@@ -1,0 +1,55 @@
+# --- OS ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# --- Editors / IDEs ---
+.vs/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+*.suo
+*.user
+*.userprefs
+*.swp
+*~
+
+# --- Build output ---
+[Bb]in/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Oo]ut/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.o
+*.a
+*.lib
+*.so
+*.dylib
+
+# --- Logs / temp / crash dumps ---
+*.log
+*.tmp
+*.dmp
+[Tt]emp/
+[Tt]mp/
+
+# --- Local secrets / environment ---
+.env
+.env.*
+!.env.example
+
+# --- Claude Code local settings ---
+.claude/settings.local.json
