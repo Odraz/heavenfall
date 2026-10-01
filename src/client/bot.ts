@@ -1,0 +1,178 @@
+/** The bot (`?bot=1`): replaces the local player's input in game (§2.5). */
+import { ENEMIES } from '../data/enemies';
+import { PHASE_CLEARED, PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
+import { PLAYER_EYE } from '../sim/constants';
+import { FlowField } from '../sim/flowfield';
+import { lineOfSight } from '../sim/los';
+import type { GameMap } from '../sim/map';
+import { distToCylinder, type Body } from '../sim/movement';
+import { PITCH_LIMIT } from './localPlayer';
+
+/** A living enemy as the client renders it (interpolated), with its derived height. */
+export interface BotEnemy {
+  slot: number;
+  type: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface BotView {
+  map: GameMap;
+  body: Body;
+  dead: boolean;
+  enemies: BotEnemy[];
+  arenaIndex: number;
+  arenaPhase: number;
+  /** The host's player position for a client's bot in multiplayer; null for the host's bot. */
+  hostPlayer: { x: number; y: number } | null;
+  qReady: boolean;
+  eReady: boolean;
+  /** Horizontal movement was blocked in the previous frame. */
+  blockedLastFrame: boolean;
+}
+
+export interface BotOutput {
+  /** null: keep the current aim. */
+  yaw: number | null;
+  pitch: number | null;
+  dirX: number;
+  dirY: number;
+  fire: boolean;
+  jump: boolean;
+  pressQ: boolean;
+  pressE: boolean;
+}
+
+const LOS_INTERVAL = 250;
+const FIELD_INTERVAL = 500;
+const FOLLOW_HOST_DIST = 6;
+const ARRIVE_DIST = 0.2;
+
+export class Bot {
+  private targetSlot = -1;
+  private lastLosCheck = -Infinity;
+  private readonly field: FlowField;
+  private fieldCell = -1;
+  private lastFieldTime = -Infinity;
+  private readonly out: BotOutput = { yaw: null, pitch: null, dirX: 0, dirY: 0, fire: false, jump: false, pressQ: false, pressE: false };
+
+  constructor(map: GameMap) {
+    this.field = new FlowField(map, false);
+  }
+
+  update(now: number, v: BotView): BotOutput {
+    const o = this.out;
+    o.yaw = null;
+    o.pitch = null;
+    o.dirX = 0;
+    o.dirY = 0;
+    o.fire = false;
+    o.jump = false;
+    o.pressQ = false;
+    o.pressE = false;
+    if (v.dead) return o;
+
+    const b = v.body;
+    const ex = b.x;
+    const ey = b.y;
+    const ez = b.z + PLAYER_EYE;
+
+    // Aim: the nearest living enemy in line of sight, checked at most 4 times per second.
+    let target = this.targetSlot >= 0 ? v.enemies.find((e) => e.slot === this.targetSlot) : undefined;
+    if (now - this.lastLosCheck >= LOS_INTERVAL) {
+      this.lastLosCheck = now;
+      target = this.findVisible(v, ex, ey, ez);
+      this.targetSlot = target ? target.slot : -1;
+    } else if (!target) {
+      this.targetSlot = -1;
+    }
+    if (target) {
+      const h = ENEMIES[target.type].height;
+      const dx = target.x - ex;
+      const dy = target.y - ey;
+      const dz = target.z + h / 2 - ez;
+      o.yaw = Math.atan2(dy, dx);
+      o.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, Math.atan2(dz, Math.hypot(dx, dy))));
+      o.fire = true;
+    }
+
+    o.pressQ = v.qReady;
+    o.pressE = v.eReady;
+
+    // Goal.
+    let goal: { x: number; y: number } | null = null;
+    if (v.hostPlayer) {
+      if (Math.hypot(v.hostPlayer.x - ex, v.hostPlayer.y - ey) > FOLLOW_HOST_DIST) goal = v.hostPlayer;
+    } else if (v.arenaPhase === PHASE_COMBAT) {
+      if (!target) {
+        let best = Infinity;
+        for (const e of v.enemies) {
+          const d = Math.hypot(e.x - ex, e.y - ey, e.z + ENEMIES[e.type].height / 2 - ez);
+          if (d < best) {
+            best = d;
+            goal = e;
+          }
+        }
+      }
+    } else {
+      const next = v.arenaPhase === PHASE_IDLE ? v.arenaIndex : v.arenaPhase === PHASE_CLEARED ? v.arenaIndex + 1 : -1;
+      const arena = v.map.arenas[next];
+      if (arena) goal = { x: arena.entryCells[0][0] + 0.5, y: arena.entryCells[0][1] + 0.5 };
+    }
+
+    if (goal) this.steer(now, v, goal, o);
+    o.jump = v.blockedLastFrame;
+    return o;
+  }
+
+  private findVisible(v: BotView, ex: number, ey: number, ez: number): BotEnemy | undefined {
+    const list = v.enemies
+      .map((e) => {
+        const def = ENEMIES[e.type];
+        return { e, d: distToCylinder(ex, ey, ez, e.x, e.y, e.z, def.radius, def.height) };
+      })
+      .sort((a, b) => a.d - b.d);
+    for (const { e } of list) {
+      if (lineOfSight(v.map, ex, ey, ez, e.x, e.y, e.z + ENEMIES[e.type].height / 2)) return e;
+    }
+    return undefined;
+  }
+
+  /** Follows a ground flow field toward the goal's cell, steering like an enemy (§7.3). */
+  private steer(now: number, v: BotView, goal: { x: number; y: number }, o: BotOutput): void {
+    const map = v.map;
+    const gc = Math.floor(goal.x);
+    const gr = Math.floor(goal.y);
+    const cell = gr * map.w + gc;
+    if (cell !== this.fieldCell && now - this.lastFieldTime >= FIELD_INTERVAL) {
+      this.field.compute(gc, gr);
+      this.fieldCell = cell;
+      this.lastFieldTime = now;
+    }
+    if (this.fieldCell < 0) return;
+    const b = v.body;
+    const c = Math.floor(b.x);
+    const r = Math.floor(b.y);
+    const fc = this.fieldCell % map.w;
+    const fr = Math.floor(this.fieldCell / map.w);
+    let tx: number;
+    let ty: number;
+    if (Math.abs(c - fc) <= 1 && Math.abs(r - fr) <= 1) {
+      // In the field's goal cell or next to it: straight at the goal.
+      tx = this.fieldCell === cell ? goal.x : fc + 0.5;
+      ty = this.fieldCell === cell ? goal.y : fr + 0.5;
+    } else {
+      const n = this.field.bestNeighbor(c, r);
+      if (n < 0) return;
+      tx = (n % map.w) + 0.5;
+      ty = Math.floor(n / map.w) + 0.5;
+    }
+    const dx = tx - b.x;
+    const dy = ty - b.y;
+    const d = Math.hypot(dx, dy);
+    if (d < ARRIVE_DIST) return;
+    o.dirX = dx / d;
+    o.dirY = dy / d;
+  }
+}

@@ -13,6 +13,8 @@ export class Input {
   ePresses = 0;
   jumpQueued = false;
   enabled = true;
+  /** The bot and the benchmark never request pointer lock. */
+  pointerLockAllowed = true;
   /** Called for one-shot keys: F3 and the dev keys. */
   onKey: (code: string) => void = () => {};
 
@@ -96,7 +98,7 @@ export class Input {
   };
 
   private readonly mousedown = (e: MouseEvent): void => {
-    if (!this.enabled) return;
+    if (!this.enabled || !this.pointerLockAllowed) return;
     if (!this.pointerLocked) {
       this.requestPointerLock();
       return;

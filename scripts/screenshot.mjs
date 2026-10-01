@@ -81,5 +81,5 @@ for (const step of steps) {
   else throw new Error(`Unknown step ${step}`);
 }
 await save(out);
-console.log(JSON.stringify(await page.evaluate(() => window.__heavenfall)).slice(0, 600));
+console.log(JSON.stringify(await page.evaluate(() => ({ ...window.__heavenfall, enemyCountsByTick: Object.keys(window.__heavenfall.enemyCountsByTick).length }))));
 await browser.close();

@@ -96,3 +96,19 @@ body {
   width: 18px;
   height: 2px;
 }
+
+.bench-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 18px 24px;
+  background: rgba(27, 21, 19, 0.85);
+  color: var(--ivory);
+  border: 2px solid var(--gold);
+  border-radius: 6px;
+  font: 18px/1.5 Consolas, monospace;
+  white-space: pre;
+  pointer-events: none;
+  z-index: 40;
+}

@@ -79,6 +79,26 @@ function overlapsNewBlocking(map: GameMap, ox: number, oy: number, nx: number, n
   return false;
 }
 
+/**
+ * Moves a body by (dx, dy) at once, unless that would make it overlap a blocking cell it didn't
+ * overlap before. Returns whether it moved. Used for separation pushes (§7.3).
+ */
+export function tryDisplace(map: GameMap, b: Body, dx: number, dy: number): boolean {
+  const nx = b.x + dx;
+  const ny = b.y + dy;
+  if (overlapsNewBlocking(map, b.x, b.y, nx, ny, b)) return false;
+  b.x = nx;
+  b.y = ny;
+  return true;
+}
+
+/** 3D distance from a point to the closest point of a vertical cylinder with its feet at (cx, cy, cz). */
+export function distToCylinder(px: number, py: number, pz: number, cx: number, cy: number, cz: number, r: number, h: number): number {
+  const dh = Math.max(0, Math.hypot(px - cx, py - cy) - r);
+  const dz = pz < cz ? cz - pz : pz > cz + h ? pz - cz - h : 0;
+  return Math.hypot(dh, dz);
+}
+
 /** Applies ground snapping, leaving the ground and landing (§5.2). Not for flyers. */
 export function updateGround(map: GameMap, b: Body): void {
   if (b.flying) return;
@@ -141,9 +161,9 @@ export function stepBody(map: GameMap, b: Body, dx: number, dy: number, dt: numb
       b.grounded = true;
     }
   }
-  updateGround(map, b);
-  moveHorizontal(map, b, dx, dy, out);
-  updateGround(map, b);
+  // moveHorizontal updates the ground after every substep; without movement, update it once here.
+  if (dx !== 0 || dy !== 0) moveHorizontal(map, b, dx, dy, out);
+  else updateGround(map, b);
 }
 
 /** Starts a jump if the body is grounded (§5.2). */

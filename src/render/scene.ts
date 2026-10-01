@@ -90,6 +90,7 @@ export class GameScene {
     const cp = Math.cos(pitch);
     this.lookTarget.set(x + cp * Math.cos(yaw), ez + Math.sin(pitch), y + cp * Math.sin(yaw));
     this.camera.lookAt(this.lookTarget);
+    this.camera.updateMatrixWorld();
     this.sky.position.copy(this.camera.position);
   }
 
