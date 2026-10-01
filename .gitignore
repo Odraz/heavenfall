@@ -44,6 +44,7 @@ node_modules/
 /dist/
 /test-results/
 /playwright-report/
+/screenshots/
 
 # --- Logs / temp / crash dumps ---
 *.log

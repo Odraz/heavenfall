@@ -17,13 +17,13 @@ Units are meters (m), seconds (s), milliseconds (ms) and hit points (HP). KB mea
 2. **This spec is the source of truth.** If it's silent or ambiguous, choose the simplest option consistent with it and record the choice in `docs/decisions.md`, one line per decision: `§<section> — <decision>`. Don't add anything listed in §14 or anything else not specified here. Internal code structure, helper modules and extra tests are up to you.
 3. **Definition of done for each milestone:**
    - `npm run typecheck`, `npm test` and every end-to-end test available at that milestone (§13.2) pass;
-   - the milestone's features were checked visually: run the dev server, open it in the browser and take screenshots;
+   - the milestone's features were checked visually: run the dev server, open it in the browser and take screenshots, saved as PNG files in `screenshots/` (ignored by Git, never committed);
    - the work is committed.
 
 **Git and housekeeping**
 - Work on the branch `mvp`, with at least one commit per milestone and messages starting `M<n>:`.
 - Don't push, rewrite history or change repository settings.
-- `.gitignore` already covers `node_modules/`, `dist/`, `test-results/` and `playwright-report/`.
+- `.gitignore` already covers `node_modules/`, `dist/`, `test-results/`, `playwright-report/` and `screenshots/`.
 - In milestone 1, create `docs/decisions.md`, and replace the README's *Getting started* section with the npm commands (§2.1) and the dev URLs (§2.5). Keep the Git LFS note.
 
 **When something blocks the work**
@@ -80,6 +80,7 @@ Commands:
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | Unit tests |
 | `npm run e2e` | Builds, serves the build and runs Playwright |
+| `npm run bench` | Builds, serves the build and runs the browser benchmark (§12) |
 
 ### 2.2 Architecture
 
@@ -103,12 +104,12 @@ e2e/               Playwright tests
   - **Multiplayer, host's own player:** uses `LocalTransport`.
   - **Multiplayer, remote clients:** use `PeerTransport`.
   - Rendering and input code never knows which transport it's using.
-- **The host simulation runs in a dedicated Web Worker.** Browsers pause `requestAnimationFrame` and throttle timers on the main thread when a tab is in the background, which would freeze the game for every player if the host alt-tabs. The worker isn't throttled that way.
+- **The host simulation runs in a dedicated Web Worker.** The worker starts when the host clicks `Create` (singleplayer: `Start`, or the page loads with `dev=1` or `bench=1`) and is terminated when the session ends at Results or on leaving. It owns the lobby state (§3) as well as the game, so every `ctrl` message to or from the host is handled there. Browsers pause `requestAnimationFrame` and throttle timers on the main thread when a tab is in the background, which would freeze the game for every player if the host alt-tabs. The worker isn't throttled that way.
   - `LocalTransport` is `postMessage` between the main thread and the worker.
   - The host's main thread owns the PeerJS connections and relays messages between remote clients and the worker.
   - The worker encodes every snapshot (§9.4) itself and posts it to the main thread, which only forwards remote clients' snapshots to their connections. Forwarding is driven by worker messages, not main-thread timers, so it keeps full rate while the host's tab is in the background.
 - **The simulation is authoritative** for enemies, projectiles, damage, abilities, cooldowns and arena state. Each player's own position is **client-authoritative** (§9.3).
-- **Simulation tick:** a fixed **30 Hz**, using an accumulator driven by `performance.now()` inside the worker.
+- **Simulation tick:** a fixed **30 Hz**, using an accumulator driven by `performance.now()` inside the worker. One loop iteration runs at most 5 ticks and discards any remaining backlog, so a slow moment can't snowball. A tick's measured time (*simulation ms per tick*) includes encoding that tick's snapshots.
 - **Randomness:** all simulation randomness (weapon spread) uses a seeded PRNG (mulberry32). The seed is random per game unless set with `?seed=` (§2.5).
 - **Local player movement** runs on each player's own main thread, every render frame (dt clamped to 50 ms). It uses `sim/movement.ts`, which the host also uses for validation.
 
@@ -121,6 +122,7 @@ e2e/               Playwright tests
 - **Body points.** Every body is a vertical cylinder with its *feet* at `(x, y, z)`.
   - *Body center* = feet + height / 2.
   - *Eye*: players at feet + 1.6 m; the Gatekeeper at feet + 5 m; every other enemy at its body center.
+- **Projectiles** are spheres; their position is their center.
 - **Placing a body on a cell** means its feet go to the cell's center at that cell's floor height (Cherubs: 4 m above it).
 
 ### 2.4 Version and deployment
@@ -217,7 +219,7 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 - The player with index *i* is placed on the *i*-th `S` marker in reading order.
 
 **Pause**
-- The Pause overlay opens when **pointer lock is lost**, and when an `Esc` keydown reaches the page; opening it releases pointer lock if held. (Browsers usually consume `Esc` to release pointer lock without passing it to the page, so the lock-loss event covers that case; automated tests may deliver the keydown directly.)
+- While In Game and before the game result (*End of game* below), the Pause overlay opens when **pointer lock is lost**, and when an `Esc` keydown reaches the page; opening it releases pointer lock if held. At the result, pointer lock is released and Pause can't open. (Browsers usually consume `Esc` to release pointer lock without passing it to the page, so the lock-loss event covers that case; automated tests may deliver the keydown directly.)
 - `Resume` closes the overlay and requests pointer lock; the click counts as the required user gesture. If the request fails (Chrome refuses it for about 1 s after the user pressed `Esc`), the game continues without it.
 - While the overlay is closed and pointer lock isn't held, a click in the game requests it.
 - In singleplayer, Pause pauses the simulation (through an internal worker message, not part of §9.2). In multiplayer it doesn't.
@@ -232,7 +234,7 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 | Join | `Connection failed` | Any other error, or no `welcome` within 10 s. |
 
 **End of game**
-- On victory or defeat, the result is shown as a large text overlay for 3 s, then the Results screen appears.
+- On victory or defeat, the host sends one last snapshot and `gameOver`, then stops simulating. The result is shown as a large text overlay for 3 s over the game view, which keeps rendering without input, then the Results screen appears.
 - **Run time** is simulation time from `go` (singleplayer: from entering the game) to the result, so time spent paused doesn't count.
 - **Kills per player** lists the players still connected at the end.
 - The session ends at Results: the host closes all connections and destroys its PeerJS peer.
@@ -254,6 +256,7 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 | F3 | Debug overlay |
 
 - **Mouse sensitivity:** 0.0022 rad per pixel, hardcoded.
+- **Held input is released** (movement keys, fire) when the window loses focus, when Pause opens and while the player is dead, so a missed keyup can't leave a player running or firing.
 - **Pitch:** limited to ±85°.
 - **Camera:** vertical field of view 75°, near plane 0.05 m, far plane 200 m.
 - **Fog:** linear from 40 m to 150 m.
@@ -264,7 +267,7 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 ## 5. World and rules
 
 ### 5.1 Heightfield
-- **Grid:** the map is a 2D grid of **1 m cells**, at most 256 × 256.
+- **Grid:** the map is a 2D grid of **1 m cells**, at most 256 × 256. Everything outside the grid counts as wall.
 - **Cells:** each cell is either a **wall** or a **floor** with its own height. Floor heights go from 0 to 8.75 m in **0.25 m steps**.
 - **No overlap:** there are no overlapping floors, bridges or ceilings. Above everything is open sky.
 - **Walls** are solid columns rising to a global top of 16 m. A **closed door** behaves exactly like a wall.
@@ -296,11 +299,11 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 - **Origins:** all player weapons and abilities originate at the player's eye. Enemy projectiles originate at the enemy's eye.
 - **Crosshair ray:** a 3D ray from the player's eye along the aim direction. It stops at the first enemy cylinder it hits, or at a wall or terrain (any point where the ray is below the floor height of the cell it's passing through).
 - **Crosshair target:** the enemy hit by the crosshair ray, if any.
-- **Ally target:** the living ally (not self) with the smallest angle between the aim direction and the direction from the eye to the ally's body center. The angle must be **10° or less**, the ally must be within the ability's range, and there must be line of sight. **Enemies don't block ally targeting.**
+- **Ally target:** the living ally (not self) with the smallest angle between the aim direction and the direction from the eye to the ally's body center. The angle must be **10° or less**, the ally must be within the ability's range, and there must be line of sight. **Enemies don't block ally targeting.** Only E abilities use ally targets (Falling Star, Martyr's Shroud). The client computes the ally target for its own E ability every frame, highlights it (§10) and sends it in every input (`allyTargetId`, §9.3; always "none" for the Binder and the Betrayer); the host uses the value sent with the press.
 - **Line of sight:** a 3D segment between two points, blocked by walls, closed doors and terrain only.
   - From a player: from the player's eye to the target's body center.
   - From an enemy to a player: from the enemy's eye to the player's body center.
-  - Line of sight is required only where this spec says so: ally targets, Chains of Tartarus (§6.3), enemy targeting and attacks (§7), Judgment (§7.4) and the bot (§2.5). Other area effects (Blasphemy, Unholy Communion, Discord, explosions, landings) don't need it.
+  - Line of sight is required only where this spec says so: ally targets, Chains of Tartarus (§6.3), the Gatekeeper's targeting, Chorister, Cherub and Volley attacks (§7), Judgment (§7.4) and the bot (§2.5). Ground and flying enemies otherwise target by flow-field distance (§7.2), and Blessed melee needs no line of sight. Other area effects (Blasphemy, Unholy Communion, Discord, explosions, landings) don't need it.
 - **Distance to an entity:** the 3D distance from a point to the closest point of the entity's cylinder. All radii and ranges use this unless stated otherwise.
   - Areas centered on a player measure from that player's body center.
   - **Horizontal distance between two bodies** is measured between their vertical axes.
@@ -310,7 +313,8 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 
 ### 5.4 Projectiles
 - Projectiles fly in straight lines at constant speed, with no gravity.
-- Each tick they're tested as a **swept segment** (from the previous position to the new one) against target cylinders and the heightfield. Player projectiles hit enemies; enemy projectiles hit players.
+- Each tick they're tested as a **swept segment** (from the previous position to the new one) against the heightfield and against target cylinders enlarged by the projectile's radius. Player projectiles hit enemies; enemy projectiles hit living players.
+- A projectile is removed when it hits, when it leaves the grid horizontally or rises above 16 m, or when it has flown **60 m** (the censer explodes earlier, §6.2).
 - At most **400** projectiles exist at once. Spawning one more removes the oldest.
 
 ### 5.5 Damage pipeline
@@ -332,7 +336,7 @@ Other rules:
 | Effect | Rule |
 |---|---|
 | **Slowed** | Movement speed ×0.7. Re-applying refreshes the duration; it doesn't stack. |
-| **Rooted** | Can't move, but can still attack and cast. |
+| **Rooted** | Can't move by itself, but can still attack and cast. Pulls (Chains) and knockbacks still move it. |
 | **Silenced** | Can't start a cast, and a cast in progress is **cancelled**. A cast that would start while silenced starts when silence ends, with its wind-up from 0. *Casts* are: Chorister orb, Cherub arrow, Gatekeeper Orb Volley and Judgment. Blessed melee isn't a cast. |
 | **Marked** | Takes ×3 damage (§5.5). Only one mark exists at a time; a new mark replaces the old one. |
 | **Knocked back** | Pushed horizontally over 0.2 s using normal collision, without steering. Ground enemies can fall off ledges. |
@@ -342,9 +346,10 @@ The **Gatekeeper is immune** to slow, root, pull and knockback. It can be silenc
 ### 5.7 Death and respawn
 - **Death:** at HP 0 a player is **dead**. Their camera stays at the death position's eye height and can only rotate. The text *"You are dead — you respawn when this arena is cleared"* is shown.
 - **Respawn:** when an arena is cleared, every dead connected player respawns at full HP on that arena's entry cell for their index (§8.2). The host sends `playerRespawned` to all and a `teleport` to the respawned player.
-- **While dead:** the host ignores that player's position, fire and ability input.
+- **While dead:** the host ignores that player's position, fire and ability input. Dead players aren't targeted, hit, healed or shielded, and can't be ally targets.
+- **Boss arena:** it is never cleared (§8.2), so players who die there don't respawn. Their death text is *"You are dead — your party fights on"*.
 - **Defeat:** the run is a defeat when **all connected players are dead** at the same time.
-- **Singleplayer only:** after 4 s without taking damage, the player regenerates 3% of max HP per second.
+- **Singleplayer only:** after 4 s without taking damage (a hit with more than 0 damage left after step 3 of §5.5), the player regenerates 3% of max HP per second.
 
 ---
 
@@ -361,7 +366,7 @@ HP **400** · speed **7 m/s**
 |---|---|---|
 | Primary | Brimstone Shotgun | 8 hitscan pellets × 10 dmg, spread up to ±8° in yaw and ±4° in pitch, range 20 m, 0.9 s between shots. |
 | Q | Blasphemy | Every enemy within 15 m, including the Gatekeeper, targets the Fallen for 5 s. Cooldown 12 s. |
-| E | Falling Star | Leaps to an ally target (range 30 m). **If there's no ally target, nothing happens and there's no cooldown.** The Fallen moves linearly from its position to the ally's position at the moment E is pressed, over 0.4 s, ignoring collision, and is invulnerable during the leap. On landing: 30 dmg to enemies within 5 m and a 4 m knockback away from the landing point. Cooldown 15 s. |
+| E | Falling Star | Leaps to the ally target (range 30 m). **If there's no ally target, nothing happens and there's no cooldown.** The Fallen moves linearly from its position to the ally's position at the moment E is pressed, over 0.4 s, ignoring collision, and is invulnerable during the leap. On landing: 30 dmg to enemies within 5 m and a 4 m knockback away from the landing point. Cooldown 15 s. |
 
 ### 6.2 The Heretic Saint (Healer)
 HP **150** · speed **8 m/s**
@@ -370,7 +375,7 @@ HP **150** · speed **8 m/s**
 |---|---|---|
 | Primary | Censer Launcher | Projectile, 20 m/s, radius 0.2 m. Explodes on the first enemy, on a wall or terrain, or after flying 25 m: 40 dmg to enemies within 3 m of the explosion point. 1.0 s between shots. |
 | Q | Unholy Communion | Heals every living player within 15 m, including self, for 80 HP. Cooldown 4 s. |
-| E | Martyr's Shroud | Shield on an ally target (range 40 m), or on self if there's no ally target. It absorbs 150 dmg and lasts 8 s. Cooldown 10 s. |
+| E | Martyr's Shroud | Shield on the ally target (range 40 m), or on self if there's no ally target or the sent ally is no longer alive. It absorbs 150 dmg and lasts 8 s. Cooldown 10 s. |
 
 ### 6.3 The Binder (Support)
 HP **200** · speed **8 m/s**
@@ -390,7 +395,11 @@ HP **120** · speed **9 m/s**
 | Q | Kiss of Betrayal | Marks the crosshair target within 50 m, including the Gatekeeper, for 6 s. **If there's no target, nothing happens and there's no cooldown.** Cooldown 10 s. |
 | E | Shadowstep | Dashes horizontally in the current movement direction (the WASD direction relative to yaw; forward if not moving) at 40 m/s for 0.2 s, which is 8 m. The dash uses normal movement rules (§5.2), gravity still applies, and it can carry the player off a ledge. Invulnerable for 0.5 s from the start. Cooldown 6 s. |
 
-**Fire rate:** each weapon has a fire timer in seconds. While the trigger is held, the weapon fires whenever the timer is 0 or less, and adds the time between shots to it. The timer counts down every tick and, while the trigger is released, stops at 0. Comparisons use a tolerance of 1e-6 s. So the chain gun fires on every third tick, and fractions carry over between ticks.
+**Fire rate:** each weapon has a fire timer in seconds, starting at 0. Each tick, in this order:
+1. If the trigger is held and the timer is 0 or less, the weapon fires once and the time between shots is added to the timer.
+2. The timer decreases by 1/30 s. While the trigger is released, it doesn't go below 0.
+
+Comparisons use a tolerance of 1e-6 s. So a held chain gun fires on ticks 0, 3, 6, … (every third tick), and fractions carry over between ticks. Each client also runs this timer locally at 30 Hz, only to time the cosmetic shot feedback (§10).
 
 ---
 
@@ -400,9 +409,9 @@ HP **120** · speed **9 m/s**
 
 | Type | Role | HP | Body (r × h) | Speed | Behavior |
 |---|---|---|---|---|---|
-| **Blessed** | Ground melee | 20 | 0.35 × 1.6 m | 6 m/s | Swarms of the righteous dead. Follows the ground flow field to its target and **stops moving within 1.0 m horizontally** of it. **Melee:** while within 1.2 m horizontally and with less than 1.5 m difference between its feet and the target's feet, it deals 5 dmg 0.5 s after entering range, then every 1 s. |
+| **Blessed** | Ground melee | 20 | 0.35 × 1.6 m | 6 m/s | Swarms of the righteous dead. Follows the ground flow field to its target and **stops moving within 1.0 m horizontally** of it. **Melee:** while within 1.2 m horizontally and with less than 1.5 m difference between its feet and the target's feet, it deals 5 dmg 0.5 s after entering range, then every 1 s. Leaving range resets this timer. |
 | **Chorister** | Ground ranged | 60 | 0.45 × 2.0 m | 3 m/s | Follows the ground flow field until it's within 20 m of its target with line of sight, then stops and **casts**: a 1.0 s wind-up (sprite glows), then fires an orb at the target's body center (12 m/s, 12 dmg, radius 0.3 m). Next cast starts 1.5 s after firing. Between casts, it walks again if line of sight is lost or the target is farther than 20 m. |
-| **Cherub** | Flying ranged | 30 | 0.4 × 0.8 m | 7 m/s | Winged archer. **Hovers with its feet 4 m above the ground height** under it, changing height at up to 6 m/s. Follows the air flow field until it's within 25 m of its target with line of sight. Then it **strafes** sideways (perpendicular to the horizontal direction to its target) at 2 m/s, switching direction every 2 s and when blocked, and **casts** while strafing: a 0.5 s wind-up, then an arrow at the target's body center (25 m/s, 8 dmg, radius 0.15 m). Next cast starts 1.3 s after firing. Between casts, it follows the field again if line of sight is lost or the target is farther than 25 m. |
+| **Cherub** | Flying ranged | 30 | 0.4 × 0.8 m | 7 m/s | Winged archer. **Hovers with its feet 4 m above the ground height** under it, changing height at up to 6 m/s. Follows the air flow field until it's within 25 m of its target with line of sight. Then it **strafes** sideways (perpendicular to the horizontal direction to its target, starting at +90° yaw from it) at 2 m/s, switching direction every 2 s and when blocked, and **casts** while strafing: a 0.5 s wind-up, then an arrow at the target's body center (25 m/s, 8 dmg, radius 0.15 m). Next cast starts 1.3 s after firing. Between casts, it follows the field again if line of sight is lost or the target is farther than 25 m. |
 | **The Gatekeeper** | Final boss | 40 000 | 2.0 × 6.0 m | 0 | See §7.4. |
 
 ### 7.2 Targeting
@@ -419,7 +428,7 @@ HP **120** · speed **9 m/s**
   - A diagonal step is allowed only if both orthogonal steps it cuts past are allowed.
   - Distances are computed **backward** from the target cell over these one-way steps, so they measure paths **to** it.
 - **Air flow field:** one per living player, built the same way, except any floor cell connects to any neighboring floor cell regardless of height. Walls and closed doors still block.
-- **Steering:** an enemy moves toward the center of the neighbor cell with the lowest distance. When it's in the target's cell or an adjacent one, it moves directly toward the target.
+- **Steering:** an enemy moves toward the center of the neighbor cell, reachable by an allowed step, with the lowest distance. When it's in the target's cell or an adjacent one, it moves directly toward the target.
 - **Separation:** two spatial hashes with 1 m cells, one for ground enemies and one for flyers; the Gatekeeper is in neither. Each tick, each enemy is pushed apart from up to 8 overlapping neighbors found in its 3×3 hash cells. The push is half the overlap each, and it is cancelled if it would make the enemy overlap a blocking cell it didn't overlap before.
 - **Falling:** ground enemies that walk or are knocked off a ledge fall with gravity 20 m/s².
 - **Line of sight:** each enemy checks it at most twice per second, staggered.
@@ -429,8 +438,8 @@ Stands on the `B` marker, on a dais 3 m above the arena floor that players can't
 All timers start when the boss arena enters combat. A cast that's due while another cast or silence prevents it starts as soon as it's allowed.
 - **Orb Volley (cast):**
   - The first Volley starts at 2 s. Each next one is due 4 s after the previous one fired, or was cancelled.
-  - A 0.5 s wind-up, then 8 orbs spread evenly from −25° to +25° horizontally around the direction to the target's body center. Each orb does 15 dmg at 12 m/s, radius 0.3 m.
-  - Volleys don't start during Judgment.
+  - A 0.5 s wind-up, then 8 orbs aimed at the target's body center, with the direction rotated around the vertical axis by evenly spread angles from −25° to +25°. Each orb does 15 dmg at 12 m/s, radius 0.3 m.
+  - Volleys don't start during Judgment, or while the Gatekeeper's target isn't in line of sight; a Volley prevented this way starts as soon as it's allowed.
 - **Judgment (cast):**
   - The first is due at 20 s. Each next one is due 25 s after the previous one completed or was interrupted.
   - If a Volley wind-up is in progress when Judgment is due, Judgment waits until the Volley fires.
@@ -475,6 +484,7 @@ The grids may be written by hand or produced by small builder helpers in `src/da
 | `B` | Gatekeeper position (at most 1) |
 
 **The loader rejects a map**, with an error naming the row and column, when:
+- the grid is empty or larger than 256 × 256;
 - the two grids differ in size, or a row's length differs from the first row's;
 - a character is unknown;
 - a marker sits on a wall;
@@ -489,9 +499,12 @@ The grids may be written by hand or produced by small builder helpers in `src/da
 - **No jump-only perches:** the two sets must be **equal**. This enforces the §5.1 rule.
 - Every arena's entry cells and `x` cells are enemy-reachable.
 - The `B` cell isn't player-reachable.
-- Every arena has at least 6 `x` cells inside its `rect` and exactly 4 entry cells, which are floor cells inside its `rect`.
+- Every arena has at least 6 `x` cells inside its `rect`, and every `x` cell is inside an arena's `rect`.
+- Every arena has exactly 4 distinct entry cells, which are floor cells inside its `rect` and aren't `D` cells.
 - Arena `rect`s don't overlap, and no `S` cell is inside one.
-- A map has a `B` cell exactly when it has a boss arena (`boss: true`). Only the last arena can be a boss arena, and the `B` cell is inside its `rect`.
+- Every cell on the grid's border is a wall, so the edge of the world is always drawn.
+- **Arenas are sealed:** with all doors closed, no floor cell inside an arena's `rect` has a floor cell outside the `rect` among its 8 neighbors.
+- A map has a `B` cell exactly when it has a boss arena (`boss: true`). Only the last arena can be a boss arena, and the `B` cell is inside its `rect`. Every cell overlapped by the Gatekeeper's body placed on `B` is a floor cell at the `B` cell's height.
 
 ### 8.2 Arenas
 
@@ -508,20 +521,20 @@ The grids may be written by hand or produced by small builder helpers in `src/da
 - An arena's **spawn points** are the `x` cells inside its `rect`.
 - **Arena index** (`arenaIndex` in snapshots and the debug object): the highest-index arena that has left *idle*, or 0 if none has. `arenaPhase` is that arena's phase.
 
-**Lifecycle:** `idle → combat → cleared`. Doors are open while idle and cleared.
+**Lifecycle:** `idle → combat → cleared`. Doors are open while idle and cleared. Arenas are entered in order, so clients derive every door's state from `arenaIndex` and `arenaPhase`: only the doors of arena `arenaIndex` can be closed, and they are closed exactly while it's in combat.
 
 1. **Start.** When any living player's feet are inside `rect`, the arena enters combat.
    - Its doors close.
    - Every living player outside `rect`, or standing on a door cell, is **teleported** to their entry cell (§9.3).
 2. **Waves.**
    - Wave 1 starts immediately.
-   - Wave *n + 1* starts when wave *n* has fully spawned and either at most 20% of wave *n*'s enemies are still alive, or 20 s have passed since wave *n* began spawning.
+   - Wave *n + 1* starts when wave *n* has fully spawned and either at most 20% of wave *n*'s enemies (after scaling, §7.5) are still alive, or 20 s have passed since wave *n* started.
 3. **Spawning** (waves and summons alike).
-   - New enemies are placed on a spawn point (§2.3).
-   - Each spawn point spawns at most **50 enemies per second**.
-   - New enemies are assigned round-robin to spawn points more than 8 m from every living player. If there are none, all spawn points are used.
-   - **Global cap:** 1 500 living enemies. Spawning pauses while the cap is reached.
-   - **Type order:** within a wave, Blessed, Choristers and Cherubs are interleaved in proportion to their counts.
+   - Starting a wave or a summon adds its enemies to the arena's spawn queue, after any enemies already waiting.
+   - **Type order:** the next enemy taken from a wave or summon is the type with the lowest `(spawned so far + 0.5) ÷ count` among its types with enemies left; ties go to Blessed, then Choristers, then Cherubs. This interleaves the types in proportion to their counts.
+   - **Rate:** each spawn point has a budget that grows by 50/30 per tick, up to 2. Placing an enemy on it costs 1, so each spawn point spawns at most **50 enemies per second**.
+   - **Placement:** each tick, queued enemies are placed one at a time on a spawn point (§2.3), going round-robin through the *eligible* spawn points (the round-robin position carries over between ticks) and skipping those with a budget below 1, until the queue is empty or no eligible spawn point has a budget of 1 or more. Eligible spawn points are those more than 8 m from every living player; if there are none, all spawn points are eligible.
+   - **Global cap:** 1 500 living enemies, not counting the Gatekeeper. Placement pauses while the cap is reached or no enemy slot is free (§9.4).
 4. **Cleared.** When every wave has fully spawned and none of the arena's enemies are alive:
    - doors open;
    - dead players respawn at full HP on the entry cells.
@@ -538,7 +551,7 @@ Linear layout: Start room → corridor → **Arena 1** → corridor → **Arena 
 |---|---|---|---|
 | 1. Courtyard of Clouds | ~40 × 40 m | A central terrace 2 m high with stairs on all 4 sides. A 1 m ledge on one side to teach jumping; the top of the ledge is also reachable by stairs. | 200 Blessed; then 300 Blessed + 20 Cherubs |
 | 2. Cloister of Hymns | ~50 × 40 m | A nave at floor level with pillars. Side galleries 3 m high, each reached by 2 staircases. | 300 Blessed + 20 Choristers + 20 Cherubs; then 400 Blessed + 40 Choristers + 30 Cherubs |
-| 3. The Gate (boss) | ~60 × 50 m | Main floor plus side terraces at 1.5 m and 3 m, none touching the dais. The Gatekeeper's dais is 3 m high, at least 6 × 6 m, with no stairs. At least 6 pillars and the dais edge give cover from Judgment. | 10 Choristers + 10 Cherubs; plus the Gatekeeper and its summons |
+| 3. The Gate (boss) | ~60 × 50 m | Main floor plus side terraces at 1.5 m and 3 m, none touching the dais. The Gatekeeper's dais is 3 m high, at least 6 × 6 m, with no stairs, so the arena's main floor is at most 5.75 m (the highest floor is 8.75 m). At least 6 pillars and the dais edge give cover from Judgment. | 10 Choristers + 10 Cherubs; plus the Gatekeeper and its summons |
 
 ### 8.4 Sandbox (dev only)
 - About 48 × 48 m.
@@ -558,7 +571,7 @@ Linear layout: Start room → corridor → **Arena 1** → corridor → **Arena 
 - **Topology:** a star. Each client connects only to the host. The host accepts at most 3 clients.
 - **Connections:** each client opens two PeerJS DataConnections to the host:
   - `ctrl`: reliable, JSON. Used for lobby and game events.
-  - `snap`: unreliable, raw `ArrayBuffer` with no PeerJS serialization. Used for client input and host snapshots.
+  - `snap`: `reliable: false` and `serialization: 'raw'` (an `ArrayBuffer` with no PeerJS serialization). Used for client input and host snapshots. PeerJS implements `reliable: false` only as `ordered: false`: messages may arrive out of order, but lost ones are still retransmitted. So neither side relies on order (§9.3, §9.4), and the host skips sending a snapshot part to a client whose `snap` channel has more than **64 KB** in `bufferedAmount`, so a slow connection can't build up lag.
 - **Password:** kept only in the host's memory. It's sent in `hello` over the DTLS-encrypted `ctrl` channel.
 - **Heartbeat:** both sides send `ping` on `ctrl` every 1 s. Any message on either channel counts as a sign of life. If nothing arrives from a peer for **5 s**, that peer is disconnected.
 
@@ -583,7 +596,7 @@ Linear layout: Start room → corridor → **Arena 1** → corridor → **Arena 
 
 | Type | Fields | Sent to |
 |---|---|---|
-| `abilityUsed` | `playerId`, `slot` (`Q` \| `E`), `x`, `y`, `z`, `targetPlayerId?` | all (drives VFX at `x`, `y`, `z`: the user's feet for Blasphemy, Unholy Communion and Shadowstep; the ally's feet for Falling Star and Martyr's Shroud; the destination for Chains; the impact point for Discord; the marked enemy's feet for Kiss) |
+| `abilityUsed` | `playerId`, `slot` (`Q` \| `E`), `x`, `y`, `z`, `targetPlayerId?` | all (drives VFX at `x`, `y`, `z`: the user's feet for Blasphemy, Unholy Communion and Shadowstep; the ally's feet for Falling Star; the shielded player's feet for Martyr's Shroud; the destination for Chains; the impact point for Discord; the marked enemy's feet for Kiss) |
 | `teleport` | `teleportId`, `x`, `y`, `z` | the one player being moved |
 | `playerDied` | `playerId` | all |
 | `playerRespawned` | `playerId` | all |
@@ -609,12 +622,12 @@ Linear layout: Start room → corridor → **Arena 1** → corridor → **Arena 
 - **Order:** an input whose `seq` isn't higher than the last accepted one is ignored.
 - **Why counters:** ability presses are sent as running counters instead of flags, so a lost packet can't drop a press. The host treats any increase, by any amount, as one press.
 - **Movement is client-authoritative.** This is co-op, so there's no anti-cheat. The host accepts the reported position, except:
-  - **Speed check:** if the horizontal distance since the previous accepted position is more than `1.2 × class speed × elapsed + 0.5 m`, where *elapsed* is host time since that input arrived, the position is clamped to that distance. The check is skipped for 0.6 s after an accepted Falling Star or Shadowstep.
+  - **Speed check:** if the horizontal distance from the previous accepted position is more than `1.2 × class speed × elapsed + 0.5 m`, where *elapsed* is host time since the previous accepted input arrived, the position is moved toward the reported one only by that distance. After a teleport, the teleport position counts as the previous accepted position. The check is skipped for 0.6 s after an accepted Falling Star or Shadowstep.
   - **Floor check:** feet below the ground height are raised to it.
   - **Teleports:** a teleport moves the player on the host immediately. Inputs with `lastTeleportId` older than the host's latest teleport for that player are ignored. On receiving `teleport`, the client moves its player there at once and reports the new `teleportId`.
 - **Abilities:**
-  - **Non-movement abilities** (Blasphemy, Unholy Communion, Martyr's Shroud, Chains, Discord, Kiss) are resolved by the host when it sees the press, using the latest reported position and aim. If the cooldown isn't ready or the ability has no valid target, the press is ignored.
-  - **Movement abilities** (Falling Star, Shadowstep) are executed by the client immediately, when its displayed cooldown is ready. The client picks the Falling Star ally and sends it in `allyTargetId`. The host accepts the press when the cooldown has 0.25 s or less remaining, then:
+  - **Non-movement abilities** (Blasphemy, Unholy Communion, Martyr's Shroud, Chains, Discord, Kiss) are resolved by the host when it sees the press, using the latest reported position and aim, and for Martyr's Shroud the `allyTargetId` sent with the press. If the cooldown isn't ready or the ability has no valid target, the press is ignored.
+  - **Movement abilities** (Falling Star, Shadowstep) are executed by the client immediately, when its displayed cooldown is ready. The Falling Star ally is the client's ally target, sent in `allyTargetId`. The host accepts the press when the cooldown has 0.25 s or less remaining, then:
     - starts the cooldown;
     - applies invulnerability;
     - for Falling Star, applies the landing damage and knockback 0.4 s later, at the Fallen's latest reported position.
@@ -641,9 +654,9 @@ The counts give the number of records of each block in that part; blocks follow 
 **Projectile kinds:** 0 censer, 1 orb, 2 arrow.
 
 **Message size**
-- A snapshot whose encoding would exceed **16 000 bytes** is split into parts.
+- A snapshot whose encoding would exceed **16 000 bytes** is split into parts. With the current caps the largest snapshot is 15 745 bytes (4 players, 1 501 enemies, 400 projectiles), so splitting is a safeguard for later tuning; it's covered by a unit test.
 - Every part carries the full header, all players, and a contiguous range of the enemy and projectile lists, each part as full as fits.
-- A client uses a tick only when all its parts have arrived, and otherwise drops it. A *complete snapshot* is one whose parts have all arrived.
+- A *complete snapshot* is a tick whose parts have all arrived. A client keeps incomplete ticks until a newer tick becomes complete, then drops them. Parts of a tick that isn't newer than the newest complete snapshot are ignored.
 
 **Rules**
 - **Slots:** enemies use a pool of 4 096 slots and projectiles a pool of 1 024. A freed slot isn't reused for **1 s**, so interpolation never connects two different entities. If no slot is free, enemy spawning waits and a new projectile isn't created.
@@ -666,9 +679,10 @@ The counts give the number of records of each block in that part; blocks follow 
 - **Bottom-left:** own HP bar, with the shield shown as a blue overlay segment.
 - **Bottom-center:** first-person weapon sprite.
 - **Bottom-right:** Q and E ability icons with a cooldown sweep and seconds remaining.
-- **Left, multiplayer only:** party frames with name, class icon, HP and shield bar, and dead state.
+- **Left, multiplayer only:** party frames, one per other player, with name, class icon, HP and shield bar, and dead state.
+- **Ally target highlight** (Fallen and Heretic Saint only): the current ally target for E (§5.3) is tinted gold, on its billboard and on its party frame.
 - **Top, boss arena only:** Gatekeeper HP bar, with the Judgment cast bar under it.
-- **Top-right:** enemies remaining.
+- **Top-right:** enemies remaining (§8.2), shown only while `arenaPhase` is `combat`.
 
 **Feedback.** All of these are required.
 
@@ -696,7 +710,7 @@ The counts give the number of records of each block in that part; blocks follow 
 ### 11.1 Rendering
 - **Sprites:** SVG files in `assets/sprites/`, one frame per entity type, rasterized at load time into one 2048² canvas atlas.
 - **Billboards:** enemies, remote players, projectiles and particles are billboards that rotate only around the vertical axis.
-  - They're anchored at the feet and drawn with **one `InstancedMesh`** per material, updated every frame.
+  - Bodies' billboards are anchored at the feet; projectile and particle billboards are centered on their position. All are drawn with **one `InstancedMesh`** per material, updated every frame.
   - Billboard height = body height (projectiles: 2 × radius). Width = height × the sprite's aspect ratio.
   - Status effects (§10) are tinted or glowing through per-instance color attributes.
 - **First-person weapon:** a screen-space sprite at the bottom-center.
@@ -708,6 +722,7 @@ The counts give the number of records of each block in that part; blocks follow 
 - **Terrain textures:** two textures generated in code with canvas (no image files): stone tiles for tops, brick for sides and walls.
 - **Sky:** a gradient dome from pale blue to gold. There is no ceiling.
 - **Particles:** a pool of at most 4 000. When it's full, a new particle replaces the oldest.
+- **Ability and status VFX** (§10) are built in code from simple geometry (rings, lines, spheres, screen overlays) and the particle sprites. Only the mark icon and the chain ring need their own sprites.
 
 ### 11.2 Assets
 The implementing AI creates all art as hand-written SVG.
@@ -717,6 +732,7 @@ The implementing AI creates all art as hand-written SVG.
 - A dark outline at least 4% of the sprite's height.
 - Colors from the §1 palette.
 - Front view only, one frame each.
+- The root `<svg>` element has explicit `width`, `height` and `viewBox` attributes; Firefox can't draw an SVG onto a canvas without them.
 
 **Required sprites**
 
@@ -727,6 +743,7 @@ The implementing AI creates all art as hand-written SVG.
 | Enemies | Blessed, Chorister, Cherub, Gatekeeper |
 | Projectiles | censer, orb, arrow |
 | Particles | feather, spark, ember |
+| Status | mark icon, chain ring |
 | Icons | 8 ability icons, 4 class icons |
 
 ---
@@ -734,12 +751,14 @@ The implementing AI creates all art as hand-written SVG.
 ## 12. Performance targets
 
 On a mid-range laptop (integrated GPU from 2022 or later) in Chrome at 1080p:
-- **60 FPS** average with 1 500 living enemies.
+- **60 FPS** average with 1 500 living enemies. The browser caps the frame rate at the display's refresh rate, so an average of 58 FPS or more counts as met.
 - An average simulation tick of **8 ms or less** in the worker.
 - Host upload of **3.5 Mbit/s (437 KB/s) or less** with 3 clients in The Pearly Gates.
 
 **How they're measured**
-- **FPS and simulation time:** with `?bench=1` (§2.5). The agent runs the benchmark on its own machine and reports the numbers. The target-laptop measurement is a human checkpoint.
+- **FPS and simulation time:** with `?bench=1` (§2.5). `npm run bench` runs it in Playwright's Chromium **headed** (not headless, which renders in software), with a 1920 × 1080 viewport and GPU rasterization enabled, waits for the `BENCH` console line (at most 90 s) and prints it. The agent runs it on its own machine and records the numbers.
+  - If the agent's machine has no hardware GPU, or Chromium falls back to software rendering (`SwiftShader` in the WebGL renderer string), the FPS result is recorded but isn't a pass/fail criterion. The simulation-time result always is.
+  - The target-laptop measurement is a human checkpoint.
 - **Simulation time is also a unit test** (§13.1), so it's verifiable without a GPU.
 - **Upload:** the host's `netOutKBps`, checked by the multiplayer end-to-end test (§13.2).
 
@@ -756,18 +775,18 @@ Tests live next to the code as `*.test.ts`, use small hand-written test maps, an
 |---|---|
 | Map loader | Parses heights and markers. Rejects every invalid case in §8.1 with the right row and column. |
 | Level validation | Every rule in §8.1 *Level validation* holds for `sandbox` and `pearly-gates`. |
-| Simulation performance | The sandbox with the arena's waves disabled, 4 invulnerable players standing on its entry cells and 1 500 Blessed placed on its spawn points at tick 0, run for 300 ticks: average tick of 8 ms or less. Skipped when the `CI` environment variable is set, because shared CI machines have unreliable timing. |
+| Simulation performance | The sandbox with the arena's waves disabled, 4 invulnerable players standing on its entry cells and 1 500 Blessed placed on its spawn points at tick 0, run for 300 ticks, encoding one snapshot per player every tick: average tick of 8 ms or less. Skipped when the `CI` environment variable is set, because shared CI machines have unreliable timing. |
 | Movement | Step-up of 0.5 m is allowed and 0.75 m is blocked. A jump reaches a 1.0 m ledge but not a 1.25 m one, at both 16 ms and 50 ms frames. Walking off a ledge falls and lands. Walls block. A 2 m move in one update doesn't pass through a 1 m wall. A body placed overlapping a wall can move out of it. Ground height uses the highest overlapped non-blocking cell. Movement along x and y is applied separately. |
 | Flow fields | The ground field routes via stairs, not up a cliff. Dropping down is allowed. The air field crosses cliffs. Walls block both fields. Diagonal corner-cutting is blocked. Costs are 10 and 14. |
 | Targeting | Lowest distance wins. Sinful halves the Fallen's distance. Blasphemy overrides and ends when the Fallen dies. Retargeting happens immediately when the target dies. The Gatekeeper requires line of sight. |
 | Damage pipeline | Each step of §5.5 in order, kill credit, heal cap, shield replacement. |
 | Status effects | Slow refreshes without stacking. A rooted enemy can't move but can attack. Silence cancels a wind-up, and a cast due during silence starts when it ends. Boss immunities. |
 | Abilities | One test per ability (8), including its no-target and edge cases (Chains destination at a wall and at a cliff, Chains ignoring enemies behind walls, Discord hitting nothing). |
-| Combat | Hitscan range and pierce. Projectile swept hits at high speed. Hit tests at different heights. Fire timers (chain gun fires every third tick). |
-| Gatekeeper | Judgment completes and damages only players in line of sight. It's interrupted by Discord and by the damage threshold. Volley and Judgment timing. Summon timing. |
-| Arenas | Start on entry. Doors close. Stragglers are teleported. Wave progression at 20% and at 20 s. Spawn rate and cap. Clearing. Respawn. Victory. Defeat. `arenaIndex`. |
+| Combat | Hitscan range and pierce. Projectile swept hits at high speed. Hit tests at different heights. Projectile removal at 60 m and outside the grid. Fire timers (a held chain gun fires on ticks 0, 3, 6). |
+| Gatekeeper | Judgment completes and damages only players in line of sight. It's interrupted by Discord and by the damage threshold. Volley and Judgment timing. A Volley waits while its target isn't in line of sight. Summon timing. |
+| Arenas | Start on entry. Doors close. Stragglers are teleported. Wave progression at 20% and at 20 s. Spawn rate, type order and cap. Clearing. Respawn, and no respawn in the boss arena. Victory. Defeat. `arenaIndex`. |
 | Scaling | Multipliers for 1 to 4 players, rounded up per type. |
-| Protocol | Snapshot and input encode/decode round-trip, splitting above 16 000 bytes, the 1 s slot reuse delay, the per-recipient `hurt` flag. Lobby: player IDs, unique classes, wrong password, full game, version mismatch. |
+| Protocol | Snapshot and input encode/decode round-trip, splitting above 16 000 bytes, reassembling parts that arrive out of order, ignoring stale parts and inputs, the 1 s slot reuse delay, the per-recipient `hurt` flag. Lobby: player IDs, unique classes, wrong password, full game, version mismatch. |
 
 ### 13.2 End-to-end tests (Playwright)
 These are automated browser tests that click through the real built game the way a player would.
@@ -792,7 +811,8 @@ Audio, ultimates, halos and loot, progression and saving, other dungeons and ene
 
 - **Strict NAT:** without a TURN relay, some players behind strict NAT can't connect (`Connection failed`). The fix after the MVP is adding a TURN server.
 - **Signaling:** the public PeerJS signaling server is a free third-party service. The fix after the MVP is self-hosting `peerjs-server`.
-- **Bandwidth:** The Pearly Gates peaks at about 800 living enemies, about 7.5 KB per snapshot and 1.8 Mbit/s with 3 clients. At the 1 500 enemy cap, a snapshot can reach about 16 KB, which is about 3.8 Mbit/s and over the target; that only happens in the sandbox. If real games go over budget, add relevance filtering or delta encoding before cutting the enemy count.
+- **Bandwidth:** The Pearly Gates peaks at about 800 living enemies, about 7.5 KB per snapshot and 1.8 Mbit/s with 3 clients. At the 1 500 enemy cap, a snapshot can reach about 16 KB, which is about 3.8 Mbit/s and over the target; that happens in the sandbox, or in the boss arena if the party lets many summons pile up. If real games go over budget, add relevance filtering or delta encoding before cutting the enemy count.
+- **Hitscan for remote clients:** without lag compensation, remote clients see enemies about 150 ms plus half the round trip behind the host. A Blessed crossing sideways at 6 m/s is then about 1.2 m from where the client sees it, wider than its body, so the client sees hit markers for shots the host counts as misses. Enemies running toward the shooter are barely affected. If the 4-player playtest finds this hurts the Binder or Betrayer, the fix after the MVP is host-side rewinding of enemy positions by each client's render delay.
 - **Solo balance:** solo Heretic Saint damage is low against the Gatekeeper. This is acceptable for the MVP and will be tuned after playtesting.
 
 ---
@@ -806,35 +826,35 @@ Each milestone is playable, and its tests pass, before the next one starts.
    - Map loader, builder helpers, the sandbox map and level validation tests.
    - Terrain rendering, sky and fog.
    - First-person movement with stairs, jumping and collision, with pointer lock.
-   - Dev URL mode (`map`, `class`, `seed`), the `F3` overlay and `window.__heavenfall` with the fields that exist so far.
+   - Dev URL mode (`map`, `class`, `seed`), the `F3` overlay and `window.__heavenfall` with the fields that exist so far. Until milestone 5, opening the page without `dev=1` or `bench=1` behaves as if `dev=1` were set.
    - The GitHub Pages workflow file.
 2. **Swarm**
    - Simulation in the worker, `LocalTransport`, binary snapshots at 30 Hz to the local player, input messages.
    - The arena lifecycle (§8.2 items 1–4), spawning, party-size scaling and teleports in the sandbox.
    - Blessed and Cherubs with ground and air flow fields, targeting, separation and falling. Their attacks come in milestone 3, and Choristers in waves are skipped until then.
    - Instanced billboards, with placeholder sprites allowed.
-   - `god=1`, the dev key `K`, the benchmark mode and the Node simulation benchmark: 1 500 enemies at 60 FPS.
+   - `god=1`, the dev key `K`, the benchmark mode with `npm run bench`, and the simulation performance unit test, meeting §12.
    - The bot (shooting and abilities take effect from milestone 3).
    - The Playwright setup and the singleplayer smoke test.
 3. **Fight**
    - The 4 classes: weapons and abilities, and the dev key `G`.
    - Enemy attacks, Choristers, projectiles, the damage pipeline and status effects.
    - Death, respawn and defeat, the result overlay and the Results screen. Until milestone 5, `Back to title` reloads the page.
-   - HUD and all feedback (§10).
+   - The HUD and feedback (§10), except the boss items (milestone 4) and the party frames (milestone 6).
    - All sprites (§11.2).
 4. **Dungeon**
    - The Pearly Gates map with multiple arenas.
-   - The boss arena and the Gatekeeper.
+   - The boss arena and the Gatekeeper, with the boss HP bar, the Judgment cast bar and the Judgment feedback.
    - Victory.
    - The full solo run test.
 5. **Menus:** Title, Singleplayer Setup, Loading and Pause, and the menus test.
-6. **Multiplayer:** `PeerTransport`, Host Setup, Join, Lobby, the ready/go handshake, 10 Hz snapshots with splitting and interpolation, client input, teleports over the network, heartbeat, disconnects, the Title messages and the multiplayer test.
+6. **Multiplayer:** `PeerTransport`, Host Setup, Join, Lobby, the ready/go handshake, 10 Hz snapshots with splitting and interpolation, client input, teleports over the network, heartbeat, disconnects, the Title messages, party frames and the multiplayer test.
 
 ## 17. Acceptance criteria
 
 **Verified by the agent.** The MVP is handed over when all of these pass.
 - [ ] `npm run typecheck`, `npm test` (every area in §13.1) and `npm run e2e` (every test in §13.2) pass.
-- [ ] The benchmark (`?bench=1`) on the agent's machine and the Node simulation benchmark meet §12. Both results are recorded in the final report.
+- [ ] `npm run bench` on the agent's machine and the simulation performance unit test meet §12 (FPS only with a hardware GPU, §12). Both results are recorded in the final report.
 - [ ] Screenshots show:
   - every feedback item in §10 (short-lived ones may be captured with their durations temporarily increased, without committing that change);
   - every class's Q and E in action;
