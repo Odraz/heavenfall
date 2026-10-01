@@ -31,5 +31,5 @@ Choices made where [mvp.md](mvp.md) is silent or ambiguous, one per line (§0).
 
 The spec's numbers are initial tuning values (see the top of mvp.md); these were changed at the user's request.
 
-- §7.1 — Blessed speed is 5 m/s (spec: 6), so every class outruns them comfortably: the Fallen by 2 m/s, the Betrayer by 4 m/s.
+- §7.1 — Blessed speed is 4 m/s (spec: 6), so every class outruns them comfortably: the Fallen by 3 m/s, the Betrayer by 5 m/s.
 - §8.2 — Each spawn point places at most 10 enemies per second (spec: 50), so the swarm builds up over several seconds instead of appearing at once. The benchmark (§2.5) still reaches 1 500 enemies before measuring, about 19 s after the start in the sandbox.

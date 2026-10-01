@@ -22,8 +22,8 @@ export interface EnemyDef {
 
 /** Indexed by enemy type ID. */
 export const ENEMIES: readonly EnemyDef[] = [
-  // Blessed: §7.1 says 6 m/s; lowered to 5 after playtesting so every class can outrun them (decisions.md).
-  { hp: 20, radius: 0.35, height: 1.6, speed: 5, flying: false },
+  // Blessed: §7.1 says 6 m/s; lowered to 4 after playtesting so every class can outrun them (decisions.md).
+  { hp: 20, radius: 0.35, height: 1.6, speed: 4, flying: false },
   { hp: 60, radius: 0.45, height: 2.0, speed: 3, flying: false },
   { hp: 30, radius: 0.4, height: 0.8, speed: 7, flying: true },
   { hp: 40000, radius: 2.0, height: 6.0, speed: 0, flying: false },
