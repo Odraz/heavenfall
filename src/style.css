@@ -1,0 +1,98 @@
+:root {
+  --ember: #d9431e;
+  --soot: #1b1513;
+  --brimstone: #f08a24;
+  --gold: #f3c64b;
+  --ivory: #f7f0dc;
+  --sky: #cfe2f3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--soot);
+  color: var(--ivory);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  user-select: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+.game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.loading {
+  background: var(--soot);
+  font-size: 22px;
+  letter-spacing: 0.05em;
+}
+
+.debug-overlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 6px 10px;
+  background: rgba(20, 14, 12, 0.7);
+  color: #fff;
+  font: 13px/1.4 Consolas, monospace;
+  white-space: pre;
+  pointer-events: none;
+  border-radius: 4px;
+  z-index: 50;
+}
+
+.crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  pointer-events: none;
+}
+
+.crosshair::before,
+.crosshair::after {
+  content: '';
+  position: absolute;
+  background: var(--soot);
+  box-shadow: 0 0 0 1px rgba(247, 240, 220, 0.8);
+}
+
+.crosshair::before {
+  left: 8px;
+  top: 0;
+  width: 2px;
+  height: 18px;
+}
+
+.crosshair::after {
+  top: 8px;
+  left: 0;
+  width: 18px;
+  height: 2px;
+}
