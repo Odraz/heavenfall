@@ -19,16 +19,16 @@ $RECYCLE.BIN/
 *.swp
 *~
 
-# --- Build output ---
-[Bb]in/
-[Oo]bj/
-[Bb]uild/
-[Bb]uilds/
-[Oo]ut/
-[Dd]ebug/
-[Rr]elease/
-x64/
-x86/
+# --- Build output (anchored to the repo root so source folders such as src/debug/ aren't ignored) ---
+/[Bb]in/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Oo]ut/
+/[Dd]ebug/
+/[Rr]elease/
+/x64/
+/x86/
 *.exe
 *.dll
 *.pdb
@@ -39,12 +39,18 @@ x86/
 *.so
 *.dylib
 
+# --- Node / web tooling ---
+node_modules/
+/dist/
+/test-results/
+/playwright-report/
+
 # --- Logs / temp / crash dumps ---
 *.log
 *.tmp
 *.dmp
-[Tt]emp/
-[Tt]mp/
+/[Tt]emp/
+/[Tt]mp/
 
 # --- Local secrets / environment ---
 .env
