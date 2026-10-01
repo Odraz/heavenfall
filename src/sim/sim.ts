@@ -137,7 +137,9 @@ interface ArenaState {
 /** Enemy type order for spawning ties: Blessed, Choristers, Cherubs. */
 const SPAWN_TYPES = [BLESSED, CHORISTER, CHERUB];
 const SPAWN_ELIGIBLE_DIST = 8;
-const BUDGET_PER_TICK = 50 / 30;
+/** Enemies per second each spawn point can place (§8.2 says 50; lowered after playtesting, see decisions.md). */
+export const SPAWN_RATE = 10;
+const BUDGET_PER_TICK = SPAWN_RATE / TICK_HZ;
 const BUDGET_MAX = 2;
 const WAVE_NEXT_FRACTION = 0.2;
 const WAVE_NEXT_TICKS = 20 * TICK_HZ;
@@ -170,6 +172,9 @@ export class Simulation {
   readonly eState = new Uint8Array(ENEMY_SLOTS);
   readonly eX = new Float64Array(ENEMY_SLOTS);
   readonly eY = new Float64Array(ENEMY_SLOTS);
+  /** Position at the start of the current tick, for limiting separation pushes. */
+  private readonly eStartX = new Float64Array(ENEMY_SLOTS);
+  private readonly eStartY = new Float64Array(ENEMY_SLOTS);
   readonly eZ = new Float64Array(ENEMY_SLOTS);
   readonly eVz = new Float64Array(ENEMY_SLOTS);
   readonly eGrounded = new Uint8Array(ENEMY_SLOTS);
@@ -677,6 +682,8 @@ export class Simulation {
     const tick = this.tick;
     for (let k = 0; k < this.activeCount; k++) {
       const slot = this.active[k];
+      this.eStartX[slot] = this.eX[slot];
+      this.eStartY[slot] = this.eY[slot];
       const t = this.eTarget[slot];
       const targetGone = t >= 0 && !this.livingTargetable(this.players[t]);
       if (targetGone || slot % RETARGET_TICKS === tick % RETARGET_TICKS) this.retarget(slot);
@@ -895,6 +902,19 @@ export class Simulation {
         }
       }
       if (found === 0) continue;
+      // Pushes from the crowd behind mustn't carry an enemy faster than it walks: limit this tick's
+      // total displacement to its speed (or to its own walk, if that was already longer).
+      const sx = this.eStartX[s];
+      const sy = this.eStartY[s];
+      const tx = x + px - sx;
+      const ty = y + py - sy;
+      const total = Math.hypot(tx, ty);
+      const limit = Math.max(def.speed * TICK_DT, Math.hypot(x - sx, y - sy));
+      if (total > limit) {
+        const k = limit / total;
+        px = sx + tx * k - x;
+        py = sy + ty * k - y;
+      }
       this.loadBody(s);
       if (tryDisplace(this.map, b, px, py)) {
         this.eX[s] = b.x;

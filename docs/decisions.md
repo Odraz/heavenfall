@@ -14,9 +14,10 @@ Choices made where [mvp.md](mvp.md) is silent or ambiguous, one per line (§0).
 - §7.1 — A Cherub following the air field moves straight toward its target's horizontal position when in the target's cell or next to it (only the Blessed have a stop distance).
 - §7.2 — An enemy also picks its first target when it spawns; ties in distance go to the lower player index.
 - §7.3 — "Every 0.25 s" for flow fields is tick-based: player index *i* recomputes on ticks where ⌊(tick + 2i) ÷ 7.5⌋ changes (alternating 7- and 8-tick gaps, 0.25 s on average, never on the same tick as another player). Doors opening or closing recompute every field on the next tick.
+- §7.3 — Separation can't carry an enemy further in a tick than it walks (its speed × 1/30 s, or its own walk if that was longer); pushes are scaled down to fit. Without this, the crowd behind shoved the front of a swarm forward at 9.2 m/s sustained, faster than the Fallen.
 - §7.3 — Separation treats bodies as cylinders: two enemies overlap only if their circles and their height ranges both overlap. Enemies at exactly the same spot are pushed apart along a fixed angle derived from their slot numbers.
 - §8.1 — Loader errors that aren't tied to one cell (an empty grid, fewer than 4 `S` markers) name row 0, column 0. A grid that's too large names the first row or column past 256. Grids of different sizes name the first missing row.
-- §8.2 — Spawn-point budgets grow every tick in every arena, even while idle, so they are full when combat starts. The cap of 2 applies to the budget carried into the next tick (after placing), so a busy spawn point sustains exactly 50 enemies per second; capping before placing would give 45.
+- §8.2 — Spawn-point budgets grow every tick in every arena, even while idle, so they are full when combat starts. The cap of 2 applies to the budget carried into the next tick (after placing), so a busy spawn point sustains exactly its rate; capping before placing would lose some (45 instead of 50 at the spec's rate).
 - §8.2 — Wave progression is checked each tick before placing, so a wave that starts can place its first enemies in the same tick.
 - §8.4 — Sandbox doors sit just outside the arena's `rect`, in the corridor, so entering the `rect` means passing the door.
 - §9.3 — The host's floor check raises the feet to the highest floor among the cells the player's circle overlaps (walls and closed doors excluded). The speed check's first interval is measured from when the simulation started.
@@ -25,3 +26,10 @@ Choices made where [mvp.md](mvp.md) is silent or ambiguous, one per line (§0).
 - §11.1 — Terrain is unlit, but faces get a fixed per-vertex tint by orientation and walls darken toward their base, so edges and ledges stay readable without lighting.
 - §11.1 — All sprite billboards share one atlas material, so they are one `InstancedMesh`; billboards face the camera's horizontal right vector.
 - §12 — `npm run bench` launches Playwright's Chromium headed; if that fails, it falls back to the installed Chrome, then Edge (both Chromium), and prints which one ran. On the agent's machine Playwright's headed Chromium can't start (Windows reports a side-by-side configuration error), so the benchmark ran in Chrome. The headless Chromium used by the end-to-end tests works. The benchmark browser also runs with Windows occlusion detection off, so a window covering it on a shared desktop doesn't throttle its frame rate.
+
+## Tuning changes after playtesting
+
+The spec's numbers are initial tuning values (see the top of mvp.md); these were changed at the user's request.
+
+- §7.1 — Blessed speed is 5 m/s (spec: 6), so every class outruns them comfortably: the Fallen by 2 m/s, the Betrayer by 4 m/s.
+- §8.2 — Each spawn point places at most 10 enemies per second (spec: 50), so the swarm builds up over several seconds instead of appearing at once. The benchmark (§2.5) still reaches 1 500 enemies before measuring, about 19 s after the start in the sandbox.

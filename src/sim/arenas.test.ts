@@ -3,7 +3,7 @@ import type { ArenaDef, WaveDef } from '../data/dungeons/types';
 import { BLESSED, CHERUB } from '../data/enemies';
 import { PHASE_CLEARED, PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
 import { MAX_LIVING_ENEMIES } from './constants';
-import { scaleCount, Simulation } from './sim';
+import { scaleCount, Simulation, SPAWN_RATE } from './sim';
 import { dungeonOf } from './testutil/maps';
 
 // Start room (x 1–4) | door x 5 | arena 0 (x 6–12) | door x 13, corridor x 14, door x 15 | arena 1 (x 16–22).
@@ -115,9 +115,8 @@ describe('arenas', () => {
   it('starts the next wave when at most 20% of the previous one is alive', () => {
     const sim = makeSim([wave(10), wave(5)]);
     enterArena0(sim);
-    for (let i = 0; i < 5; i++) sim.step();
     const st = sim.arenas[0];
-    expect(st.waveFullySpawned[0]).toBe(true);
+    while (!st.waveFullySpawned[0]) sim.step();
     expect(st.wave).toBe(0);
     const kill = (n: number) => {
       for (let i = 0; i < n; i++) sim.removeEnemy(sim.active[0]);
@@ -142,7 +141,7 @@ describe('arenas', () => {
     expect(sim.tick - start).toBe(600);
   });
 
-  it('spawns at most 50 enemies per second from one spawn point', () => {
+  it('spawns at most SPAWN_RATE enemies per second from one spawn point', () => {
     // Only one x cell.
     const markers = ['........................', '.SS..D....x..D.D....x.x.', '.SS..D.......D.D......x.', '.....................x..', '........................', '........................'];
     const sim = makeSim([wave(500)], 4, { markers });
@@ -151,7 +150,7 @@ describe('arenas', () => {
       for (let i = 0; i < ticks; i++) sim.step();
       return sim.living;
     };
-    // The budget was full (2) when combat started, so the first tick placed 2 + ... at most 3.
+    // The budget was full (2) when combat started, so the first tick placed at most 2 + 1.
     const first = sim.living;
     expect(first).toBeLessThanOrEqual(3);
     const perTick: number[] = [];
@@ -161,10 +160,10 @@ describe('arenas', () => {
       perTick.push(sim.living - prev);
       prev = sim.living;
     }
-    expect(Math.max(...perTick)).toBeLessThanOrEqual(2);
-    // A busy spawn point sustains exactly 50 per second.
-    expect(perTick.slice(30, 60).reduce((a, b) => a + b, 0)).toBe(50);
-    expect(perTick.slice(60, 90).reduce((a, b) => a + b, 0)).toBe(50);
+    expect(Math.max(...perTick)).toBeLessThanOrEqual(Math.ceil(SPAWN_RATE / 30));
+    // A busy spawn point sustains exactly SPAWN_RATE per second.
+    expect(perTick.slice(30, 60).reduce((a, b) => a + b, 0)).toBe(SPAWN_RATE);
+    expect(perTick.slice(60, 90).reduce((a, b) => a + b, 0)).toBe(SPAWN_RATE);
     expect(spawnedAfter(0)).toBe(prev);
   });
 
