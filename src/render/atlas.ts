@@ -3,6 +3,24 @@ import * as THREE from 'three';
 
 const sources = import.meta.glob('../../assets/sprites/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 
+const spriteName = (path: string) => path.replace(/^.*\//, '').replace(/\.svg$/, '');
+
+/** Sprites drawn in the world as billboards; the rest (weapons, muzzle flash, icons) are HUD images. */
+const BILLBOARD_SPRITES = new Set([
+  'fallen', 'heretic', 'binder', 'betrayer',
+  'blessed', 'chorister', 'cherub', 'gatekeeper',
+  'proj-censer', 'proj-orb', 'proj-arrow',
+  'feather', 'spark', 'ember',
+  'mark', 'chain-ring',
+]);
+
+/** A sprite as a data URL, for HUD images. */
+export function spriteUrl(name: string): string {
+  const entry = Object.entries(sources).find(([path]) => spriteName(path) === name);
+  if (!entry) throw new Error(`Unknown sprite ${name}`);
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(entry[1])}`;
+}
+
 export const ATLAS_SIZE = 2048;
 const PAD = 4;
 /** Rasterized height in pixels per sprite; the default is 192. */
@@ -46,8 +64,9 @@ export async function buildAtlas(): Promise<Atlas> {
   canvas.height = ATLAS_SIZE;
   const ctx = canvas.getContext('2d')!;
   const entries = Object.entries(sources)
+    .filter(([path]) => BILLBOARD_SPRITES.has(spriteName(path)))
     .map(([path, svg]) => {
-      const name = path.replace(/^.*\//, '').replace(/\.svg$/, '');
+      const name = spriteName(path);
       const size = svgSize(svg);
       const ph = RASTER_HEIGHT[name] ?? DEFAULT_HEIGHT;
       const pw = Math.round((ph * size.w) / size.h);

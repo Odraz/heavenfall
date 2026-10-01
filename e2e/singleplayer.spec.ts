@@ -1,7 +1,7 @@
 import { expect, state, test } from './fixtures';
 
-// Milestone 2: the Fallen only; all 4 classes from milestone 3.
-const CLASSES = ['fallen'];
+// From milestone 3: all 4 classes, and the player has kills at the end.
+const CLASSES = ['fallen', 'heretic', 'binder', 'betrayer'];
 
 for (const classId of CLASSES) {
   test(`singleplayer smoke: ${classId}`, async ({ page }) => {
@@ -15,5 +15,6 @@ for (const classId of CLASSES) {
     const end = await state(page);
     expect(end.fps).toBeGreaterThan(0);
     expect(Math.max(...enemySamples)).toBeGreaterThan(0);
+    expect(end.players[0].kills).toBeGreaterThan(0);
   });
 }

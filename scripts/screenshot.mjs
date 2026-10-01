@@ -1,7 +1,7 @@
 // Dev helper: opens a URL in headless Chromium, runs simple input steps and saves a PNG.
 // Usage: node scripts/screenshot.mjs <url> <out.png> [step ...]
 // Steps: wait:<ms>  hold:<KeyCode>:<ms>  press:<KeyCode>  lock  look:<dx>:<dy>  shot:<out.png>
-//        goto:<x>:<y>  face:<yaw>   (need the F3 overlay open: press:F3 first)
+//        goto:<x>:<y>  face:<yaw>   (need the F3 overlay open: press:F3 first)  fire:<ms> (hold the mouse button)
 import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -31,8 +31,12 @@ const cursor = { x: 640, y: 360 };
 const SENS = 0.0022;
 
 async function readPos() {
-  const text = await page.evaluate(() => document.querySelector('.debug-overlay')?.textContent ?? '');
-  const m = /pos (\S+) (\S+) (\S+) yaw (\S+)/.exec(text);
+  let m = null;
+  for (let i = 0; i < 30 && !m; i++) {
+    const text = await page.evaluate(() => document.querySelector('.debug-overlay')?.textContent ?? '');
+    m = /pos (\S+) (\S+) (\S+) yaw (\S+)/.exec(text);
+    if (!m) await page.waitForTimeout(100);
+  }
   if (!m) throw new Error('Open the F3 overlay first');
   return { x: +m[1], y: +m[2], z: +m[3], yaw: +m[4] };
 }
@@ -75,6 +79,10 @@ for (const step of steps) {
     cursor.x += Number(a);
     cursor.y += Number(b);
     await page.mouse.move(cursor.x, cursor.y, { steps: 10 });
+  } else if (kind === 'fire') {
+    await page.mouse.down();
+    await page.waitForTimeout(Number(a));
+    await page.mouse.up();
   } else if (kind === 'goto') await goTo(Number(a), Number(b));
   else if (kind === 'face') await turnTo(Number(a));
   else if (kind === 'shot') await save(a);

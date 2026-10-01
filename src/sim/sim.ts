@@ -9,40 +9,83 @@ import {
   CHORISTER,
   ENEMIES,
   GATEKEEPER,
+  ST_ATTACKING,
   ST_FALLING,
   ST_IDLE,
   ST_MOVING,
+  ST_WINDUP,
 } from '../data/enemies';
+import {
+  ABILITIES,
+  BLASPHEMY_DURATION,
+  BLASPHEMY_RADIUS,
+  CENSER_BLAST,
+  CENSER_RADIUS,
+  CENSER_SPEED,
+  CHAINS_ANGLE,
+  CHAINS_MAX,
+  CHAINS_PULL_TIME,
+  CHAINS_RANGE,
+  CHAINS_ROOT,
+  CHAINS_STEP,
+  COMMUNION_HEAL,
+  COMMUNION_RADIUS,
+  DISCORD_RADIUS,
+  DISCORD_RANGE,
+  DISCORD_SILENCE,
+  FALLING_STAR_DAMAGE,
+  FALLING_STAR_RADIUS,
+  FALLING_STAR_TIME,
+  KISS_DURATION,
+  KISS_RANGE,
+  KNOCKBACK_DIST,
+  KNOCKBACK_TIME,
+  MOVEMENT_GRACE,
+  MOVEMENT_SPEED_CHECK_SKIP,
+  SHADOWSTEP_INVULN,
+  SHROUD_AMOUNT,
+  SHROUD_DURATION,
+  SLOW_FACTOR,
+  WEAPONS,
+} from '../data/weapons';
 import type { GameEvent } from '../net/messages';
 import {
+  ALLY_NONE,
   encodeSnapshot,
   FLAG_HURT,
+  FLAG_MARKED,
+  FLAG_ROOTED,
+  FLAG_SILENCED,
+  FLAG_SLOWED,
   PHASE_CLEARED,
   PHASE_COMBAT,
   PHASE_IDLE,
+  type InputMsg,
   type SnapshotEntities,
   type SnapshotHeader,
-  type InputMsg,
   type SnapshotPlayer,
 } from '../net/protocol';
 import {
   ENEMY_SLOTS,
+  EPS,
   MAX_LIVING_ENEMIES,
+  PLAYER_EYE,
   PLAYER_HEIGHT,
   PLAYER_RADIUS,
+  PROJECTILE_SLOTS,
   SLOT_REUSE_TICKS,
+  STEP_UP,
   TICK_DT,
   TICK_HZ,
   TICK_MS,
+  WALL_TOP,
 } from './constants';
+import { aimDir, rayCylinder } from './combat';
 import { FlowField, UNREACHABLE } from './flowfield';
-import { lineOfSight } from './los';
-import { insideRect, loadMap, setArenaDoors, type GameMap } from './map';
+import { lineOfSight, raycastTerrain } from './los';
+import { insideRect, isSolid, loadMap, setArenaDoors, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
-
-/** Choristers in waves are skipped until milestone 3 (§16). */
-export const CHORISTERS_ENABLED = false;
 
 /** Party-size multipliers ×10 (§7.5), indexed by party size. */
 const MULT10 = [0, 4, 6, 8, 10];
@@ -68,6 +111,8 @@ export interface SimOptions {
   god?: boolean;
   /** Benchmark mode (§2.5). */
   bench?: boolean;
+  /** Singleplayer: enables health regeneration (§5.7). */
+  singleplayer?: boolean;
   /** Arena waves are disabled (tests). */
   noWaves?: boolean;
 }
@@ -86,21 +131,39 @@ export interface SimPlayer {
   maxHp: number;
   hp: number;
   shield: number;
+  /** Tick at which the shield expires. */
+  shieldUntil: number;
   dead: boolean;
   connected: boolean;
-  invulnerable: boolean;
+  /** Invulnerable for the whole game (`god=1`, benchmark). */
+  god: boolean;
+  /** Dev key G toggle. */
+  devGod: boolean;
+  /** Invulnerable while tick < invulUntil (Falling Star, Shadowstep). */
+  invulUntil: number;
   x: number;
   y: number;
   z: number;
   yaw: number;
   pitch: number;
   fireHeld: boolean;
+  fireTimer: number;
   qPresses: number;
   ePresses: number;
   allyTargetId: number;
+  /** Presses seen since the last tick, resolved on the next tick. */
+  pendingQ: boolean;
+  pendingE: boolean;
+  /** The allyTargetId sent with the E press. */
+  pendingEAlly: number;
+  /** Tick of a pending Falling Star landing, or -1. */
+  landingTick: number;
   kills: number;
+  /** Seconds of cooldown remaining. */
   cdQ: number;
   cdE: number;
+  /** Tick of the last hit that did damage after invulnerability (for regeneration). */
+  lastDamageTick: number;
   /** Highest accepted input sequence number, or -1. */
   lastSeq: number;
   /** Host time (ms) when the previous accepted input arrived, or the latest teleport. */
@@ -134,6 +197,13 @@ interface ArenaState {
   alive: number;
 }
 
+/** Projectile kinds, as encoded in snapshots (§9.4). */
+export const PROJ_CENSER = 0;
+export const PROJ_ORB = 1;
+export const PROJ_ARROW = 2;
+const MAX_PROJECTILES = 400;
+const PROJECTILE_RANGE = 60;
+
 /** Enemy type order for spawning ties: Blessed, Choristers, Cherubs. */
 const SPAWN_TYPES = [BLESSED, CHORISTER, CHERUB];
 const SPAWN_ELIGIBLE_DIST = 8;
@@ -146,11 +216,39 @@ const WAVE_NEXT_TICKS = 20 * TICK_HZ;
 const RETARGET_TICKS = TICK_HZ;
 /** Line of sight is checked at most twice per second per enemy. */
 const LOS_TICKS = TICK_HZ / 2;
+const MAX_SEPARATION_NEIGHBORS = 8;
+
+// Enemy behavior (§7.1).
 const BLESSED_STOP = 1.0;
+const MELEE_RANGE = 1.2;
+const MELEE_HEIGHT = 1.5;
+const MELEE_DAMAGE = 5;
+const MELEE_FIRST = 0.5;
+const MELEE_INTERVAL = 1.0;
+const CHORISTER_RANGE = 20;
 const CHERUB_RANGE = 25;
 const CHERUB_STRAFE_SPEED = 2;
 const CHERUB_STRAFE_SWITCH = 2;
-const MAX_SEPARATION_NEIGHBORS = 8;
+
+interface CasterDef {
+  range: number;
+  windup: number;
+  recovery: number;
+  kind: number;
+  speed: number;
+  damage: number;
+  radius: number;
+}
+
+const CASTERS: Record<number, CasterDef> = {
+  [CHORISTER]: { range: CHORISTER_RANGE, windup: 1.0, recovery: 1.5, kind: PROJ_ORB, speed: 12, damage: 12, radius: 0.3 },
+  [CHERUB]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 25, damage: 8, radius: 0.15 },
+};
+
+const REGEN_DELAY_TICKS = 4 * TICK_HZ;
+const REGEN_FRACTION = 0.03;
+
+const ticks = (seconds: number) => Math.round(seconds * TICK_HZ);
 
 export class Simulation {
   readonly map: GameMap;
@@ -158,13 +256,17 @@ export class Simulation {
   readonly partySize: number;
   readonly bench: boolean;
   readonly noWaves: boolean;
-  readonly random: () => number;
+  readonly singleplayer: boolean;
+  /** Seeded PRNG for all simulation randomness (§2.2); tests may replace it. */
+  random: () => number;
   /** Ticks simulated so far; the tick being simulated during step(). */
   tick = 0;
   /** Host time of the current tick, ms. */
   nowMs = 0;
   readonly events: SimEvent[] = [];
   readonly arenas: ArenaState[];
+  /** The run's result, once decided; the simulation stops then. */
+  result: null | 'victory' | 'defeat' = null;
 
   // Enemies, structure of arrays indexed by slot.
   readonly eAlive = new Uint8Array(ENEMY_SLOTS);
@@ -172,10 +274,10 @@ export class Simulation {
   readonly eState = new Uint8Array(ENEMY_SLOTS);
   readonly eX = new Float64Array(ENEMY_SLOTS);
   readonly eY = new Float64Array(ENEMY_SLOTS);
+  readonly eZ = new Float64Array(ENEMY_SLOTS);
   /** Position at the start of the current tick, for limiting separation pushes. */
   private readonly eStartX = new Float64Array(ENEMY_SLOTS);
   private readonly eStartY = new Float64Array(ENEMY_SLOTS);
-  readonly eZ = new Float64Array(ENEMY_SLOTS);
   readonly eVz = new Float64Array(ENEMY_SLOTS);
   readonly eGrounded = new Uint8Array(ENEMY_SLOTS);
   readonly eHp = new Float64Array(ENEMY_SLOTS);
@@ -187,6 +289,31 @@ export class Simulation {
   readonly eStrafeT = new Float64Array(ENEMY_SLOTS);
   readonly eHurtTick = new Int32Array(ENEMY_SLOTS).fill(-1);
   readonly eFreedTick = new Int32Array(ENEMY_SLOTS);
+  // Status effects: active while tick < until (§5.6).
+  readonly eSlowUntil = new Int32Array(ENEMY_SLOTS);
+  readonly eRootUntil = new Int32Array(ENEMY_SLOTS);
+  readonly eSilenceUntil = new Int32Array(ENEMY_SLOTS);
+  readonly eTauntUntil = new Int32Array(ENEMY_SLOTS);
+  /** Knocked back on ticks kbFrom < tick ≤ kbUntil. */
+  readonly eKbUntil = new Int32Array(ENEMY_SLOTS);
+  private readonly eKbFrom = new Int32Array(ENEMY_SLOTS);
+  private readonly eKbVx = new Float64Array(ENEMY_SLOTS);
+  private readonly eKbVy = new Float64Array(ENEMY_SLOTS);
+  /** Chains pull: start tick (-1 = none), from and to. */
+  readonly ePullStart = new Int32Array(ENEMY_SLOTS).fill(-1);
+  private readonly ePull = new Float64Array(ENEMY_SLOTS * 6);
+  // Casts and melee (§7.1).
+  /** 1 while winding up a cast. */
+  readonly eCast = new Uint8Array(ENEMY_SLOTS);
+  readonly eCastT = new Float64Array(ENEMY_SLOTS);
+  /** Seconds until the next cast may start. */
+  readonly eCastCd = new Float64Array(ENEMY_SLOTS);
+  /** Seconds until the next melee hit while in range; -1 when out of range. */
+  readonly eMeleeNext = new Float64Array(ENEMY_SLOTS).fill(-1);
+  /** The one marked enemy (Kiss of Betrayal), or -1. */
+  markSlot = -1;
+  markUntil = 0;
+
   /** Dense list of living enemy slots. */
   readonly active = new Int32Array(ENEMY_SLOTS);
   activeCount = 0;
@@ -197,6 +324,28 @@ export class Simulation {
   private freeHead = 0;
   private freeCount = 0;
   private nextFresh = 0;
+
+  // Projectiles (§5.4).
+  readonly pAlive = new Uint8Array(PROJECTILE_SLOTS);
+  readonly pKind = new Uint8Array(PROJECTILE_SLOTS);
+  readonly pX = new Float64Array(PROJECTILE_SLOTS);
+  readonly pY = new Float64Array(PROJECTILE_SLOTS);
+  readonly pZ = new Float64Array(PROJECTILE_SLOTS);
+  private readonly pDx = new Float64Array(PROJECTILE_SLOTS);
+  private readonly pDy = new Float64Array(PROJECTILE_SLOTS);
+  private readonly pDz = new Float64Array(PROJECTILE_SLOTS);
+  private readonly pSpeed = new Float64Array(PROJECTILE_SLOTS);
+  private readonly pRadius = new Float64Array(PROJECTILE_SLOTS);
+  private readonly pDamage = new Float64Array(PROJECTILE_SLOTS);
+  readonly pTraveled = new Float64Array(PROJECTILE_SLOTS);
+  private readonly pMaxDist = new Float64Array(PROJECTILE_SLOTS);
+  /** Player index for player projectiles, -1 for enemy projectiles. */
+  private readonly pOwner = new Int8Array(PROJECTILE_SLOTS);
+  private readonly pFreedTick = new Int32Array(PROJECTILE_SLOTS).fill(-SLOT_REUSE_TICKS);
+  /** Living projectile slots, oldest first. */
+  readonly projectiles: number[] = [];
+  private readonly pFree: number[] = [];
+  private pNextFresh = 0;
 
   readonly groundFields: FlowField[];
   readonly airFields: FlowField[];
@@ -219,11 +368,11 @@ export class Simulation {
     enemyTypeState: new Uint8Array(ENEMY_SLOTS),
     enemyFlags: new Uint8Array(ENEMY_SLOTS),
     projectileCount: 0,
-    projSlot: new Uint16Array(0),
-    projKind: new Uint8Array(0),
-    projX: new Float32Array(0),
-    projY: new Float32Array(0),
-    projZ: new Float32Array(0),
+    projSlot: new Uint16Array(MAX_PROJECTILES),
+    projKind: new Uint8Array(MAX_PROJECTILES),
+    projX: new Float32Array(MAX_PROJECTILES),
+    projY: new Float32Array(MAX_PROJECTILES),
+    projZ: new Float32Array(MAX_PROJECTILES),
   };
   private readonly baseFlags = new Uint8Array(ENEMY_SLOTS);
   private preparedTick = -1;
@@ -233,6 +382,7 @@ export class Simulation {
     this.map = loadMap(opts.dungeon);
     this.bench = !!opts.bench;
     this.noWaves = !!opts.noWaves;
+    this.singleplayer = !!opts.singleplayer;
     this.random = mulberry32(opts.seed);
     const sorted = [...opts.players].sort((a, b) => a.id - b.id);
     this.partySize = Math.max(1, sorted.length);
@@ -248,21 +398,30 @@ export class Simulation {
         maxHp: cls.hp,
         hp: cls.hp,
         shield: 0,
+        shieldUntil: 0,
         dead: false,
         connected: true,
-        invulnerable: !!opts.god || this.bench,
+        god: !!opts.god || this.bench,
+        devGod: false,
+        invulUntil: 0,
         x: c + 0.5,
         y: r + 0.5,
         z: this.map.floor[r * this.map.w + c],
         yaw: 0,
         pitch: 0,
         fireHeld: false,
+        fireTimer: 0,
         qPresses: 0,
         ePresses: 0,
-        allyTargetId: 255,
+        allyTargetId: ALLY_NONE,
+        pendingQ: false,
+        pendingE: false,
+        pendingEAlly: ALLY_NONE,
+        landingTick: -1,
         kills: 0,
         cdQ: 0,
         cdE: 0,
+        lastDamageTick: 0,
         lastSeq: -1,
         lastAcceptMs: 0,
         teleportId: 0,
@@ -308,6 +467,10 @@ export class Simulation {
     return { arenaIndex: 0, arenaPhase: this.arenas.length ? this.arenas[0].phase : PHASE_IDLE };
   }
 
+  isInvulnerable(p: SimPlayer): boolean {
+    return p.god || p.devGod || this.tick < p.invulUntil;
+  }
+
   // ------------------------------------------------------------------ input
 
   /** Applies an input message from a player (§9.3). `nowMs` is the host time of arrival. */
@@ -321,7 +484,12 @@ export class Simulation {
     p.lastSeq = m.seq;
     p.yaw = m.yaw;
     p.pitch = m.pitch;
+    const qPressed = m.qPresses !== p.qPresses;
+    const ePressed = m.ePresses !== p.ePresses;
+    p.qPresses = m.qPresses;
+    p.ePresses = m.ePresses;
     if (p.dead) {
+      // Position, fire and ability input are ignored while dead.
       p.lastAcceptMs = nowMs;
       return;
     }
@@ -347,9 +515,12 @@ export class Simulation {
     p.lastAcceptMs = nowMs;
     p.fireHeld = m.fireHeld;
     p.allyTargetId = m.allyTargetId;
-    // Ability presses take effect from milestone 3; the counters are tracked already.
-    p.qPresses = m.qPresses;
-    p.ePresses = m.ePresses;
+    // Any increase of a press counter is one press (§9.3).
+    if (qPressed) p.pendingQ = true;
+    if (ePressed) {
+      p.pendingE = true;
+      p.pendingEAlly = m.allyTargetId;
+    }
   }
 
   /** Moves a player on the host and tells its client (§9.3). */
@@ -362,19 +533,29 @@ export class Simulation {
     this.events.push({ to: p.id, event: { type: 'teleport', teleportId: p.teleportId, x, y, z } });
   }
 
+  /** Dev key G: toggles invulnerability for one player. */
+  toggleDevGod(playerId: number): void {
+    const p = this.playerById(playerId);
+    if (p) p.devGod = !p.devGod;
+  }
+
   // ------------------------------------------------------------------ tick
 
-  /** Simulates one tick. `nowMs` is the host time used for input timing. */
+  /** Simulates one tick. `nowMs` is the host time used for input timing. Does nothing after the result. */
   step(nowMs?: number): void {
+    if (this.result) return;
     this.tick++;
     this.nowMs = nowMs ?? this.tick * TICK_MS;
     this.checkArenaStarts();
     this.updateFlowFields();
     this.updateSpawning();
+    this.updatePlayers();
     this.updateEnemies();
     this.separate(0);
     this.separate(1);
+    this.updateProjectiles();
     this.checkArenaClears();
+    this.checkDefeat();
   }
 
   private livingTargetable(p: SimPlayer): boolean {
@@ -410,11 +591,7 @@ export class Simulation {
   private startWave(ai: number, n: number): void {
     const st = this.arenas[ai];
     const w = this.map.arenas[ai].waves[n];
-    const counts = [
-      scaleCount(w.blessed, this.partySize),
-      CHORISTERS_ENABLED ? scaleCount(w.choristers, this.partySize) : 0,
-      scaleCount(w.cherubs, this.partySize),
-    ];
+    const counts = [scaleCount(w.blessed, this.partySize), scaleCount(w.choristers, this.partySize), scaleCount(w.cherubs, this.partySize)];
     st.wave = n;
     st.waveStartTick = this.tick;
     st.waveTotals[n] = counts[0] + counts[1] + counts[2];
@@ -438,11 +615,28 @@ export class Simulation {
         p.dead = false;
         p.hp = p.maxHp;
         p.shield = 0;
+        p.lastDamageTick = this.tick;
         const [c, r] = a.entryCells[p.index];
         this.events.push({ to: 'all', event: { type: 'playerRespawned', playerId: p.id } });
         this.teleport(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
       }
     });
+  }
+
+  /** Defeat: all connected players are dead at the same time (§5.7). */
+  private checkDefeat(): void {
+    if (this.result || this.bench) return;
+    const connected = this.players.filter((p) => p.connected);
+    if (connected.length > 0 && connected.every((p) => p.dead)) this.finish('defeat');
+  }
+
+  /** Ends the run: the host sends one last snapshot and `gameOver`, then stops simulating (§3). */
+  finish(result: 'victory' | 'defeat'): void {
+    if (this.result) return;
+    this.result = result;
+    const kills: Record<number, number> = {};
+    for (const p of this.players) if (p.connected) kills[p.id] = p.kills;
+    this.events.push({ to: 'all', event: { type: 'gameOver', result, timeMs: Math.round(this.timeMs), kills } });
   }
 
   // ------------------------------------------------------------------ flow fields
@@ -482,7 +676,7 @@ export class Simulation {
       const b = st.budgets;
       for (let i = 0; i < b.length; i++) b[i] += BUDGET_PER_TICK;
       if (st.phase === PHASE_COMBAT) this.updateArenaSpawning(ai);
-      // The cap applies to the budget carried into the next tick, so a busy point sustains 50 per second.
+      // The cap applies to the budget carried into the next tick, so a busy point sustains its rate.
       for (let i = 0; i < b.length; i++) if (b[i] > BUDGET_MAX) b[i] = BUDGET_MAX;
     });
   }
@@ -602,6 +796,8 @@ export class Simulation {
     this.eX[slot] = c + 0.5;
     this.eY[slot] = r + 0.5;
     this.eZ[slot] = this.map.floor[r * this.map.w + c] + (type === CHERUB ? CHERUB_HOVER : 0);
+    this.eStartX[slot] = this.eX[slot];
+    this.eStartY[slot] = this.eY[slot];
     this.eVz[slot] = 0;
     this.eGrounded[slot] = 1;
     this.eHp[slot] = def.hp;
@@ -611,6 +807,16 @@ export class Simulation {
     this.eStrafe[slot] = 1;
     this.eStrafeT[slot] = 0;
     this.eHurtTick[slot] = -1;
+    this.eSlowUntil[slot] = 0;
+    this.eRootUntil[slot] = 0;
+    this.eSilenceUntil[slot] = 0;
+    this.eTauntUntil[slot] = 0;
+    this.eKbUntil[slot] = 0;
+    this.ePullStart[slot] = -1;
+    this.eCast[slot] = 0;
+    this.eCastT[slot] = 0;
+    this.eCastCd[slot] = 0;
+    this.eMeleeNext[slot] = -1;
     this.activePos[slot] = this.activeCount;
     this.active[this.activeCount++] = slot;
     if (type !== GATEKEEPER) this.living++;
@@ -635,6 +841,7 @@ export class Simulation {
       const wave = this.eWave[slot];
       if (wave >= 0) st.waveAlive[wave]--;
     }
+    if (this.markSlot === slot) this.markSlot = -1;
     const pos = this.activePos[slot];
     const last = this.active[--this.activeCount];
     this.active[pos] = last;
@@ -655,10 +862,546 @@ export class Simulation {
     this.eHurtTick[slot] = this.tick;
   }
 
+  // ------------------------------------------------------------------ damage (§5.5)
+
+  /** A hit on an enemy. `source` is the player index that gets the kill credit, or -1. */
+  damageEnemy(slot: number, amount: number, source: number): void {
+    if (!this.eAlive[slot]) return;
+    // 1. Kiss of Betrayal.
+    if (slot === this.markSlot && this.tick < this.markUntil) amount *= 3;
+    if (amount <= 0) return;
+    this.eHp[slot] -= amount;
+    this.eHurtTick[slot] = this.tick;
+    // 5. Death and kill credit.
+    if (this.eHp[slot] <= 0) {
+      if (source >= 0) this.players[source].kills++;
+      this.removeEnemy(slot);
+    }
+  }
+
+  /** A hit on a player. */
+  damagePlayer(p: SimPlayer, amount: number): void {
+    if (p.dead || !p.connected) return;
+    // 2. Brimstone Hide.
+    if (p.classId === 'fallen') amount *= 0.6;
+    // 3. Invulnerability.
+    if (this.isInvulnerable(p)) amount = 0;
+    if (amount <= 0) return;
+    p.lastDamageTick = this.tick;
+    // 4. Shield.
+    if (p.shield > 0) {
+      const absorbed = Math.min(p.shield, amount);
+      p.shield -= absorbed;
+      amount -= absorbed;
+    }
+    p.hp -= amount;
+    // 5. Death.
+    if (p.hp <= 0) this.killPlayer(p);
+  }
+
+  private killPlayer(p: SimPlayer): void {
+    p.dead = true;
+    p.hp = 0;
+    p.shield = 0;
+    p.fireHeld = false;
+    p.pendingQ = false;
+    p.pendingE = false;
+    p.landingTick = -1;
+    this.events.push({ to: 'all', event: { type: 'playerDied', playerId: p.id } });
+    // Blasphemy ends when the Fallen dies (§7.2).
+    if (p.classId === 'fallen') for (let k = 0; k < this.activeCount; k++) this.eTauntUntil[this.active[k]] = 0;
+  }
+
+  /** Heals a living player, capped at max HP. */
+  heal(p: SimPlayer, amount: number): void {
+    if (p.dead || !p.connected) return;
+    p.hp = Math.min(p.maxHp, p.hp + amount);
+  }
+
+  /** Gives a living player a shield; a new shield replaces the old one. */
+  giveShield(p: SimPlayer, amount: number, seconds: number): void {
+    if (p.dead || !p.connected) return;
+    p.shield = amount;
+    p.shieldUntil = this.tick + ticks(seconds);
+  }
+
+  // ------------------------------------------------------------------ status effects (§5.6)
+
+  private immune(slot: number): boolean {
+    return this.eType[slot] === GATEKEEPER;
+  }
+
+  /** Slow: refreshes the duration, doesn't stack. */
+  slow(slot: number, seconds: number): void {
+    if (this.immune(slot)) return;
+    this.eSlowUntil[slot] = this.tick + ticks(seconds);
+  }
+
+  root(slot: number, seconds: number): void {
+    if (this.immune(slot)) return;
+    this.eRootUntil[slot] = Math.max(this.eRootUntil[slot], this.tick + ticks(seconds));
+  }
+
+  /** Silence: a cast in progress is cancelled. */
+  silence(slot: number, seconds: number): void {
+    this.eSilenceUntil[slot] = Math.max(this.eSilenceUntil[slot], this.tick + ticks(seconds));
+    this.eCast[slot] = 0;
+    this.eCastT[slot] = 0;
+  }
+
+  /** Mark: only one exists; a new mark replaces the old one. */
+  mark(slot: number, seconds: number): void {
+    this.markSlot = slot;
+    this.markUntil = this.tick + ticks(seconds);
+  }
+
+  /** Knockback: pushed horizontally by `dist` over 0.2 s, with normal collision and no steering. */
+  knockback(slot: number, dirX: number, dirY: number, dist: number): void {
+    if (this.immune(slot)) return;
+    const len = Math.hypot(dirX, dirY);
+    if (len < 1e-9) return;
+    const v = dist / KNOCKBACK_TIME;
+    this.eKbVx[slot] = (dirX / len) * v;
+    this.eKbVy[slot] = (dirY / len) * v;
+    this.eKbFrom[slot] = this.tick;
+    this.eKbUntil[slot] = this.tick + ticks(KNOCKBACK_TIME);
+  }
+
+  /** Chains: moves linearly to (x, y) over 0.3 s ignoring collision, then roots for 1.5 s. */
+  pull(slot: number, x: number, y: number, floorZ: number): void {
+    if (this.immune(slot)) return;
+    const o = slot * 6;
+    this.ePull[o] = this.eX[slot];
+    this.ePull[o + 1] = this.eY[slot];
+    this.ePull[o + 2] = this.eZ[slot];
+    this.ePull[o + 3] = x;
+    this.ePull[o + 4] = y;
+    // Ground enemies end on the floor there; flyers keep their hover height.
+    this.ePull[o + 5] = this.eType[slot] === CHERUB ? this.eZ[slot] : floorZ;
+    this.ePullStart[slot] = this.tick;
+    this.eKbUntil[slot] = 0;
+  }
+
+  // ------------------------------------------------------------------ players
+
+  private updatePlayers(): void {
+    for (const p of this.players) {
+      p.cdQ = Math.max(0, p.cdQ - TICK_DT);
+      p.cdE = Math.max(0, p.cdE - TICK_DT);
+      if (p.shield > 0 && this.tick >= p.shieldUntil) p.shield = 0;
+      if (!this.livingTargetable(p)) {
+        p.fireTimer = Math.max(0, p.fireTimer - TICK_DT);
+        continue;
+      }
+      if (this.singleplayer && this.tick - p.lastDamageTick >= REGEN_DELAY_TICKS) {
+        p.hp = Math.min(p.maxHp, p.hp + REGEN_FRACTION * p.maxHp * TICK_DT);
+      }
+      if (p.landingTick >= 0 && this.tick >= p.landingTick) {
+        p.landingTick = -1;
+        this.fallingStarLanding(p);
+      }
+      if (p.pendingQ) {
+        p.pendingQ = false;
+        this.useQ(p);
+      }
+      if (p.pendingE) {
+        p.pendingE = false;
+        this.useE(p, p.pendingEAlly);
+      }
+      this.updateWeapon(p);
+    }
+  }
+
+  /** Fire timer (§6): fire when held and the timer is 0 or less, then count down. */
+  private updateWeapon(p: SimPlayer): void {
+    const w = WEAPONS[p.classId];
+    if (p.fireHeld && p.fireTimer <= 1e-6) {
+      this.fireWeapon(p);
+      p.fireTimer += w.interval;
+    }
+    p.fireTimer -= TICK_DT;
+    if (!p.fireHeld && p.fireTimer < 0) p.fireTimer = 0;
+  }
+
+  /** Fires one shot of the player's primary weapon from the eye, along the latest reported aim. */
+  fireWeapon(p: SimPlayer): void {
+    const w = WEAPONS[p.classId];
+    const ex = p.x;
+    const ey = p.y;
+    const ez = p.z + PLAYER_EYE;
+    if (!w.hitscan) {
+      const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
+      this.spawnProjectile(PROJ_CENSER, ex, ey, ez, dx, dy, dz, CENSER_SPEED, CENSER_RADIUS, w.damage, w.range, p.index);
+      return;
+    }
+    for (let i = 0; i < w.pellets; i++) {
+      const yaw = w.spreadYaw > 0 ? p.yaw + (this.random() * 2 - 1) * w.spreadYaw : p.yaw;
+      const pitch = w.spreadPitch > 0 ? p.pitch + (this.random() * 2 - 1) * w.spreadPitch : p.pitch;
+      const [dx, dy, dz] = aimDir(yaw, pitch);
+      const hits = this.rayEnemies(ex, ey, ez, dx, dy, dz, w.range, w.maxHits);
+      for (const slot of hits) {
+        this.damageEnemy(slot, w.damage, p.index);
+        if (w.slow > 0 && this.eAlive[slot]) this.slow(slot, w.slow);
+      }
+    }
+  }
+
+  /**
+   * Hitscan: the first `maxHits` enemies along the ray, nearest first, before it reaches a wall,
+   * terrain or `range` (§5.3).
+   */
+  rayEnemies(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, range: number, maxHits: number): number[] {
+    const stop = raycastTerrain(this.map, ox, oy, oz, dx, dy, dz, range);
+    const hits: Array<[number, number]> = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      const def = ENEMIES[this.eType[s]];
+      const t = rayCylinder(ox, oy, oz, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height);
+      if (t > stop) continue;
+      if (hits.length < maxHits) {
+        hits.push([t, s]);
+        hits.sort((a, b) => a[0] - b[0]);
+      } else if (t < hits[hits.length - 1][0]) {
+        hits[hits.length - 1] = [t, s];
+        hits.sort((a, b) => a[0] - b[0]);
+      }
+    }
+    return hits.map((h) => h[1]);
+  }
+
+  /**
+   * The crosshair ray (§5.3): stops at the first enemy cylinder or at a wall or terrain.
+   * Returns the distance (up to maxDist) and the enemy hit, or -1.
+   */
+  crosshair(p: SimPlayer, maxDist: number): { t: number; slot: number } {
+    const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
+    const ex = p.x;
+    const ey = p.y;
+    const ez = p.z + PLAYER_EYE;
+    const stop = raycastTerrain(this.map, ex, ey, ez, dx, dy, dz, maxDist);
+    const hit = this.rayEnemies(ex, ey, ez, dx, dy, dz, stop, 1);
+    if (hit.length === 0) return { t: stop, slot: -1 };
+    const s = hit[0];
+    const def = ENEMIES[this.eType[s]];
+    return { t: rayCylinder(ex, ey, ez, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height), slot: s };
+  }
+
+  private abilityEvent(p: SimPlayer, slot: 'Q' | 'E', x: number, y: number, z: number, targetPlayerId?: number): void {
+    const event: GameEvent = { type: 'abilityUsed', playerId: p.id, slot, x, y, z };
+    if (targetPlayerId !== undefined) event.targetPlayerId = targetPlayerId;
+    this.events.push({ to: 'all', event });
+  }
+
+  private useQ(p: SimPlayer): void {
+    if (p.cdQ > 1e-6) return;
+    const cd = ABILITIES[p.classId].Q.cooldown;
+    const bx = p.x;
+    const by = p.y;
+    const bz = p.z + PLAYER_HEIGHT / 2;
+    switch (p.classId) {
+      case 'fallen': {
+        // Blasphemy: every enemy within 15 m, including the Gatekeeper, targets the Fallen for 5 s.
+        for (let k = 0; k < this.activeCount; k++) {
+          const s = this.active[k];
+          const def = ENEMIES[this.eType[s]];
+          if (distToCylinder(bx, by, bz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > BLASPHEMY_RADIUS) continue;
+          this.eTauntUntil[s] = this.tick + ticks(BLASPHEMY_DURATION);
+          this.eTarget[s] = p.index;
+        }
+        break;
+      }
+      case 'heretic': {
+        // Unholy Communion: heals every living player within 15 m, including self.
+        for (const o of this.players) {
+          if (!this.livingTargetable(o)) continue;
+          if (distToCylinder(bx, by, bz, o.x, o.y, o.z, PLAYER_RADIUS, PLAYER_HEIGHT) <= COMMUNION_RADIUS) this.heal(o, COMMUNION_HEAL);
+        }
+        break;
+      }
+      case 'binder': {
+        const [dx, dy] = this.chainsDestination(p);
+        const c = Math.floor(dx);
+        const r = Math.floor(dy);
+        const floorZ = this.map.floor[r * this.map.w + c];
+        for (const s of this.chainsTargets(p)) this.pull(s, dx, dy, floorZ);
+        p.cdQ = cd;
+        this.abilityEvent(p, 'Q', dx, dy, floorZ);
+        return;
+      }
+      case 'betrayer': {
+        // Kiss of Betrayal: no target, no cooldown.
+        const hit = this.crosshair(p, KISS_RANGE);
+        if (hit.slot < 0) return;
+        this.mark(hit.slot, KISS_DURATION);
+        p.cdQ = cd;
+        this.abilityEvent(p, 'Q', this.eX[hit.slot], this.eY[hit.slot], this.eZ[hit.slot]);
+        return;
+      }
+    }
+    p.cdQ = cd;
+    this.abilityEvent(p, 'Q', p.x, p.y, p.z);
+  }
+
+  private useE(p: SimPlayer, allyId: number): void {
+    const def = ABILITIES[p.classId].E;
+    if (def.movement) {
+      // Movement abilities run on the client; the host accepts within 0.25 s of ready (§9.3).
+      if (p.cdE > MOVEMENT_GRACE + 1e-6) return;
+      if (p.classId === 'fallen') {
+        const ally = allyId === ALLY_NONE ? undefined : this.playerById(allyId);
+        if (!ally || ally === p || !this.livingTargetable(ally)) return;
+        p.landingTick = this.tick + ticks(FALLING_STAR_TIME);
+        p.invulUntil = Math.max(p.invulUntil, this.tick + ticks(FALLING_STAR_TIME));
+        p.cdE = def.cooldown;
+        p.speedCheckSkipUntil = this.nowMs + MOVEMENT_SPEED_CHECK_SKIP * 1000;
+        this.abilityEvent(p, 'E', ally.x, ally.y, ally.z, ally.id);
+      } else {
+        p.invulUntil = Math.max(p.invulUntil, this.tick + ticks(SHADOWSTEP_INVULN));
+        p.cdE = def.cooldown;
+        p.speedCheckSkipUntil = this.nowMs + MOVEMENT_SPEED_CHECK_SKIP * 1000;
+        this.abilityEvent(p, 'E', p.x, p.y, p.z);
+      }
+      return;
+    }
+    if (p.cdE > 1e-6) return;
+    if (p.classId === 'heretic') {
+      // Martyr's Shroud: on the ally target sent with the press, or on self.
+      const ally = allyId === ALLY_NONE ? undefined : this.playerById(allyId);
+      const target = ally && ally !== p && this.livingTargetable(ally) ? ally : p;
+      this.giveShield(target, SHROUD_AMOUNT, SHROUD_DURATION);
+      p.cdE = def.cooldown;
+      this.abilityEvent(p, 'E', target.x, target.y, target.z, target.id);
+    } else if (p.classId === 'binder') {
+      // Discord: silences every enemy within 8 m of the impact point.
+      const hit = this.crosshair(p, DISCORD_RANGE);
+      const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
+      const ix = p.x + dx * hit.t;
+      const iy = p.y + dy * hit.t;
+      const iz = p.z + PLAYER_EYE + dz * hit.t;
+      for (let k = 0; k < this.activeCount; k++) {
+        const s = this.active[k];
+        const ed = ENEMIES[this.eType[s]];
+        if (distToCylinder(ix, iy, iz, this.eX[s], this.eY[s], this.eZ[s], ed.radius, ed.height) <= DISCORD_RADIUS) this.silence(s, DISCORD_SILENCE);
+      }
+      p.cdE = def.cooldown;
+      this.abilityEvent(p, 'E', ix, iy, iz);
+    }
+  }
+
+  /** Falling Star landing: 30 damage within 5 m and a 4 m knockback away from the landing point. */
+  private fallingStarLanding(p: SimPlayer): void {
+    const cx = p.x;
+    const cy = p.y;
+    const cz = p.z + PLAYER_HEIGHT / 2;
+    const hit: number[] = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      const def = ENEMIES[this.eType[s]];
+      if (distToCylinder(cx, cy, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= FALLING_STAR_RADIUS) hit.push(s);
+    }
+    for (const s of hit) {
+      this.damageEnemy(s, FALLING_STAR_DAMAGE, p.index);
+      if (!this.eAlive[s]) continue;
+      let dx = this.eX[s] - cx;
+      let dy = this.eY[s] - cy;
+      if (Math.hypot(dx, dy) < 1e-6) {
+        const a = (s % 16) * (Math.PI / 8);
+        dx = Math.cos(a);
+        dy = Math.sin(a);
+      }
+      this.knockback(s, dx, dy, KNOCKBACK_DIST);
+    }
+  }
+
+  /**
+   * Chains destination (§6.3): from the Binder's feet along the horizontal aim in 0.25 m steps, up to
+   * 5 m; a step into a wall, a closed door or a floor more than 0.5 m above the previous one is blocked.
+   */
+  chainsDestination(p: SimPlayer): [number, number] {
+    const cx = Math.cos(p.yaw);
+    const cy = Math.sin(p.yaw);
+    let x = p.x;
+    let y = p.y;
+    let prevFloor = this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)];
+    const steps = Math.round(CHAINS_MAX / CHAINS_STEP);
+    for (let i = 1; i <= steps; i++) {
+      const nx = p.x + cx * CHAINS_STEP * i;
+      const ny = p.y + cy * CHAINS_STEP * i;
+      const c = Math.floor(nx);
+      const r = Math.floor(ny);
+      if (isSolid(this.map, c, r)) break;
+      const f = this.map.floor[r * this.map.w + c];
+      if (f > prevFloor + STEP_UP + EPS) break;
+      x = nx;
+      y = ny;
+      prevFloor = f;
+    }
+    return [x, y];
+  }
+
+  /** Non-boss enemies within 20 m, in line of sight, with the body center within 30° of the aim. */
+  chainsTargets(p: SimPlayer): number[] {
+    const [ax, ay, az] = aimDir(p.yaw, p.pitch);
+    const ex = p.x;
+    const ey = p.y;
+    const ez = p.z + PLAYER_EYE;
+    const cosMax = Math.cos(CHAINS_ANGLE);
+    const out: number[] = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      if (this.eType[s] === GATEKEEPER) continue;
+      const def = ENEMIES[this.eType[s]];
+      if (distToCylinder(ex, ey, ez, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > CHAINS_RANGE) continue;
+      const bx = this.eX[s] - ex;
+      const by = this.eY[s] - ey;
+      const bz = this.eZ[s] + def.height / 2 - ez;
+      const len = Math.hypot(bx, by, bz);
+      if (len > 1e-9 && (bx * ax + by * ay + bz * az) / len < cosMax - 1e-9) continue;
+      if (!lineOfSight(this.map, ex, ey, ez, this.eX[s], this.eY[s], this.eZ[s] + def.height / 2)) continue;
+      out.push(s);
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------------ projectiles (§5.4)
+
+  spawnProjectile(kind: number, x: number, y: number, z: number, dx: number, dy: number, dz: number, speed: number, radius: number, damage: number, maxDist: number, owner: number): number {
+    if (this.projectiles.length >= MAX_PROJECTILES) this.removeProjectile(this.projectiles[0]);
+    let slot = -1;
+    if (this.pFree.length > 0 && this.pFreedTick[this.pFree[0]] + SLOT_REUSE_TICKS <= this.tick) slot = this.pFree.shift()!;
+    else if (this.pNextFresh < PROJECTILE_SLOTS) slot = this.pNextFresh++;
+    if (slot < 0) return -1;
+    this.pAlive[slot] = 1;
+    this.pKind[slot] = kind;
+    this.pX[slot] = x;
+    this.pY[slot] = y;
+    this.pZ[slot] = z;
+    this.pDx[slot] = dx;
+    this.pDy[slot] = dy;
+    this.pDz[slot] = dz;
+    this.pSpeed[slot] = speed;
+    this.pRadius[slot] = radius;
+    this.pDamage[slot] = damage;
+    this.pTraveled[slot] = 0;
+    this.pMaxDist[slot] = Math.min(maxDist, PROJECTILE_RANGE);
+    this.pOwner[slot] = owner;
+    this.projectiles.push(slot);
+    return slot;
+  }
+
+  removeProjectile(slot: number): void {
+    if (!this.pAlive[slot]) return;
+    this.pAlive[slot] = 0;
+    const i = this.projectiles.indexOf(slot);
+    if (i >= 0) this.projectiles.splice(i, 1);
+    this.pFreedTick[slot] = this.tick;
+    this.pFree.push(slot);
+  }
+
+  private updateProjectiles(): void {
+    for (const slot of [...this.projectiles]) {
+      if (this.pAlive[slot]) this.updateProjectile(slot);
+    }
+  }
+
+  /** Moves one projectile as a swept segment against the heightfield and enlarged target cylinders. */
+  private updateProjectile(slot: number): void {
+    const x = this.pX[slot];
+    const y = this.pY[slot];
+    const z = this.pZ[slot];
+    const dx = this.pDx[slot];
+    const dy = this.pDy[slot];
+    const dz = this.pDz[slot];
+    const pr = this.pRadius[slot];
+    const owner = this.pOwner[slot];
+    const len = Math.min(this.pSpeed[slot] * TICK_DT, this.pMaxDist[slot] - this.pTraveled[slot]);
+    const terrainT = raycastTerrain(this.map, x, y, z, dx, dy, dz, len);
+    let hitT = Infinity;
+    let hitSlot = -1;
+    if (owner >= 0) {
+      for (let k = 0; k < this.activeCount; k++) {
+        const s = this.active[k];
+        const def = ENEMIES[this.eType[s]];
+        const t = rayCylinder(x, y, z, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s] - pr, def.radius + pr, def.height + 2 * pr);
+        if (t <= terrainT && t < hitT) {
+          hitT = t;
+          hitSlot = s;
+        }
+      }
+    } else {
+      for (const p of this.players) {
+        if (!this.livingTargetable(p)) continue;
+        const t = rayCylinder(x, y, z, dx, dy, dz, p.x, p.y, p.z - pr, PLAYER_RADIUS + pr, PLAYER_HEIGHT + 2 * pr);
+        if (t <= terrainT && t < hitT) {
+          hitT = t;
+          hitSlot = p.index;
+        }
+      }
+    }
+    if (hitSlot >= 0) {
+      if (owner >= 0) this.explodeCenser(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT);
+      else {
+        this.damagePlayer(this.players[hitSlot], this.pDamage[slot]);
+        this.removeProjectile(slot);
+      }
+      return;
+    }
+    if (terrainT < len) {
+      if (owner >= 0) this.explodeCenser(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT);
+      else this.removeProjectile(slot);
+      return;
+    }
+    const nx = x + dx * len;
+    const ny = y + dy * len;
+    const nz = z + dz * len;
+    this.pX[slot] = nx;
+    this.pY[slot] = ny;
+    this.pZ[slot] = nz;
+    this.pTraveled[slot] += len;
+    if (this.pTraveled[slot] >= this.pMaxDist[slot] - 1e-9) {
+      if (owner >= 0) this.explodeCenser(slot, nx, ny, nz);
+      else this.removeProjectile(slot);
+      return;
+    }
+    if (nx < 0 || ny < 0 || nx >= this.map.w || ny >= this.map.h || nz > WALL_TOP) this.removeProjectile(slot);
+  }
+
+  /** Censer explosion: 40 damage to enemies within 3 m of the point (§6.2). */
+  private explodeCenser(slot: number, x: number, y: number, z: number): void {
+    const owner = this.pOwner[slot];
+    const damage = this.pDamage[slot];
+    this.pX[slot] = x;
+    this.pY[slot] = y;
+    this.pZ[slot] = z;
+    this.removeProjectile(slot);
+    const hit: number[] = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      const def = ENEMIES[this.eType[s]];
+      if (distToCylinder(x, y, z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= CENSER_BLAST) hit.push(s);
+    }
+    for (const s of hit) this.damageEnemy(s, damage, owner);
+  }
+
   // ------------------------------------------------------------------ enemies
 
-  /** Targets the living, connected player with the lowest flow-field distance; Sinful halves the Fallen's (§7.2). */
+  private fallenIndex(): number {
+    const f = this.players.find((p) => p.classId === 'fallen');
+    return f ? f.index : -1;
+  }
+
+  /**
+   * Targets the living, connected player with the lowest flow-field distance; Sinful halves the
+   * Fallen's (§7.2). Blasphemy overrides this for its duration.
+   */
   retarget(slot: number): void {
+    if (this.eTauntUntil[slot] > this.tick) {
+      const f = this.fallenIndex();
+      if (f >= 0 && this.livingTargetable(this.players[f])) {
+        this.eTarget[slot] = f;
+        return;
+      }
+    }
     const air = this.eType[slot] === CHERUB;
     const c = Math.floor(this.eX[slot]);
     const r = Math.floor(this.eY[slot]);
@@ -680,6 +1423,7 @@ export class Simulation {
 
   private updateEnemies(): void {
     const tick = this.tick;
+    // Attacks and statuses don't remove enemies, so the active list is stable during this loop.
     for (let k = 0; k < this.activeCount; k++) {
       const slot = this.active[k];
       this.eStartX[slot] = this.eX[slot];
@@ -688,9 +1432,67 @@ export class Simulation {
       const targetGone = t >= 0 && !this.livingTargetable(this.players[t]);
       if (targetGone || slot % RETARGET_TICKS === tick % RETARGET_TICKS) this.retarget(slot);
       const type = this.eType[slot];
-      if (type === CHERUB) this.updateCherub(slot);
-      else if (type !== GATEKEEPER) this.updateGround(slot);
+      if (type === GATEKEEPER) continue;
+      if (this.ePullStart[slot] >= 0) {
+        this.updatePull(slot);
+        continue;
+      }
+      if (type !== BLESSED) this.updateLos(slot);
+      if (tick > this.eKbFrom[slot] && tick <= this.eKbUntil[slot]) this.updateKnockback(slot);
+      else if (type === CHERUB) this.updateCherub(slot);
+      else this.updateWalker(slot);
+      if (type === BLESSED) this.updateMelee(slot);
+      else this.updateCast(slot);
     }
+  }
+
+  private updatePull(slot: number): void {
+    const o = slot * 6;
+    const f = Math.min(1, (this.tick - this.ePullStart[slot]) / ticks(CHAINS_PULL_TIME));
+    const p = this.ePull;
+    this.eX[slot] = p[o] + (p[o + 3] - p[o]) * f;
+    this.eY[slot] = p[o + 1] + (p[o + 4] - p[o + 1]) * f;
+    this.eZ[slot] = p[o + 2] + (p[o + 5] - p[o + 2]) * f;
+    this.eState[slot] = ST_MOVING;
+    if (f >= 1) {
+      this.ePullStart[slot] = -1;
+      this.eGrounded[slot] = 1;
+      this.eVz[slot] = 0;
+      this.root(slot, CHAINS_ROOT);
+    }
+  }
+
+  private updateLos(slot: number): void {
+    const t = this.eTarget[slot];
+    if (t < 0 || slot % LOS_TICKS !== this.tick % LOS_TICKS) return;
+    const p = this.players[t];
+    const def = ENEMIES[this.eType[slot]];
+    this.eLos[slot] = lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eZ[slot] + def.height / 2, p.x, p.y, p.z + PLAYER_HEIGHT / 2) ? 1 : 0;
+  }
+
+  /** Whether a caster's target is within its range with line of sight. */
+  private casterInRange(slot: number): boolean {
+    const t = this.eTarget[slot];
+    if (t < 0 || !this.eLos[slot]) return false;
+    const p = this.players[t];
+    const def = ENEMIES[this.eType[slot]];
+    const range = CASTERS[this.eType[slot]].range;
+    return distToCylinder(this.eX[slot], this.eY[slot], this.eZ[slot] + def.height / 2, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) <= range;
+  }
+
+  private speedOf(slot: number): number {
+    const s = ENEMIES[this.eType[slot]].speed;
+    return this.tick < this.eSlowUntil[slot] ? s * SLOW_FACTOR : s;
+  }
+
+  private updateKnockback(slot: number): void {
+    const b = this.loadBody(slot);
+    const dx = this.eKbVx[slot] * TICK_DT;
+    const dy = this.eKbVy[slot] * TICK_DT;
+    if (b.flying) moveHorizontal(this.map, b, dx, dy);
+    else stepBody(this.map, b, dx, dy, TICK_DT);
+    this.storeBody(slot, b);
+    this.eState[slot] = !b.grounded ? ST_FALLING : ST_MOVING;
   }
 
   private loadBody(slot: number): Body {
@@ -750,18 +1552,22 @@ export class Simulation {
 
   private readonly steerOut = { dx: 0, dy: 0, dist: 0, direct: false };
 
-  private updateGround(slot: number): void {
-    const def = ENEMIES[this.eType[slot]];
+  /** Blessed and Choristers: follow the ground field; Choristers stop to cast in range. */
+  private updateWalker(slot: number): void {
+    const type = this.eType[slot];
     const b = this.loadBody(slot);
     const t = this.eTarget[slot];
     let mx = 0;
     let my = 0;
-    if (t >= 0) {
+    const rooted = this.tick < this.eRootUntil[slot];
+    const holds = type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot));
+    if (t >= 0 && !rooted && !holds) {
       const p = this.players[t];
       const s = this.steerOut;
       if (this.steer(slot, this.groundFields[t], p, s)) {
-        let step = def.speed * TICK_DT;
-        if (s.direct) step = Math.min(step, s.dist - BLESSED_STOP);
+        let step = this.speedOf(slot) * TICK_DT;
+        if (s.direct && type === BLESSED) step = Math.min(step, s.dist - BLESSED_STOP);
+        else if (s.direct) step = Math.min(step, s.dist);
         if (step > 0) {
           mx = s.dx * step;
           my = s.dy * step;
@@ -774,29 +1580,26 @@ export class Simulation {
   }
 
   private updateCherub(slot: number): void {
-    const def = ENEMIES[CHERUB];
     const b = this.loadBody(slot);
     const t = this.eTarget[slot];
     let mx = 0;
     let my = 0;
     let strafing = false;
-    if (t >= 0) {
+    const rooted = this.tick < this.eRootUntil[slot];
+    if (t >= 0 && !rooted) {
       const p = this.players[t];
-      const eyeZ = b.z + def.height / 2;
-      if (slot % LOS_TICKS === this.tick % LOS_TICKS) {
-        this.eLos[slot] = lineOfSight(this.map, b.x, b.y, eyeZ, p.x, p.y, p.z + PLAYER_HEIGHT / 2) ? 1 : 0;
-      }
-      const inRange = distToCylinder(b.x, b.y, eyeZ, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) <= CHERUB_RANGE;
-      if (this.eLos[slot] && inRange) {
+      if (this.casterInRange(slot)) {
         strafing = true;
         const base = Math.atan2(p.y - b.y, p.x - b.x);
         const a = base + (this.eStrafe[slot] * Math.PI) / 2;
-        mx = Math.cos(a) * CHERUB_STRAFE_SPEED * TICK_DT;
-        my = Math.sin(a) * CHERUB_STRAFE_SPEED * TICK_DT;
+        const v = CHERUB_STRAFE_SPEED * (this.tick < this.eSlowUntil[slot] ? SLOW_FACTOR : 1) * TICK_DT;
+        mx = Math.cos(a) * v;
+        my = Math.sin(a) * v;
       } else {
         const s = this.steerOut;
         if (this.steer(slot, this.airFields[t], p, s)) {
-          const step = s.direct ? Math.min(def.speed * TICK_DT, s.dist) : def.speed * TICK_DT;
+          const v = this.speedOf(slot) * TICK_DT;
+          const step = s.direct ? Math.min(v, s.dist) : v;
           mx = s.dx * step;
           my = s.dy * step;
         }
@@ -820,6 +1623,81 @@ export class Simulation {
     }
     this.storeBody(slot, b);
     this.eState[slot] = mx !== 0 || my !== 0 ? ST_MOVING : ST_IDLE;
+  }
+
+  /**
+   * Blessed melee (§7.1): while within 1.2 m horizontally and less than 1.5 m apart in height, 5 damage
+   * 0.5 s after entering range, then every 1 s. Leaving range resets the timer.
+   */
+  private updateMelee(slot: number): void {
+    const t = this.eTarget[slot];
+    let inRange = false;
+    if (t >= 0) {
+      const p = this.players[t];
+      inRange = Math.hypot(p.x - this.eX[slot], p.y - this.eY[slot]) <= MELEE_RANGE && Math.abs(p.z - this.eZ[slot]) < MELEE_HEIGHT;
+    }
+    if (!inRange) {
+      this.eMeleeNext[slot] = -1;
+      return;
+    }
+    if (this.eMeleeNext[slot] < 0) this.eMeleeNext[slot] = MELEE_FIRST;
+    this.eMeleeNext[slot] -= TICK_DT;
+    if (this.eMeleeNext[slot] <= 1e-9) {
+      this.damagePlayer(this.players[t], MELEE_DAMAGE);
+      this.eMeleeNext[slot] += MELEE_INTERVAL;
+    }
+    if (this.eState[slot] !== ST_FALLING) this.eState[slot] = ST_ATTACKING;
+  }
+
+  /**
+   * Chorister and Cherub casts (§7.1, §5.6): a wind-up, then a projectile at the target's body center;
+   * the next cast may start `recovery` seconds after firing. Silence cancels a wind-up and keeps new
+   * ones from starting until it ends.
+   */
+  private updateCast(slot: number): void {
+    const c = CASTERS[this.eType[slot]];
+    if (this.eCastCd[slot] > 0) this.eCastCd[slot] = Math.max(0, this.eCastCd[slot] - TICK_DT);
+    const silenced = this.tick < this.eSilenceUntil[slot];
+    const t = this.eTarget[slot];
+    if (this.eCast[slot] === 1) {
+      if (silenced || t < 0) {
+        this.eCast[slot] = 0;
+        this.eCastT[slot] = 0;
+        return;
+      }
+      this.eCastT[slot] += TICK_DT;
+      this.eState[slot] = ST_WINDUP;
+      if (this.eCastT[slot] >= c.windup - 1e-9) {
+        this.fireCast(slot, c);
+        this.eCast[slot] = 0;
+        this.eCastT[slot] = 0;
+        this.eCastCd[slot] = c.recovery;
+        this.eState[slot] = ST_ATTACKING;
+      }
+      return;
+    }
+    if (!silenced && t >= 0 && this.eCastCd[slot] <= 1e-9 && this.casterInRange(slot)) {
+      this.eCast[slot] = 1;
+      this.eCastT[slot] = 0;
+      this.eState[slot] = ST_WINDUP;
+    }
+  }
+
+  private fireCast(slot: number, c: CasterDef): void {
+    const p = this.players[this.eTarget[slot]];
+    const def = ENEMIES[this.eType[slot]];
+    const ox = this.eX[slot];
+    const oy = this.eY[slot];
+    const oz = this.eZ[slot] + def.height / 2;
+    let dx = p.x - ox;
+    let dy = p.y - oy;
+    let dz = p.z + PLAYER_HEIGHT / 2 - oz;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-9) return;
+    dx /= len;
+    dy /= len;
+    dz /= len;
+    this.spawnProjectile(c.kind, ox, oy, oz, dx, dy, dz, c.speed, c.radius, c.damage, PROJECTILE_RANGE, -1);
   }
 
   /** Pushes overlapping enemies apart, half the overlap each, up to 8 neighbors (§7.3). */
@@ -860,7 +1738,7 @@ export class Simulation {
     const b = this.body;
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
-      if (!isLayer(s)) continue;
+      if (!isLayer(s) || this.ePullStart[s] >= 0) continue;
       const def = ENEMIES[this.eType[s]];
       const x = this.eX[s];
       const y = this.eY[s];
@@ -903,7 +1781,7 @@ export class Simulation {
       }
       if (found === 0) continue;
       // Pushes from the crowd behind mustn't carry an enemy faster than it walks: limit this tick's
-      // total displacement to its speed (or to its own walk, if that was already longer).
+      // total displacement to its speed (or to its own movement, if that was already longer).
       const sx = this.eStartX[s];
       const sy = this.eStartY[s];
       const tx = x + px - sx;
@@ -911,9 +1789,9 @@ export class Simulation {
       const total = Math.hypot(tx, ty);
       const limit = Math.max(def.speed * TICK_DT, Math.hypot(x - sx, y - sy));
       if (total > limit) {
-        const k = limit / total;
-        px = sx + tx * k - x;
-        py = sy + ty * k - y;
+        const k2 = limit / total;
+        px = sx + tx * k2 - x;
+        py = sy + ty * k2 - y;
       }
       this.loadBody(s);
       if (tryDisplace(this.map, b, px, py)) {
@@ -937,7 +1815,7 @@ export class Simulation {
     if (!this.noWaves && !this.bench) {
       for (let i = st.wave + 1; i < waves.length; i++) {
         const w = waves[i];
-        n += scaleCount(w.blessed, this.partySize) + (CHORISTERS_ENABLED ? scaleCount(w.choristers, this.partySize) : 0) + scaleCount(w.cherubs, this.partySize);
+        n += scaleCount(w.blessed, this.partySize) + scaleCount(w.choristers, this.partySize) + scaleCount(w.cherubs, this.partySize);
       }
     }
     return n;
@@ -947,6 +1825,7 @@ export class Simulation {
     if (this.preparedTick === this.tick) return;
     this.preparedTick = this.tick;
     const e = this.ent;
+    const tick = this.tick;
     e.enemyCount = this.activeCount;
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
@@ -954,8 +1833,21 @@ export class Simulation {
       e.enemyX[k] = this.eX[s];
       e.enemyY[k] = this.eY[s];
       e.enemyTypeState[k] = (this.eType[s] & 0x0f) | (this.eState[s] << 4);
-      this.baseFlags[k] = 0;
+      let f = 0;
+      if (s === this.markSlot && tick < this.markUntil) f |= FLAG_MARKED;
+      if (tick < this.eRootUntil[s] || this.ePullStart[s] >= 0) f |= FLAG_ROOTED;
+      if (tick < this.eSilenceUntil[s]) f |= FLAG_SILENCED;
+      if (tick < this.eSlowUntil[s]) f |= FLAG_SLOWED;
+      this.baseFlags[k] = f;
     }
+    e.projectileCount = this.projectiles.length;
+    this.projectiles.forEach((slot, i) => {
+      e.projSlot[i] = slot;
+      e.projKind[i] = this.pKind[slot];
+      e.projX[i] = this.pX[slot];
+      e.projY[i] = this.pY[slot];
+      e.projZ[i] = this.pZ[slot];
+    });
   }
 
   /** Encodes this tick's snapshot for one recipient (the `hurt` flag is per recipient). */
@@ -991,8 +1883,9 @@ export class Simulation {
         hp: p.hp,
         shield: p.shield,
         dead: p.dead,
-        cdQ: p.cdQ * 1000,
-        cdE: p.cdE * 1000,
+        // Rounded to whole ms: the countdown leaves float dust (1e-16 s) that would show as "not ready".
+        cdQ: Math.round(p.cdQ * 1000),
+        cdE: Math.round(p.cdE * 1000),
         kills: p.kills,
       });
     }

@@ -21,12 +21,17 @@ export class HostSession {
     this.worker.postMessage(msg);
   }
 
-  start(dungeonId: string, players: SimPlayerInit[], seed: number, god: boolean, bench: boolean): void {
-    this.post({ t: 'start', dungeonId, players, seed, god, bench, localPlayerId: this.localPlayerId });
+  start(dungeonId: string, players: SimPlayerInit[], seed: number, god: boolean, bench: boolean, singleplayer: boolean): void {
+    this.post({ t: 'start', dungeonId, players, seed, god, bench, singleplayer, localPlayerId: this.localPlayerId });
   }
 
   killAll(): void {
     this.post({ t: 'killAll' });
+  }
+
+  /** Dev key G: toggles invulnerability for the local player. */
+  toggleGod(): void {
+    this.post({ t: 'toggleGod', playerId: this.localPlayerId });
   }
 
   setPaused(paused: boolean): void {

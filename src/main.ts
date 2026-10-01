@@ -7,6 +7,7 @@ import { loadMap } from './sim/map';
 import { buildAtlas } from './render/atlas';
 import { Game, type RosterEntry } from './client/game';
 import { HostSession } from './client/hostSession';
+import { showResults } from './ui/results';
 
 const params = parseParams(window.location.search);
 const root = document.getElementById('app')!;
@@ -38,8 +39,24 @@ async function bootSingleplayer(): Promise<void> {
   const atlas = await buildAtlas();
   const roster: RosterEntry[] = [{ id: 0, name: 'Dev', classId: params.classId }];
   const seed = params.seed ?? (Math.random() * 2 ** 32) >>> 0;
-  const game = new Game({ root, map, atlas, params, transport: host.local, host, localPlayerId: 0, roster });
-  host.start(dungeon.id, roster, seed, params.god, params.bench);
+  const game = new Game({
+    root,
+    map,
+    atlas,
+    params,
+    transport: host.local,
+    host,
+    localPlayerId: 0,
+    roster,
+    onResults: (data) => {
+      // The session ends at Results (§3). Until milestone 5, Back to title reloads the page.
+      game.dispose();
+      host.stop();
+      debugState.screen = 'results';
+      showResults(data, () => window.location.reload());
+    },
+  });
+  host.start(dungeon.id, roster, seed, params.god, params.bench, true);
   setLoading(null);
   debugState.screen = 'inGame';
   game.start();

@@ -1,6 +1,7 @@
 /**
  * Billboards that rotate only around the vertical axis, all drawn with one InstancedMesh for the
- * atlas material, refilled every frame (§11.1).
+ * atlas material, refilled every frame (§11.1). Status effects are per-instance colors: a multiply
+ * tint and a glow mixed over it.
  */
 import * as THREE from 'three';
 import type { SpriteFrame } from './atlas';
@@ -11,15 +12,18 @@ const vertexShader = /* glsl */ `
   attribute vec3 iPos;
   attribute vec3 iSize;
   attribute vec4 iUv;
-  attribute vec4 iTint;
+  attribute vec3 iTint;
+  attribute vec4 iGlow;
   uniform vec3 uRight;
   varying vec2 vUv;
-  varying vec4 vTint;
+  varying vec3 vTint;
+  varying vec4 vGlow;
   #include <fog_pars_vertex>
   void main() {
     vec3 p = iPos + uRight * (position.x * iSize.x) + vec3(0.0, (position.y - iSize.z) * iSize.y, 0.0);
     vUv = mix(iUv.xy, iUv.zw, uv);
     vTint = iTint;
+    vGlow = iGlow;
     vec4 mvPosition = viewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     #include <fog_vertex>
@@ -29,16 +33,27 @@ const vertexShader = /* glsl */ `
 const fragmentShader = /* glsl */ `
   uniform sampler2D map;
   varying vec2 vUv;
-  varying vec4 vTint;
+  varying vec3 vTint;
+  varying vec4 vGlow;
   #include <fog_pars_fragment>
   void main() {
     vec4 c = texture2D(map, vUv);
     if (c.a < 0.5) discard;
-    gl_FragColor = vec4(mix(c.rgb * vTint.rgb, vec3(1.0), vTint.a), 1.0);
+    gl_FragColor = vec4(mix(c.rgb * vTint, vGlow.rgb, vGlow.a), 1.0);
     #include <colorspace_fragment>
     #include <fog_fragment>
   }
 `;
+
+/** A color with an amount, for the glow. */
+export interface Glow {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+export const NO_GLOW: Glow = { r: 1, g: 1, b: 1, a: 0 };
 
 export class Billboards {
   readonly mesh: THREE.InstancedMesh;
@@ -46,6 +61,7 @@ export class Billboards {
   private readonly size: THREE.InstancedBufferAttribute;
   private readonly uv: THREE.InstancedBufferAttribute;
   private readonly tint: THREE.InstancedBufferAttribute;
+  private readonly glow: THREE.InstancedBufferAttribute;
   private readonly material: THREE.ShaderMaterial;
   private n = 0;
 
@@ -63,11 +79,13 @@ export class Billboards {
     this.pos = mk(3);
     this.size = mk(3);
     this.uv = mk(4);
-    this.tint = mk(4);
+    this.tint = mk(3);
+    this.glow = mk(4);
     geo.setAttribute('iPos', this.pos);
     geo.setAttribute('iSize', this.size);
     geo.setAttribute('iUv', this.uv);
     geo.setAttribute('iTint', this.tint);
+    geo.setAttribute('iGlow', this.glow);
     this.material = new THREE.ShaderMaterial({
       uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { map: { value: null }, uRight: { value: new THREE.Vector3(1, 0, 0) } }]),
       vertexShader,
@@ -87,8 +105,9 @@ export class Billboards {
   /**
    * Adds a billboard. (x, y, z) are simulation coordinates: the feet, or the center if `centered`.
    * `height` is the billboard height in meters; the width follows the sprite's aspect ratio.
+   * The color is multiplied by (tr, tg, tb), then mixed toward `glow` by its amount.
    */
-  add(f: SpriteFrame, x: number, y: number, z: number, height: number, centered: boolean, r = 1, g = 1, b = 1, flash = 0): void {
+  add(f: SpriteFrame, x: number, y: number, z: number, height: number, centered: boolean, tr = 1, tg = 1, tb = 1, glow: Glow = NO_GLOW): void {
     if (this.n >= MAX_BILLBOARDS) return;
     const i = this.n++;
     const p = this.pos.array as Float32Array;
@@ -105,17 +124,21 @@ export class Billboards {
     u[i * 4 + 2] = f.u1;
     u[i * 4 + 3] = f.v1;
     const t = this.tint.array as Float32Array;
-    t[i * 4] = r;
-    t[i * 4 + 1] = g;
-    t[i * 4 + 2] = b;
-    t[i * 4 + 3] = flash;
+    t[i * 3] = tr;
+    t[i * 3 + 1] = tg;
+    t[i * 3 + 2] = tb;
+    const g = this.glow.array as Float32Array;
+    g[i * 4] = glow.r;
+    g[i * 4 + 1] = glow.g;
+    g[i * 4 + 2] = glow.b;
+    g[i * 4 + 3] = glow.a;
   }
 
   /** Uploads this frame's billboards; `camera` gives the shared horizontal right vector. */
   end(camera: THREE.Camera): void {
     const n = this.n;
     this.mesh.count = n;
-    for (const a of [this.pos, this.size, this.uv, this.tint]) {
+    for (const a of [this.pos, this.size, this.uv, this.tint, this.glow]) {
       a.clearUpdateRanges();
       a.addUpdateRange(0, n * a.itemSize);
       a.needsUpdate = true;

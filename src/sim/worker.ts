@@ -37,8 +37,15 @@ function runTick(): void {
   sim.step(t0);
   const parts = sim.encodeFor(localPlayerId);
   const ms = performance.now() - t0;
-  flushEvents();
   post({ t: 'snap', to: localPlayerId, bufs: parts, simMs: ms }, parts);
+  flushEvents();
+  // At the result the host sends one last snapshot and gameOver, then stops simulating (§3).
+  if (sim.result) stopLoop();
+}
+
+function stopLoop(): void {
+  running = false;
+  if (timer !== undefined) clearTimeout(timer);
 }
 
 /** Fixed 30 Hz with an accumulator; at most 5 ticks per iteration, the rest of the backlog is discarded. */
@@ -57,10 +64,10 @@ function loop(): void {
   timer = setTimeout(loop, Math.max(1, TICK_MS - acc - 1));
 }
 
-function start(players: SimPlayerInit[], dungeonId: string, seed: number, god: boolean, bench: boolean, localId: number): void {
+function start(players: SimPlayerInit[], dungeonId: string, seed: number, god: boolean, bench: boolean, singleplayer: boolean, localId: number): void {
   const dungeon = getDungeon(dungeonId);
   if (!dungeon) throw new Error(`Unknown dungeon ${dungeonId}`);
-  sim = new Simulation({ dungeon, players, seed, god, bench });
+  sim = new Simulation({ dungeon, players, seed, god, bench, singleplayer });
   localPlayerId = localId;
   for (const p of sim.players) p.lastAcceptMs = performance.now();
   running = true;
@@ -73,7 +80,7 @@ ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
   const m = e.data;
   switch (m.t) {
     case 'start':
-      start(m.players, m.dungeonId, m.seed, m.god, m.bench, m.localPlayerId);
+      start(m.players, m.dungeonId, m.seed, m.god, m.bench, m.singleplayer, m.localPlayerId);
       break;
     case 'input': {
       const input = decodeInput(m.buf);
@@ -86,9 +93,11 @@ ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
     case 'killAll':
       sim?.killAll();
       break;
+    case 'toggleGod':
+      sim?.toggleDevGod(m.playerId);
+      break;
     case 'stop':
-      running = false;
-      if (timer !== undefined) clearTimeout(timer);
+      stopLoop();
       sim = null;
       break;
   }

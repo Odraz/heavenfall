@@ -10,11 +10,13 @@ export type MainToWorker =
       seed: number;
       god: boolean;
       bench: boolean;
+      singleplayer: boolean;
       localPlayerId: number;
     }
   | { t: 'input'; playerId: number; buf: ArrayBuffer }
   | { t: 'pause'; paused: boolean }
   | { t: 'killAll' }
+  | { t: 'toggleGod'; playerId: number }
   | { t: 'stop' };
 
 export type WorkerToMain =

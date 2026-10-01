@@ -8,14 +8,11 @@ export class Input {
   /** Accumulated mouse movement since the last read, in pixels. */
   private mouseDx = 0;
   private mouseDy = 0;
-  /** Running press counters (wrap at 256). */
-  qPresses = 0;
-  ePresses = 0;
   jumpQueued = false;
   enabled = true;
   /** The bot and the benchmark never request pointer lock. */
   pointerLockAllowed = true;
-  /** Called for one-shot keys: F3 and the dev keys. */
+  /** Called on every key press (not repeats): F3, Q, E and the dev keys. */
   onKey: (code: string) => void = () => {};
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -88,8 +85,7 @@ export class Input {
     if (e.code === 'Space') {
       this.jumpQueued = true;
       e.preventDefault();
-    } else if (e.code === 'KeyQ') this.qPresses = (this.qPresses + 1) & 0xff;
-    else if (e.code === 'KeyE') this.ePresses = (this.ePresses + 1) & 0xff;
+    }
     this.onKey(e.code);
   };
 
