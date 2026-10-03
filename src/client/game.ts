@@ -144,7 +144,7 @@ export class Game {
     this.scene = new GameScene(this.canvas, this.map);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
-    this.blessedBillboards = new Billboards(o.blessed.texture);
+    this.blessedBillboards = new Billboards(o.blessed.texture, true);
     this.scene.scene.add(this.blessedBillboards.mesh);
     this.scene.scene.add(this.vfx.group);
     this.frames = o.atlas.frames;

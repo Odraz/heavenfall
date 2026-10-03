@@ -52,7 +52,7 @@ In game: mouse to look (click to capture the pointer), WASD to move, Space to ju
 
 ### Blessed sprites
 
-The Blessed's animated 8-direction sprites are rendered from a 3D model built in code. To regenerate `assets/sprites/blessed/` after changing [scripts/blender/blessed.py](scripts/blender/blessed.py), run it with Blender 5.2 (about a minute):
+The Blessed's animated 8-direction sprites are rendered from a 3D model built in code. To regenerate `assets/sprites/blessed/` after changing [scripts/blender/blessed.py](scripts/blender/blessed.py), run it with Blender 5.2 (about 2 minutes):
 
 ```bash
 blender -b --factory-startup -P scripts/blender/blessed.py -- sprites assets/sprites/blessed

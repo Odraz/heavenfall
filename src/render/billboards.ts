@@ -8,6 +8,15 @@ import type { SpriteFrame } from './atlas';
 
 export const MAX_BILLBOARDS = 8192;
 
+/**
+ * Near fade: a billboard closer to the camera than NEAR_FADE_START (horizontally, at its anchor)
+ * dissolves in a dither pattern, down to NEAR_FADE_MIN of its pixels at NEAR_FADE_END and closer,
+ * so an enemy pressed against the camera doesn't fill the view.
+ */
+export const NEAR_FADE_START = 0.8;
+export const NEAR_FADE_END = 0.4;
+export const NEAR_FADE_MIN = 0.3;
+
 const vertexShader = /* glsl */ `
   attribute vec3 iPos;
   attribute vec4 iSize;
@@ -18,8 +27,15 @@ const vertexShader = /* glsl */ `
   varying vec2 vUv;
   varying vec3 vTint;
   varying vec4 vGlow;
+  varying float vVisible;
   #include <fog_pars_vertex>
   void main() {
+    #ifdef NEAR_FADE
+      float fade = clamp((distance(iPos.xz, cameraPosition.xz) - NEAR_FADE_END) / (NEAR_FADE_START - NEAR_FADE_END), 0.0, 1.0);
+      vVisible = mix(NEAR_FADE_MIN, 1.0, fade);
+    #else
+      vVisible = 1.0;
+    #endif
     // iSize: width, height, and the anchor point within the quad (fractions from the bottom left).
     vec3 p = iPos + uRight * ((position.x + 0.5 - iSize.z) * iSize.x) + vec3(0.0, (position.y - iSize.w) * iSize.y, 0.0);
     vUv = mix(iUv.xy, iUv.zw, uv);
@@ -36,10 +52,17 @@ const fragmentShader = /* glsl */ `
   varying vec2 vUv;
   varying vec3 vTint;
   varying vec4 vGlow;
+  varying float vVisible;
   #include <fog_pars_fragment>
+  // A 4 × 4 ordered-dither threshold per screen pixel, for the near fade.
+  const float BAYER[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
   void main() {
     vec4 c = texture2D(map, vUv);
     if (c.a < 0.5) discard;
+    if (vVisible < 1.0) {
+      ivec2 q = ivec2(mod(gl_FragCoord.xy, 4.0));
+      if ((BAYER[q.x + q.y * 4] + 0.5) / 16.0 > vVisible) discard;
+    }
     gl_FragColor = vec4(mix(c.rgb * vTint, vGlow.rgb, vGlow.a), 1.0);
     #include <colorspace_fragment>
     #include <fog_fragment>
@@ -66,7 +89,8 @@ export class Billboards {
   private readonly material: THREE.ShaderMaterial;
   private n = 0;
 
-  constructor(texture: THREE.Texture) {
+  /** `nearFade` dissolves billboards close to the camera (see NEAR_FADE_START). */
+  constructor(texture: THREE.Texture, nearFade = false) {
     const geo = new THREE.BufferGeometry();
     // A unit quad: x in [-0.5, 0.5], y in [0, 1].
     geo.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0], 3));
@@ -92,6 +116,7 @@ export class Billboards {
       vertexShader,
       fragmentShader,
       fog: true,
+      defines: nearFade ? { NEAR_FADE: '', NEAR_FADE_START: NEAR_FADE_START.toFixed(3), NEAR_FADE_END: NEAR_FADE_END.toFixed(3), NEAR_FADE_MIN: NEAR_FADE_MIN.toFixed(3) } : {},
     });
     this.material.uniforms.map.value = texture;
     this.mesh = new THREE.InstancedMesh(geo, this.material, MAX_BILLBOARDS);

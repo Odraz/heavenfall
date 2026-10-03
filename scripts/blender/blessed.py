@@ -677,7 +677,10 @@ def anim_times(name):
 
 # ---------------------------------------------------------------- camera and rendering
 
-PX_PER_M = 100  # sprite pixels per meter in the game
+# Sprite pixels per meter in the game. A Blessed 1 m from the camera covers about 700 screen px
+# per meter at 1080p, so close up it is magnified about 3.7×; 190 still fits one 4096² atlas.
+PX_PER_M = 190
+OUTLINE_M = 0.02  # thickness of the outer ink contour
 SUPERSAMPLE = 2
 # The render canvas in meters around the character's ground point: room for a raised sword and
 # a body lying on the ground in any direction.
@@ -745,7 +748,7 @@ def save_array(arr, path):
 def ink_frame(arr, ss):
     """
     Downsamples a supersampled render and adds the bold outer contour: an ink layer made from
-    the dilated silhouette, under the figure. Fully transparent pixels get the ink color so
+    the silhouette dilated by OUTLINE_M, under the figure. Fully transparent pixels get the ink color so
     texture filtering bleeds dark, not black or white, at the edges.
     """
     import numpy as np
@@ -755,12 +758,13 @@ def ink_frame(arr, ss):
     pre = pre[: h - h % ss, : w - w % ss].reshape(h // ss, ss, w // ss, ss, 4).mean(axis=(1, 3))
     a = pre[..., 3:4]
     rgb = np.where(a > 1e-4, pre[..., :3] / np.maximum(a, 1e-4), 0)
-    # Max-filter the alpha with a disk of radius 2 px.
+    # Max-filter the alpha with a disk.
+    rad = max(1, round(OUTLINE_M * PX_PER_M))
     d = a[..., 0].copy()
     src = a[..., 0]
-    for dy in range(-2, 3):
-        for dx in range(-2, 3):
-            if dx * dx + dy * dy > 5:
+    for dy in range(-rad, rad + 1):
+        for dx in range(-rad, rad + 1):
+            if dx * dx + dy * dy > rad * rad + rad:
                 continue
             sh = np.zeros_like(src)
             ys = slice(max(dy, 0), src.shape[0] + min(dy, 0))
@@ -868,7 +872,7 @@ def pack(frames, width=2048, pad=2):
     return pos, -(-(y + shelf + pad) // 64) * 64
 
 
-def cmd_sprites(out_dir, width=2048):
+def cmd_sprites(out_dir, width=4096):
     """Renders every animation from 8 directions and writes atlas.png and atlas.json."""
     import json
     import os
