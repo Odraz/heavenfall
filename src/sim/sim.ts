@@ -22,6 +22,8 @@ import {
   CENSER_BLAST,
   CENSER_RADIUS,
   CENSER_SPEED,
+  CENSER_SPLASH_DAMAGE,
+  CENSER_SPLASH_MAX,
   CHAINS_ANGLE,
   CHAINS_MAX,
   CHAINS_PULL_TIME,
@@ -1339,7 +1341,7 @@ export class Simulation {
       }
     }
     if (hitSlot >= 0) {
-      if (owner >= 0) this.explodeCenser(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT);
+      if (owner >= 0) this.explodeCenser(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT, hitSlot);
       else {
         this.damagePlayer(this.players[hitSlot], this.pDamage[slot]);
         this.removeProjectile(slot);
@@ -1347,7 +1349,7 @@ export class Simulation {
       return;
     }
     if (terrainT < len) {
-      if (owner >= 0) this.explodeCenser(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT);
+      if (owner >= 0) this.explodeCenser(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT, -1);
       else this.removeProjectile(slot);
       return;
     }
@@ -1359,28 +1361,36 @@ export class Simulation {
     this.pZ[slot] = nz;
     this.pTraveled[slot] += len;
     if (this.pTraveled[slot] >= this.pMaxDist[slot] - 1e-9) {
-      if (owner >= 0) this.explodeCenser(slot, nx, ny, nz);
+      if (owner >= 0) this.explodeCenser(slot, nx, ny, nz, -1);
       else this.removeProjectile(slot);
       return;
     }
     if (nx < 0 || ny < 0 || nx >= this.map.w || ny >= this.map.h || nz > WALL_TOP) this.removeProjectile(slot);
   }
 
-  /** Censer explosion: 40 damage to enemies within 3 m of the point (§6.2). */
-  private explodeCenser(slot: number, x: number, y: number, z: number): void {
+  /**
+   * Censer explosion: 40 damage to the enemy hit directly (-1 for none), and 10 to the 6 other enemies
+   * nearest the point within 2 m (§6.2, decisions.md).
+   */
+  private explodeCenser(slot: number, x: number, y: number, z: number, direct: number): void {
     const owner = this.pOwner[slot];
     const damage = this.pDamage[slot];
     this.pX[slot] = x;
     this.pY[slot] = y;
     this.pZ[slot] = z;
     this.removeProjectile(slot);
-    const hit: number[] = [];
+    const hit: Array<{ s: number; d: number }> = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
+      if (s === direct) continue;
       const def = ENEMIES[this.eType[s]];
-      if (distToCylinder(x, y, z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= CENSER_BLAST) hit.push(s);
+      const d = distToCylinder(x, y, z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height);
+      if (d <= CENSER_BLAST) hit.push({ s, d });
     }
-    for (const s of hit) this.damageEnemy(s, damage, owner);
+    // Stable sort: equal distances keep active-list order, so the result is deterministic.
+    hit.sort((a, b) => a.d - b.d);
+    if (direct >= 0) this.damageEnemy(direct, damage, owner);
+    for (let i = 0; i < hit.length && i < CENSER_SPLASH_MAX; i++) this.damageEnemy(hit[i].s, CENSER_SPLASH_DAMAGE, owner);
   }
 
   // ------------------------------------------------------------------ enemies

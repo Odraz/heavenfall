@@ -55,13 +55,13 @@ export class Particles {
     }
   }
 
-  /** Censer explosion: an ember burst of 3 m radius, lasting 0.4 s (§10). */
+  /** Censer explosion: an ember burst of 2 m radius, lasting 0.4 s (§10, decisions.md). */
   emberBurst(x: number, y: number, z: number): void {
     for (let i = 0; i < 24; i++) {
       const a = Math.random() * Math.PI * 2;
       const e = (Math.random() - 0.3) * 0.8;
-      // Reaches about 3 m in 0.4 s.
-      const s = 6 + Math.random() * 1.5;
+      // Reaches about 2 m in 0.4 s.
+      const s = 4 + Math.random();
       this.spawn(P_EMBER, x, y, z, Math.cos(a) * Math.cos(e) * s, Math.sin(a) * Math.cos(e) * s, Math.sin(e) * s, 0.4, 0.35);
     }
   }

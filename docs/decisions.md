@@ -49,3 +49,4 @@ The spec's numbers are initial tuning values (see the top of mvp.md); these were
 
 - §7.1 — Blessed speed is 4 m/s (spec: 6), so every class outruns them comfortably: the Fallen by 3 m/s, the Betrayer by 5 m/s.
 - §8.2 — Each spawn point places at most 10 enemies per second (spec: 50), so the swarm builds up over several seconds instead of appearing at once. The benchmark (§2.5) still reaches 1 500 enemies before measuring, about 19 s after the start in the sandbox.
+- §6.2 — The Censer deals 40 dmg only to the enemy it hits; the 6 other enemies nearest the explosion within 2 m take 10 each (spec: 40 dmg to all within 3 m), and its ember burst (§10) has a 2 m radius to match. The spec's splash killed every Blessed in a packed swarm, so the Heretic out-killed every other class, and a smaller splash alone didn't fix that; the limit of 6 puts its swarm kills level with the Fallen and the Binder. Single-target damage, which matters for the Gatekeeper, is unchanged.

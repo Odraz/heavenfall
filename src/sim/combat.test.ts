@@ -316,33 +316,59 @@ describe('combat (§5.3, §5.4, §6)', () => {
     spy.mockRestore();
   });
 
-  it('the censer explodes on the first enemy for 40 damage within 3 m', () => {
+  it('the censer explodes on the first enemy: 40 damage to it, 10 to others within 2 m', () => {
     const sim = makeSim(room(30, 5), ['heretic']);
     const p = sim.players[0];
     put(sim, p, 2.5, 3.5);
     const a = enemyAt(sim, CHORISTER, 10.5, 3.5);
-    const b = enemyAt(sim, CHORISTER, 12.5, 3.5);
-    const far = enemyAt(sim, CHORISTER, 16.5, 3.5);
+    // The explosion point is about 0.65 m in front of a's center.
+    const b = enemyAt(sim, CHORISTER, 12, 3.5);
+    const far = enemyAt(sim, CHORISTER, 13, 3.5);
     for (const s of [a, b, far]) sim.root(s, 10);
     aimAt(sim, p, a);
     sim.fireWeapon(p);
     for (let i = 0; i < 15; i++) sim.step();
     expect(sim.eHp[a]).toBe(20);
-    expect(sim.eHp[b]).toBe(20);
+    expect(sim.eHp[b]).toBe(50);
     expect(sim.eHp[far]).toBe(60);
   });
 
-  it('the censer explodes after flying 25 m', () => {
+  it('the censer splash hits only the 6 enemies nearest the explosion', () => {
+    const sim = makeSim(room(30, 10), ['heretic']);
+    const p = sim.players[0];
+    put(sim, p, 2.5, 5.5);
+    const a = enemyAt(sim, CHORISTER, 10.5, 5.5);
+    // The explosion point is about (9.85, 5.5). Seven Blessed within 2 m of it, clear of the flight path;
+    // the seventh is the farthest (1.95 m).
+    const near = [
+      [9.85, 6.2],
+      [9.85, 4.75],
+      [10.6, 6.5],
+      [10.6, 4.4],
+      [9.85, 7.0],
+      [9.85, 3.9],
+    ].map(([x, y]) => enemyAt(sim, BLESSED, x, y));
+    const seventh = enemyAt(sim, BLESSED, 9.85, 7.8);
+    for (const s of [a, ...near, seventh]) sim.root(s, 10);
+    aimAt(sim, p, a);
+    sim.fireWeapon(p);
+    for (let i = 0; i < 15; i++) sim.step();
+    expect(sim.eHp[a]).toBe(20);
+    for (const s of near) expect(sim.eHp[s]).toBe(10);
+    expect(sim.eHp[seventh]).toBe(20);
+  });
+
+  it('the censer explodes after flying 25 m, with splash damage only', () => {
     const sim = makeSim(room(60, 5), ['heretic']);
     const p = sim.players[0];
     put(sim, p, 2.5, 3.5);
-    const at25 = enemyAt(sim, CHORISTER, 2.5 + 25 + 2.4, 1.5);
+    const at25 = enemyAt(sim, CHORISTER, 2.5 + 25 + 1.2, 2);
     sim.root(at25, 10);
     p.pitch = 0;
     sim.fireWeapon(p);
     for (let i = 0; i < 40; i++) sim.step();
     expect(sim.projectiles.length).toBe(0);
-    expect(sim.eHp[at25]).toBe(20);
+    expect(sim.eHp[at25]).toBe(50);
   });
 });
 

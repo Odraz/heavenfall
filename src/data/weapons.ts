@@ -95,6 +95,10 @@ export const ALLY_TARGET_ANGLE = 10 * DEG;
 // Censer projectile (§6.2).
 export const CENSER_SPEED = 20;
 export const CENSER_RADIUS = 0.2;
-export const CENSER_BLAST = 3;
+// §6.2 says 40 dmg to all within 3 m; changed after playtesting to 40 for the enemy hit directly
+// and 10 splash to the 6 nearest others within 2 m (decisions.md).
+export const CENSER_BLAST = 2;
+export const CENSER_SPLASH_DAMAGE = 10;
+export const CENSER_SPLASH_MAX = 6;
 
 export const SLOW_FACTOR = 0.7;
