@@ -1,4 +1,5 @@
 /** Level validation rules (§8.1), checked by unit tests for every shipped map. */
+import { DECOR } from '../decor';
 import { ENEMIES, GATEKEEPER } from '../enemies';
 import { EPS } from '../../sim/constants';
 import { insideRect, type GameMap } from '../../sim/map';
@@ -131,6 +132,11 @@ export function validateLevel(map: GameMap, markers: string[]): string[] {
         }
       }
     }
+  }
+
+  // Large decorations stand on pedestals nobody can reach, so nobody walks through them.
+  for (const d of map.decorations) {
+    if (DECOR[d.id].large && player[d.r * w + d.c]) errors.push(`large decoration '${d.id}' at ${cellName(d.c, d.r)} is player-reachable`);
   }
   return errors;
 }

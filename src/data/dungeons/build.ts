@@ -53,8 +53,8 @@ export class GridBuilder {
     return this;
   }
 
-  /** Puts a marker character on a cell. */
-  marker(x: number, y: number, ch: 'S' | 'D' | 'x' | 'B'): this {
+  /** Puts a marker character on a cell: `S`, `D`, `x`, `B` or a key of the dungeon's `decor` table. */
+  marker(x: number, y: number, ch: string): this {
     this.markers[y]![x] = ch;
     return this;
   }

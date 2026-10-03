@@ -18,4 +18,14 @@ describe('level validation', () => {
     const map = loadMap({ ...def, heights });
     expect(validateLevel(map, def.markers).some((e) => e.includes('jump-only perch'))).toBe(true);
   });
+
+  it('detects a large decoration that players can reach', () => {
+    const def = DUNGEONS.sandbox;
+    // Lower the statue's pedestal to the arena floor.
+    const map = loadMap(def);
+    const statue = map.decorations.find((d) => d.id === 'angel-statue')!;
+    const heights = def.heights.map((row, r) => (r === statue.r ? row.slice(0, statue.c) + '0' + row.slice(statue.c + 1) : row));
+    const errors = validateLevel(loadMap({ ...def, heights }), def.markers);
+    expect(errors.some((e) => e.includes("large decoration 'angel-statue'"))).toBe(true);
+  });
 });

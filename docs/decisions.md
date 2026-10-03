@@ -4,10 +4,9 @@ Choices made where [mvp.md](mvp.md) is silent or ambiguous, one per line (§0).
 
 - §2.1 — TypeScript 7 (the native `tsc`), Vite 8, Vitest 5, Three.js 0.186 and Playwright 1.63 are the latest stable versions at project start.
 - §2.2 — The worker runs its first tick as soon as it starts; later ticks follow the 30 Hz accumulator.
-- §2.5 — Until the Pearly Gates exists (milestone 4), `map=pearly-gates` counts as invalid and opens the sandbox.
 - §2.5 — `seed` is read as a non-negative decimal integer taken modulo 2³²; any other value means a random seed.
 - §2.5 — The F3 overlay also shows the local player's position and yaw; the screenshot helper (`scripts/screenshot.mjs`) steers by it.
-- §2.5 — Dev keys `K` and `G` and the singleplayer pause reach the worker as internal messages, like the other host-only worker messages.
+- §2.5 — Dev keys `K` and `G` and the singleplayer pause reach the worker as internal messages, like the other host-only worker messages. The dev keys also work with `bot=1`, since the full solo run test presses `K` while the bot plays.
 - §2.5 — Benchmark 1%-low FPS is 1000 ÷ the average frame time of the slowest 1% of frames (at least one frame) in the 30 s window.
 - §2.5 — Bot: between line-of-sight checks it keeps aiming at the enemy it chose while that enemy is still in the interpolated set; it stops when within 0.2 m of its goal point; when it's in the goal's cell or next to it, it heads straight for the goal point. Its Shadowstep goes in its movement direction, or forward when it stands still.
 - §3 — When the result overlay appears it replaces the death text.
@@ -23,12 +22,17 @@ Choices made where [mvp.md](mvp.md) is silent or ambiguous, one per line (§0).
 - §7.1 — A started wind-up finishes even if line of sight or range is lost; only silence or losing the target cancels it. The projectile aims at the target's body center when it's fired. Choristers stand still while their target is in range or while winding up; Cherubs keep strafing while winding up.
 - §7.1 — Enemy state `attacking` is sent while a Blessed is in melee range and on the tick a cast fires.
 - §7.2 — An enemy also picks its first target when it spawns; ties in distance go to the lower player index.
+- §7.2 — The Gatekeeper measures distance from its eye to the player's cylinder, and checks line of sight from its eye to the player's body center when it retargets and twice per second for its target, like other enemies.
+- §7.4 — A Gatekeeper cast that becomes allowed when another one ends (Judgment after a Volley fires) starts on the next tick. A Volley cancelled by silence counts as cancelled, so the next one is due 4 s later; a Volley started before its target left line of sight still fires. Summoned enemies join the boss arena's spawn queue like a wave.
+- §7.4 — Judgment's glow is the Gatekeeper's sprite glowing white-gold plus an additive sphere around it growing from 3 m to 9 m radius over the cast; the completion flash is a white full-screen overlay fading over 0.6 s.
 - §7.3 — "Every 0.25 s" for flow fields is tick-based: player index *i* recomputes on ticks where ⌊(tick + 2i) ÷ 7.5⌋ changes (alternating 7- and 8-tick gaps, 0.25 s on average, never on the same tick as another player). Doors opening or closing recompute every field on the next tick.
 - §7.3 — Separation can't carry an enemy further in a tick than it walks (its speed × 1/30 s, or its own walk if that was longer); pushes are scaled down to fit. Without this, the crowd behind shoved the front of a swarm forward at 9.2 m/s sustained, faster than the Fallen.
 - §7.3 — Separation treats bodies as cylinders: two enemies overlap only if their circles and their height ranges both overlap. Enemies at exactly the same spot are pushed apart along a fixed angle derived from their slot numbers.
 - §8.1 — Loader errors that aren't tied to one cell (an empty grid, fewer than 4 `S` markers) name row 0, column 0. A grid that's too large names the first row or column past 256. Grids of different sizes name the first missing row.
 - §8.2 — Spawn-point budgets grow every tick in every arena, even while idle, so they are full when combat starts. The cap of 2 applies to the budget carried into the next tick (after placing), so a busy spawn point sustains exactly its rate; capping before placing would lose some (45 instead of 50 at the spec's rate).
 - §8.2 — Wave progression is checked each tick before placing, so a wave that starts can place its first enemies in the same tick.
+- §8.1 — A `decor` table error (a reserved or multi-character key, an unknown ID) names the first cell using the key, or row 0, column 0.
+- §8.3 — The Pearly Gates' doors sit just outside each arena's `rect`, like the sandbox's. The corridors out of the Lobby and into the boss arena are 4 m wide; the others and the Cloudbridge walkways are 3 m. The Cloudbridge has 1 m support columns at the inner corners where routes turn beside the pit: steering toward a diagonal neighbor's center (§7.3) can clip the pit cell at an inner corner and walk off the edge, which trapped the bot in a fall-and-climb loop; a wall there rules out the diagonal step.
 - §8.4 — Sandbox doors sit just outside the arena's `rect`, in the corridor, so entering the `rect` means passing the door.
 - §9.3 — The host's floor check raises the feet to the highest floor among the cells the player's circle overlaps (walls and closed doors excluded). The speed check's first interval is measured from when the simulation started.
 - §9.3 — The client counts every E press, including a Falling Star it doesn't execute for lack of an ally target; the host then ignores it.

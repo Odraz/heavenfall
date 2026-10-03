@@ -28,6 +28,11 @@ for (const [x, y] of [
   g.marker(x, y, 'x');
 }
 
+// Decorations: one of each type; the large ones stand on 1.5 m pedestals nobody can reach.
+g.marker(2, 2, 'c').marker(11, 2, 'u').marker(22, 6, 'h').marker(40, 41, 't');
+g.fillRect(20, 12, 20, 12, 1.5).marker(20, 12, 'a');
+g.fillRect(42, 37, 42, 37, 1.5).marker(42, 37, 'f');
+
 const grids = g.build();
 
 export const sandbox: DungeonDef = {
@@ -35,6 +40,7 @@ export const sandbox: DungeonDef = {
   name: 'Sandbox',
   heights: grids.heights,
   markers: grids.markers,
+  decor: { c: 'candelabrum', u: 'lily-urn', h: 'harp', t: 'cloud-tuft', a: 'angel-statue', f: 'fountain' },
   arenas: [
     {
       id: 'sandbox-arena',

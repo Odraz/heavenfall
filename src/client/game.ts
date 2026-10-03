@@ -1,6 +1,8 @@
 /** The in-game client: input or bot, local movement, snapshots, interpolation, rendering and feedback. */
 import { CLASSES, type ClassId } from '../data/classes';
-import { BLESSED, CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, ST_WINDUP } from '../data/enemies';
+import { DECOR, decorSprite } from '../data/decor';
+import * as THREE from 'three';
+import { BLESSED, CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, ST_WINDUP } from '../data/enemies';
 import { ABILITIES, ALLY_TARGET_ANGLE, WEAPONS } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent } from '../net/messages';
@@ -12,7 +14,7 @@ import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, PLAYER_RADIUS, TICK_DT, TICK_MS
 import { lineOfSight, raycastTerrain } from '../sim/los';
 import { doorsClosedFor, setArenaDoors, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
-import { PROJ_CENSER } from '../sim/sim';
+import { BOSS_CAST_JUDGMENT, PROJ_CENSER } from '../sim/sim';
 import type { AnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
@@ -45,6 +47,9 @@ const GLOW_FLASH: Glow = { r: 1, g: 1, b: 1, a: 1 };
 const GLOW_WINDUP: Glow = { r: 1, g: 0.78, b: 0.2, a: 0.5 };
 const GLOW_MARKED: Glow = { r: 1, g: 0.12, b: 0.08, a: 0.45 };
 const GLOW_ALLY: Glow = { r: 1, g: 0.8, b: 0.2, a: 0.55 };
+/** Judgment: the glow sphere around the Gatekeeper grows from this radius to the next over the cast. */
+const JUDGMENT_GLOW_R0 = 3;
+const JUDGMENT_GLOW_R1 = 9;
 
 export interface RosterEntry {
   id: number;
@@ -91,6 +96,8 @@ export class Game {
   private readonly corpses: Corpse[] = [];
   private readonly particles: Particles;
   private readonly vfx = new Vfx();
+  /** The large growing glow on the Gatekeeper while it casts Judgment (§7.4). */
+  private readonly judgmentGlow: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
   private readonly frames: Record<string, SpriteFrame>;
   private readonly enemyFrames: Array<SpriteFrame | undefined>;
   private readonly bot: Bot | null;
@@ -123,6 +130,9 @@ export class Game {
   /** Delayed bursts, played when the render time reaches them. */
   private readonly pendingBursts: Array<{ at: number; censer: boolean; x: number; y: number; z: number }> = [];
   private readonly afterimages: Array<{ start: number; x: number; y: number; z: number; sprite: string }> = [];
+  /** The Gatekeeper's cast and its progress (0–1) in the newest snapshot. */
+  private bossCast = 0;
+  private bossCastProgress = 0;
   private resultAt = -1;
   private resultData: ResultsData | null = null;
   private resultsShown = false;
@@ -147,6 +157,12 @@ export class Game {
     this.blessedBillboards = new Billboards(o.blessed.texture, true);
     this.scene.scene.add(this.blessedBillboards.mesh);
     this.scene.scene.add(this.vfx.group);
+    this.judgmentGlow = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 24, 16),
+      new THREE.MeshBasicMaterial({ color: 0xfff0b0, transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
+    );
+    this.judgmentGlow.visible = false;
+    this.scene.scene.add(this.judgmentGlow);
     this.frames = o.atlas.frames;
     this.enemyFrames = ENEMY_SPRITES.map((n) => o.atlas.frames[n]);
     this.particles = new Particles([o.atlas.frames.feather, o.atlas.frames.spark, o.atlas.frames.ember]);
@@ -186,11 +202,13 @@ export class Game {
 
   private onKey(code: string): void {
     if (code === 'F3') this.overlay.toggle();
-    if (this.over || this.params.bot || this.params.bench) return;
-    if (code === 'KeyQ') this.pressAbility('Q', performance.now());
-    else if (code === 'KeyE') this.pressAbility('E', performance.now());
-    else if (code === 'KeyK' && this.params.dev && this.o.host) this.o.host.killAll();
+    if (this.over || this.params.bench) return;
+    // Dev keys work with the bot too: the full solo run test presses K (§13.2).
+    if (code === 'KeyK' && this.params.dev && this.o.host) this.o.host.killAll();
     else if (code === 'KeyG' && this.params.dev && this.o.host) this.o.host.toggleGod();
+    else if (this.params.bot) return;
+    else if (code === 'KeyQ') this.pressAbility('Q', performance.now());
+    else if (code === 'KeyE') this.pressAbility('E', performance.now());
   }
 
   /**
@@ -246,6 +264,9 @@ export class Game {
         break;
       case 'abilityUsed':
         this.abilityVfx(e, now);
+        break;
+      case 'bossCast':
+        this.hud.judgmentEvent(e.phase, now);
         break;
       case 'gameOver':
         this.onGameOver(e, now);
@@ -399,6 +420,9 @@ export class Game {
       kills: p.kills,
     }));
     this.hud.setRemaining(s.arenaPhase === PHASE_COMBAT ? s.enemiesRemaining : null);
+    this.hud.setBoss(s.bossHp, s.bossMaxHp, s.bossCast === BOSS_CAST_JUDGMENT ? s.bossCastProgress / 255 : null);
+    this.bossCast = s.bossCast;
+    this.bossCastProgress = s.bossCastProgress / 255;
     this.bench?.onSnapshot(s);
   }
 
@@ -641,6 +665,7 @@ export class Game {
     const dt = Math.min(0.1, (now - this.lastAnimAt) / 1000);
     this.lastAnimAt = now;
     this.animator.begin();
+    this.judgmentGlow.visible = false;
     for (let i = 0; i < ents.count; i++) {
       const type = ents.type[i];
       let f = this.enemyFrames[type];
@@ -665,7 +690,23 @@ export class Game {
       const z = enemyZ[i];
       // Status (§10): hurt flash, wind-up gold glow, marked red glow, silenced grey tint.
       let glow = NO_GLOW;
+      let judgment: Glow | null = null;
+      if (type === GATEKEEPER && this.bossCast === BOSS_CAST_JUDGMENT) {
+        const t = this.bossCastProgress;
+        const g = this.glowScratch;
+        g.r = 1;
+        g.g = 0.95;
+        g.b = 0.75;
+        g.a = 0.25 + 0.6 * t;
+        judgment = g;
+        const r = JUDGMENT_GLOW_R0 + (JUDGMENT_GLOW_R1 - JUDGMENT_GLOW_R0) * t;
+        this.judgmentGlow.visible = true;
+        this.judgmentGlow.position.set(ents.x[i], enemyZ[i] + def.height / 2, ents.y[i]);
+        this.judgmentGlow.scale.setScalar(r);
+        this.judgmentGlow.material.opacity = 0.15 + 0.3 * t;
+      }
       if (this.flashUntil[ents.slot[i]] > now) glow = GLOW_FLASH;
+      else if (judgment) glow = judgment;
       else if (ents.state[i] === ST_WINDUP) glow = GLOW_WINDUP;
       else if (flags & FLAG_MARKED) glow = GLOW_MARKED;
       const grey = (flags & FLAG_SILENCED) !== 0;
@@ -697,6 +738,10 @@ export class Game {
       const cls = this.classOf(q.id);
       if (!cls) continue;
       bb.add(this.frames[cls], q.x, q.y, q.z, PLAYER_HEIGHT, false, 1, 1, 1, q.id === this.allyTargetId ? GLOW_ALLY : NO_GLOW);
+    }
+    // Decorations (§8.1): drawn only.
+    for (const d of this.map.decorations) {
+      bb.add(this.frames[decorSprite(d.id)], d.c + 0.5, d.r + 0.5, this.map.floor[d.r * this.map.w + d.c], DECOR[d.id].height, false);
     }
     // Shadowstep afterimages fade out over 0.4 s.
     for (let i = this.afterimages.length - 1; i >= 0; i--) {

@@ -1,3 +1,4 @@
+import { isDecorId, type DecorId } from '../data/decor';
 import type { ArenaDef, DungeonDef } from '../data/dungeons/types';
 import { HEIGHT_STEP, MAX_MAP_SIZE, WALL_TOP } from './constants';
 
@@ -34,8 +35,13 @@ export interface GameMap {
   arenaSpawnPoints: Array<Array<[number, number]>>;
   /** Gatekeeper cell (`B`), if any. */
   boss: [number, number] | null;
+  /** Decorations in reading order; drawn only (§8.1). */
+  decorations: Array<{ id: DecorId; c: number; r: number }>;
   arenas: ArenaDef[];
 }
+
+/** Marker characters with a fixed meaning; a `decor` key can't be one of these. */
+const RESERVED_MARKERS = '.SDxB';
 
 function heightIndex(ch: string): number {
   const c = ch.charCodeAt(0);
@@ -47,6 +53,7 @@ function heightIndex(ch: string): number {
 /** Parses and checks a dungeon definition (§8.1). Throws MapError. */
 export function loadMap(def: DungeonDef): GameMap {
   const { heights, markers } = def;
+  const decor = def.decor ?? {};
   if (heights.length === 0 || heights[0].length === 0) throw new MapError(0, 0, 'the grid is empty');
   const h = heights.length;
   const w = heights[0].length;
@@ -69,6 +76,17 @@ export function loadMap(def: DungeonDef): GameMap {
   const xCells: Array<[number, number]> = [];
   const doorCells: Array<[number, number]> = [];
   let boss: [number, number] | null = null;
+  const decorations: GameMap['decorations'] = [];
+
+  for (const [key, id] of Object.entries(decor)) {
+    if (key.length === 1 && !RESERVED_MARKERS.includes(key) && isDecorId(id)) continue;
+    // Name the first cell using the key, if any.
+    let at: [number, number] = [0, 0];
+    const r = markers.findIndex((row) => row.includes(key));
+    if (r >= 0) at = [r, markers[r].indexOf(key)];
+    const why = isDecorId(id) ? `decoration key '${key}' isn't a single unreserved character` : `unknown decoration '${String(id)}'`;
+    throw new MapError(at[0], at[1], why);
+  }
 
   for (let r = 0; r < h; r++) {
     for (let c = 0; c < w; c++) {
@@ -83,9 +101,11 @@ export function loadMap(def: DungeonDef): GameMap {
       }
       const mc = markers[r][c];
       if (mc === '.') continue;
-      if (mc !== 'S' && mc !== 'D' && mc !== 'x' && mc !== 'B') throw new MapError(r, c, `unknown marker character '${mc}'`);
+      const decorId = Object.hasOwn(decor, mc) ? decor[mc] : undefined;
+      if (!RESERVED_MARKERS.includes(mc) && !decorId) throw new MapError(r, c, `unknown marker character '${mc}'`);
       if (wall[i]) throw new MapError(r, c, `marker '${mc}' sits on a wall`);
-      if (mc === 'S') {
+      if (decorId) decorations.push({ id: decorId, c, r });
+      else if (mc === 'S') {
         spawns.push([c, r]);
         if (spawns.length > 4) throw new MapError(r, c, 'more than 4 S markers');
       } else if (mc === 'x') xCells.push([c, r]);
@@ -120,7 +140,7 @@ export function loadMap(def: DungeonDef): GameMap {
   const top = new Float32Array(n);
   for (let i = 0; i < n; i++) top[i] = wall[i] ? WALL_TOP : floor[i];
 
-  return { id: def.id, name: def.name, w, h, floor, wall, doorArena, solid, top, spawns, arenaSpawnPoints, boss, arenas: def.arenas };
+  return { id: def.id, name: def.name, w, h, floor, wall, doorArena, solid, top, spawns, arenaSpawnPoints, boss, decorations, arenas: def.arenas };
 }
 
 /** Opens or closes the doors of one arena. */

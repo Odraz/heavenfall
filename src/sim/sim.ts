@@ -92,6 +92,11 @@ import { mulberry32 } from './rng';
 /** Party-size multipliers ×10 (§7.5), indexed by party size. */
 const MULT10 = [0, 4, 6, 8, 10];
 
+/** The party-size multiplier (§7.5). */
+export function partyMultiplier(partySize: number): number {
+  return MULT10[Math.max(1, Math.min(4, partySize))] / 10;
+}
+
 /** Scales one enemy count for the party size, rounding up (§7.5). */
 export function scaleCount(count: number, partySize: number): number {
   const m = MULT10[Math.max(1, Math.min(4, partySize))];
@@ -247,6 +252,27 @@ const CASTERS: Record<number, CasterDef> = {
   [CHERUB]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 25, damage: 8, radius: 0.15 },
 };
 
+// The Gatekeeper (§7.4).
+const BOSS_EYE = 5;
+const VOLLEY_FIRST = 2;
+const VOLLEY_INTERVAL = 4;
+const VOLLEY_WINDUP = 0.5;
+const VOLLEY_ORBS = 8;
+const VOLLEY_SPREAD = (25 * Math.PI) / 180;
+const VOLLEY_ORB = { speed: 12, damage: 15, radius: 0.3 };
+const JUDGMENT_FIRST = 20;
+const JUDGMENT_INTERVAL = 25;
+const JUDGMENT_CAST = 3;
+const JUDGMENT_INTERRUPT = 2000;
+const SUMMON_FIRST = 30;
+const SUMMON_INTERVAL = 30;
+const SUMMON = { blessed: 150, cherubs: 10 };
+
+/** Gatekeeper casts, as sent in snapshots (§9.4). */
+export const BOSS_CAST_NONE = 0;
+export const BOSS_CAST_VOLLEY = 1;
+export const BOSS_CAST_JUDGMENT = 2;
+
 const REGEN_DELAY_TICKS = 4 * TICK_HZ;
 const REGEN_FRACTION = 0.03;
 
@@ -315,6 +341,22 @@ export class Simulation {
   /** The one marked enemy (Kiss of Betrayal), or -1. */
   markSlot = -1;
   markUntil = 0;
+
+  // The Gatekeeper (§7.4). Timers are ticks.
+  /** The living Gatekeeper's slot, or -1. */
+  bossSlot = -1;
+  bossMaxHp = 0;
+  /** BOSS_CAST_*: the cast in progress. */
+  bossCast = BOSS_CAST_NONE;
+  /** Ticks since the cast in progress started. */
+  bossCastTicks = 0;
+  volleyDue = 0;
+  judgmentDue = 0;
+  summonDue = 0;
+  /** Damage taken during the Judgment cast in progress (after step 1 of §5.5). */
+  private judgmentDamage = 0;
+  /** The Gatekeeper died this tick or since the last one (dev key K); the run ends in victory. */
+  private bossKilled = false;
 
   /** Dense list of living enemy slots. */
   readonly active = new Int32Array(ENEMY_SLOTS);
@@ -556,8 +598,16 @@ export class Simulation {
     this.separate(0);
     this.separate(1);
     this.updateProjectiles();
+    this.checkVictory();
     this.checkArenaClears();
     this.checkDefeat();
+  }
+
+  /** Victory: when the Gatekeeper dies, every remaining enemy bursts without kill credit (§8.2). */
+  private checkVictory(): void {
+    if (!this.bossKilled || this.result) return;
+    while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1]);
+    this.finish('victory');
   }
 
   private livingTargetable(p: SimPlayer): boolean {
@@ -588,6 +638,23 @@ export class Simulation {
       }
     }
     if (!this.bench && !this.noWaves && a.waves.length > 0) this.startWave(ai, 0);
+    if (a.boss && this.map.boss) this.placeBoss(ai);
+  }
+
+  /** Places the Gatekeeper on `B` when the boss arena enters combat; all its timers start now (§7.4). */
+  private placeBoss(ai: number): void {
+    const [c, r] = this.map.boss!;
+    const slot = this.allocSlot();
+    if (slot < 0) return;
+    this.bossMaxHp = ENEMIES[GATEKEEPER].hp * partyMultiplier(this.partySize);
+    this.bossCast = BOSS_CAST_NONE;
+    this.bossCastTicks = 0;
+    this.volleyDue = this.tick + ticks(VOLLEY_FIRST);
+    this.judgmentDue = this.tick + ticks(JUDGMENT_FIRST);
+    this.summonDue = this.tick + ticks(SUMMON_FIRST);
+    this.bossSlot = slot;
+    this.spawnAt(slot, GATEKEEPER, c, r, ai, -1);
+    this.eHp[slot] = this.bossMaxHp;
   }
 
   private startWave(ai: number, n: number): void {
@@ -806,6 +873,7 @@ export class Simulation {
     this.eArena[slot] = arena;
     this.eWave[slot] = wave;
     this.eLos[slot] = 0;
+    this.eTarget[slot] = -1;
     this.eStrafe[slot] = 1;
     this.eStrafeT[slot] = 0;
     this.eHurtTick[slot] = -1;
@@ -844,6 +912,11 @@ export class Simulation {
       if (wave >= 0) st.waveAlive[wave]--;
     }
     if (this.markSlot === slot) this.markSlot = -1;
+    if (slot === this.bossSlot) {
+      this.bossSlot = -1;
+      this.bossCast = BOSS_CAST_NONE;
+      this.bossKilled = true;
+    }
     const pos = this.activePos[slot];
     const last = this.active[--this.activeCount];
     this.active[pos] = last;
@@ -872,6 +945,11 @@ export class Simulation {
     // 1. Kiss of Betrayal.
     if (slot === this.markSlot && this.tick < this.markUntil) amount *= 3;
     if (amount <= 0) return;
+    // Judgment is interrupted by the boss taking 2 000 damage during it, counted after step 1.
+    if (slot === this.bossSlot && this.bossCast === BOSS_CAST_JUDGMENT) {
+      this.judgmentDamage += amount;
+      if (this.judgmentDamage >= JUDGMENT_INTERRUPT * partyMultiplier(this.partySize) - 1e-9) this.interruptJudgment();
+    }
     this.eHp[slot] -= amount;
     this.eHurtTick[slot] = this.tick;
     // 5. Death and kill credit.
@@ -1405,6 +1483,10 @@ export class Simulation {
    * Fallen's (§7.2). Blasphemy overrides this for its duration.
    */
   retarget(slot: number): void {
+    if (this.eType[slot] === GATEKEEPER) {
+      this.retargetBoss(slot);
+      return;
+    }
     if (this.eTauntUntil[slot] > this.tick) {
       const f = this.fallenIndex();
       if (f >= 0 && this.livingTargetable(this.players[f])) {
@@ -1431,6 +1513,60 @@ export class Simulation {
     this.eTarget[slot] = best;
   }
 
+  /** An enemy's eye: the Gatekeeper's is 5 m above its feet, every other enemy's at its body center (§2.3). */
+  private eyeZ(slot: number): number {
+    return this.eZ[slot] + (this.eType[slot] === GATEKEEPER ? BOSS_EYE : ENEMIES[this.eType[slot]].height / 2);
+  }
+
+  private bossSees(slot: number, p: SimPlayer): boolean {
+    return lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eyeZ(slot), p.x, p.y, p.z + PLAYER_HEIGHT / 2);
+  }
+
+  /**
+   * Gatekeeper targeting (§7.2): the lowest straight-line distance among the players it has line of
+   * sight to, Sinful halving the Fallen's. With none visible it keeps its target, or takes the nearest
+   * living player if it has none. Blasphemy overrides this for its duration.
+   */
+  private retargetBoss(slot: number): void {
+    const ex = this.eX[slot];
+    const ey = this.eY[slot];
+    const ez = this.eyeZ(slot);
+    if (this.eTauntUntil[slot] > this.tick) {
+      const f = this.fallenIndex();
+      if (f >= 0 && this.livingTargetable(this.players[f])) {
+        this.eTarget[slot] = f;
+        this.eLos[slot] = this.bossSees(slot, this.players[f]) ? 1 : 0;
+        return;
+      }
+    }
+    let best = -1;
+    let bestD = Infinity;
+    let nearest = -1;
+    let nearestD = Infinity;
+    for (const p of this.players) {
+      if (!this.livingTargetable(p)) continue;
+      const d = distToCylinder(ex, ey, ez, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT);
+      if (d < nearestD) {
+        nearestD = d;
+        nearest = p.index;
+      }
+      if (!this.bossSees(slot, p)) continue;
+      const v = p.classId === 'fallen' ? d * 0.5 : d;
+      if (v < bestD) {
+        bestD = v;
+        best = p.index;
+      }
+    }
+    if (best >= 0) {
+      this.eTarget[slot] = best;
+      this.eLos[slot] = 1;
+      return;
+    }
+    const cur = this.eTarget[slot];
+    if (cur < 0 || !this.livingTargetable(this.players[cur])) this.eTarget[slot] = nearest;
+    this.eLos[slot] = 0;
+  }
+
   private updateEnemies(): void {
     const tick = this.tick;
     // Attacks and statuses don't remove enemies, so the active list is stable during this loop.
@@ -1442,7 +1578,11 @@ export class Simulation {
       const targetGone = t >= 0 && !this.livingTargetable(this.players[t]);
       if (targetGone || slot % RETARGET_TICKS === tick % RETARGET_TICKS) this.retarget(slot);
       const type = this.eType[slot];
-      if (type === GATEKEEPER) continue;
+      if (type === GATEKEEPER) {
+        this.updateLos(slot);
+        this.updateBoss(slot);
+        continue;
+      }
       if (this.ePullStart[slot] >= 0) {
         this.updatePull(slot);
         continue;
@@ -1476,8 +1616,100 @@ export class Simulation {
     const t = this.eTarget[slot];
     if (t < 0 || slot % LOS_TICKS !== this.tick % LOS_TICKS) return;
     const p = this.players[t];
-    const def = ENEMIES[this.eType[slot]];
-    this.eLos[slot] = lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eZ[slot] + def.height / 2, p.x, p.y, p.z + PLAYER_HEIGHT / 2) ? 1 : 0;
+    this.eLos[slot] = lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eyeZ(slot), p.x, p.y, p.z + PLAYER_HEIGHT / 2) ? 1 : 0;
+  }
+
+  /**
+   * The Gatekeeper's casts and summons (§7.4, §5.6). A cast that becomes allowed when another one ends
+   * starts on the next tick.
+   */
+  private updateBoss(slot: number): void {
+    const tick = this.tick;
+    const silenced = tick < this.eSilenceUntil[slot];
+    const t = this.eTarget[slot];
+    const wasCasting = this.bossCast !== BOSS_CAST_NONE;
+    this.eState[slot] = ST_IDLE;
+
+    if (tick >= this.summonDue) {
+      // Not a cast: silence doesn't stop it.
+      const ai = this.eArena[slot];
+      const counts = [scaleCount(SUMMON.blessed, this.partySize), 0, scaleCount(SUMMON.cherubs, this.partySize)];
+      if (ai >= 0) this.arenas[ai].queue.push({ counts, spawned: [0, 0, 0], wave: -1 });
+      this.summonDue += ticks(SUMMON_INTERVAL);
+    }
+
+    if (this.bossCast === BOSS_CAST_VOLLEY) {
+      if (silenced || t < 0) {
+        this.bossCast = BOSS_CAST_NONE;
+        this.volleyDue = tick + ticks(VOLLEY_INTERVAL);
+      } else if (++this.bossCastTicks >= ticks(VOLLEY_WINDUP)) {
+        this.fireVolley(slot);
+        this.bossCast = BOSS_CAST_NONE;
+        this.volleyDue = tick + ticks(VOLLEY_INTERVAL);
+        this.eState[slot] = ST_ATTACKING;
+      } else this.eState[slot] = ST_WINDUP;
+    } else if (this.bossCast === BOSS_CAST_JUDGMENT) {
+      if (silenced) this.interruptJudgment();
+      else if (++this.bossCastTicks >= ticks(JUDGMENT_CAST)) this.completeJudgment(slot);
+      else this.eState[slot] = ST_WINDUP;
+    }
+    if (wasCasting || silenced) return;
+
+    if (tick >= this.judgmentDue) {
+      this.bossCast = BOSS_CAST_JUDGMENT;
+      this.bossCastTicks = 0;
+      this.judgmentDamage = 0;
+      this.eState[slot] = ST_WINDUP;
+      this.events.push({ to: 'all', event: { type: 'bossCast', phase: 'start' } });
+    } else if (tick >= this.volleyDue && t >= 0 && this.eLos[slot]) {
+      this.bossCast = BOSS_CAST_VOLLEY;
+      this.bossCastTicks = 0;
+      this.eState[slot] = ST_WINDUP;
+    }
+  }
+
+  /** Orb Volley: 8 orbs at the target's body center, rotated by evenly spread angles from −25° to +25°. */
+  private fireVolley(slot: number): void {
+    const p = this.players[this.eTarget[slot]];
+    const ox = this.eX[slot];
+    const oy = this.eY[slot];
+    const oz = this.eyeZ(slot);
+    const dx = p.x - ox;
+    const dy = p.y - oy;
+    const dz = p.z + PLAYER_HEIGHT / 2 - oz;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-9) return;
+    for (let i = 0; i < VOLLEY_ORBS; i++) {
+      const a = -VOLLEY_SPREAD + (2 * VOLLEY_SPREAD * i) / (VOLLEY_ORBS - 1);
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      const rx = dx * ca - dy * sa;
+      const ry = dx * sa + dy * ca;
+      this.spawnProjectile(PROJ_ORB, ox, oy, oz, rx / len, ry / len, dz / len, VOLLEY_ORB.speed, VOLLEY_ORB.radius, VOLLEY_ORB.damage, PROJECTILE_RANGE, -1);
+    }
+  }
+
+  /** Judgment completes: 100% of max HP to every living player whose eye sees the boss's eye. */
+  private completeJudgment(slot: number): void {
+    const bx = this.eX[slot];
+    const by = this.eY[slot];
+    const bz = this.eyeZ(slot);
+    this.bossCast = BOSS_CAST_NONE;
+    this.judgmentDue = this.tick + ticks(JUDGMENT_INTERVAL);
+    this.eState[slot] = ST_ATTACKING;
+    this.events.push({ to: 'all', event: { type: 'bossCast', phase: 'completed' } });
+    for (const p of this.players) {
+      if (!this.livingTargetable(p)) continue;
+      if (lineOfSight(this.map, p.x, p.y, p.z + PLAYER_EYE, bx, by, bz)) this.damagePlayer(p, p.maxHp);
+    }
+  }
+
+  /** Discord or 2 000 damage interrupts Judgment; the next one is due 25 s later. */
+  private interruptJudgment(): void {
+    if (this.bossCast !== BOSS_CAST_JUDGMENT) return;
+    this.bossCast = BOSS_CAST_NONE;
+    this.judgmentDue = this.tick + ticks(JUDGMENT_INTERVAL);
+    this.events.push({ to: 'all', event: { type: 'bossCast', phase: 'interrupted' } });
   }
 
   /** Whether a caster's target is within its range with line of sight. */
@@ -1831,6 +2063,15 @@ export class Simulation {
     return n;
   }
 
+  /** The boss fields of the snapshot header; 0 outside the boss fight (§9.4). */
+  private bossHeader(): Pick<SnapshotHeader, 'bossHp' | 'bossMaxHp' | 'bossCast' | 'bossCastProgress'> {
+    const s = this.bossSlot;
+    if (s < 0) return { bossHp: 0, bossMaxHp: 0, bossCast: BOSS_CAST_NONE, bossCastProgress: 0 };
+    const len = this.bossCast === BOSS_CAST_VOLLEY ? ticks(VOLLEY_WINDUP) : ticks(JUDGMENT_CAST);
+    const progress = this.bossCast === BOSS_CAST_NONE ? 0 : Math.min(255, Math.round((this.bossCastTicks / len) * 255));
+    return { bossHp: Math.max(0, this.eHp[s]), bossMaxHp: Math.round(this.bossMaxHp), bossCast: this.bossCast, bossCastProgress: progress };
+  }
+
   private prepareSnapshot(): void {
     if (this.preparedTick === this.tick) return;
     this.preparedTick = this.tick;
@@ -1876,10 +2117,7 @@ export class Simulation {
       arenaIndex,
       arenaPhase,
       enemiesRemaining: this.enemiesRemaining(),
-      bossHp: 0,
-      bossMaxHp: 0,
-      bossCast: 0,
-      bossCastProgress: 0,
+      ...this.bossHeader(),
     };
     const players: SnapshotPlayer[] = [];
     for (const p of this.players) {

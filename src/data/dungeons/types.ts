@@ -1,3 +1,5 @@
+import type { DecorId } from '../decor';
+
 export interface WaveDef {
   blessed: number;
   choristers: number;
@@ -26,4 +28,6 @@ export interface DungeonDef {
   /** Marker layer, one string per row (§8.1). */
   markers: string[];
   arenas: ArenaDef[];
+  /** Marker characters of decorations and their IDs (§8.1). */
+  decor?: Record<string, DecorId>;
 }

@@ -43,7 +43,7 @@ These work on the dev server (port 5173), the preview server (port 4173) and the
 
 | URL | Opens |
 |---|---|
-| http://localhost:5173/?dev=1&map=sandbox&class=fallen | Skips the menus into a singleplayer game. `class` is `fallen`, `heretic`, `binder` or `betrayer`; add `&seed=N` for a fixed seed. |
+| http://localhost:5173/?dev=1&map=sandbox&class=fallen | Skips the menus into a singleplayer game. `map` is `sandbox` (a small test map) or `pearly-gates` (the dungeon); `class` is `fallen`, `heretic`, `binder` or `betrayer`; add `&seed=N` for a fixed seed. |
 | http://localhost:5173/?dev=1&god=1 | God mode: every player is invulnerable. |
 | http://localhost:5173/?dev=1&bot=1 | A bot plays the local player. |
 | http://localhost:5173/?bench=1 | The benchmark: 1 500 enemies for 30 s, then shows FPS and simulation time. |

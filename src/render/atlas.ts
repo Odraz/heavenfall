@@ -1,5 +1,6 @@
 /** SVG sprites rasterized at load time into one 2048² canvas atlas (§11.1). */
 import * as THREE from 'three';
+import { DECOR_IDS, decorSprite } from '../data/decor';
 
 const sources = import.meta.glob('../../assets/sprites/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 
@@ -12,6 +13,7 @@ const BILLBOARD_SPRITES = new Set([
   'proj-censer', 'proj-orb', 'proj-arrow',
   'feather', 'spark', 'ember',
   'mark', 'chain-ring',
+  ...DECOR_IDS.map(decorSprite),
 ]);
 
 /** A sprite as a data URL, for HUD images. */
@@ -24,7 +26,7 @@ export function spriteUrl(name: string): string {
 export const ATLAS_SIZE = 2048;
 const PAD = 4;
 /** Rasterized height in pixels per sprite; the default is 192. */
-const RASTER_HEIGHT: Record<string, number> = { gatekeeper: 512 };
+const RASTER_HEIGHT: Record<string, number> = { gatekeeper: 512, 'decor-angel-statue': 320, 'decor-fountain': 256, 'decor-candelabrum': 256 };
 const DEFAULT_HEIGHT = 192;
 
 export interface SpriteFrame {

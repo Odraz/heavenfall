@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { DungeonDef } from '../data/dungeons/types';
 import { loadMap, MapError } from './map';
 
-function def(heights: string[], markers: string[], arenas: DungeonDef['arenas'] = []): DungeonDef {
-  return { id: 't', name: 'T', heights, markers, arenas };
+function def(heights: string[], markers: string[], arenas: DungeonDef['arenas'] = [], decor?: DungeonDef['decor']): DungeonDef {
+  return { id: 't', name: 'T', heights, markers, arenas, decor };
 }
 
 const H = ['#######', '#0123a#', '#00z00#', '#######'];
@@ -38,6 +38,14 @@ describe('map loader', () => {
     expect(m.top[0]).toBe(16);
   });
 
+  it('parses decorations', () => {
+    const m = loadMap(def(H, ['.......', '.S.Sh..', '.S.S.u.', '.......'], [], { h: 'harp', u: 'lily-urn' }));
+    expect(m.decorations).toEqual([
+      { id: 'harp', c: 4, r: 1 },
+      { id: 'lily-urn', c: 5, r: 2 },
+    ]);
+  });
+
   it('parses doors and assigns them to arenas', () => {
     const m = loadMap(
       def(H, ['.......', '.S.S.D.', '.S.S...', '.......'], [
@@ -61,6 +69,14 @@ describe('map loader', () => {
   it('rejects an unknown height character', () => expectError(def([H[0], '#0123A#', H[2], H[3]], M), 1, 5));
   it('rejects an unknown marker character', () => expectError(def(H, [M[0], '.S.S.q.', M[2], M[3]]), 1, 5));
   it('rejects a marker on a wall', () => expectError(def(H, ['..x....', M[1], M[2], M[3]]), 0, 2));
+  it('rejects a decoration on a wall', () => expectError(def(H, ['...h...', M[1], M[2], M[3]], [], { h: 'harp' }), 0, 3));
+  it('rejects a decoration key that is a reserved marker character', () => {
+    expectError(def(H, M, [], { S: 'harp' }), 1, 1);
+    expectError(def(H, M, [], { x: 'harp' }), 0, 0);
+  });
+  it('rejects an unknown decoration ID', () => {
+    expectError(def(H, [M[0], '.S.Sq..', M[2], M[3]], [], { q: 'gargoyle' as 'harp' }), 1, 4);
+  });
   it('rejects more than 4 S markers', () => expectError(def(H, [M[0], '.S.SS..', M[2], M[3]]), 2, 3));
   it('rejects fewer than 4 S markers', () => expectError(def(H, [M[0], '.S.....', M[2], M[3]]), 0, 0));
   it('rejects more than one B', () => expectError(def(H, [M[0], '.S.SB..', '.S.S.B.', M[3]]), 2, 5));

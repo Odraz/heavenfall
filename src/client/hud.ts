@@ -9,6 +9,9 @@ const HIT_MARKER_MS = 100;
 const KILL_MARKER_MS = 150;
 const VIGNETTE_MS = 300;
 const SHAKE_MS = 150;
+const JUDGMENT_TEXT_MS = 3000;
+const INTERRUPTED_MS = 1000;
+const JUDGMENT_FLASH_MS = 600;
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, parent: HTMLElement): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -40,6 +43,13 @@ export class Hud {
   private readonly remaining: HTMLDivElement;
   private readonly death: HTMLDivElement;
   private readonly result: HTMLDivElement;
+  private readonly boss: HTMLDivElement;
+  private readonly bossFill: HTMLDivElement;
+  private readonly bossCast: HTMLDivElement;
+  private readonly bossCastFill: HTMLDivElement;
+  private readonly judgment: HTMLDivElement;
+  private readonly judgmentFlash: HTMLDivElement;
+  private judgmentUntil = 0;
   private shotAt = -Infinity;
   private hitAt = -Infinity;
   private killAt = -Infinity;
@@ -81,6 +91,16 @@ export class Hud {
       return { sweep, text, box };
     });
 
+    this.boss = el('div', 'boss', this.root);
+    el('div', 'boss-name', this.boss).textContent = 'The Gatekeeper';
+    this.bossFill = el('div', 'boss-fill', el('div', 'boss-bar', this.boss));
+    this.bossCast = el('div', 'boss-cast', this.boss);
+    this.bossCastFill = el('div', 'boss-cast-fill', this.bossCast);
+    this.boss.hidden = true;
+    this.judgmentFlash = el('div', 'judgment-flash', this.root);
+    this.judgment = el('div', 'judgment-text', this.root);
+    this.judgment.hidden = true;
+
     this.remaining = el('div', 'remaining', this.root);
     this.center = el('div', 'center-text', this.root);
     this.death = el('div', 'death-text', this.root);
@@ -115,6 +135,34 @@ export class Hud {
     if (n !== null) this.remaining.textContent = `Enemies remaining: ${n}`;
   }
 
+  /**
+   * The Gatekeeper's HP bar, shown while `maxHp` > 0, and the Judgment cast bar under it while
+   * `judgment` (progress 0–1) isn't null.
+   */
+  setBoss(hp: number, maxHp: number, judgment: number | null): void {
+    this.boss.hidden = maxHp <= 0;
+    if (maxHp <= 0) return;
+    this.bossFill.style.width = `${Math.max(0, Math.min(1, hp / maxHp)) * 100}%`;
+    this.bossCast.hidden = judgment === null;
+    if (judgment !== null) this.bossCastFill.style.width = `${Math.min(1, judgment) * 100}%`;
+  }
+
+  /** Judgment feedback (§10): the warning for the 3 s cast, then a white flash or "Interrupted!". */
+  judgmentEvent(phase: 'start' | 'interrupted' | 'completed', now: number): void {
+    if (phase === 'start') this.showJudgmentText('JUDGMENT — break line of sight!', JUDGMENT_TEXT_MS, now);
+    else if (phase === 'interrupted') this.showJudgmentText('Interrupted!', INTERRUPTED_MS, now);
+    else {
+      this.judgment.hidden = true;
+      this.fade(this.judgmentFlash, 1, JUDGMENT_FLASH_MS, now);
+    }
+  }
+
+  private showJudgmentText(text: string, ms: number, now: number): void {
+    this.judgment.textContent = text;
+    this.judgment.hidden = false;
+    this.judgmentUntil = now + ms;
+  }
+
   shot(now: number): void {
     this.shotAt = now;
   }
@@ -133,10 +181,13 @@ export class Hud {
 
   /** A screen-edge vignette that fades out over 300 ms. */
   vignette(color: 'red' | 'green' | 'blue', opacity: number, now: number): void {
-    const v = this.vignettes[color];
-    const i = this.fades.findIndex((f) => f.el === v);
+    this.fade(this.vignettes[color], opacity, VIGNETTE_MS, now);
+  }
+
+  private fade(e: HTMLElement, from: number, duration: number, now: number): void {
+    const i = this.fades.findIndex((f) => f.el === e);
     if (i >= 0) this.fades.splice(i, 1);
-    this.fades.push({ el: v, start: now, duration: VIGNETTE_MS, from: opacity });
+    this.fades.push({ el: e, start: now, duration, from });
   }
 
   centerText(text: string, ms: number, now: number): void {
@@ -167,6 +218,7 @@ export class Hud {
     const shaking = now - this.shakeAt < SHAKE_MS;
     this.hpBar.style.transform = shaking ? `translate(${(Math.random() - 0.5) * 8}px, ${(Math.random() - 0.5) * 6}px)` : '';
     if (now > this.centerUntil) this.center.hidden = true;
+    if (now > this.judgmentUntil) this.judgment.hidden = true;
     for (let i = this.fades.length - 1; i >= 0; i--) {
       const f = this.fades[i];
       const t = (now - f.start) / f.duration;
