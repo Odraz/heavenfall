@@ -49,3 +49,13 @@ These work on the dev server (port 5173), the preview server (port 4173) and the
 | http://localhost:5173/?bench=1 | The benchmark: 1 500 enemies for 30 s, then shows FPS and simulation time. |
 
 In game: mouse to look (click to capture the pointer), WASD to move, Space to jump, F3 for the debug overlay. With `dev=1`, K kills every enemy.
+
+### Blessed sprites
+
+The Blessed's animated 8-direction sprites are rendered from a 3D model built in code. To regenerate `assets/sprites/blessed/` after changing [scripts/blender/blessed.py](scripts/blender/blessed.py), run it with Blender 5.2 (about a minute):
+
+```bash
+blender -b --factory-startup -P scripts/blender/blessed.py -- sprites assets/sprites/blessed
+```
+
+`-- sheet walk preview.png` renders one animation as a contact sheet (rows: directions, columns: frames) for checking poses.

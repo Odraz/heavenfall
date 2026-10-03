@@ -709,6 +709,11 @@ The counts give the number of records of each block in that part; blocks follow 
 
 ### 11.1 Rendering
 - **Sprites:** SVG files in `assets/sprites/`, one frame per entity type, rasterized at load time into one 2048² canvas atlas.
+- **Blessed sprites** are the exception: animated, from 8 directions, rendered from a 3D model by `scripts/blender/blessed.py` (Blender 5.2) into `assets/sprites/blessed/` (a PNG atlas and a JSON manifest) and drawn with their own `InstancedMesh`.
+  - Animations: idle (1 frame), walk (8), attack (8), pain (3), death (8). Each frame stores its ground point, which the billboard is anchored at; its height in meters follows from the frame's pixel height at 100 px per meter.
+  - Snapshots carry no facing or animation time, so clients derive them. **Facing:** the direction of the smoothed interpolated movement, or the nearest player while `attacking`. **Direction:** the 45° step nearest the angle between the facing and the camera.
+  - **Frame:** walk advances one cycle per 1.6 m walked, shown while the state is `moving` or `falling` and the smoothed speed is at least 0.4 m/s, otherwise idle. Attack loops over 1 s from when the state became `attacking`, the blow on frame 4 (0.5 s, matching the melee timing in §7.1). The `hurt` flag plays pain over 0.25 s, at most once per 0.7 s.
+  - **Death:** a corpse plays the death animation over 0.8 s, lies still for 3 s, then sinks 0.6 m into the floor over 1 s. At most 1 000 corpses; the oldest vanish first.
 - **Billboards:** enemies, remote players, projectiles and particles are billboards that rotate only around the vertical axis.
   - Bodies' billboards are anchored at the feet; projectile and particle billboards are centered on their position. All are drawn with **one `InstancedMesh`** per material, updated every frame.
   - Billboard height = body height (projectiles: 2 × radius). Width = height × the sprite's aspect ratio.
@@ -731,7 +736,7 @@ The implementing AI creates all art as hand-written SVG.
 - Flat shapes, at most about 40 elements per sprite.
 - A dark outline at least 4% of the sprite's height.
 - Colors from the §1 palette.
-- Front view only, one frame each.
+- Front view only, one frame each (the Blessed: see §11.1).
 - The root `<svg>` element has explicit `width`, `height` and `viewBox` attributes; Firefox can't draw an SVG onto a canvas without them.
 
 **Required sprites**
@@ -805,7 +810,7 @@ These are automated browser tests that click through the real built game the way
 
 ## 14. Out of scope for the MVP
 
-Audio, ultimates, halos and loot, progression and saving, other dungeons and enemy types, overlapping floors, bridges, ceilings, moving platforms, directional or animated sprites, settings screen, gamepad, mobile, reconnecting, joining mid-game, lag compensation, client-side prediction beyond local movement, TURN relay, a self-hosted signaling server, dedicated servers, anti-cheat, chat.
+Audio, ultimates, halos and loot, progression and saving, other dungeons and enemy types, overlapping floors, bridges, ceilings, moving platforms, directional or animated sprites other than the Blessed's, settings screen, gamepad, mobile, reconnecting, joining mid-game, lag compensation, client-side prediction beyond local movement, TURN relay, a self-hosted signaling server, dedicated servers, anti-cheat, chat.
 
 ## 15. Known risks
 

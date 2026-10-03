@@ -4,6 +4,7 @@ import { debugState } from './debug';
 import { getDungeon } from './data/dungeons/index';
 import { parseParams } from './params';
 import { loadMap } from './sim/map';
+import { loadBlessedAnims } from './render/animAtlas';
 import { buildAtlas } from './render/atlas';
 import { Game, type RosterEntry } from './client/game';
 import { HostSession } from './client/hostSession';
@@ -36,13 +37,14 @@ async function bootSingleplayer(): Promise<void> {
   const dungeon = getDungeon(params.mapId)!;
   const map = loadMap(dungeon);
   setLoading('Drawing the sprites…');
-  const atlas = await buildAtlas();
+  const [atlas, blessed] = await Promise.all([buildAtlas(), loadBlessedAnims()]);
   const roster: RosterEntry[] = [{ id: 0, name: 'Dev', classId: params.classId }];
   const seed = params.seed ?? (Math.random() * 2 ** 32) >>> 0;
   const game = new Game({
     root,
     map,
     atlas,
+    blessed,
     params,
     transport: host.local,
     host,

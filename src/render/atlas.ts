@@ -35,6 +35,13 @@ export interface SpriteFrame {
   v1: number;
   /** Width ÷ height. */
   aspect: number;
+  /**
+   * Where the billboard's position sits in the frame, as fractions of its width (from the left)
+   * and height (from the bottom); the default is the bottom center. Set by animated frames,
+   * which are cropped tightly around each pose.
+   */
+  anchorX?: number;
+  anchorY?: number;
 }
 
 export interface Atlas {

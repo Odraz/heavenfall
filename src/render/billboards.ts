@@ -10,7 +10,7 @@ export const MAX_BILLBOARDS = 8192;
 
 const vertexShader = /* glsl */ `
   attribute vec3 iPos;
-  attribute vec3 iSize;
+  attribute vec4 iSize;
   attribute vec4 iUv;
   attribute vec3 iTint;
   attribute vec4 iGlow;
@@ -20,7 +20,8 @@ const vertexShader = /* glsl */ `
   varying vec4 vGlow;
   #include <fog_pars_vertex>
   void main() {
-    vec3 p = iPos + uRight * (position.x * iSize.x) + vec3(0.0, (position.y - iSize.z) * iSize.y, 0.0);
+    // iSize: width, height, and the anchor point within the quad (fractions from the bottom left).
+    vec3 p = iPos + uRight * ((position.x + 0.5 - iSize.z) * iSize.x) + vec3(0.0, (position.y - iSize.w) * iSize.y, 0.0);
     vUv = mix(iUv.xy, iUv.zw, uv);
     vTint = iTint;
     vGlow = iGlow;
@@ -77,7 +78,7 @@ export class Billboards {
       return a;
     };
     this.pos = mk(3);
-    this.size = mk(3);
+    this.size = mk(4);
     this.uv = mk(4);
     this.tint = mk(3);
     this.glow = mk(4);
@@ -104,7 +105,8 @@ export class Billboards {
 
   /**
    * Adds a billboard. (x, y, z) are simulation coordinates: the feet, or the center if `centered`.
-   * `height` is the billboard height in meters; the width follows the sprite's aspect ratio.
+   * `height` is the billboard height in meters; the width follows the sprite's aspect ratio. A frame
+   * with an anchor puts that point at the position instead (`centered` still centers it vertically).
    * The color is multiplied by (tr, tg, tb), then mixed toward `glow` by its amount.
    */
   add(f: SpriteFrame, x: number, y: number, z: number, height: number, centered: boolean, tr = 1, tg = 1, tb = 1, glow: Glow = NO_GLOW): void {
@@ -115,9 +117,10 @@ export class Billboards {
     p[i * 3 + 1] = z;
     p[i * 3 + 2] = y;
     const s = this.size.array as Float32Array;
-    s[i * 3] = height * f.aspect;
-    s[i * 3 + 1] = height;
-    s[i * 3 + 2] = centered ? 0.5 : 0;
+    s[i * 4] = height * f.aspect;
+    s[i * 4 + 1] = height;
+    s[i * 4 + 2] = f.anchorX ?? 0.5;
+    s[i * 4 + 3] = centered ? 0.5 : (f.anchorY ?? 0);
     const u = this.uv.array as Float32Array;
     u[i * 4] = f.u0;
     u[i * 4 + 1] = f.v0;
