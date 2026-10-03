@@ -458,3 +458,234 @@ body {
 .button:hover {
   background: var(--brimstone);
 }
+
+.button:disabled {
+  background: #5a4a44;
+  color: rgba(247, 240, 220, 0.5);
+  cursor: default;
+}
+
+.button.secondary {
+  background: #3a2c27;
+}
+
+.button.secondary:hover {
+  background: #4d3a33;
+}
+
+/* ---------------------------------------------------------------- Menus (§3) */
+
+.menu {
+  gap: 24px;
+  padding: 24px;
+  overflow-y: auto;
+  background:
+    radial-gradient(ellipse 120% 60% at 50% -10%, rgba(243, 198, 75, 0.35), transparent 60%),
+    linear-gradient(#2b3a52 0%, #3a2620 55%, var(--soot) 100%);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px 28px;
+  background: rgba(27, 21, 19, 0.82);
+  border: 3px solid var(--soot);
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px rgba(243, 198, 75, 0.35), 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.title-logo {
+  text-align: center;
+}
+
+.title-logo h1 {
+  margin: 0;
+  font: 800 88px/1 Georgia, serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold);
+  text-shadow: 0 0 24px rgba(243, 198, 75, 0.5), 0 4px 0 var(--soot), 0 6px 12px #000;
+}
+
+.tagline {
+  margin-top: 10px;
+  font: italic 22px/1.2 Georgia, serif;
+  color: var(--brimstone);
+  text-shadow: 0 2px 4px #000;
+}
+
+.title-screen .panel {
+  width: min(380px, 100%);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label,
+.section-label {
+  font: 600 14px/1 'Segoe UI', system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(247, 240, 220, 0.75);
+}
+
+.text-input {
+  padding: 10px 12px;
+  font: 500 20px/1 'Segoe UI', system-ui, sans-serif;
+  color: var(--ivory);
+  background: #120d0c;
+  border: 2px solid #4d3a33;
+  border-radius: 5px;
+  outline: none;
+  user-select: text;
+}
+
+.text-input:focus {
+  border-color: var(--brimstone);
+}
+
+.message {
+  min-height: 1.2em;
+  color: var(--gold);
+  font-size: 16px;
+}
+
+.message:empty {
+  display: none;
+}
+
+.buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.title-screen .buttons,
+.buttons-column {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.version {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  font: 12px/1 Consolas, monospace;
+  color: rgba(247, 240, 220, 0.4);
+}
+
+.screen-title {
+  margin: 0;
+  font: 700 44px/1 Georgia, serif;
+  color: var(--gold);
+  text-shadow: 0 3px 8px #000;
+}
+
+.setup-screen .panel {
+  width: min(960px, 100%);
+}
+
+.class-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.class-card,
+.dungeon-option {
+  font: inherit;
+  color: var(--ivory);
+  background: #241b18;
+  border: 3px solid #3a2c27;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.class-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 12px 16px;
+  text-align: center;
+}
+
+.class-card:hover,
+.dungeon-option:hover {
+  border-color: #6b5047;
+}
+
+.class-card[aria-pressed='true'],
+.dungeon-option[aria-pressed='true'] {
+  border-color: var(--brimstone);
+  background: #3a2620;
+  box-shadow: 0 0 14px rgba(240, 138, 36, 0.45);
+}
+
+.class-portrait {
+  height: 120px;
+  margin-bottom: 4px;
+}
+
+.class-name {
+  font: 700 19px/1.2 Georgia, serif;
+  color: var(--gold);
+}
+
+.class-role {
+  font-size: 14px;
+  color: var(--brimstone);
+}
+
+.class-desc {
+  font-size: 14px;
+  line-height: 1.35;
+  color: rgba(247, 240, 220, 0.8);
+}
+
+.dungeon-picker {
+  display: flex;
+  gap: 12px;
+}
+
+.dungeon-option {
+  padding: 12px 18px;
+  font: 600 18px/1 Georgia, serif;
+}
+
+@media (max-width: 800px) {
+  .class-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---------------------------------------------------------------- Pause (§3) */
+
+.pause-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(18, 12, 10, 0.55);
+  z-index: 60;
+}
+
+.pause-overlay[hidden] {
+  display: none;
+}
+
+.pause-overlay .panel {
+  width: 300px;
+  text-align: center;
+}
+
+.pause-overlay h2 {
+  margin: 0 0 6px;
+  font: 700 36px/1 Georgia, serif;
+  color: var(--gold);
+}

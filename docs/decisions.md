@@ -10,6 +10,11 @@ Choices made where [mvp.md](mvp.md) is silent or ambiguous, one per line (§0).
 - §2.5 — Benchmark 1%-low FPS is 1000 ÷ the average frame time of the slowest 1% of frames (at least one frame) in the 30 s window.
 - §2.5 — Bot: between line-of-sight checks it keeps aiming at the enemy it chose while that enemy is still in the interpolated set; it stops when within 0.2 m of its goal point; when it's in the goal's cell or next to it, it heads straight for the goal point. Its Shadowstep goes in its movement direction, or forward when it stands still.
 - §3 — When the result overlay appears it replaces the death text.
+- §3 — Until milestone 7, Title's `Multiplayer` button stays disabled, since the multiplayer screens don't exist yet.
+- §3 — The player name is saved to `localStorage` (key `heavenfall.name`) on every edit, as typed; the field accepts at most 16 characters, and the trimmed name is used.
+- §3 — The class cards show the class's placeholder player sprite until the portraits arrive (milestone 6). The dungeon picker's only entry is preselected.
+- §3 — Pause doesn't open in the benchmark. `Esc` while Pause is open does nothing; only `Resume` closes it. While Pause is open the local player, bot included, gets no input. In singleplayer the client's clock for interpolation, displayed cooldowns and the local Shadowstep and Falling Star timer stands still while paused, matching the paused simulation.
+- §3 — `Back to title` and `Leave game` end the session (the worker is terminated) and reset the debug object's game fields; at Results they keep their final values. Ending a game also releases its WebGL context, so several games in one page don't pile up contexts.
 - §5.2 — Feet are compared with floors using a 1e-6 m tolerance, so a jump peaking exactly at a ledge height still lands on it.
 - §5.4 — Projectiles test the heightfield with their center point; their radius only enlarges the target cylinders. A projectile removed to make room for a new one (the 400 cap) doesn't explode.
 - §5.6 — Knockback moves the enemy on the 6 ticks after it's applied (20 m/s for 0.2 s). A pulled enemy doesn't act during the 0.3 s pull and shows the rooted flag during it. Slow also slows Cherub strafing.

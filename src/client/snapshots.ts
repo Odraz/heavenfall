@@ -109,6 +109,11 @@ export class SnapshotBuffer {
     this.onComplete(snap, prev);
   }
 
+  /** Moves every arrival time later by `ms`, so time spent with the simulation paused doesn't count. */
+  shiftArrivals(ms: number): void {
+    for (const r of this.ring) r.arrival += ms;
+  }
+
   /** The client's estimate of the current tick (§9.4). */
   estimatedTick(now: number): number {
     const n = this.ring[this.ring.length - 1];

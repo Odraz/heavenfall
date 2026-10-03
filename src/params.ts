@@ -19,8 +19,8 @@ export function parseParams(search: string): Params {
   if (bench) {
     return { dev: false, bench: true, bot: false, god: false, mapId: 'sandbox', classId: 'betrayer', seed: null };
   }
-  // Until milestone 5, opening the page without dev=1 behaves as if dev=1 were set.
-  const dev = true;
+  // Without dev=1 (or bench=1) the page opens the menus.
+  const dev = q.get('dev') === '1';
   const mapParam = q.get('map');
   const mapId = getDungeon(mapParam) ? (mapParam as string) : 'sandbox';
   const classParam = q.get('class');

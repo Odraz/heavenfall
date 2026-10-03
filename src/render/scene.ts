@@ -108,5 +108,7 @@ export class GameScene {
   dispose(): void {
     window.removeEventListener('resize', this.resize);
     this.renderer.dispose();
+    // Release the WebGL context now: a page that plays several games would otherwise pile them up.
+    this.renderer.forceContextLoss();
   }
 }

@@ -22,6 +22,7 @@ import { Particles } from '../render/particles';
 import { GameScene } from '../render/scene';
 import { Vfx } from '../render/vfx';
 import { DebugOverlay } from '../ui/debugOverlay';
+import { PauseOverlay } from '../ui/pause';
 import type { ResultsData } from '../ui/results';
 import { BenchRunner } from './bench';
 import { Bot, type BotEnemy } from './bot';
@@ -70,8 +71,12 @@ export interface GameOptions {
   localPlayerId: number;
   /** Players at `start`, sorted by id. */
   roster: RosterEntry[];
+  /** Singleplayer pauses the simulation while the Pause overlay is open (§3). */
+  singleplayer: boolean;
   /** Called 3 s after the result, when the Results screen should appear. */
   onResults: (data: ResultsData) => void;
+  /** Called when the player clicks `Leave game`, after `leave` was sent. */
+  onLeave: () => void;
 }
 
 export class Game {
@@ -87,6 +92,12 @@ export class Game {
   private readonly player: LocalPlayer;
   private readonly overlay: DebugOverlay;
   private readonly hud: Hud;
+  private readonly pause: PauseOverlay;
+  private paused = false;
+  /** performance.now() when the Pause overlay opened. */
+  private pausedAt = 0;
+  /** Whether pointer lock was held at the previous `pointerlockchange`. */
+  private wasLocked = false;
   private readonly fps = new FpsCounter();
   private readonly snaps: SnapshotBuffer;
   private readonly billboards: Billboards;
@@ -171,10 +182,12 @@ export class Game {
     this.hud.setRemaining(null);
     this.hud.setDeath(null);
     this.overlay = new DebugOverlay(o.root);
+    this.pause = new PauseOverlay(o.root, () => this.resume(), () => this.leave());
 
     this.input = new Input(this.canvas);
     this.input.pointerLockAllowed = !this.params.bot && !this.params.bench;
     this.input.onKey = (code) => this.onKey(code);
+    document.addEventListener('pointerlockchange', this.onPointerLockChange);
 
     const [sc, sr] = this.params.bench ? this.map.arenas[0].entryCells[0] : this.map.spawns[index];
     this.player = new LocalPlayer(sc + 0.5, sr + 0.5, this.map.floor[sr * this.map.w + sc], CLASSES[me.classId].speed);
@@ -203,6 +216,10 @@ export class Game {
   private onKey(code: string): void {
     if (code === 'F3') this.overlay.toggle();
     if (this.over || this.params.bench) return;
+    if (code === 'Escape') {
+      this.openPause();
+      return;
+    }
     // Dev keys work with the bot too: the full solo run test presses K (§13.2).
     if (code === 'KeyK' && this.params.dev && this.o.host) this.o.host.killAll();
     else if (code === 'KeyG' && this.params.dev && this.o.host) this.o.host.toggleGod();
@@ -241,6 +258,58 @@ export class Game {
       p.startDash(dx, dy);
     }
     this.localEReadyAt = now + def.cooldown * 1000;
+  }
+
+  /** Pause opens when pointer lock is lost, before the result (§3). */
+  private readonly onPointerLockChange = (): void => {
+    const locked = this.input.pointerLocked;
+    if (this.wasLocked && !locked) this.openPause();
+    this.wasLocked = locked;
+  };
+
+  /**
+   * Opens the Pause overlay: releases held input and pointer lock and, in singleplayer, pauses the
+   * simulation. It can't open at or after the result, nor in the benchmark.
+   */
+  private openPause(): void {
+    if (this.paused || this.over || this.params.bench || this.disposed) return;
+    this.paused = true;
+    this.pausedAt = performance.now();
+    debugState.paused = true;
+    this.pause.open = true;
+    this.input.release();
+    this.input.enabled = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+    if (this.o.singleplayer) this.o.host?.setPaused(true);
+  }
+
+  private closePause(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    debugState.paused = false;
+    this.pause.open = false;
+    if (this.o.singleplayer) {
+      this.o.host?.setPaused(false);
+      // The simulation stood still, so snapshot times and the local Shadowstep and Falling Star timer
+      // (§9.3) do too.
+      const ms = performance.now() - this.pausedAt;
+      this.localEReadyAt += ms;
+      this.snaps.shiftArrivals(ms);
+    }
+    if (!this.over) this.input.enabled = true;
+  }
+
+  /** `Resume`: closes the overlay and requests pointer lock; the click is the required user gesture. */
+  private resume(): void {
+    this.closePause();
+    if (this.input.pointerLockAllowed) this.input.requestPointerLock();
+  }
+
+  /** `Leave game`: sends `leave` and returns to Title (§3). */
+  private leave(): void {
+    if (this.disposed) return;
+    this.o.transport.sendCtrl({ type: 'leave' });
+    this.o.onLeave();
   }
 
   /** The bot's movement direction this frame, for its Shadowstep. */
@@ -341,6 +410,7 @@ export class Game {
       kills: Object.entries(e.kills).map(([id, kills]) => ({ name: this.o.roster.find((r) => r.id === Number(id))?.name ?? `Player ${id}`, kills })),
     };
     this.hud.showResult(e.result === 'victory' ? 'Victory' : 'Defeat');
+    this.closePause();
     // At the result, pointer lock is released and input stops.
     this.input.release();
     this.input.enabled = false;
@@ -527,8 +597,10 @@ export class Game {
       return;
     }
 
+    // While singleplayer is paused, the simulation's clock stands still at the moment Pause opened.
+    const simNow = this.paused && this.o.singleplayer ? this.pausedAt : now;
     // Enemies at the render time, and their derived heights.
-    const ents = this.snaps.interpolate(now);
+    const ents = this.snaps.interpolate(simNow);
     const enemyZ = this.enemyHeights(ents, dt);
     this.allyTargetId = this.computeAllyTarget();
 
@@ -536,8 +608,8 @@ export class Game {
     let my = 0;
     let wantJump = false;
     let fire = false;
-    if (this.over) {
-      // The result overlay: the game keeps rendering without input.
+    if (this.over || this.paused) {
+      // The result overlay or Pause: the game keeps rendering without input.
     } else if (this.bench) {
       p.yaw += BENCH_TURN_RATE * dt;
       p.pitch = 0;
@@ -639,7 +711,7 @@ export class Game {
     this.drawBillboards(now, ents, enemyZ);
     this.scene.render();
 
-    this.hud.setCooldowns(this.displayedCooldown('Q', now), ABILITIES[this.classId].Q.cooldown, this.displayedCooldown('E', now), ABILITIES[this.classId].E.cooldown);
+    this.hud.setCooldowns(this.displayedCooldown('Q', simNow), ABILITIES[this.classId].Q.cooldown, this.displayedCooldown('E', simNow), ABILITIES[this.classId].E.cooldown);
     this.hud.update(now);
     debugState.fps = this.fps.frame(now);
     debugState.simMs = this.o.host ? this.o.host.simMs(now) : 0;
@@ -815,8 +887,11 @@ export class Game {
   dispose(): void {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
+    document.removeEventListener('pointerlockchange', this.onPointerLockChange);
+    if (document.pointerLockElement) document.exitPointerLock();
     this.input.dispose();
     this.overlay.dispose();
+    this.pause.dispose();
     this.hud.dispose();
     this.bench?.dispose();
     this.scene.dispose();

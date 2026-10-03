@@ -12,7 +12,7 @@ function formatTime(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-/** Shows the Results screen; `onBack` runs when `Back to title` is pressed. */
+/** Builds the Results screen; `onBack` runs when `Back to title` is pressed. */
 export function showResults(data: ResultsData, onBack: () => void): HTMLElement {
   const screen = document.createElement('div');
   screen.className = 'screen results';
@@ -32,6 +32,5 @@ export function showResults(data: ResultsData, onBack: () => void): HTMLElement 
   back.textContent = 'Back to title';
   back.addEventListener('click', onBack);
   screen.append(h1, time, table, back);
-  document.body.appendChild(screen);
   return screen;
 }
