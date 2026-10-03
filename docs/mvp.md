@@ -36,6 +36,8 @@ Units are meters (m), seconds (s), milliseconds (ms) and hit points (HP). KB mea
 - A real 4-player playthrough.
 - Measuring FPS on the target laptop (§12).
 
+**Art checkpoint (milestone 6).** The generated 2D art (§11.2) needs an image generator the agent can't run. Write its prompts in `docs/art-prompts.md`, then stop and ask for the images. The human saves them in `assets/art-src/`, and the agent continues from there.
+
 ---
 
 ## 1. Setting
@@ -95,7 +97,11 @@ src/
   render/          three.js scene, billboards, first-person weapon, VFX
   net/             Transport interface, LocalTransport, PeerTransport, protocol encode/decode
   data/            classes, enemies, dungeons (plain TS data)
-assets/sprites/    SVG source art
+assets/sprites/    world sprites and sprite atlases
+assets/textures/   terrain and effect textures
+assets/ui/         UI images, class portraits and the font
+assets/art-src/    generated source images (Git LFS)
+scripts/blender/   3D models built in code and rendered to atlases
 e2e/               Playwright tests
 ```
 
@@ -188,7 +194,7 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 | Screen | Contents | Actions |
 |---|---|---|
 | **Title** | Game title; **Player name** field (1–16 characters after trimming, remembered in `localStorage`); a message line, empty unless set by a return to Title | `Singleplayer`, `Multiplayer` (both disabled while the name is empty) |
-| **Singleplayer Setup** | Class picker (4 cards: name, role, HP, 1-line description), dungeon picker (1 entry: *The Pearly Gates*) | `Start` (enabled once a class is picked), `Back` |
+| **Singleplayer Setup** | Class picker (4 cards: portrait from milestone 6, name, role, HP, 1-line description), dungeon picker (1 entry: *The Pearly Gates*) | `Start` (enabled once a class is picked), `Back` |
 | **Multiplayer** | — | `Host game`, `Join game`, `Back` |
 | **Host Setup** | Password field (0–32 chars; empty means an open game), dungeon picker | `Create` (registers the game ID, then goes to Lobby; errors shown inline), `Back` |
 | **Join** | Game ID field (6 chars, case-insensitive, normalized to upper case), password field | `Join` (connects, then goes to Lobby; errors shown inline), `Back` |
@@ -462,7 +468,7 @@ The party size is the number of players at `go` (1 in singleplayer). Disconnects
 ## 8. Dungeons and arenas
 
 ### 8.1 Map format
-A dungeon is a TS module in `src/data/dungeons/<id>.ts` exporting **two ASCII grids of equal size** (one character per 1 m cell) plus the arena definitions (§8.2) in order.
+A dungeon is a TS module in `src/data/dungeons/<id>.ts` exporting **two ASCII grids of equal size** (one character per 1 m cell), the arena definitions (§8.2) in order, and a `decor` table (from milestone 6) mapping marker characters to decoration IDs (§11.2).
 
 The grids may be written by hand or produced by small builder helpers in `src/data/dungeons/build.ts`, such as `fillRect`, `stairs`, `pillar` and `marker`. Whichever way, the exported data is the two grids. Large maps are expected to use the helpers.
 
@@ -482,6 +488,9 @@ The grids may be written by hand or produced by small builder helpers in `src/da
 | `D` | Door cell; its height-layer character is its floor height when open |
 | `x` | Enemy spawn point |
 | `B` | Gatekeeper position (at most 1) |
+| a key of `decor` | A decoration. Keys are single characters other than `.`, `S`, `D`, `x` and `B`. |
+
+**Decorations** are only drawn (§11.1). The simulation ignores them: they block nothing and nothing collides with them.
 
 **The loader rejects a map**, with an error naming the row and column, when:
 - the grid is empty or larger than 256 × 256;
@@ -491,7 +500,8 @@ The grids may be written by hand or produced by small builder helpers in `src/da
 - there aren't exactly 4 `S` markers;
 - there's more than one `B`;
 - an arena's `doors` entry isn't a `D` cell;
-- a `D` cell isn't in exactly one arena's `doors`.
+- a `D` cell isn't in exactly one arena's `doors`;
+- a `decor` key is a reserved marker character, or its decoration ID is unknown.
 
 **Level validation.** These rules are checked by unit tests for every shipped map, not at runtime. Reachability is computed from the `S` cells with all doors open, using the flow-field step rules (§7.3: 8 neighbors, no corner cutting, drops allowed) with the given up-step limit.
 - **Ground enemy reach:** cells reachable with up-steps of at most 0.5 m are "enemy-reachable".
@@ -505,6 +515,7 @@ The grids may be written by hand or produced by small builder helpers in `src/da
 - Every cell on the grid's border is a wall, so the edge of the world is always drawn.
 - **Arenas are sealed:** with all doors closed, no floor cell inside an arena's `rect` has a floor cell outside the `rect` among its 8 neighbors.
 - A map has a `B` cell exactly when it has a boss arena (`boss: true`). Only the last arena can be a boss arena, and the `B` cell is inside its `rect`. Every cell overlapped by the Gatekeeper's body placed on `B` is a floor cell at the `B` cell's height.
+- No **large** decoration (§11.2) sits on a player-reachable cell, so nobody walks through one. Large decorations stand on **pedestals**: floor cells more than 1 m above all their neighbors.
 
 ### 8.2 Arenas
 
@@ -545,7 +556,7 @@ The grids may be written by hand or produced by small builder helpers in `src/da
 - **"Enemies remaining" (HUD):** living enemies in the arena plus enemies of the arena's waves not yet spawned. In the boss arena it counts living enemies only, excluding the Gatekeeper.
 
 ### 8.3 The Pearly Gates (values for 4 players)
-Linear layout: Start room → corridor → **Arena 1** → corridor → **Arena 2** → corridor → **Arena 3**. The corridors contain stair runs and the route climbs overall. The start room holds the 4 `S` markers. There are no enemies outside arenas. Each arena has a door on the side it's entered from and, except the boss arena, one on the side it's left from.
+Linear layout: Start room → corridor → **Arena 1** → corridor → **Arena 2** → corridor → **Arena 3**. The corridors contain stair runs and the route climbs overall. The start room holds the 4 `S` markers. There are no enemies outside arenas. Each arena has a door on the side it's entered from and, except the boss arena, one on the side it's left from. From milestone 6, it has decorations: at least 6 in each arena and 2 in the start room and in each corridor.
 
 | Arena | Size | Verticality | Waves |
 |---|---|---|---|
@@ -559,7 +570,8 @@ Linear layout: Start room → corridor → **Arena 1** → corridor → **Arena 
   - stairs;
   - a 2 m terrace;
   - a 1 m ledge whose top is also reachable by stairs;
-  - 8 spawn points.
+  - 8 spawn points;
+  - from milestone 6, one decoration of each type, the large ones on pedestals.
 - One wave (values for 4 players): 1 000 Blessed, 20 Choristers and 20 Cherubs.
 
 ---
@@ -708,39 +720,46 @@ The counts give the number of records of each block in that part; blocks follow 
 ## 11. Rendering and assets
 
 ### 11.1 Rendering
-- **Sprites:** SVG files in `assets/sprites/`, one frame per entity type, rasterized at load time into one 2048² canvas atlas.
-- **Blessed sprites** are the exception: animated, from 8 directions, rendered from a 3D model by `scripts/blender/blessed.py` (Blender 5.2) into `assets/sprites/blessed/` (a PNG atlas and a JSON manifest) and drawn with their own `InstancedMesh`.
-  - Animations: idle (1 frame), walk (8), attack (8), pain (3), death (8). Each frame stores its ground point, which the billboard is anchored at; its height in meters follows from the frame's pixel height at 190 px per meter.
-  - Snapshots carry no facing or animation time, so clients derive them. **Facing:** the direction of the smoothed interpolated movement, or the nearest player while `attacking`. **Direction:** the 45° step nearest the angle between the facing and the camera.
-  - **Frame:** walk advances one cycle per 1.6 m walked, shown while the state is `moving` or `falling` and the smoothed speed is at least 0.4 m/s, otherwise idle. Attack loops over 1 s from when the state became `attacking`, the blow on frame 4 (0.5 s, matching the melee timing in §7.1). The `hurt` flag plays pain over 0.25 s, at most once per 0.7 s.
-  - **Death:** a corpse plays the death animation over 0.8 s, lies still for 3 s, then sinks 0.6 m into the floor over 1 s. At most 1 000 corpses; the oldest vanish first.
-  - **Near fade:** a Blessed or corpse closer than 0.8 m to the camera (horizontally) dissolves in a 4 × 4 dither pattern, linearly down to 30% of its pixels at 0.4 m and closer, so the one pressed against the camera doesn't fill the view.
-- **Billboards:** enemies, remote players, projectiles and particles are billboards that rotate only around the vertical axis.
-  - Bodies' billboards are anchored at the feet; projectile and particle billboards are centered on their position. All are drawn with **one `InstancedMesh`** per material, updated every frame.
-  - Billboard height = body height (projectiles: 2 × radius). Width = height × the sprite's aspect ratio.
+- **Billboards:** characters (enemies and remote players), decorations, projectiles and particles are billboards that rotate only around the vertical axis.
+  - Characters' billboards are anchored at the feet, and decorations' at their cell's center at its floor height; projectile and particle billboards are centered on their position. All are drawn with **one `InstancedMesh`** per material, updated every frame.
+  - Billboard height = body height (projectiles: 2 × radius; decorations: their height, §11.2; character frames: see *Character animation*). Width = height × the sprite's aspect ratio.
   - Status effects (§10) are tinted or glowing through per-instance color attributes.
-- **First-person weapon:** a screen-space sprite at the bottom-center.
+- **Sprite sources:** until milestone 6, the SVG placeholders (§11.2) are rasterized at load time into one 2048² canvas atlas; only the Blessed already use their character atlas. From milestone 6:
+  - each **character atlas** (§11.2) is drawn with its own `InstancedMesh`;
+  - every other world sprite (projectiles, particles, the mark icon, the chain ring and decorations) is packed at load time into one 2048² **world atlas**.
+- **First-person weapon:** a screen-space sprite at the bottom-center. From milestone 6 it comes from the local class's weapon atlas: the idle frame, and on each shot the 4 fire frames over the shorter of the time between shots and 0.3 s, on top of the recoil (§10). The muzzle flash is drawn at the frame's muzzle point.
 - **Terrain:** one merged mesh built from the heightfield:
   - a top quad at each floor cell's height;
   - vertical side quads wherever a neighbor floor is lower;
   - wall columns from the lowest adjacent floor up to 16 m;
   - door cells as separate meshes, shown when closed.
-- **Terrain textures:** two textures generated in code with canvas (no image files): stone tiles for tops, brick for sides and walls.
+- **Terrain textures:** until milestone 6, two textures generated in code with canvas: stone tiles for tops, brick for sides and walls. From milestone 6, four image textures (§11.2): *floor* on tops, *riser* on side quads, *wall* on wall columns and *door* on door meshes. Each repeats every 4 m, aligned to world coordinates so the pattern continues across cells.
 - **Sky:** a gradient dome from pale blue to gold. There is no ceiling.
 - **Particles:** a pool of at most 4 000. When it's full, a new particle replaces the oldest.
-- **Ability and status VFX** (§10) are built in code from simple geometry (rings, lines, spheres, screen overlays) and the particle sprites. Only the mark icon and the chain ring need their own sprites.
+- **Ability and status VFX** (§10) are built in code from simple geometry (rings, lines, spheres, screen overlays) and the particle sprites. Only the mark icon and the chain ring need their own sprites. From milestone 6, the geometry is textured with the effect textures (§11.2) and drawn with additive blending: *ring* for the taunt ring, heal ring and landing shockwave; *beam* for tracers and the mark beam; *chain* tiled along the chain lines; *glow* for the Judgment glow and the censer explosion; *smoke* for the Discord burst.
+
+**Character animation** (every character atlas)
+- Each frame stores its ground point, which the billboard is anchored at; its height in meters follows from the frame's pixel height at the atlas's pixels per meter (§11.2).
+- Snapshots carry no animation time, and no facing for enemies, so clients derive them.
+  - **Facing:** an enemy faces the direction of its smoothed interpolated movement, or the nearest player while its state is `wind-up` or `attacking`. The Gatekeeper always faces the nearest living player. A player faces its `yaw`.
+  - **Direction:** the 45° step nearest the angle between the facing and the camera. An atlas rendered from 5 directions (front, back, and the three between them on one side) draws the other 3 as mirror images.
+- **Walk** (every atlas that has one): shown while the smoothed horizontal speed is at least 0.4 m/s (enemies: and the state is `moving` or `falling`), otherwise idle. One walk cycle per stride: Blessed 1.6 m, Chorister 2.0 m, players 2.5 m.
+- **Attacks and casts:**
+
+| Type | Animation |
+|---|---|
+| Blessed | Attack loops over 1 s from when the state became `attacking`, the blow on frame 4 (0.5 s, matching the melee timing in §7.1). |
+| Chorister | Cast frames 1–6 over the 1.0 s wind-up, holding frame 6; frames 7–8 over 0.25 s from the tick its state is `attacking` (the orb fires). |
+| Cherub | Fly loops every 0.5 s, except during a cast. Cast frames 1–4 over the 0.5 s wind-up, holding frame 4; frames 5–6 over 0.2 s from the tick its state is `attacking`. |
+| Gatekeeper | Volley frames 1–3 over the 0.5 s wind-up (`bossCast` 1), then frame 4 for 0.3 s. Judgment's 4 frames loop every 1 s while `bossCast` is 2. Idle otherwise. |
+
+- **Pain:** the `hurt` flag plays pain over 0.25 s, at most once per 0.7 s. The Gatekeeper has no pain animation.
+- **Death:** a corpse plays the death animation over 0.8 s, lies still for 3 s, then sinks 0.6 m into the floor over 1 s. A Cherub's corpse falls to the ground height under it at 20 m/s² while dying. The Gatekeeper's plays over 1.5 s and stays. At most 1 000 corpses; the oldest vanish first.
+- **Near fade:** a character or corpse closer than 0.8 m to the camera (horizontally) dissolves in a 4 × 4 dither pattern, linearly down to 30% of its pixels at 0.4 m and closer, so the one pressed against the camera doesn't fill the view.
 
 ### 11.2 Assets
-The implementing AI creates all art as hand-written SVG.
 
-**Style rules**
-- Flat shapes, at most about 40 elements per sprite.
-- A dark outline at least 4% of the sprite's height.
-- Colors from the §1 palette.
-- Front view only, one frame each (the Blessed: see §11.1).
-- The root `<svg>` element has explicit `width`, `height` and `viewBox` attributes; Firefox can't draw an SVG onto a canvas without them.
-
-**Required sprites**
+**Placeholder art (milestones 2–5).** The implementing AI draws every sprite in this table as hand-written SVG in `assets/sprites/`. The Blessed have used their character atlas (*Final art*) since milestone 3.
 
 | Group | Sprites |
 |---|---|
@@ -751,6 +770,56 @@ The implementing AI creates all art as hand-written SVG.
 | Particles | feather, spark, ember |
 | Status | mark icon, chain ring |
 | Icons | 8 ability icons, 4 class icons |
+
+- Flat shapes, at most about 40 elements per sprite.
+- A dark outline at least 4% of the sprite's height.
+- Colors from the §1 palette.
+- Front view only, one frame each.
+- The root `<svg>` element has explicit `width`, `height` and `viewBox` attributes; Firefox can't draw an SVG onto a canvas without them.
+
+**Final art (milestone 6)** replaces every placeholder. Each asset comes from one of three sources:
+
+| Source | Assets |
+|---|---|
+| **Blender:** 3D models built in code by scripts in `scripts/blender/` (shared code in `common.py`, one script per model), rendered with Blender 5.2 into a PNG atlas and a JSON manifest per atlas in `assets/sprites/<atlas>/` | Character atlases, first-person weapon atlases, class portraits |
+| **Generated 2D images:** prompts in `docs/art-prompts.md`, images made at the art checkpoint (§0), sources in `assets/art-src/`. The agent cuts them out, crops and sizes them, and makes the textures seamless. | Everything in *Generated 2D assets* |
+| **Font:** Cinzel (SIL Open Font License), bundled as WOFF2 in `assets/ui/` | Headings, buttons and HUD numbers |
+
+- **Look:** Blender renders use toon shading, inverted-hull ink lines and a 2 px outer ink contour, in the §1 colors. Generated images match them, with a render of the Blessed as the style reference.
+- **Backgrounds:** world sprites, HUD sprites and UI images are generated on flat `#00FF00` green and cut out. Effect textures are generated on pure black, which additive blending makes transparent.
+
+**Character atlases**
+
+| Atlas | Pixels per m | Directions | Animations (frames) |
+|---|---|---|---|
+| Blessed | 190 | 8 | idle 1, walk 8, attack 8, pain 3, death 8 |
+| Chorister | 120 | 8 | idle 1, walk 8, cast 8, pain 3, death 8 |
+| Cherub | 160 | 8 | fly 6, cast 6, pain 3, death 8 |
+| Gatekeeper | 64 | 5 | idle 1, volley 4, judgment 4, death 8 |
+| Fallen, Heretic Saint, Binder, Betrayer (one atlas each) | 120 | 8 | idle 1, walk 8 |
+
+Each player model holds its class weapon.
+
+**First-person weapons:** one atlas per class in `assets/sprites/weapon-<classId>/`, rendered from the eye: the class weapon in the class's hands. Frames: idle 1 and fire 4, 600 px tall, each storing its muzzle point. Only the local class's atlas is loaded.
+
+**Class portraits:** each class's idle frame from the front, rendered 512 px tall to `assets/ui/portrait-<classId>.png`, for the class cards (§3).
+
+**Generated 2D assets**
+
+| Group | Assets |
+|---|---|
+| World sprites | projectiles (censer, orb, arrow), particles (feather, spark, ember), mark icon, chain ring |
+| Decorations | candelabrum 1.8 m, lily urn 1.0 m, harp 1.4 m, cloud tuft 1.0 m, angel statue 3.0 m (large), fountain 2.0 m (large) |
+| HUD sprites | muzzle flash, 8 ability icons, 4 class icons |
+| Terrain textures | floor, riser, wall, door; 1024 × 1024, seamless |
+| Effect textures | ring, beam, chain, glow, smoke |
+| UI | title logo, title background, panel, button (normal and hover), bar frame, ability slot frame |
+
+- Decorations are listed in `src/data/decor.ts` with their ID, height and whether they're **large** (§8.1).
+- Panels, buttons and bar frames are 9-slice images (CSS `border-image`), so they stretch to any size.
+- **UI styling:** every screen (§3), the Pause overlay and the HUD (§10) use the panel, button, bar frame and slot frame images and the font. Layout and behavior don't change.
+
+**Budget.** All character and weapon atlases loaded together are at most **56 million pixels** (the Blessed atlas alone is 15.5 million). If they're over, lower the pixels per meter of the largest atlas other than the Blessed and record it in `docs/decisions.md`. The §12 targets still apply with the final art.
 
 ---
 
@@ -779,7 +848,7 @@ Tests live next to the code as `*.test.ts`, use small hand-written test maps, an
 
 | Area | Required checks |
 |---|---|
-| Map loader | Parses heights and markers. Rejects every invalid case in §8.1 with the right row and column. |
+| Map loader | Parses heights, markers and decorations. Rejects every invalid case in §8.1 with the right row and column. |
 | Level validation | Every rule in §8.1 *Level validation* holds for `sandbox` and `pearly-gates`. |
 | Simulation performance | The sandbox with the arena's waves disabled, 4 invulnerable players standing on its entry cells and 1 500 Blessed placed on its spawn points at tick 0, run for 300 ticks, encoding one snapshot per player every tick: average tick of 8 ms or less. Skipped when the `CI` environment variable is set, because shared CI machines have unreliable timing. |
 | Movement | Step-up of 0.5 m is allowed and 0.75 m is blocked. A jump reaches a 1.0 m ledge but not a 1.25 m one, at both 16 ms and 50 ms frames. Walking off a ledge falls and lands. Walls block. A 2 m move in one update doesn't pass through a 1 m wall. A body placed overlapping a wall can move out of it. Ground height uses the highest overlapped non-blocking cell. Movement along x and y is applied separately. |
@@ -805,13 +874,13 @@ These are automated browser tests that click through the real built game the way
 | Singleplayer smoke | For each class, open `?dev=1&map=sandbox&class=<id>&bot=1&god=1&seed=1` and run for 15 s. Checks: `fps > 0`; `enemies > 0` in at least one sample; from milestone 3, the player's `kills > 0` at the end. | 2 (Fallen only); 3 (all 4 classes) |
 | Full solo run | Open `?dev=1&map=pearly-gates&class=fallen&bot=1&god=1&seed=1`. While `arenaPhase` is `combat`, press `K` once per second. Checks: each arena reaches `combat` within 60 s of the previous one being cleared (the first within 60 s of the start); arenas 1 and 2 reach `cleared`; `gameResult` becomes `victory`; `screen` becomes `results`. | 4 |
 | Menus | Using only the UI: on Title enter a name, click `Singleplayer`, pick the Fallen, click `Start`, and wait for `screen = inGame`. Press `Esc`: `paused` is true. Click `Resume`: `paused` is false. Press `Esc` and click `Leave game`: `screen = title`. | 5 |
-| Multiplayer | 4 browser contexts A–D, each opening `?bot=1` (A also with `god=1`), using the real menus. (1) A hosts with password `pw` and reads the game ID. (2) B joins with password `x` and sees `Wrong password`, then joins with `pw`; C and D join. (3) A picks the Fallen; on B's screen the Fallen becomes greyed out and shows A's name. B, C and D pick the Heretic Saint, the Binder and the Betrayer. A clicks `Start`. (4) Everyone reaches `inGame` within 30 s, and A's `arenaPhase` becomes `combat` within 60 s. (5) For 30 s, sampled every 1 s: every client's `lastSnapshotTick` has increased since the previous sample; for each client, its `enemyCountsByTick` at its `lastSnapshotTick` equals A's at the same tick; A's `netOutKBps` is 437 or less. (6) A presses `Esc` and clicks `Leave game`. Every client's `screen` becomes `title` with the message `Host left the game` within 6 s. | 6 |
+| Multiplayer | 4 browser contexts A–D, each opening `?bot=1` (A also with `god=1`), using the real menus. (1) A hosts with password `pw` and reads the game ID. (2) B joins with password `x` and sees `Wrong password`, then joins with `pw`; C and D join. (3) A picks the Fallen; on B's screen the Fallen becomes greyed out and shows A's name. B, C and D pick the Heretic Saint, the Binder and the Betrayer. A clicks `Start`. (4) Everyone reaches `inGame` within 30 s, and A's `arenaPhase` becomes `combat` within 60 s. (5) For 30 s, sampled every 1 s: every client's `lastSnapshotTick` has increased since the previous sample; for each client, its `enemyCountsByTick` at its `lastSnapshotTick` equals A's at the same tick; A's `netOutKBps` is 437 or less. (6) A presses `Esc` and clicks `Leave game`. Every client's `screen` becomes `title` with the message `Host left the game` within 6 s. | 7 |
 
 ---
 
 ## 14. Out of scope for the MVP
 
-Audio, ultimates, halos and loot, progression and saving, other dungeons and enemy types, overlapping floors, bridges, ceilings, moving platforms, directional or animated sprites other than the Blessed's, settings screen, gamepad, mobile, reconnecting, joining mid-game, lag compensation, client-side prediction beyond local movement, TURN relay, a self-hosted signaling server, dedicated servers, anti-cheat, chat.
+Audio, ultimates, halos and loot, progression and saving, other dungeons and enemy types, overlapping floors, bridges, ceilings, moving platforms, decorations that block movement or animate, 3D props, wall decals, player animations other than idle and walk, first-person animations other than firing, settings screen, gamepad, mobile, reconnecting, joining mid-game, lag compensation, client-side prediction beyond local movement, TURN relay, a self-hosted signaling server, dedicated servers, anti-cheat, chat.
 
 ## 15. Known risks
 
@@ -846,15 +915,21 @@ Each milestone is playable, and its tests pass, before the next one starts.
    - The 4 classes: weapons and abilities, and the dev key `G`.
    - Enemy attacks, Choristers, projectiles, the damage pipeline and status effects.
    - Death, respawn and defeat, the result overlay and the Results screen. Until milestone 5, `Back to title` reloads the page.
-   - The HUD and feedback (§10), except the boss items (milestone 4) and the party frames (milestone 6).
-   - All sprites (§11.2).
+   - The HUD and feedback (§10), except the boss items (milestone 4) and the party frames (milestone 7).
+   - The placeholder sprites (§11.2).
 4. **Dungeon**
    - The Pearly Gates map with multiple arenas.
    - The boss arena and the Gatekeeper, with the boss HP bar, the Judgment cast bar and the Judgment feedback.
    - Victory.
    - The full solo run test.
 5. **Menus:** Title, Singleplayer Setup, Loading and Pause, and the menus test.
-6. **Multiplayer:** `PeerTransport`, Host Setup, Join, Lobby, the ready/go handshake, 10 Hz snapshots with splitting and interpolation, client input, teleports over the network, heartbeat, disconnects, the Title messages, party frames and the multiplayer test.
+6. **Art:** the final art (§11.2) replaces every placeholder.
+   - The Blender models and renders: the Chorister, Cherub, Gatekeeper and 4 player atlases, the 4 weapon atlases and the class portraits, with shared code moved from `blessed.py` into `common.py`. Character animation (§11.1) for every atlas, and the animated first-person weapon. The budget (§11.2) is met.
+   - Rewrite `docs/art-prompts.md` for the generated 2D assets, then stop for the art checkpoint (§0). Integrate the images: world and HUD sprites, terrain and effect textures (§11.1), and the UI images and font on every screen built so far.
+   - Decorations: the `decor` table and loader rules (§8.1), the large-decoration validation rule, and decorations in the sandbox and the Pearly Gates (§8.3, §8.4).
+   - Delete the replaced SVG placeholders, and update the README's section on regenerating the sprites.
+   - Rerun `npm run bench` and record the result (§12).
+7. **Multiplayer:** `PeerTransport`, Host Setup, Join, Lobby, the ready/go handshake, 10 Hz snapshots with splitting and interpolation, client input, teleports over the network, heartbeat, disconnects, the Title messages, party frames and the multiplayer test. The new screens and the party frames use the UI images and font (§11.2).
 
 ## 17. Acceptance criteria
 
@@ -865,7 +940,10 @@ Each milestone is playable, and its tests pass, before the next one starts.
   - every feedback item in §10 (short-lived ones may be captured with their durations temporarily increased, without committing that change);
   - every class's Q and E in action;
   - all three Pearly Gates arenas;
-  - the Gatekeeper casting Judgment.
+  - the Gatekeeper casting Judgment;
+  - each enemy type walking, attacking and dying, seen from the front, the side and the back;
+  - each class's first-person weapon firing;
+  - every decoration in place.
 - [ ] The final report lists the decisions from `docs/decisions.md` and the human checkpoints.
 
 **Verified by a human** after handover:
