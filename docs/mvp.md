@@ -468,7 +468,7 @@ The party size is the number of players at `go` (1 in singleplayer). Disconnects
 ## 8. Dungeons and arenas
 
 ### 8.1 Map format
-A dungeon is a TS module in `src/data/dungeons/<id>.ts` exporting **two ASCII grids of equal size** (one character per 1 m cell), the arena definitions (§8.2) in order, and a `decor` table (from milestone 6) mapping marker characters to decoration IDs (§11.2).
+A dungeon is a TS module in `src/data/dungeons/<id>.ts` exporting **two ASCII grids of equal size** (one character per 1 m cell), the arena definitions (§8.2) in order, and a `decor` table mapping marker characters to decoration IDs (§11.2).
 
 The grids may be written by hand or produced by small builder helpers in `src/data/dungeons/build.ts`, such as `fillRect`, `stairs`, `pillar` and `marker`. Whichever way, the exported data is the two grids. Large maps are expected to use the helpers.
 
@@ -515,7 +515,7 @@ The grids may be written by hand or produced by small builder helpers in `src/da
 - Every cell on the grid's border is a wall, so the edge of the world is always drawn.
 - **Arenas are sealed:** with all doors closed, no floor cell inside an arena's `rect` has a floor cell outside the `rect` among its 8 neighbors.
 - A map has a `B` cell exactly when it has a boss arena (`boss: true`). Only the last arena can be a boss arena, and the `B` cell is inside its `rect`. Every cell overlapped by the Gatekeeper's body placed on `B` is a floor cell at the `B` cell's height.
-- No **large** decoration (§11.2) sits on a player-reachable cell, so nobody walks through one. Large decorations stand on **pedestals**: floor cells more than 1 m above all their neighbors.
+- No **large** decoration (§11.2) sits on a player-reachable cell, so nobody walks through one. Large decorations stand on **pedestals**: floor cells raised more than 1 m above the floor around them.
 
 ### 8.2 Arenas
 
@@ -556,13 +556,17 @@ The grids may be written by hand or produced by small builder helpers in `src/da
 - **"Enemies remaining" (HUD):** living enemies in the arena plus enemies of the arena's waves not yet spawned. In the boss arena it counts living enemies only, excluding the Gatekeeper.
 
 ### 8.3 The Pearly Gates (values for 4 players)
-Linear layout: Start room → corridor → **Arena 1** → corridor → **Arena 2** → corridor → **Arena 3**. The corridors contain stair runs and the route climbs overall. The start room holds the 4 `S` markers. There are no enemies outside arenas. Each arena has a door on the side it's entered from and, except the boss arena, one on the side it's left from. From milestone 6, it has decorations: at least 6 in each arena and 2 in the start room and in each corridor.
+Layout: Lobby → corridor → **Arena 1** → corridor → **Arena 2** → corridor → **Arena 3** → corridor → **Arena 4**. The route may turn (an L or snake shape fits the 256 × 256 limit), the corridors contain stair runs, and the route climbs overall.
+- The **Lobby** is a safe start room holding the 4 `S` markers. There are no enemies outside arenas.
+- Each arena has a door on the side it's entered from and, except the boss arena, one on the side it's left from.
+- Each arena introduces one enemy type and one terrain feature, and has its own decorations: at least 6 in each arena and 2 in the Lobby and in each corridor. Large decorations stand on pedestals (§8.1).
 
-| Arena | Size | Verticality | Waves |
-|---|---|---|---|
-| 1. Courtyard of Clouds | ~40 × 40 m | A central terrace 2 m high with stairs on all 4 sides. A 1 m ledge on one side to teach jumping; the top of the ledge is also reachable by stairs. | 200 Blessed; then 300 Blessed + 20 Cherubs |
-| 2. Cloister of Hymns | ~50 × 40 m | A nave at floor level with pillars. Side galleries 3 m high, each reached by 2 staircases. | 300 Blessed + 20 Choristers + 20 Cherubs; then 400 Blessed + 40 Choristers + 30 Cherubs |
-| 3. The Gate (boss) | ~60 × 50 m | Main floor plus side terraces at 1.5 m and 3 m, none touching the dais. The Gatekeeper's dais is 3 m high, at least 6 × 6 m, with no stairs, so the arena's main floor is at most 5.75 m (the highest floor is 8.75 m). At least 6 pillars and the dais edge give cover from Judgment. | 10 Choristers + 10 Cherubs; plus the Gatekeeper and its summons |
+| Arena | Size | Terrain | Decorations | Waves |
+|---|---|---|---|---|
+| 1. Courtyard of Clouds | ~40 × 40 m | A central terrace 2 m high with stairs on all 4 sides. A 1 m ledge on one side to teach jumping; the top of the ledge is also reachable by stairs. | cloud tufts, lily urns | 150 Blessed; then 250 Blessed |
+| 2. The Cloudbridge | ~45 × 40 m | A sunken floor 3 m below the doors, crossed by raised walkways 3 m wide that link the two doors, with at least 3 staircases down into it. Enemies knocked or walking off a walkway fall in and must climb back by the stairs. Spawn points both on the walkways and in the pit. | harps | 250 Blessed + 15 Cherubs; then 350 Blessed + 25 Cherubs |
+| 3. Cloister of Hymns | ~50 × 40 m | A nave at floor level with pillars that block line of sight to the Choristers. Side galleries 3 m high, each reached by 2 staircases. | candelabra | 300 Blessed + 20 Choristers + 20 Cherubs; then 450 Blessed + 40 Choristers + 30 Cherubs |
+| 4. The Gate (boss) | ~60 × 50 m | Main floor plus side terraces at 1.5 m and 3 m, none touching the dais. The Gatekeeper's dais is 3 m high, at least 6 × 6 m, with no stairs, so the arena's main floor is at most 5.75 m (the highest floor is 8.75 m). At least 6 pillars and the dais edge give cover from Judgment. | angel statues, fountains | 10 Choristers + 10 Cherubs; plus the Gatekeeper and its summons |
 
 ### 8.4 Sandbox (dev only)
 - About 48 × 48 m.
@@ -571,7 +575,7 @@ Linear layout: Start room → corridor → **Arena 1** → corridor → **Arena 
   - a 2 m terrace;
   - a 1 m ledge whose top is also reachable by stairs;
   - 8 spawn points;
-  - from milestone 6, one decoration of each type, the large ones on pedestals.
+  - one decoration of each type, the large ones on pedestals.
 - One wave (values for 4 players): 1 000 Blessed, 20 Choristers and 20 Cherubs.
 
 ---
@@ -724,7 +728,7 @@ The counts give the number of records of each block in that part; blocks follow 
   - Characters' billboards are anchored at the feet, and decorations' at their cell's center at its floor height; projectile and particle billboards are centered on their position. All are drawn with **one `InstancedMesh`** per material, updated every frame.
   - Billboard height = body height (projectiles: 2 × radius; decorations: their height, §11.2; character frames: see *Character animation*). Width = height × the sprite's aspect ratio.
   - Status effects (§10) are tinted or glowing through per-instance color attributes.
-- **Sprite sources:** until milestone 6, the SVG placeholders (§11.2) are rasterized at load time into one 2048² canvas atlas; only the Blessed already use their character atlas. From milestone 6:
+- **Sprite sources:** until milestone 6, the SVG placeholders (§11.2), decorations included, are rasterized at load time into one 2048² canvas atlas; only the Blessed already use their character atlas. From milestone 6:
   - each **character atlas** (§11.2) is drawn with its own `InstancedMesh`;
   - every other world sprite (projectiles, particles, the mark icon, the chain ring and decorations) is packed at load time into one 2048² **world atlas**.
 - **First-person weapon:** a screen-space sprite at the bottom-center. From milestone 6 it comes from the local class's weapon atlas: the idle frame, and on each shot the 4 fire frames over the shorter of the time between shots and 0.3 s, on top of the recoil (§10). The muzzle flash is drawn at the frame's muzzle point.
@@ -770,6 +774,7 @@ The counts give the number of records of each block in that part; blocks follow 
 | Particles | feather, spark, ember |
 | Status | mark icon, chain ring |
 | Icons | 8 ability icons, 4 class icons |
+| Decorations (from milestone 4) | the 6 in *Generated 2D assets* |
 
 - Flat shapes, at most about 40 elements per sprite.
 - A dark outline at least 4% of the sprite's height.
@@ -872,7 +877,7 @@ These are automated browser tests that click through the real built game the way
 | Test | Steps and checks | From milestone |
 |---|---|---|
 | Singleplayer smoke | For each class, open `?dev=1&map=sandbox&class=<id>&bot=1&god=1&seed=1` and run for 15 s. Checks: `fps > 0`; `enemies > 0` in at least one sample; from milestone 3, the player's `kills > 0` at the end. | 2 (Fallen only); 3 (all 4 classes) |
-| Full solo run | Open `?dev=1&map=pearly-gates&class=fallen&bot=1&god=1&seed=1`. While `arenaPhase` is `combat`, press `K` once per second. Checks: each arena reaches `combat` within 60 s of the previous one being cleared (the first within 60 s of the start); arenas 1 and 2 reach `cleared`; `gameResult` becomes `victory`; `screen` becomes `results`. | 4 |
+| Full solo run | Open `?dev=1&map=pearly-gates&class=fallen&bot=1&god=1&seed=1`. While `arenaPhase` is `combat`, press `K` once per second. Checks: each arena reaches `combat` within 60 s of the previous one being cleared (the first within 60 s of the start); arenas 1 to 3 reach `cleared`; `gameResult` becomes `victory`; `screen` becomes `results`. | 4 |
 | Menus | Using only the UI: on Title enter a name, click `Singleplayer`, pick the Fallen, click `Start`, and wait for `screen = inGame`. Press `Esc`: `paused` is true. Click `Resume`: `paused` is false. Press `Esc` and click `Leave game`: `screen = title`. | 5 |
 | Multiplayer | 4 browser contexts A–D, each opening `?bot=1` (A also with `god=1`), using the real menus. (1) A hosts with password `pw` and reads the game ID. (2) B joins with password `x` and sees `Wrong password`, then joins with `pw`; C and D join. (3) A picks the Fallen; on B's screen the Fallen becomes greyed out and shows A's name. B, C and D pick the Heretic Saint, the Binder and the Betrayer. A clicks `Start`. (4) Everyone reaches `inGame` within 30 s, and A's `arenaPhase` becomes `combat` within 60 s. (5) For 30 s, sampled every 1 s: every client's `lastSnapshotTick` has increased since the previous sample; for each client, its `enemyCountsByTick` at its `lastSnapshotTick` equals A's at the same tick; A's `netOutKBps` is 437 or less. (6) A presses `Esc` and clicks `Leave game`. Every client's `screen` becomes `title` with the message `Host left the game` within 6 s. | 7 |
 
@@ -918,7 +923,8 @@ Each milestone is playable, and its tests pass, before the next one starts.
    - The HUD and feedback (§10), except the boss items (milestone 4) and the party frames (milestone 7).
    - The placeholder sprites (§11.2).
 4. **Dungeon**
-   - The Pearly Gates map with multiple arenas.
+   - The Pearly Gates map with its Lobby and 4 arenas (§8.3).
+   - Decorations (§8.1) with placeholder sprites, in the sandbox and the Pearly Gates.
    - The boss arena and the Gatekeeper, with the boss HP bar, the Judgment cast bar and the Judgment feedback.
    - Victory.
    - The full solo run test.
@@ -926,7 +932,6 @@ Each milestone is playable, and its tests pass, before the next one starts.
 6. **Art:** the final art (§11.2) replaces every placeholder.
    - The Blender models and renders: the Chorister, Cherub, Gatekeeper and 4 player atlases, the 4 weapon atlases and the class portraits, with shared code moved from `blessed.py` into `common.py`. Character animation (§11.1) for every atlas, and the animated first-person weapon. The budget (§11.2) is met.
    - Rewrite `docs/art-prompts.md` for the generated 2D assets, then stop for the art checkpoint (§0). Integrate the images: world and HUD sprites, terrain and effect textures (§11.1), and the UI images and font on every screen built so far.
-   - Decorations: the `decor` table and loader rules (§8.1), the large-decoration validation rule, and decorations in the sandbox and the Pearly Gates (§8.3, §8.4).
    - Delete the replaced SVG placeholders, and update the README's section on regenerating the sprites.
    - Rerun `npm run bench` and record the result (§12).
 7. **Multiplayer:** `PeerTransport`, Host Setup, Join, Lobby, the ready/go handshake, 10 Hz snapshots with splitting and interpolation, client input, teleports over the network, heartbeat, disconnects, the Title messages, party frames and the multiplayer test. The new screens and the party frames use the UI images and font (§11.2).
@@ -939,7 +944,7 @@ Each milestone is playable, and its tests pass, before the next one starts.
 - [ ] Screenshots show:
   - every feedback item in §10 (short-lived ones may be captured with their durations temporarily increased, without committing that change);
   - every class's Q and E in action;
-  - all three Pearly Gates arenas;
+  - all four Pearly Gates arenas;
   - the Gatekeeper casting Judgment;
   - each enemy type walking, attacking and dying, seen from the front, the side and the back;
   - each class's first-person weapon firing;
