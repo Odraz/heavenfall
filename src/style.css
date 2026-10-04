@@ -223,25 +223,42 @@ body {
 }
 
 /*
- * The 9-slice bar frame (§11.2) around the HP bar and the Gatekeeper's bars: the slices keep
- * the rims and the end ornaments, drawn at about 0.3 of the image's size (--frame-y, --frame-x).
- * The fill is drawn inside it, over the dark trough.
+ * The HP bar and the Gatekeeper's bars are the dark trough the fill runs in. The 9-slice bar
+ * frame (§11.2) is drawn over it, reaching past it by --reach-y and --reach-x, so the trough and
+ * the fill run under the rims and up to the tips of the frame's curved ends. The slices keep the
+ * rims and the end ornaments; --frame-y and --frame-x are their drawn sizes.
  */
 .hp-bar,
 .boss-bar,
 .boss-cast {
   position: relative;
-  background: rgba(27, 21, 19, 0.85) padding-box;
+  margin: var(--reach-y) var(--reach-x);
+  background: rgba(27, 21, 19, 0.85);
+}
+
+.hp-bar::after,
+.boss-bar::after,
+.boss-cast::after {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--reach-y)) calc(-1 * var(--reach-x));
   border-style: solid;
   border-width: var(--frame-y) var(--frame-x);
   border-image: url('../assets/ui/ui-bar-frame.png') 25 120 / var(--frame-y) var(--frame-x) stretch;
-  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Drawn at 0.3 of the image's size: the curved ends' tips are 30 px in, the rims 7 px deep. */
+.hp-bar,
+.boss-bar {
+  --frame-y: 8px;
+  --frame-x: 36px;
+  --reach-y: 7px;
+  --reach-x: 28px;
 }
 
 .hp-bar {
-  --frame-y: 8px;
-  --frame-x: 36px;
-  height: 38px;
+  height: 24px;
 }
 
 .hp-fill {
@@ -396,16 +413,17 @@ body {
 }
 
 .boss-bar {
-  --frame-y: 8px;
-  --frame-x: 36px;
-  height: 34px;
+  height: 20px;
 }
 
+/* Drawn at 0.2 of the image's size. */
 .boss-cast {
   --frame-y: 5px;
   --frame-x: 24px;
-  height: 18px;
-  margin: 6px auto 0;
+  --reach-y: 4px;
+  --reach-x: 19px;
+  height: 10px;
+  margin: calc(6px + var(--reach-y)) auto var(--reach-y);
   width: 70%;
 }
 
