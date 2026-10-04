@@ -1,19 +1,11 @@
-/**
- * Sprites packed at load time into one 2048² canvas atlas (§11.1): the final PNG sprites cut
- * out by scripts/cutout.py (§11.2), and the SVG placeholders still waiting for theirs.
- */
+/** PNG sprites (cut out by scripts/cutout.py, §11.2) packed at load time into one 2048² canvas atlas (§11.1). */
 import * as THREE from 'three';
 import { DECOR_IDS, decorSprite } from '../data/decor';
 
-const svgs = import.meta.glob('../../assets/sprites/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 const pngs = import.meta.glob('../../assets/sprites/*.png', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 
-const spriteName = (path: string) => path.replace(/^.*\//, '').replace(/\.(svg|png)$/, '');
-
-/** Every sprite's image URL by name; a PNG replaces the SVG placeholder of the same name. */
-const sources = new Map<string, { url: string; svg?: string }>();
-for (const [path, svg] of Object.entries(svgs)) sources.set(spriteName(path), { url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, svg });
-for (const [path, url] of Object.entries(pngs)) sources.set(spriteName(path), { url });
+/** Every sprite's image URL by name. */
+const sources = new Map(Object.entries(pngs).map(([path, url]) => [path.replace(/^.*\//, '').replace(/\.png$/, ''), url]));
 
 /** Sprites drawn in the world as billboards; the rest (weapons, muzzle flash, icons) are HUD images. */
 const BILLBOARD_SPRITES = new Set([
@@ -25,15 +17,13 @@ const BILLBOARD_SPRITES = new Set([
 
 /** A sprite's image URL, for HUD images. */
 export function spriteUrl(name: string): string {
-  const source = sources.get(name);
-  if (!source) throw new Error(`Unknown sprite ${name}`);
-  return source.url;
+  const url = sources.get(name);
+  if (!url) throw new Error(`Unknown sprite ${name}`);
+  return url;
 }
 
 export const ATLAS_SIZE = 2048;
 const PAD = 4;
-/** Rasterized height in pixels of an SVG sprite. PNG sprites keep their own size. */
-const SVG_HEIGHT = 192;
 
 export interface SpriteFrame {
   /** UV rectangle: bottom-left (u0, v0) to top-right (u1, v1). */
@@ -58,14 +48,6 @@ export interface Atlas {
   canvas: HTMLCanvasElement;
 }
 
-function svgSize(svg: string): { w: number; h: number } {
-  const root = /<svg\b[^>]*>/.exec(svg)?.[0] ?? '';
-  const w = Number(/\bwidth="([\d.]+)"/.exec(root)?.[1]);
-  const h = Number(/\bheight="([\d.]+)"/.exec(root)?.[1]);
-  if (!(w > 0 && h > 0)) throw new Error('Sprite SVGs need explicit width and height attributes');
-  return { w, h };
-}
-
 async function loadImage(url: string): Promise<HTMLImageElement> {
   const img = new Image();
   img.src = url;
@@ -79,14 +61,13 @@ export async function buildAtlas(): Promise<Atlas> {
   canvas.height = ATLAS_SIZE;
   const ctx = canvas.getContext('2d')!;
   const loaded = await Promise.all(
-    [...sources].filter(([name]) => BILLBOARD_SPRITES.has(name)).map(async ([name, source]) => ({ name, source, img: await loadImage(source.url) })),
+    [...sources].filter(([name]) => BILLBOARD_SPRITES.has(name)).map(async ([name, url]) => ({ name, img: await loadImage(url) })),
   );
   const entries = loaded
-    .map(({ name, source, img }) => {
-      const size = source.svg ? svgSize(source.svg) : { w: img.naturalWidth, h: img.naturalHeight };
-      const ph = source.svg ? SVG_HEIGHT : size.h;
-      const pw = Math.round((ph * size.w) / size.h);
-      return { name, img, pw, ph, aspect: size.w / size.h };
+    .map(({ name, img }) => {
+      const pw = img.naturalWidth;
+      const ph = img.naturalHeight;
+      return { name, img, pw, ph, aspect: pw / ph };
     })
     .sort((a, b) => b.ph - a.ph || a.name.localeCompare(b.name));
 
