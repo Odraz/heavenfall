@@ -1,4 +1,4 @@
-/** The Title and Singleplayer Setup screens (§3). */
+/** The Title, Singleplayer Setup and Loading screens (§3), and helpers shared with the multiplayer screens. */
 import { CLASS_IDS, CLASSES, type ClassId } from '../data/classes';
 import fallenPortrait from '../../assets/ui/portrait-fallen.png';
 import hereticPortrait from '../../assets/ui/portrait-heretic.png';
@@ -37,7 +37,7 @@ function saveName(name: string): void {
   }
 }
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, parent?: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
+export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, parent?: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   if (className) e.className = className;
   if (text !== undefined) e.textContent = text;
@@ -45,7 +45,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, pa
   return e;
 }
 
-function button(label: string, parent: HTMLElement, onClick: () => void, extra = ''): HTMLButtonElement {
+export function button(label: string, parent: HTMLElement, onClick: () => void, extra = ''): HTMLButtonElement {
   const b = el('button', `button ${extra}`.trim(), parent, label);
   b.type = 'button';
   b.addEventListener('click', onClick);
@@ -56,6 +56,7 @@ export interface TitleActions {
   /** The message line, empty unless set by a return to Title; the next button press clears it. */
   message: string;
   onSingleplayer: (name: string) => void;
+  onMultiplayer: (name: string) => void;
 }
 
 export function titleScreen(a: TitleActions): HTMLElement {
@@ -86,13 +87,15 @@ export function titleScreen(a: TitleActions): HTMLElement {
     const name = validName(input.value);
     if (name) a.onSingleplayer(name);
   });
-  // Multiplayer (Host Setup, Join, Lobby) arrives in milestone 7; until then the button stays disabled.
-  const multi = button('Multiplayer', buttons, pressed);
-  multi.disabled = true;
-  multi.title = 'Coming soon';
+  const multi = button('Multiplayer', buttons, () => {
+    pressed();
+    const name = validName(input.value);
+    if (name) a.onMultiplayer(name);
+  });
 
+  // Both are disabled while the name is empty (§3).
   const update = (): void => {
-    single.disabled = validName(input.value) === null;
+    single.disabled = multi.disabled = validName(input.value) === null;
   };
   input.addEventListener('input', () => {
     saveName(input.value);
@@ -102,6 +105,35 @@ export function titleScreen(a: TitleActions): HTMLElement {
   el('div', 'version', screen, `v${__BUILD_VERSION__}`);
   queueMicrotask(() => input.focus());
   return screen;
+}
+
+/** A class card (§3): portrait, name, role, HP and a 1-line description. */
+export function classCard(id: ClassId, parent: HTMLElement): HTMLButtonElement {
+  const c = CLASSES[id];
+  const card = el('button', 'class-card', parent);
+  card.type = 'button';
+  card.dataset.classId = id;
+  card.setAttribute('aria-pressed', 'false');
+  const img = el('img', 'class-portrait', card);
+  img.src = PORTRAITS[id];
+  img.alt = '';
+  el('div', 'class-name', card, c.name);
+  el('div', 'class-role', card, `${c.role} · ${c.hp} HP`);
+  el('div', 'class-desc', card, c.description);
+  return card;
+}
+
+/** The dungeon picker with its only entry preselected; returns that dungeon's id. */
+export function dungeonPicker(panel: HTMLElement): string {
+  el('div', 'section-label', panel, 'Dungeon');
+  const dungeons = el('div', 'dungeon-picker', panel);
+  const dungeonId = MENU_DUNGEONS[0].id;
+  for (const d of MENU_DUNGEONS) {
+    const opt = el('button', 'dungeon-option', dungeons, d.name);
+    opt.type = 'button';
+    opt.setAttribute('aria-pressed', String(d.id === dungeonId));
+  }
+  return dungeonId;
 }
 
 export interface SetupActions {
@@ -119,17 +151,7 @@ export function singleplayerSetupScreen(a: SetupActions): HTMLElement {
   let picked: ClassId | null = null;
   const cardEls = new Map<ClassId, HTMLButtonElement>();
   for (const id of CLASS_IDS) {
-    const c = CLASSES[id];
-    const card = el('button', 'class-card', cards);
-    card.type = 'button';
-    card.dataset.classId = id;
-    card.setAttribute('aria-pressed', 'false');
-    const img = el('img', 'class-portrait', card);
-    img.src = PORTRAITS[id];
-    img.alt = '';
-    el('div', 'class-name', card, c.name);
-    el('div', 'class-role', card, `${c.role} · ${c.hp} HP`);
-    el('div', 'class-desc', card, c.description);
+    const card = classCard(id, cards);
     card.addEventListener('click', () => {
       picked = id;
       for (const [cid, e] of cardEls) e.setAttribute('aria-pressed', String(cid === id));
@@ -138,14 +160,7 @@ export function singleplayerSetupScreen(a: SetupActions): HTMLElement {
     cardEls.set(id, card);
   }
 
-  el('div', 'section-label', panel, 'Dungeon');
-  const dungeons = el('div', 'dungeon-picker', panel);
-  const dungeonId = MENU_DUNGEONS[0].id;
-  for (const d of MENU_DUNGEONS) {
-    const opt = el('button', 'dungeon-option', dungeons, d.name);
-    opt.type = 'button';
-    opt.setAttribute('aria-pressed', String(d.id === dungeonId));
-  }
+  const dungeonId = dungeonPicker(panel);
 
   const buttons = el('div', 'buttons', panel);
   button('Back', buttons, a.onBack, 'secondary');

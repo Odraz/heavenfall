@@ -99,6 +99,30 @@ export class GameScene {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /**
+   * Compiles every material's shaders (in parallel where the browser can) and uploads every texture
+   * in the scene, one per task, so the first frames of the game don't block the page for seconds.
+   */
+  async warmUp(): Promise<void> {
+    await this.renderer.compileAsync(this.scene, this.camera);
+    const textures = new Set<THREE.Texture>();
+    const collect = (v: unknown): void => {
+      if (v instanceof THREE.Texture) textures.add(v);
+    };
+    this.scene.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      for (const mat of Array.isArray(m) ? m : m ? [m] : []) {
+        for (const v of Object.values(mat)) collect(v);
+        const uniforms = (mat as THREE.ShaderMaterial).uniforms;
+        if (uniforms) for (const u of Object.values(uniforms)) collect(u.value);
+      }
+    });
+    for (const t of textures) {
+      this.renderer.initTexture(t);
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  }
+
   /** The WebGL renderer string, for the benchmark report. */
   rendererString(): string {
     const gl = this.renderer.getContext();

@@ -6,6 +6,7 @@ import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, ST_WINDUP } fr
 import { ABILITIES, ALLY_TARGET_ANGLE, WEAPONS } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent } from '../net/messages';
+import type { NetStats } from '../net/netStats';
 import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_MARKED, FLAG_ROOTED, FLAG_SILENCED, PHASE_CLEARED, PHASE_COMBAT, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
@@ -33,6 +34,7 @@ import type { HostSession } from './hostSession';
 import { Hud } from './hud';
 import { Input, MOUSE_SENSITIVITY } from './input';
 import { LocalPlayer, wasdDirection } from './localPlayer';
+import { PartyFrames } from './partyFrames';
 import { PlayerAnimator } from './playerAnim';
 import { SnapshotBuffer } from './snapshots';
 
@@ -75,8 +77,10 @@ export interface GameOptions {
   localPlayerId: number;
   /** Players at `start`, sorted by id. */
   roster: RosterEntry[];
-  /** Singleplayer pauses the simulation while the Pause overlay is open (§3). */
+  /** Singleplayer pauses the simulation while the Pause overlay is open (§3); multiplayer shows party frames. */
   singleplayer: boolean;
+  /** Payload bytes over PeerJS, in multiplayer (§2.5). */
+  net: NetStats | null;
   /** Called 3 s after the result, when the Results screen should appear. */
   onResults: (data: ResultsData) => void;
   /** Called when the player clicks `Leave game`, after `leave` was sent. */
@@ -97,6 +101,7 @@ export class Game {
   private readonly overlay: DebugOverlay;
   private readonly hud: Hud;
   private readonly pause: PauseOverlay;
+  private readonly party: PartyFrames | null;
   private paused = false;
   /** performance.now() when the Pause overlay opened. */
   private pausedAt = 0;
@@ -196,6 +201,7 @@ export class Game {
     this.hud.setHp(this.maxHp, 0, this.maxHp);
     this.hud.setRemaining(null);
     this.hud.setDeath(null);
+    this.party = o.singleplayer ? null : new PartyFrames(this.hud.root);
     this.overlay = new DebugOverlay(o.root);
     this.pause = new PauseOverlay(o.root, () => this.resume(), () => this.leave());
 
@@ -203,6 +209,7 @@ export class Game {
     this.input.pointerLockAllowed = !this.params.bot && !this.params.bench;
     this.input.onKey = (code) => this.onKey(code);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    document.addEventListener('visibilitychange', this.onVisibility);
 
     const [sc, sr] = this.params.bench ? this.map.arenas[0].entryCells[0] : this.map.spawns[index];
     this.player = new LocalPlayer(sc + 0.5, sr + 0.5, this.map.floor[sr * this.map.w + sc], CLASSES[me.classId].speed);
@@ -211,12 +218,16 @@ export class Game {
     this.snaps = new SnapshotBuffer(o.host ? 1.5 : 4.5);
     this.snaps.onComplete = (s, prev) => this.onSnapshot(s, prev);
     o.transport.onSnapshot = (buf) => this.snaps.addPart(buf, performance.now());
-    o.transport.onCtrl = (msg) => this.onCtrl(msg);
 
     this.bot = this.params.bot ? new Bot(this.map) : null;
     this.bench = this.params.bench && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString()) : null;
 
     debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0 }));
+  }
+
+  /** Compiles shaders and uploads textures during Loading, so entering the game doesn't stall. */
+  prepare(): Promise<void> {
+    return this.scene.warmUp();
   }
 
   start(): void {
@@ -327,11 +338,42 @@ export class Game {
     this.o.onLeave();
   }
 
+  private sendInput(): void {
+    const p = this.player;
+    this.o.transport.sendInput(
+      encodeInput({
+        seq: ++this.seq,
+        x: p.body.x,
+        y: p.body.y,
+        z: p.body.z,
+        yaw: p.yaw,
+        pitch: p.pitch,
+        fireHeld: this.fireHeld,
+        qPresses: this.qPresses,
+        ePresses: this.ePresses,
+        allyTargetId: this.allyTargetId,
+        lastTeleportId: this.lastTeleportId,
+      }),
+    );
+  }
+
+  /**
+   * A hidden page draws no frames, so it sends no input either: held fire is released at once, or the
+   * host would keep firing for a player who switched tabs (§4).
+   */
+  private readonly onVisibility = (): void => {
+    if (!document.hidden || this.over || this.disposed || !this.fireHeld) return;
+    this.input.release();
+    this.fireHeld = false;
+    this.sendInput();
+  };
+
   /** The bot's movement direction this frame, for its Shadowstep. */
   private botDir: [number, number] | null = null;
 
-  private onCtrl(msg: CtrlMessage): void {
-    if (msg.type === 'event') this.onEvent(msg.event, performance.now());
+  /** A `ctrl` message from the host; the game handles its events (§9.2). */
+  handleCtrl(msg: CtrlMessage): void {
+    if (msg.type === 'event' && !this.disposed) this.onEvent(msg.event, performance.now());
   }
 
   private onEvent(e: GameEvent, now: number): void {
@@ -507,6 +549,14 @@ export class Game {
       dead: p.dead,
       kills: p.kills,
     }));
+    this.party?.set(
+      s.players
+        .filter((p) => p.id !== this.localId)
+        .flatMap((p) => {
+          const r = this.o.roster.find((q) => q.id === p.id);
+          return r ? [{ id: p.id, name: r.name, classId: r.classId, hp: p.hp, shield: p.shield, dead: p.dead }] : [];
+        }),
+    );
     this.hud.setRemaining(s.arenaPhase === PHASE_COMBAT ? s.enemiesRemaining : null);
     this.hud.setBoss(s.bossHp, s.bossMaxHp, s.bossCast === BOSS_CAST_JUDGMENT ? s.bossCastProgress / 255 : null);
     this.bossCast = s.bossCast;
@@ -621,6 +671,7 @@ export class Game {
     const ents = this.snaps.interpolate(simNow);
     const enemyZ = this.enemyHeights(ents, dt);
     this.allyTargetId = this.computeAllyTarget();
+    this.party?.setAllyTarget(this.allyTargetId);
 
     let mx = 0;
     let my = 0;
@@ -650,7 +701,8 @@ export class Game {
         enemies: be,
         arenaIndex: s?.arenaIndex ?? 0,
         arenaPhase: s?.arenaPhase ?? 0,
-        hostPlayer: null,
+        // A client's bot follows the host's player (§2.5).
+        hostPlayer: this.o.host ? null : (this.snaps.playersOut.find((q) => q.id === 0) ?? null),
         qReady: this.displayedCooldown('Q', now) <= 0,
         eReady: this.displayedCooldown('E', now) <= 0,
         blockedLastFrame: p.moveResult.blocked,
@@ -696,21 +748,7 @@ export class Game {
     this.inputAcc += dt;
     if (this.inputAcc >= TICK_DT && !this.over) {
       this.inputAcc = Math.min(this.inputAcc - TICK_DT, TICK_DT);
-      this.o.transport.sendInput(
-        encodeInput({
-          seq: ++this.seq,
-          x: p.body.x,
-          y: p.body.y,
-          z: p.body.z,
-          yaw: p.yaw,
-          pitch: p.pitch,
-          fireHeld: this.fireHeld,
-          qPresses: this.qPresses,
-          ePresses: this.ePresses,
-          allyTargetId: this.allyTargetId,
-          lastTeleportId: this.lastTeleportId,
-        }),
-      );
+      this.sendInput();
     }
 
     // Bursts whose time has come.
@@ -736,6 +774,8 @@ export class Game {
     this.hud.update(now);
     debugState.fps = this.fps.frame(now);
     debugState.simMs = this.o.host ? this.o.host.simMs(now) : 0;
+    debugState.netInKBps = this.o.net ? this.o.net.inKBps(now) : 0;
+    debugState.netOutKBps = this.o.net ? this.o.net.outKBps(now) : 0;
     this.overlay.position.x = b.x;
     this.overlay.position.y = b.y;
     this.overlay.position.z = b.z;
@@ -919,10 +959,12 @@ export class Game {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
+    document.removeEventListener('visibilitychange', this.onVisibility);
     if (document.pointerLockElement) document.exitPointerLock();
     this.input.dispose();
     this.overlay.dispose();
     this.pause.dispose();
+    this.party?.dispose();
     this.hud.dispose();
     this.bench?.dispose();
     this.scene.dispose();

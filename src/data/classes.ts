@@ -47,6 +47,6 @@ export const CLASSES: Record<ClassId, ClassDef> = {
   },
 };
 
-export function isClassId(s: string | null | undefined): s is ClassId {
+export function isClassId(s: unknown): s is ClassId {
   return s === 'fallen' || s === 'heretic' || s === 'binder' || s === 'betrayer';
 }

@@ -282,6 +282,112 @@ body {
   text-shadow: 0 1px 2px #000, 0 0 6px #000;
 }
 
+/* Party frames (§10), multiplayer only: left, above the own HP bar. */
+.party {
+  position: absolute;
+  left: 24px;
+  top: 30%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 250px;
+}
+
+.party-frame {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  background: rgba(27, 21, 19, 0.55);
+  border: 2px solid transparent;
+  border-radius: 6px;
+}
+
+.party-frame.ally {
+  border-color: var(--gold);
+  background: rgba(120, 90, 20, 0.55);
+  box-shadow: 0 0 12px rgba(243, 198, 75, 0.6);
+}
+
+.party-frame.dead {
+  filter: grayscale(1) brightness(0.7);
+}
+
+.party-icon {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 4px;
+}
+
+.party-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.party-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+  text-shadow: 0 1px 2px #000;
+}
+
+.party-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.party-frame.ally .party-name {
+  color: var(--gold);
+}
+
+.party-status {
+  flex: none;
+  font: 600 14px/1.4 var(--display-font);
+}
+
+/* Drawn at 0.2 of the bar frame's size, like the Judgment cast bar. */
+.party-bar {
+  --frame-y: 5px;
+  --frame-x: 24px;
+  --reach-y: 4px;
+  --reach-x: 19px;
+  position: relative;
+  height: 10px;
+  margin: var(--reach-y) var(--reach-x);
+  background: rgba(27, 21, 19, 0.85);
+}
+
+.party-bar::after {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--reach-y)) calc(-1 * var(--reach-x));
+  border-style: solid;
+  border-width: var(--frame-y) var(--frame-x);
+  border-image: url('../assets/ui/ui-bar-frame.png') 25 120 / var(--frame-y) var(--frame-x) stretch;
+  pointer-events: none;
+}
+
+.party-hp,
+.party-shield {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.party-hp {
+  left: 0;
+  background: linear-gradient(var(--brimstone), var(--ember));
+}
+
+.party-shield {
+  background: linear-gradient(#9fd2ff, #3b8fe0);
+}
+
 .weapon {
   position: absolute;
   bottom: 0;
@@ -529,6 +635,8 @@ body {
 /* ---------------------------------------------------------------- Menus (§3) */
 
 .menu {
+  /* Taller than the window: scroll from the top instead of cutting off both ends. */
+  justify-content: safe center;
   gap: 24px;
   padding: 24px;
   overflow-y: auto;
@@ -709,6 +817,147 @@ body {
 .dungeon-option {
   padding: 12px 18px;
   font: 600 18px/1 var(--display-font);
+}
+
+/* ---------------------------------------------------------------- Multiplayer menus (§3) */
+
+.multiplayer-screen .panel {
+  width: min(380px, 100%);
+}
+
+.form-screen .panel {
+  width: min(460px, 100%);
+}
+
+.field-hint {
+  margin-top: -6px;
+  font-size: 14px;
+  color: rgba(247, 240, 220, 0.65);
+}
+
+.message.error {
+  color: #ff8a6a;
+}
+
+.text-input:disabled {
+  opacity: 0.6;
+}
+
+.game-id-input {
+  font-family: Consolas, monospace;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.lobby-screen {
+  gap: 10px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.lobby-screen .screen-title {
+  font-size: 36px;
+}
+
+.lobby-screen .panel {
+  width: min(960px, 100%);
+  gap: 10px;
+}
+
+.lobby-screen .class-card {
+  padding: 10px 10px 12px;
+  gap: 4px;
+}
+
+.lobby-screen .class-portrait {
+  height: 72px;
+}
+
+.game-id-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.game-id-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.game-id {
+  font: 700 40px/1 Consolas, monospace;
+  letter-spacing: 0.25em;
+  color: var(--gold);
+  text-shadow: 0 2px 6px #000;
+  user-select: text;
+}
+
+.lobby-dungeon {
+  font: 600 20px/1.2 var(--display-font);
+  color: var(--brimstone);
+}
+
+.lobby-slots {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.lobby-slot {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #241b18;
+  border: 2px solid #3a2c27;
+  border-radius: 6px;
+}
+
+.lobby-slot.me {
+  border-color: var(--brimstone);
+}
+
+.lobby-slot.empty {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.slot-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.slot-tag {
+  padding: 1px 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--soot);
+  background: var(--gold);
+  border-radius: 3px;
+}
+
+.slot-class {
+  margin-left: auto;
+  font: 600 15px/1.2 var(--display-font);
+  color: rgba(247, 240, 220, 0.8);
+}
+
+.class-card:disabled {
+  cursor: default;
+  filter: grayscale(1) brightness(0.6);
+}
+
+.class-taken:empty {
+  display: none;
+}
+
+.class-taken {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gold);
 }
 
 @media (max-width: 800px) {

@@ -107,11 +107,16 @@ export interface SimPlayerInit {
   id: number;
   name: string;
   classId: ClassId;
+  /**
+   * False for a player listed in `start` who left or was dropped during Loading: it keeps its index
+   * (§3) but takes no part in the game. Default true.
+   */
+  connected?: boolean;
 }
 
 export interface SimOptions {
   dungeon: DungeonDef;
-  /** Players at `go`; sorted by id internally. */
+  /** Players at `start`, sorted by id internally; their index is their position (§3). */
   players: SimPlayerInit[];
   seed: number;
   /** Every player is invulnerable (`god=1`). */
@@ -429,7 +434,8 @@ export class Simulation {
     this.singleplayer = !!opts.singleplayer;
     this.random = mulberry32(opts.seed);
     const sorted = [...opts.players].sort((a, b) => a.id - b.id);
-    this.partySize = Math.max(1, sorted.length);
+    // The party size is the number of players at `go` (§7.5).
+    this.partySize = Math.max(1, sorted.filter((p) => p.connected !== false).length);
     this.players = sorted.map((p, index) => {
       const cls = CLASSES[p.classId];
       const [c, r] = this.bench ? this.map.arenas[0].entryCells[0] : this.map.spawns[index];
@@ -444,7 +450,7 @@ export class Simulation {
         shield: 0,
         shieldUntil: 0,
         dead: false,
-        connected: true,
+        connected: p.connected !== false,
         god: !!opts.god || this.bench,
         devGod: false,
         invulUntil: 0,
@@ -575,6 +581,21 @@ export class Simulation {
     p.teleportId = (p.teleportId + 1) & 0xffff;
     p.lastAcceptMs = this.nowMs;
     this.events.push({ to: p.id, event: { type: 'teleport', teleportId: p.teleportId, x, y, z } });
+  }
+
+  /**
+   * A player left or timed out (§9.4): their player is removed and the game continues. Enemies
+   * retarget at once, and the run is a defeat if every player still connected is dead.
+   */
+  disconnect(playerId: number): void {
+    const p = this.playerById(playerId);
+    if (!p || !p.connected) return;
+    p.connected = false;
+    p.fireHeld = false;
+    p.pendingQ = false;
+    p.pendingE = false;
+    p.landingTick = -1;
+    if (!this.result) this.checkDefeat();
   }
 
   /** Dev key G: toggles invulnerability for one player. */

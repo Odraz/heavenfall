@@ -30,8 +30,9 @@ export class LocalTransport implements Transport {
     this.worker.postMessage({ t: 'input', playerId: this.playerId, buf }, [buf]);
   }
 
-  sendCtrl(_msg: CtrlMessage): void {
-    // The lobby and handshake messages arrive with multiplayer (milestone 6).
+  /** The same `ctrl` messages as a remote client's, without serialization (§9.2). */
+  sendCtrl(msg: CtrlMessage): void {
+    this.worker.postMessage({ t: 'ctrl', playerId: this.playerId, msg });
   }
 
   /** Delivers a snapshot part from the worker. */
