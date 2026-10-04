@@ -21,7 +21,7 @@ Save every image as PNG with exactly this name. Part A goes in `assets/art-src/r
 - [x] A3 Weapon sheets: `weapon-shotgun-sheet.png`, `weapon-censer-sheet.png`, `weapon-chaingun-sheet.png`, `weapon-revolver-sheet.png`
 
 **Part B: game assets** (`assets/art-src/`)
-- [ ] B1 World sprites: `proj-censer.png`, `proj-orb.png`, `proj-arrow.png`, `feather.png`, `spark.png`, `ember.png`, `mark.png`, `chain-ring.png`
+- [x] B1 World sprites: `proj-censer.png`, `proj-orb.png`, `proj-arrow.png`, `feather.png`, `spark.png`, `ember.png`, `mark.png`, `chain-ring.png`
 - [ ] B2 Decorations: `decor-candelabrum.png`, `decor-lily-urn.png`, `decor-harp.png`, `decor-cloud-tuft.png`, `decor-angel-statue.png`, `decor-fountain.png`
 - [ ] B3 HUD: `muzzle-flash.png`, `icon-blasphemy.png`, `icon-falling-star.png`, `icon-communion.png`, `icon-shroud.png`, `icon-chains.png`, `icon-discord.png`, `icon-kiss.png`, `icon-shadowstep.png`, `class-fallen.png`, `class-heretic.png`, `class-binder.png`, `class-betrayer.png`
 - [ ] B4 Terrain textures: `tex-floor.png`, `tex-riser.png`, `tex-wall.png`, `tex-door.png`

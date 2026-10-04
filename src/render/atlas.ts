@@ -1,10 +1,19 @@
-/** SVG sprites rasterized at load time into one 2048² canvas atlas (§11.1). */
+/**
+ * Sprites packed at load time into one 2048² canvas atlas (§11.1): the final PNG sprites cut
+ * out by scripts/cutout.py (§11.2), and the SVG placeholders still waiting for theirs.
+ */
 import * as THREE from 'three';
 import { DECOR_IDS, decorSprite } from '../data/decor';
 
-const sources = import.meta.glob('../../assets/sprites/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const svgs = import.meta.glob('../../assets/sprites/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const pngs = import.meta.glob('../../assets/sprites/*.png', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 
-const spriteName = (path: string) => path.replace(/^.*\//, '').replace(/\.svg$/, '');
+const spriteName = (path: string) => path.replace(/^.*\//, '').replace(/\.(svg|png)$/, '');
+
+/** Every sprite's image URL by name; a PNG replaces the SVG placeholder of the same name. */
+const sources = new Map<string, { url: string; svg?: string }>();
+for (const [path, svg] of Object.entries(svgs)) sources.set(spriteName(path), { url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, svg });
+for (const [path, url] of Object.entries(pngs)) sources.set(spriteName(path), { url });
 
 /** Sprites drawn in the world as billboards; the rest (weapons, muzzle flash, icons) are HUD images. */
 const BILLBOARD_SPRITES = new Set([
@@ -14,16 +23,16 @@ const BILLBOARD_SPRITES = new Set([
   ...DECOR_IDS.map(decorSprite),
 ]);
 
-/** A sprite as a data URL, for HUD images. */
+/** A sprite's image URL, for HUD images. */
 export function spriteUrl(name: string): string {
-  const entry = Object.entries(sources).find(([path]) => spriteName(path) === name);
-  if (!entry) throw new Error(`Unknown sprite ${name}`);
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(entry[1])}`;
+  const source = sources.get(name);
+  if (!source) throw new Error(`Unknown sprite ${name}`);
+  return source.url;
 }
 
 export const ATLAS_SIZE = 2048;
 const PAD = 4;
-/** Rasterized height in pixels per sprite; the default is 192. */
+/** Rasterized height in pixels per SVG sprite; the default is 192. PNG sprites keep their own size. */
 const RASTER_HEIGHT: Record<string, number> = { 'decor-angel-statue': 320, 'decor-fountain': 256, 'decor-candelabrum': 256 };
 const DEFAULT_HEIGHT = 192;
 
@@ -58,9 +67,9 @@ function svgSize(svg: string): { w: number; h: number } {
   return { w, h };
 }
 
-async function rasterize(svg: string): Promise<HTMLImageElement> {
+async function loadImage(url: string): Promise<HTMLImageElement> {
   const img = new Image();
-  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  img.src = url;
   await img.decode();
   return img;
 }
@@ -70,14 +79,15 @@ export async function buildAtlas(): Promise<Atlas> {
   canvas.width = ATLAS_SIZE;
   canvas.height = ATLAS_SIZE;
   const ctx = canvas.getContext('2d')!;
-  const entries = Object.entries(sources)
-    .filter(([path]) => BILLBOARD_SPRITES.has(spriteName(path)))
-    .map(([path, svg]) => {
-      const name = spriteName(path);
-      const size = svgSize(svg);
-      const ph = RASTER_HEIGHT[name] ?? DEFAULT_HEIGHT;
+  const loaded = await Promise.all(
+    [...sources].filter(([name]) => BILLBOARD_SPRITES.has(name)).map(async ([name, source]) => ({ name, source, img: await loadImage(source.url) })),
+  );
+  const entries = loaded
+    .map(({ name, source, img }) => {
+      const size = source.svg ? svgSize(source.svg) : { w: img.naturalWidth, h: img.naturalHeight };
+      const ph = source.svg ? (RASTER_HEIGHT[name] ?? DEFAULT_HEIGHT) : size.h;
       const pw = Math.round((ph * size.w) / size.h);
-      return { name, svg, pw, ph, aspect: size.w / size.h };
+      return { name, img, pw, ph, aspect: size.w / size.h };
     })
     .sort((a, b) => b.ph - a.ph || a.name.localeCompare(b.name));
 
@@ -93,8 +103,7 @@ export async function buildAtlas(): Promise<Atlas> {
       shelf = 0;
     }
     if (y + e.ph + PAD > ATLAS_SIZE) throw new Error('Sprite atlas is full');
-    const img = await rasterize(e.svg);
-    ctx.drawImage(img, x, y, e.pw, e.ph);
+    ctx.drawImage(e.img, x, y, e.pw, e.ph);
     frames[e.name] = {
       u0: x / ATLAS_SIZE,
       u1: (x + e.pw) / ATLAS_SIZE,
