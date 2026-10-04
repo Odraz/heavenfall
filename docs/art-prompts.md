@@ -343,8 +343,9 @@ Attach to each: `concept-1.webp`, `concept-3.webp`
 
 #### Logo — `ui-logo.png` · 21:9
 ```text
-The game logo: the word "HEAVENFALL" in tall, sharp classical Roman capital letters like those carved in stone, the letters made of polished gold that is charred black and cracked at the edges with glowing ember-orange fissures, a broken golden halo ring behind the middle of the word, a few embers rising. Hand-inked graphic-novel style matching the attached images: bold black ink outline around the whole logo, cel shading with painterly brush texture. Spelled exactly HEAVENFALL, no other text. Centered. Isolated on a flat pure green (#00FF00) background: no soft glow or smoke outside the outline. Aspect ratio 21:9.
+The game logo: the word "HEAVENFALL" in tall, sharp classical Roman capital letters like those carved in stone, the letters made of polished gold that is charred black and cracked at the edges with glowing ember-orange fissures, a few embers rising. Hand-inked graphic-novel style matching the attached images: bold black ink outline around the whole logo, cel shading with painterly brush texture. Spelled exactly HEAVENFALL, no other text. Wide letter spacing suitable for headline. Centered. Isolated on a flat pure green (#00FF00) background: no soft glow or smoke outside the outline. Aspect ratio 21:9.
 ```
+Gemini still draws the letters touching; `scripts/cutout.py` spaces them out (and drops the floating embers).
 
 #### Title background — `ui-title-bg.png` · 16:9
 The full-screen image behind the Title and menus. The menu panel sits on the left, so the left third is calm.

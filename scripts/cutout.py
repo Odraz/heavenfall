@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / 'assets' / 'art-src'
@@ -98,7 +98,7 @@ MARGIN = 2
 # UI images: output height in pixels and margin. The frames are 9-slice images (CSS
 # border-image): about twice the size they're drawn at, for high-DPI screens.
 UI = {
-    'ui-logo': (480, MARGIN),
+    'ui-logo': (320, MARGIN),
     'ui-panel': (512, 0),
     'ui-button': (192, 0),
     'ui-button-hover': (192, 0),
@@ -109,6 +109,10 @@ UI = {
 # Frames whose inside must be empty (the generated green inside can be uneven or smudged):
 # everything within the rim's inner edge, found scanning out from the center, is cleared.
 HOLLOW = {'ui-slot-frame', 'ui-bar-frame'}
+
+# Lettering whose letters touch (the image generator won't space the logo's letters): the
+# number of letters and the gap to add between them, as a fraction of the lettering's height.
+SPACED = {'ui-logo': (10, 0.1)}
 
 # Full-frame paintings: output width in pixels.
 BACKGROUNDS = {
@@ -148,6 +152,9 @@ def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN) ->
     spill = bg_share > 0 if name in HAS_GREEN else np.full(alpha.shape, True)
     color[..., 1] = np.where(spill, np.minimum(color[..., 1], np.maximum(color[..., 0], color[..., 2])), color[..., 1])
 
+    if name in SPACED:
+        color, alpha = space_letters(color, alpha, *SPACED[name])
+
     if name in HOLLOW:
         h, w = alpha.shape
         cy, cx = h // 2, w // 2
@@ -176,6 +183,78 @@ def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN) ->
     out.paste(img, (margin, margin))
     out.save(out_dir / f'{name}.png', optimize=True)
     print(f'{name}: {out.width}x{out.height}')
+
+
+def space_letters(color: np.ndarray, alpha: np.ndarray, letters: int, gap: float) -> tuple[np.ndarray, np.ndarray]:
+    """Moves touching letters apart and redraws the ink outline around them.
+
+    Specks floating free of the letters (the logo's embers) are dropped: a few pixels each,
+    their color is mostly the green they were mixed with.
+
+    The cuts are the cheapest top-to-bottom paths through the lettering: through transparent
+    pixels and the dark outline rather than the bright letters, wandering sideways at a small
+    cost. Of their ends, the letters - 1 cheapest that are well apart are used.
+    """
+    h, w = alpha.shape
+    solid = Image.fromarray(((alpha >= 0.5) * 255).astype(np.uint8)).copy()  # writable, for floodfill
+    body = np.nonzero((alpha >= 0.5).sum(axis=1) > 0.15 * (alpha >= 0.5).sum(axis=1).max())[0]
+    mid = (body[0] + body[-1]) // 2
+    for x in range(w):
+        if solid.getpixel((x, mid)) == 255:
+            ImageDraw.floodfill(solid, (x, mid), 128)
+    # Keep only what's at or near the letters, so the specks' soft edges go too.
+    letters_mask = Image.fromarray(((np.asarray(solid) == 128) * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(7))
+    alpha = np.where(np.asarray(letters_mask) > 0, alpha, 0)
+
+    cost = alpha * (0.05 + color.max(axis=2) / 255)
+    move = 0.08
+    total = cost[0].copy()
+    step = np.zeros((h, w), dtype=np.int8)
+    for y in range(1, h):
+        options = np.stack([np.r_[np.inf, total[:-1]] + move, total, np.r_[total[1:], np.inf] + move])
+        choice = options.argmin(axis=0)
+        step[y] = choice - 1
+        total = options.min(axis=0) + cost[y]
+
+    xs = np.nonzero((alpha >= 0.5).any(axis=0))[0]
+    spacing = (xs[-1] - xs[0]) / letters
+    window = round(spacing / 4)
+    ends = [x for x in range(xs[0] + window, xs[-1] - window) if total[x] == total[x - window:x + window + 1].min()]
+    cuts: list[int] = []
+    for x in sorted(ends, key=lambda x: total[x]):
+        if all(abs(x - c) >= 0.45 * spacing for c in cuts):
+            cuts.append(x)
+        if len(cuts) == letters - 1:
+            break
+    paths = []
+    for x in sorted(cuts):
+        path = np.empty(h, dtype=int)
+        for y in range(h - 1, -1, -1):
+            path[y] = x
+            x += int(step[y, x])
+        paths.append(path)
+
+    # Each letter is what lies between its two cuts; letter i moves right by i gaps.
+    rows = np.arange(h)[:, None]
+    cols = np.arange(w)[None, :]
+    letter = sum((cols >= p[:, None]).astype(int) for p in paths)
+    shift = round(gap * np.ptp(np.nonzero((alpha >= 0.5).any(axis=1))[0]))
+    out_w = w + (letters - 1) * shift
+    out_color = np.zeros((h, out_w, 3), dtype=np.float32)
+    out_alpha = np.zeros((h, out_w), dtype=np.float32)
+    dest = cols + letter * shift
+    out_color[rows, dest] = color
+    out_alpha[rows, dest] = alpha
+
+    # The cuts left edges without ink: draw an outline around everything, under the letters.
+    radius = max(1, round(h / 150))
+    ink = np.asarray(Image.fromarray((out_alpha * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(2 * radius + 1))).astype(np.float32) / 255
+    ink_color = np.array([18, 12, 10], dtype=np.float32)
+    a = out_alpha[..., None]
+    combined = a + ink[..., None] * (1 - a)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        out_color = np.nan_to_num((out_color * a + ink_color * ink[..., None] * (1 - a)) / combined)
+    return out_color, combined[..., 0]
 
 
 def icon(name: str, size: int) -> None:
