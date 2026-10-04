@@ -2,6 +2,7 @@
 import type { ClassId } from '../data/classes';
 import { ABILITIES, WEAPONS } from '../data/weapons';
 import { spriteUrl } from '../render/atlas';
+import { fireFrame, weaponAtlas, type WeaponManifest } from '../render/weaponAtlas';
 
 const RECOIL_MS = 120;
 const FLASH_MS = 60;
@@ -33,8 +34,13 @@ export class Hud {
   private readonly hpFill: HTMLDivElement;
   private readonly shieldFill: HTMLDivElement;
   private readonly hpText: HTMLDivElement;
-  private readonly weapon: HTMLImageElement;
+  /** The weapon and its muzzle flash, moved together by the recoil. */
+  private readonly weaponBox: HTMLDivElement;
+  private readonly weapon: HTMLDivElement;
   private readonly flash: HTMLImageElement;
+  private readonly weaponManifest: WeaponManifest;
+  private readonly fireIntervalMs: number;
+  private weaponFrame = -2;
   private readonly abilities: Array<{ sweep: HTMLDivElement; text: HTMLDivElement; box: HTMLDivElement }>;
   private readonly hitMarker: HTMLDivElement;
   private readonly killMarker: HTMLDivElement;
@@ -74,11 +80,22 @@ export class Hud {
     this.shieldFill = el('div', 'shield-fill', this.hpBar);
     this.hpText = el('div', 'hp-text', hp);
 
-    const weapon = el('div', 'weapon', this.root);
-    this.flash = el('img', 'muzzle-flash', weapon);
+    // The weapon frame covers the bottom half of the screen (600 px = 50vh), placed so its
+    // screen-center column lies on the screen's center line (§11.1).
+    const wa = weaponAtlas(classId);
+    const m = wa.manifest;
+    const vh = (px: number) => `${(px / m.frameH) * 50}vh`;
+    this.weaponManifest = m;
+    this.fireIntervalMs = WEAPONS[classId].interval * 1000;
+    this.weaponBox = el('div', 'weapon', this.root);
+    this.weaponBox.style.left = `calc(50% - ${vh(m.centerX)})`;
+    this.weaponBox.style.width = vh(m.frameW);
+    this.weapon = el('div', 'weapon-sprite', this.weaponBox);
+    this.weapon.style.backgroundImage = `url(${wa.url})`;
+    this.weapon.style.backgroundSize = `${vh(m.width)} ${vh(m.height)}`;
+    this.flash = el('img', 'muzzle-flash', this.weaponBox);
     this.flash.src = spriteUrl('muzzle-flash');
-    this.weapon = el('img', 'weapon-sprite', weapon);
-    this.weapon.src = spriteUrl(WEAPONS[classId].sprite);
+    this.setWeaponFrame(-1);
 
     const abil = el('div', 'abilities', this.root);
     this.abilities = (['Q', 'E'] as const).map((key) => {
@@ -207,12 +224,24 @@ export class Hud {
     this.result.hidden = false;
   }
 
+  /** Shows fire frame `f` (0–3), or the idle frame for -1, with the flash at its muzzle. */
+  private setWeaponFrame(f: number): void {
+    if (f === this.weaponFrame) return;
+    this.weaponFrame = f;
+    const m = this.weaponManifest;
+    const [x, y, mx, my] = f < 0 ? m.idle[0] : m.fire[f];
+    const vh = (px: number) => `${(px / m.frameH) * 50}vh`;
+    this.weapon.style.backgroundPosition = `-${vh(x)} -${vh(y)}`;
+    this.flash.style.left = vh(mx);
+    this.flash.style.top = vh(my);
+  }
+
   update(now: number): void {
     // Recoil: 8% of the screen height, recovering over 120 ms.
     const r = Math.max(0, 1 - (now - this.shotAt) / RECOIL_MS);
-    this.weapon.style.transform = `translateY(${r * 8}vh)`;
+    this.weaponBox.style.transform = `translateY(${r * 8}vh)`;
+    this.setWeaponFrame(fireFrame(now - this.shotAt, this.fireIntervalMs));
     this.flash.style.opacity = now - this.shotAt < FLASH_MS ? '1' : '0';
-    this.flash.style.transform = `translateY(${r * 8}vh)`;
     this.hitMarker.style.opacity = now - this.hitAt < HIT_MARKER_MS ? '1' : '0';
     this.killMarker.style.opacity = now - this.killAt < KILL_MARKER_MS ? '1' : '0';
     const shaking = now - this.shakeAt < SHAKE_MS;

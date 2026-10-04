@@ -18,7 +18,7 @@ Save every image as PNG with exactly this name. Part A goes in `assets/art-src/r
 **Part A: model references** (`assets/art-src/reference/`)
 - [x] A1 Fronts: `fallen-front.png`, `heretic-front.png`, `binder-front.png`, `betrayer-front.png`, `gatekeeper-front.png`
 - [x] A2 Turnarounds: `chorister-turnaround.png`, `cherub-turnaround.png`, `gatekeeper-turnaround.png`, `fallen-turnaround.png`, `heretic-turnaround.png`, `binder-turnaround.png`, `betrayer-turnaround.png`
-- [ ] A3 Weapon sheets: `weapon-shotgun-sheet.png`, `weapon-censer-sheet.png`, `weapon-chaingun-sheet.png`, `weapon-revolver-sheet.png`
+- [x] A3 Weapon sheets: `weapon-shotgun-sheet.png`, `weapon-censer-sheet.png`, `weapon-chaingun-sheet.png`, `weapon-revolver-sheet.png`
 
 **Part B: game assets** (`assets/art-src/`)
 - [ ] B1 World sprites: `proj-censer.png`, `proj-orb.png`, `proj-arrow.png`, `feather.png`, `spark.png`, `ember.png`, `mark.png`, `chain-ring.png`

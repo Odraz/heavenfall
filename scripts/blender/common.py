@@ -17,6 +17,7 @@ along +Y. Direction d (0–7) means the character is turned d × 45° counterclo
 above, away from facing the camera: d = 2 shows its right side.
 """
 import math
+import os
 import random
 import sys
 
@@ -220,6 +221,15 @@ def sphere(name, loc, scale, mat, seg=20, rot=(0, 0, 0), outline=0.008):
     bmesh.ops.create_uvsphere(bm, u_segments=seg, v_segments=seg // 2 + 2, radius=1.0)
     bmesh.ops.transform(bm, matrix=Matrix.LocRotScale(Vector(loc), Euler(rot), Vector(scale)), verts=bm.verts)
     return _finish(_new_obj(name, bm), mat, outline=outline)
+
+
+def feather(name, base, direction, length, width, mat, normal=Vector((0, 1, 0)), thick=0.010, outline=0.004):
+    """A flat, pointed-oval feather from `base` along `direction`, lying in the plane facing `normal`."""
+    d = Vector(direction).normalized()
+    n = (Vector(normal) - d * Vector(normal).dot(d)).normalized()
+    s = d.cross(n)
+    rot = Matrix((d, n, s)).transposed().to_euler()
+    return sphere(name, Vector(base) + d * length / 2, (length / 2, thick, width / 2), mat, seg=12, rot=rot, outline=outline)
 
 
 def tube(name, p0, p1, r0, r1, mat, seg=14, cap=True, outline=0.008, squash=1.0):
@@ -448,6 +458,14 @@ def build_armature(bones):
     for pb in arm.pose.bones:
         pb.rotation_mode = 'QUATERNION'
     return arm
+
+
+def add_ik(arm, bone, target, chain_count=2):
+    """Two-bone IK: `bone`'s tail reaches the head of bone `target` (a hand on a weapon)."""
+    c = arm.pose.bones[bone].constraints.new('IK')
+    c.target = arm
+    c.subtarget = target
+    c.chain_count = chain_count
 
 
 def bind_rigid(obj, arm, bone):
@@ -691,7 +709,7 @@ def ink_frame(arr, ss, px_per_m):
     a = pre[..., 3:4]
     rgb = np.where(a > 1e-4, pre[..., :3] / np.maximum(a, 1e-4), 0)
     # Max-filter the alpha with a disk.
-    rad = max(1, round(OUTLINE_M * px_per_m))
+    rad = max(2, round(OUTLINE_M * px_per_m))  # at least 2 px (§11.2), even at low pixels per meter
     d = a[..., 0].copy()
     src = a[..., 0]
     for dy in range(-rad, rad + 1):
@@ -776,6 +794,7 @@ def cmd_model(spec, out, px_per_m=None, dirs='01234567'):
     r = Renderer(spec, out + '.tmp', int(px_per_m) if px_per_m else None)
     cells = [[r.frame('idle', 0, int(d)) for d in dirs]]
     save_array(compose_sheet(cells), out)
+    os.remove(out + '.tmp.frame.png')
 
 
 def cmd_sheet(spec, anim, out, dirs='01234567', px_per_m=None):
@@ -783,6 +802,7 @@ def cmd_sheet(spec, anim, out, dirs='01234567', px_per_m=None):
     n = spec.anims[anim][0]
     cells = [[r.frame(anim, i, int(d)) for i in range(n)] for d in dirs]
     save_array(compose_sheet(cells), out)
+    os.remove(out + '.tmp.frame.png')
 
 
 def cmd_portrait(spec, out):
@@ -799,7 +819,6 @@ def cmd_portrait(spec, out):
         pad[..., :3] = PAL['ink']
         img = np.concatenate([pad, img])
     save_array(img, out)
-    import os
     os.remove(out + '.tmp.frame.png')
 
 

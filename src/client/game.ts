@@ -2,7 +2,7 @@
 import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
-import { BLESSED, CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, ST_WINDUP } from '../data/enemies';
+import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, ST_WINDUP } from '../data/enemies';
 import { ABILITIES, ALLY_TARGET_ANGLE, WEAPONS } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent } from '../net/messages';
@@ -15,7 +15,7 @@ import { lineOfSight, raycastTerrain } from '../sim/los';
 import { doorsClosedFor, setArenaDoors, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
 import { BOSS_CAST_JUDGMENT, PROJ_CENSER } from '../sim/sim';
-import type { AnimSet, PlayerAnimSet } from '../render/animAtlas';
+import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
 import { Particles } from '../render/particles';
@@ -36,7 +36,6 @@ import { PlayerAnimator } from './playerAnim';
 import { SnapshotBuffer } from './snapshots';
 
 const BENCH_TURN_RATE = 0.3;
-const ENEMY_SPRITES = ['blessed', 'chorister', 'cherub', 'gatekeeper'];
 const PROJECTILE_SPRITES = ['proj-censer', 'proj-orb', 'proj-arrow'];
 const PROJECTILE_SIZES = [0.4, 0.6, 0.3];
 const RESULT_OVERLAY_MS = 3000;
@@ -63,8 +62,8 @@ export interface GameOptions {
   root: HTMLElement;
   map: GameMap;
   atlas: Atlas;
-  /** The Blessed's animated 8-direction sprites. */
-  blessed: AnimSet;
+  /** The animated 8-direction sprites of every enemy type that has an atlas, by type. */
+  enemyAnims: Partial<Record<number, EnemyAnimSet>>;
   /** The animated sprites of every class another player in the roster plays. */
   players: Partial<Record<ClassId, PlayerAnimSet>>;
   params: Params;
@@ -104,8 +103,8 @@ export class Game {
   private readonly fps = new FpsCounter();
   private readonly snaps: SnapshotBuffer;
   private readonly billboards: Billboards;
-  /** The Blessed and their corpses, drawn from their own atlas. */
-  private readonly blessedBillboards: Billboards;
+  /** Enemies with an atlas and their corpses, one billboard mesh per type. */
+  private readonly enemyBillboards = new Map<number, Billboards>();
   private readonly animator = new EnemyAnimator();
   private readonly corpses: Corpse[] = [];
   private readonly particles: Particles;
@@ -113,7 +112,6 @@ export class Game {
   /** The large growing glow on the Gatekeeper while it casts Judgment (§7.4). */
   private readonly judgmentGlow: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
   private readonly frames: Record<string, SpriteFrame>;
-  private readonly enemyFrames: Array<SpriteFrame | undefined>;
   private readonly bot: Bot | null;
   private readonly bench: BenchRunner | null;
   private lastFrame = 0;
@@ -171,8 +169,11 @@ export class Game {
     this.scene = new GameScene(this.canvas, this.map);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
-    this.blessedBillboards = new Billboards(o.blessed.texture, true);
-    this.scene.scene.add(this.blessedBillboards.mesh);
+    for (const [type, set] of Object.entries(o.enemyAnims)) {
+      const b = new Billboards(set!.texture, true);
+      this.enemyBillboards.set(Number(type), b);
+      this.scene.scene.add(b.mesh);
+    }
     for (const [cls, set] of Object.entries(o.players) as Array<[ClassId, PlayerAnimSet]>) {
       const b = new Billboards(set.texture, true);
       this.playerBillboards.set(cls, b);
@@ -186,7 +187,6 @@ export class Game {
     this.judgmentGlow.visible = false;
     this.scene.scene.add(this.judgmentGlow);
     this.frames = o.atlas.frames;
-    this.enemyFrames = ENEMY_SPRITES.map((n) => o.atlas.frames[n]);
     this.particles = new Particles([o.atlas.frames.feather, o.atlas.frames.spark, o.atlas.frames.ember]);
     this.hud = new Hud(o.root, this.classId);
     this.hud.setHp(this.maxHp, 0, this.maxHp);
@@ -464,7 +464,7 @@ export class Game {
     for (let i = 0; i < s.enemyCount; i++) {
       if (!(s.enemyFlags[i] & FLAG_HURT)) continue;
       this.flashUntil[s.enemySlot[i]] = now + ENEMY_FLASH_MS;
-      if (s.enemyType[i] === BLESSED) this.animator.hurt(s.enemySlot[i], now);
+      if (this.o.enemyAnims[s.enemyType[i]]?.anims.pain) this.animator.hurt(s.enemySlot[i], now);
     }
     if (prev) {
       const delay = this.snaps.delayTicks * TICK_MS;
@@ -476,8 +476,11 @@ export class Game {
         const g = groundHeight(this.map, prev.enemyX[i], prev.enemyY[i], def.radius, Infinity, false, true);
         const z = (g === -Infinity ? 0 : g) + (type === CHERUB ? CHERUB_HOVER : 0) + def.height / 2;
         this.pendingBursts.push({ at: now + delay, censer: false, x: prev.enemyX[i], y: prev.enemyY[i], z });
-        if (type === BLESSED) {
-          this.corpses.push({ start: now + delay, x: prev.enemyX[i], y: prev.enemyY[i], z: g === -Infinity ? 0 : g, facing: this.animator.facing[slot] });
+        if (this.o.enemyAnims[type]?.anims.death) {
+          const ground = g === -Infinity ? 0 : g;
+          // A Cherub falls from its hover height to the ground while it dies (§11.1).
+          const fallFrom = type === CHERUB ? ground + CHERUB_HOVER : undefined;
+          this.corpses.push({ start: now + delay, x: prev.enemyX[i], y: prev.enemyY[i], z: ground, facing: this.animator.facing[slot], type, fallFrom });
           if (this.corpses.length > MAX_CORPSES) this.corpses.shift();
         }
       }
@@ -738,13 +741,11 @@ export class Game {
 
   private drawBillboards(now: number, ents: { count: number; slot: Uint16Array; x: Float32Array; y: Float32Array; type: Uint8Array; state: Uint8Array; flags: Uint8Array }, enemyZ: Float32Array): void {
     const bb = this.billboards;
-    const bbBlessed = this.blessedBillboards;
     bb.begin();
-    bbBlessed.begin();
+    for (const b of this.enemyBillboards.values()) b.begin();
     for (const b of this.playerBillboards.values()) b.begin();
     const chain = this.frames['chain-ring'];
     const mark = this.frames.mark;
-    const anims = this.o.blessed.anims;
     const eye = this.player.body;
     const dt = Math.min(0.1, (now - this.lastAnimAt) / 1000);
     this.lastAnimAt = now;
@@ -752,23 +753,18 @@ export class Game {
     this.judgmentGlow.visible = false;
     for (let i = 0; i < ents.count; i++) {
       const type = ents.type[i];
-      let f = this.enemyFrames[type];
-      let height = ENEMIES[type].height;
-      let target = bb;
-      if (type === BLESSED) {
-        // Direction and frame of the animated sprite (§11.1).
-        const slot = ents.slot[i];
-        const x = ents.x[i];
-        const y = ents.y[i];
-        const t = this.nearestPlayer(x, y);
-        this.animator.update(slot, x, y, ents.state[i], now, dt, t.x, t.y);
-        const pick = this.animator.pick(slot, now);
-        const af = anims[pick.anim][spriteDirection(this.animator.facing[slot], eye.x - x, eye.y - y)][pick.frame];
-        f = af;
-        height = af.height;
-        target = bbBlessed;
-      }
-      if (!f) continue;
+      const set = this.o.enemyAnims[type];
+      if (!set) continue;
+      // Direction and frame of the animated sprite (§11.1).
+      const slot = ents.slot[i];
+      const x = ents.x[i];
+      const y = ents.y[i];
+      const t = this.nearestPlayer(x, y);
+      this.animator.update(slot, x, y, ents.state[i], now, dt, t.x, t.y, type);
+      const pick = this.animator.pick(slot, now, this.bossCast);
+      const f = set.anims[pick.anim][spriteDirection(this.animator.facing[slot], eye.x - x, eye.y - y)][pick.frame];
+      const height = f.height;
+      const target = this.enemyBillboards.get(type)!;
       const def = ENEMIES[type];
       const flags = ents.flags[i];
       const z = enemyZ[i];
@@ -798,18 +794,21 @@ export class Game {
       if (flags & FLAG_ROOTED) bb.add(chain, ents.x[i], ents.y[i], z + 0.25, Math.max(0.45, def.radius * 1.1), true);
       if (flags & FLAG_MARKED) bb.add(mark, ents.x[i], ents.y[i], z + def.height + 0.5, 0.6, true);
     }
-    // Blessed corpses: the death animation, then lying still, then sinking into the floor.
+    // Corpses: the death animation, then lying still, then sinking into the floor (the
+    // Gatekeeper's stays). They are in order of death, so the expired ones lead the list; a
+    // corpse that stays stops the count, keeping it from being removed.
     let gone = 0;
+    let leading = true;
     for (const c of this.corpses) {
       const cf = corpseFrame(c, now);
       if (!cf) {
-        if (now >= c.start) gone++;
+        if (leading && now >= c.start) gone++;
         continue;
       }
-      const af = anims.death[spriteDirection(c.facing, eye.x - c.x, eye.y - c.y)][cf.frame];
-      bbBlessed.add(af, c.x, c.y, c.z - cf.sink, af.height, false);
+      leading = false;
+      const af = this.o.enemyAnims[c.type]!.anims.death[spriteDirection(c.facing, eye.x - c.x, eye.y - c.y)][cf.frame];
+      this.enemyBillboards.get(c.type)!.add(af, c.x, c.y, c.z - cf.sink, af.height, false);
     }
-    // Corpses are in order of death, so the expired ones are at the front.
     if (gone) this.corpses.splice(0, gone);
     const proj = this.snaps.projOut;
     for (let i = 0; i < proj.count; i++) {
@@ -854,7 +853,7 @@ export class Game {
     }
     this.particles.draw(bb);
     bb.end(this.scene.camera);
-    bbBlessed.end(this.scene.camera);
+    for (const b of this.enemyBillboards.values()) b.end(this.scene.camera);
     for (const b of this.playerBillboards.values()) b.end(this.scene.camera);
   }
 

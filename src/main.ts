@@ -5,7 +5,7 @@ import { debugState, resetGameDebug, type Screen } from './debug';
 import { getDungeon } from './data/dungeons/index';
 import { parseParams } from './params';
 import { loadMap } from './sim/map';
-import { loadBlessedAnims, loadPlayerAnims } from './render/animAtlas';
+import { loadEnemyAnims, loadPlayerAnims } from './render/animAtlas';
 import { buildAtlas } from './render/atlas';
 import { Game, type RosterEntry } from './client/game';
 import { HostSession } from './client/hostSession';
@@ -57,7 +57,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   const roster: RosterEntry[] = [{ id: 0, name, classId }];
   // Only other players are drawn as billboards, so the local class's atlas isn't needed.
   const others = roster.filter((r) => r.id !== 0).map((r) => r.classId);
-  const [atlas, blessed, players] = await Promise.all([buildAtlas(), loadBlessedAnims(), loadPlayerAnims(others)]);
+  const [atlas, enemyAnims, players] = await Promise.all([buildAtlas(), loadEnemyAnims(), loadPlayerAnims(others)]);
   // The session ends at Results or on leaving: the worker is terminated (§2.2).
   const end = (): void => {
     game.dispose();
@@ -67,7 +67,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
     root,
     map,
     atlas,
-    blessed,
+    enemyAnims,
     players,
     params,
     transport: host.local,

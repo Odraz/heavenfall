@@ -13,7 +13,7 @@ import sys
 from mathutils import Matrix, Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import (EMISSIVE, PAL, Pose, Spec, add, bind_rigid, bind_skirt, box, build_armature, chain,  # noqa: E402
+from common import (EMISSIVE, PAL, Pose, Spec, add, add_ik, bind_rigid, bind_skirt, box, build_armature, chain,  # noqa: E402
                     main, robe_panel, sag, sphere, torus, tube)
 
 # ---------------------------------------------------------------- palette
@@ -70,13 +70,6 @@ for side, sx in (('R', -1), ('L', 1)):
         f'foot.{side}': ((0.135 * sx, 0.01, 0.10), (0.135 * sx, -0.15, 0.03), f'shin.{side}'),
         f'skirt.{side}': ((0.20 * sx, 0, 0.94), (0.30 * sx, 0, 0.32), 'hips'),
     })
-
-
-def add_ik(arm, bone, target):
-    c = arm.pose.bones[bone].constraints.new('IK')
-    c.target = arm
-    c.subtarget = target
-    c.chain_count = 2
 
 
 def padlock(name, p, rot=(0, 0, 0)):

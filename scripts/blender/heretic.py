@@ -59,7 +59,7 @@ for side, sx in (('R', -1), ('L', 1)):
         f'skirt.{side}': ((0.15 * sx, 0, 0.98), (0.25 * sx, 0, 0.25), 'hips'),
     })
 
-# The censer launcher hangs from the right hand, its muzzle (the censer) down and a little forward.
+# The censer launcher is held in the right hand, its muzzle (the censer) down and a little forward.
 HAND_R = Vector((-0.24, -0.04, 0.82))
 LAUNCH_DIR = Vector((0.0, -0.18, -1.0)).normalized()
 
@@ -141,17 +141,23 @@ def build_model():
         rigid(tube(f'thighwrap.{side}', (0.09 * sx, 0, 0.94), (0.095 * sx, 0, 0.50), 0.06, 0.05, 'robe', outline=0.005), f'thigh.{side}')
         rigid(tube(f'shinwrap.{side}', (0.095 * sx, 0, 0.54), (0.095 * sx, 0.01, 0.08), 0.05, 0.042, 'robe', outline=0.005), f'shin.{side}')
 
-    # The censer launcher: a stubby filigreed bronze barrel, the censer of glowing coals at its muzzle.
+    # The censer launcher, a pistol-gripped hand cannon as in weapon-censer-sheet.png, pointing down
+    # at the right side: a tapered bronze barrel bound in chain, a flared bell, the censer of
+    # glowing coals bulging from its muzzle, and the grip in the fist.
     h, d = HAND_R, LAUNCH_DIR
-    rigid(tube('lgrip', h - d * 0.08, h + d * 0.06, 0.026, 0.026, 'bronze', seg=8, outline=0.004), 'hand.R')
-    rigid(tube('lbody', h + d * 0.05, h + d * 0.26, 0.05, 0.056, 'bronze', seg=6, outline=0.006), 'hand.R')
-    for k, t in enumerate((0.07, 0.16, 0.25)):
-        rigid(torus(f'lband{k}', h + d * t, 0.058, 0.011, 'gold', rot=(-0.18, 0, 0), seg=16, outline=0.004), 'hand.R')
-    rigid(box('lplate', h + d * 0.15 - Vector((0, 0.055, 0)), (0.05, 0.012, 0.13), 'gold', rot=(-0.18, 0, 0), outline=0.003), 'hand.R')
-    rigid(sphere('censer', h + d * 0.36, (0.078, 0.078, 0.075),
-                 cracked('bronze', 'coal', scale=16.0, width=0.10, coverage=0.65), seg=16, outline=0.006), 'hand.R')
-    rigid(torus('censerrim', h + d * 0.30, 0.06, 0.012, 'bronze', rot=(-0.18, 0, 0), seg=16, outline=0.004), 'hand.R')
-    rigid(sphere('finial', h + d * 0.45, (0.022, 0.022, 0.03), 'bronze', seg=10, outline=0.004), 'hand.R')
+    fwd = Vector((0, -1, 0))
+    u = (fwd - d * fwd.dot(d)).normalized()   # across the barrel, toward the front
+    b = h + u * 0.065                           # the barrel's axis passes in front of the fist
+    rot = d.to_track_quat('Z', 'Y').to_euler()
+    rigid(tube('lgrip', h - u * 0.035 - d * 0.03, h + u * 0.045 + d * 0.01, 0.024, 0.028, 'gold', seg=8, squash=0.7, outline=0.004), 'hand.R')
+    rigid(tube('lbody', b - d * 0.06, b + d * 0.17, 0.036, 0.052, 'bronze', seg=14, outline=0.006), 'hand.R')
+    for k, t in enumerate((0.0, 0.11)):
+        rigid(torus(f'lchain{k}', b + d * t, 0.055, 0.012, 'iron', rot=rot, seg=16, outline=0.003), 'hand.R')
+    rigid(box('lplate', b + d * 0.06 + u * 0.05, (0.04, 0.01, 0.10), 'gold', rot=rot, outline=0.003), 'hand.R')
+    rigid(tube('lbell', b + d * 0.17, b + d * 0.21, 0.052, 0.062, 'bronze', seg=14, cap=False, outline=0.005), 'hand.R')
+    rigid(sphere('censer', b + d * 0.27, (0.075, 0.075, 0.075),
+                 cracked('bronze', 'coal', scale=16.0, width=0.10, coverage=0.7), seg=16, outline=0.006), 'hand.R')
+    rigid(sphere('finial', b + d * 0.35, (0.02, 0.02, 0.02), 'bronze', seg=10, outline=0.004), 'hand.R')
 
     for obj, bone in parts:
         bind_rigid(obj, arm, bone)

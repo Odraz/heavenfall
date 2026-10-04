@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { ST_ATTACKING, ST_IDLE, ST_MOVING } from '../data/enemies';
-import { corpseFrame, CORPSE_MS, DEATH_MS, EnemyAnimator, PAIN_COOLDOWN_MS, spriteDirection, WALK_CYCLE_M } from './enemyAnim';
+import { CHERUB, CHORISTER, GATEKEEPER, ST_ATTACKING, ST_IDLE, ST_MOVING, ST_WINDUP } from '../data/enemies';
+import { BOSS_CAST_JUDGMENT, BOSS_CAST_NONE, BOSS_CAST_VOLLEY } from '../sim/sim';
+import { CORPSE_FALL_G, corpseFrame, CORPSE_MS, DEATH_MS, EnemyAnimator, PAIN_COOLDOWN_MS, spriteDirection, WALK_CYCLE_M } from './enemyAnim';
 
 describe('spriteDirection', () => {
   it('shows the front to a viewer the enemy faces, and the back to one behind it', () => {
@@ -25,14 +26,14 @@ describe('spriteDirection', () => {
 });
 
 /** Runs an enemy at 30 frames per second, moving (vx, vy) m/s, and returns the time reached. */
-function run(a: EnemyAnimator, slot: number, from: { x: number; y: number; t: number }, frames: number, vx: number, vy: number, state: number): { x: number; y: number; t: number } {
+function run(a: EnemyAnimator, slot: number, from: { x: number; y: number; t: number }, frames: number, vx: number, vy: number, state: number, type?: number): { x: number; y: number; t: number } {
   let { x, y, t } = from;
   for (let i = 0; i < frames; i++) {
     a.begin();
     x += vx / 30;
     y += vy / 30;
     t += 1000 / 30;
-    a.update(slot, x, y, state, t, 1 / 30, 100, 0);
+    a.update(slot, x, y, state, t, 1 / 30, 100, 0, type);
   }
   return { x, y, t };
 }
@@ -96,14 +97,125 @@ describe('EnemyAnimator', () => {
   });
 });
 
+describe('EnemyAnimator, Chorister', () => {
+  it('walks one cycle per 2 m', () => {
+    const a = new EnemyAnimator();
+    let s = run(a, 9, { x: 0, y: 0, t: 0 }, 30, 0, 3, ST_MOVING, CHORISTER);
+    const before = a.pick(9, s.t).frame;
+    s = run(a, 9, s, Math.round((2.0 / 3) * 30), 0, 3, ST_MOVING, CHORISTER);
+    expect(a.pick(9, s.t)).toEqual({ anim: 'walk', frame: before });
+  });
+
+  it('casts frames 1–6 over the 1 s wind-up and holds frame 6, facing its target', () => {
+    const a = new EnemyAnimator();
+    let s = run(a, 6, { x: 0, y: 0, t: 0 }, 10, 0, 3, ST_MOVING, CHORISTER);
+    s = run(a, 6, s, 1, 0, 0, ST_WINDUP, CHORISTER);
+    const start = s.t;
+    expect(a.facing[6]).toBeCloseTo(0, 1); // toward the target at x = 100
+    expect(a.pick(6, start)).toEqual({ anim: 'cast', frame: 0 });
+    expect(a.pick(6, start + 500)).toEqual({ anim: 'cast', frame: 3 });
+    expect(a.pick(6, start + 990)).toEqual({ anim: 'cast', frame: 5 });
+    expect(a.pick(6, start + 1400)).toEqual({ anim: 'cast', frame: 5 });
+  });
+
+  it('plays frames 7–8 over 0.25 s from the tick it fires, then goes back to idle', () => {
+    const a = new EnemyAnimator();
+    let s = run(a, 8, { x: 0, y: 0, t: 0 }, 1, 0, 0, ST_WINDUP, CHORISTER);
+    s = run(a, 8, s, 30, 0, 0, ST_WINDUP, CHORISTER);
+    s = run(a, 8, s, 1, 0, 0, ST_ATTACKING, CHORISTER);
+    const fired = s.t;
+    // `attacking` lasts one tick; the release plays on regardless.
+    s = run(a, 8, s, 2, 0, 0, ST_IDLE, CHORISTER);
+    expect(a.pick(8, fired)).toEqual({ anim: 'cast', frame: 6 });
+    expect(a.pick(8, fired + 130)).toEqual({ anim: 'cast', frame: 7 });
+    expect(a.pick(8, fired + 260)).toEqual({ anim: 'idle', frame: 0 });
+  });
+});
+
+describe('EnemyAnimator, Cherub', () => {
+  it('flaps on a 0.5 s clock whether moving or not, 6 frames a beat', () => {
+    const a = new EnemyAnimator();
+    const s = run(a, 0, { x: 0, y: 0, t: 0 }, 3, 0, 0, ST_IDLE, CHERUB);
+    const frames = [0, 1, 2, 3, 4, 5].map((k) => a.pick(0, s.t + (k * 500) / 6 + 1));
+    expect(frames.every((f) => f.anim === 'fly')).toBe(true);
+    expect(new Set(frames.map((f) => f.frame)).size).toBe(6);
+    expect(a.pick(0, s.t + 500 + 1)).toEqual(a.pick(0, s.t + 1));
+  });
+
+  it('casts frames 1–4 over the 0.5 s wind-up, then 5–6 over 0.2 s once it fires', () => {
+    const a = new EnemyAnimator();
+    let s = run(a, 2, { x: 0, y: 0, t: 0 }, 1, 0, 0, ST_IDLE, CHERUB);
+    s = run(a, 2, s, 1, 0, 0, ST_WINDUP, CHERUB);
+    const start = s.t;
+    expect(a.pick(2, start)).toEqual({ anim: 'cast', frame: 0 });
+    expect(a.pick(2, start + 260)).toEqual({ anim: 'cast', frame: 2 });
+    expect(a.pick(2, start + 800)).toEqual({ anim: 'cast', frame: 3 });
+    s = run(a, 2, { ...s, t: start + 500 }, 1, 0, 0, ST_ATTACKING, CHERUB);
+    expect(a.pick(2, s.t)).toEqual({ anim: 'cast', frame: 4 });
+    expect(a.pick(2, s.t + 110)).toEqual({ anim: 'cast', frame: 5 });
+    expect(a.pick(2, s.t + 210).anim).toBe('fly');
+  });
+});
+
+describe('EnemyAnimator, Gatekeeper', () => {
+  it('always faces the nearest player, even standing idle', () => {
+    const a = new EnemyAnimator();
+    run(a, 1, { x: 0, y: 0, t: 0 }, 2, 0, 0, ST_IDLE, GATEKEEPER);
+    a.begin();
+    a.update(1, 0, 0, ST_IDLE, 100, 1 / 30, 0, -10, GATEKEEPER);
+    expect(a.facing[1]).toBeCloseTo(-Math.PI / 2);
+    expect(a.pick(1, 100, BOSS_CAST_NONE)).toEqual({ anim: 'idle', frame: 0 });
+  });
+
+  it('plays Volley frames 1–3 over the 0.5 s wind-up, then frame 4 for 0.3 s after it fires', () => {
+    const a = new EnemyAnimator();
+    let s = run(a, 1, { x: 0, y: 0, t: 0 }, 2, 0, 0, ST_IDLE, GATEKEEPER);
+    s = run(a, 1, s, 1, 0, 0, ST_WINDUP, GATEKEEPER);
+    const start = s.t;
+    expect(a.pick(1, start, BOSS_CAST_VOLLEY)).toEqual({ anim: 'volley', frame: 0 });
+    expect(a.pick(1, start + 250, BOSS_CAST_VOLLEY)).toEqual({ anim: 'volley', frame: 1 });
+    expect(a.pick(1, start + 480, BOSS_CAST_VOLLEY)).toEqual({ anim: 'volley', frame: 2 });
+    s = run(a, 1, { ...s, t: start + 500 }, 1, 0, 0, ST_ATTACKING, GATEKEEPER);
+    s = run(a, 1, s, 1, 0, 0, ST_IDLE, GATEKEEPER);
+    expect(a.pick(1, start + 600, BOSS_CAST_NONE)).toEqual({ anim: 'volley', frame: 3 });
+    expect(a.pick(1, start + 850, BOSS_CAST_NONE)).toEqual({ anim: 'idle', frame: 0 });
+  });
+
+  it('loops Judgment every second while it is cast', () => {
+    const a = new EnemyAnimator();
+    let s = run(a, 1, { x: 0, y: 0, t: 0 }, 2, 0, 0, ST_IDLE, GATEKEEPER);
+    s = run(a, 1, s, 1, 0, 0, ST_WINDUP, GATEKEEPER);
+    const start = s.t;
+    expect(a.pick(1, start + 10, BOSS_CAST_JUDGMENT)).toEqual({ anim: 'judgment', frame: 0 });
+    expect(a.pick(1, start + 760, BOSS_CAST_JUDGMENT)).toEqual({ anim: 'judgment', frame: 3 });
+    expect(a.pick(1, start + 1010, BOSS_CAST_JUDGMENT)).toEqual({ anim: 'judgment', frame: 0 });
+  });
+});
+
 describe('corpseFrame', () => {
   it('plays the death frames, holds the last one, sinks, then is gone', () => {
-    const c = { start: 1000, x: 0, y: 0, z: 0, facing: 0 };
+    const c = { start: 1000, x: 0, y: 0, z: 0, facing: 0, type: 0 };
     expect(corpseFrame(c, 999)).toBeNull();
     expect(corpseFrame(c, 1000)).toEqual({ frame: 0, sink: 0 });
     expect(corpseFrame(c, 1000 + DEATH_MS / 2)?.frame).toBe(4);
     expect(corpseFrame(c, 1000 + DEATH_MS + 100)).toEqual({ frame: 7, sink: 0 });
     expect(corpseFrame(c, 1000 + CORPSE_MS - 1)!.sink).toBeGreaterThan(0.5);
     expect(corpseFrame(c, 1000 + CORPSE_MS)).toBeNull();
+  });
+
+  it("the Gatekeeper's corpse plays its death over 1.5 s and stays", () => {
+    const c = { start: 0, x: 0, y: 0, z: 3, facing: 0, type: GATEKEEPER };
+    expect(corpseFrame(c, 750)).toEqual({ frame: 4, sink: 0 });
+    expect(corpseFrame(c, 1600)).toEqual({ frame: 7, sink: 0 });
+    expect(corpseFrame(c, 600000)).toEqual({ frame: 7, sink: 0 });
+  });
+
+  it('a corpse that died in the air falls to its ground height at 20 m/s²', () => {
+    const c = { start: 0, x: 0, y: 0, z: 2, facing: 0, type: CHERUB, fallFrom: 6 };
+    expect(corpseFrame(c, 0)!.sink).toBeCloseTo(-4);
+    // After 0.5 s it has fallen 2.5 m.
+    expect(corpseFrame(c, 500)!.sink).toBeCloseTo(-(4 - 0.5 * CORPSE_FALL_G * 0.25));
+    // It lands after √(2 · 4 / 20) ≈ 0.63 s, before the death animation ends.
+    expect(corpseFrame(c, 700)!.sink).toBe(0);
   });
 });

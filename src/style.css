@@ -231,29 +231,20 @@ body {
 
 .weapon {
   position: absolute;
-  left: 50%;
   bottom: 0;
-  width: 36vh;
-  height: 28.8vh;
-  transform: translateX(-50%);
-}
-
-.weapon-sprite,
-.muzzle-flash {
-  position: absolute;
-  left: 0;
-  right: 0;
-  margin: auto;
+  height: 50vh;
 }
 
 .weapon-sprite {
-  bottom: -2vh;
-  width: 100%;
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
 }
 
 .muzzle-flash {
-  top: -10vh;
-  width: 14vh;
+  position: absolute;
+  width: 10vh;
+  translate: -50% -50%;
   opacity: 0;
 }
 

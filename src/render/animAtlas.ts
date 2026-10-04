@@ -5,6 +5,12 @@
 import * as THREE from 'three';
 import blessedUrl from '../../assets/sprites/blessed/atlas.png';
 import blessedManifest from '../../assets/sprites/blessed/atlas.json';
+import choristerUrl from '../../assets/sprites/chorister/atlas.png';
+import choristerManifest from '../../assets/sprites/chorister/atlas.json';
+import cherubUrl from '../../assets/sprites/cherub/atlas.png';
+import cherubManifest from '../../assets/sprites/cherub/atlas.json';
+import gatekeeperUrl from '../../assets/sprites/gatekeeper/atlas.png';
+import gatekeeperManifest from '../../assets/sprites/gatekeeper/atlas.json';
 import fallenUrl from '../../assets/sprites/fallen/atlas.png';
 import fallenManifest from '../../assets/sprites/fallen/atlas.json';
 import hereticUrl from '../../assets/sprites/heretic/atlas.png';
@@ -14,10 +20,14 @@ import binderManifest from '../../assets/sprites/binder/atlas.json';
 import betrayerUrl from '../../assets/sprites/betrayer/atlas.png';
 import betrayerManifest from '../../assets/sprites/betrayer/atlas.json';
 import type { ClassId } from '../data/classes';
+import { BLESSED, CHERUB, CHORISTER, GATEKEEPER } from '../data/enemies';
 import type { SpriteFrame } from './atlas';
 
 export const ANIM_NAMES = ['idle', 'walk', 'attack', 'pain', 'death'] as const;
 export type AnimName = (typeof ANIM_NAMES)[number];
+export const CHORISTER_ANIM_NAMES = ['idle', 'walk', 'cast', 'pain', 'death'] as const;
+export const CHERUB_ANIM_NAMES = ['fly', 'cast', 'pain', 'death'] as const;
+export const GATEKEEPER_ANIM_NAMES = ['idle', 'volley', 'judgment', 'death'] as const;
 export const PLAYER_ANIM_NAMES = ['idle', 'walk'] as const;
 export type PlayerAnimName = (typeof PLAYER_ANIM_NAMES)[number];
 
@@ -42,12 +52,17 @@ interface Manifest {
   anims: Record<string, number[][][]>;
 }
 
+/** The same frame flipped left to right: the character seen from the mirrored direction. */
+function mirrored(f: AnimFrame): AnimFrame {
+  return { ...f, u0: f.u1, u1: f.u0, anchorX: 1 - (f.anchorX ?? 0.5) };
+}
+
 function framesOf<N extends string>(m: Manifest, names: readonly N[]): Record<N, AnimFrame[][]> {
   const out = {} as Record<N, AnimFrame[][]>;
   for (const name of names) {
     const dirs = m.anims[name];
-    if (dirs?.length !== 8) throw new Error(`Animation ${name} needs 8 directions`);
-    out[name] = dirs.map((frames) =>
+    if (dirs?.length !== 8 && dirs?.length !== 5) throw new Error(`Animation ${name} needs 8 or 5 directions`);
+    const frames8: AnimFrame[][] = dirs.map((frames) =>
       frames.map(([x, y, w, h, gx, gy]) => ({
         u0: x / m.width,
         u1: (x + w) / m.width,
@@ -60,6 +75,10 @@ function framesOf<N extends string>(m: Manifest, names: readonly N[]): Record<N,
         height: h / m.pxPerMeter,
       })),
     );
+    // An atlas rendered from 5 directions (front to back on one side) draws the other 3 as
+    // mirror images (§11.1): direction 8 − d mirrors d.
+    for (let d = frames8.length; d < 8; d++) frames8.push(frames8[8 - d].map(mirrored));
+    out[name] = frames8;
   }
   return out;
 }
@@ -75,8 +94,18 @@ async function loadAnimSet<N extends string>(url: string, manifest: Manifest, na
   return { texture, anims: framesOf(manifest, names) };
 }
 
-export function loadBlessedAnims(): Promise<AnimSet> {
-  return loadAnimSet(blessedUrl, blessedManifest as Manifest, ANIM_NAMES);
+/** An enemy's animations by name; which ones it has depends on its type (§11.2). */
+export type EnemyAnimSet = AnimSet<string>;
+
+/** The atlases of every enemy type that has one, by type. */
+export async function loadEnemyAnims(): Promise<Partial<Record<number, EnemyAnimSet>>> {
+  const [blessed, chorister, cherub, gatekeeper] = await Promise.all([
+    loadAnimSet(blessedUrl, blessedManifest as Manifest, ANIM_NAMES),
+    loadAnimSet(choristerUrl, choristerManifest as Manifest, CHORISTER_ANIM_NAMES),
+    loadAnimSet(cherubUrl, cherubManifest as Manifest, CHERUB_ANIM_NAMES),
+    loadAnimSet(gatekeeperUrl, gatekeeperManifest as Manifest, GATEKEEPER_ANIM_NAMES),
+  ]);
+  return { [BLESSED]: blessed, [CHORISTER]: chorister, [CHERUB]: cherub, [GATEKEEPER]: gatekeeper };
 }
 
 const PLAYER_ATLASES: Record<ClassId, { url: string; manifest: Manifest }> = {

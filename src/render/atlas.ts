@@ -8,7 +8,6 @@ const spriteName = (path: string) => path.replace(/^.*\//, '').replace(/\.svg$/,
 
 /** Sprites drawn in the world as billboards; the rest (weapons, muzzle flash, icons) are HUD images. */
 const BILLBOARD_SPRITES = new Set([
-  'blessed', 'chorister', 'cherub', 'gatekeeper',
   'proj-censer', 'proj-orb', 'proj-arrow',
   'feather', 'spark', 'ember',
   'mark', 'chain-ring',
@@ -25,7 +24,7 @@ export function spriteUrl(name: string): string {
 export const ATLAS_SIZE = 2048;
 const PAD = 4;
 /** Rasterized height in pixels per sprite; the default is 192. */
-const RASTER_HEIGHT: Record<string, number> = { gatekeeper: 512, 'decor-angel-statue': 320, 'decor-fountain': 256, 'decor-candelabrum': 256 };
+const RASTER_HEIGHT: Record<string, number> = { 'decor-angel-statue': 320, 'decor-fountain': 256, 'decor-candelabrum': 256 };
 const DEFAULT_HEIGHT = 192;
 
 export interface SpriteFrame {

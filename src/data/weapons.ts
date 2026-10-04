@@ -19,15 +19,13 @@ export interface WeaponDef {
   maxHits: number;
   /** Slows each enemy hit for this many seconds (0 = no slow). */
   slow: number;
-  /** First-person sprite. */
-  sprite: string;
 }
 
 export const WEAPONS: Record<ClassId, WeaponDef> = {
-  fallen: { name: 'Brimstone Shotgun', interval: 0.9, hitscan: true, pellets: 8, damage: 10, spreadYaw: 8 * DEG, spreadPitch: 4 * DEG, range: 20, maxHits: 1, slow: 0, sprite: 'weapon-shotgun' },
-  heretic: { name: 'Censer Launcher', interval: 1.0, hitscan: false, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 25, maxHits: 1, slow: 0, sprite: 'weapon-censer' },
-  binder: { name: 'Chain Gun', interval: 0.1, hitscan: true, pellets: 1, damage: 12, spreadYaw: 2 * DEG, spreadPitch: 2 * DEG, range: 40, maxHits: 1, slow: 1, sprite: 'weapon-chaingun' },
-  betrayer: { name: 'Silver Revolver', interval: 0.35, hitscan: true, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: 3, slow: 0, sprite: 'weapon-revolver' },
+  fallen: { name: 'Brimstone Shotgun', interval: 0.9, hitscan: true, pellets: 8, damage: 10, spreadYaw: 8 * DEG, spreadPitch: 4 * DEG, range: 20, maxHits: 1, slow: 0 },
+  heretic: { name: 'Censer Launcher', interval: 1.0, hitscan: false, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 25, maxHits: 1, slow: 0 },
+  binder: { name: 'Chain Gun', interval: 0.1, hitscan: true, pellets: 1, damage: 12, spreadYaw: 2 * DEG, spreadPitch: 2 * DEG, range: 40, maxHits: 1, slow: 1 },
+  betrayer: { name: 'Silver Revolver', interval: 0.35, hitscan: true, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: 3, slow: 0 },
 };
 
 export interface AbilityDef {

@@ -13,7 +13,7 @@ import sys
 from mathutils import Matrix, Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import (EMISSIVE, PAL, Pose, Spec, add, bind_rigid, bind_skirt, box, build_armature,  # noqa: E402
+from common import (EMISSIVE, PAL, Pose, Spec, add, add_ik, bind_rigid, bind_skirt, box, build_armature,  # noqa: E402
                     cracked, main, robe_panel, sphere, sweep, torus, tube)
 
 # ---------------------------------------------------------------- palette
@@ -77,13 +77,6 @@ for side, sx in (('R', -1), ('L', 1)):
         f'shin.{side}': ((0.15 * sx, 0, 0.58), (0.15 * sx, 0.01, 0.12), f'thigh.{side}'),
         f'foot.{side}': ((0.15 * sx, 0.01, 0.12), (0.15 * sx, -0.16, 0.05), f'shin.{side}'),
     })
-
-
-def add_ik(arm, bone, target):
-    c = arm.pose.bones[bone].constraints.new('IK')
-    c.target = arm
-    c.subtarget = target
-    c.chain_count = 2
 
 
 def gun_rot():
