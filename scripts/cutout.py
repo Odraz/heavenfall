@@ -8,6 +8,10 @@ Reads assets/art-src/<name>.png, writes assets/sprites/<name>.png.
   trimmed, then cropped to a centered square of the listed size.
 - TEXTURES (seamless terrain textures): resized to the listed size, wrapping around the
   edges so they stay seamless; written to assets/textures/<name>.png.
+- EFFECTS (effect textures on black): brightness turned into opacity, so black becomes
+  transparent and the color stays true over the bright world; resized to the listed width
+  and written to assets/textures/<name>.png. Strips (beam, chain) repeat along their
+  length: they are cropped to the rows that aren't black and their side seams smoothed.
 
 Needs Python 3 with Pillow and NumPy.
 Usage: python scripts/cutout.py [name ...]   (no names: every image)
@@ -71,6 +75,16 @@ TEXTURES = {
     'tex-riser': 1024,
     'tex-wall': 1024,
     'tex-door': 1024,
+}
+
+# Effect textures: output width in pixels, whether it's a strip repeated left to right, and
+# an opacity gain (the chain's dim red edges would be see-through at 1).
+EFFECTS = {
+    'fx-ring': (512, False, 1),
+    'fx-glow': (256, False, 1),
+    'fx-smoke': (512, False, 1),
+    'fx-beam': (256, True, 1),
+    'fx-chain': (512, True, 2.5),
 }
 
 # Sprites with some green of their own (the lilies' stems). Pixels with less than
@@ -164,8 +178,49 @@ def texture(name: str, size: int) -> None:
     print(f'{name}: {size}x{size}')
 
 
+def effect(name: str, width: int, strip: bool, gain: float) -> None:
+    rgb = np.asarray(Image.open(SRC / f'{name}.png').convert('RGB')).astype(np.float32)
+    if strip:
+        # Crop to the rows that aren't black.
+        rows = np.nonzero(rgb.max(axis=2).mean(axis=1) > 4)[0]
+        rgb = rgb[rows[0]:rows[-1] + 1]
+        # Smooth the side seam: spread the difference between the two edge columns, blurred
+        # down the rows so only its broad shape is corrected, over a band at each side.
+        diff = rgb[:, 0] - rgb[:, -1]
+        k = 31
+        diff = np.stack([np.convolve(np.pad(diff[:, c], k // 2, mode='edge'), np.ones(k) / k, mode='valid') for c in range(3)], axis=1)
+        band = rgb.shape[1] // 10
+        ramp = (1 - np.arange(band) / band)[None, :, None]
+        rgb[:, :band] -= diff[:, None] / 2 * ramp
+        rgb[:, -band:] += diff[:, None] / 2 * ramp[:, ::-1]
+        rgb = np.clip(rgb, 0, 255)
+
+    # Brightness becomes opacity (above the JPEG's near-black floor), times the gain; the color
+    # is divided by the brightness, so drawn over black at gain 1 it matches the original.
+    alpha = np.clip((rgb.max(axis=2) - 3) / 252, 0, 1)
+    color_alpha = alpha
+    alpha = np.minimum(alpha * gain, 1)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        color = np.nan_to_num(np.clip(rgb / np.maximum(color_alpha, 1e-6)[..., None], 0, 255))
+    rgba = np.dstack([color, alpha * 255]).round().astype(np.uint8)
+
+    height = round(width * rgba.shape[0] / rgba.shape[1])
+    img = Image.fromarray(rgba, 'RGBA').convert('RGBa')
+    if strip:
+        # Pad with the opposite side, so resampling near a side sees what the tiling puts there.
+        pad = 16
+        padded = Image.fromarray(np.pad(np.asarray(img), ((0, 0), (pad, pad), (0, 0)), mode='wrap'), 'RGBa')
+        p = round(pad * width / rgba.shape[1])
+        img = padded.resize((width + 2 * p, height), Image.LANCZOS).crop((p, 0, p + width, height))
+    else:
+        img = img.resize((width, height), Image.LANCZOS)
+    TEX_OUT.mkdir(exist_ok=True)
+    img.convert('RGBA').save(TEX_OUT / f'{name}.png', optimize=True)
+    print(f'{name}: {width}x{height}')
+
+
 def main() -> None:
-    known = [*SPRITES, *ICONS, *TEXTURES]
+    known = [*SPRITES, *ICONS, *TEXTURES, *EFFECTS]
     for name in sys.argv[1:] or known:
         if name in SPRITES:
             cutout(name, SPRITES[name])
@@ -173,6 +228,8 @@ def main() -> None:
             icon(name, ICONS[name])
         elif name in TEXTURES:
             texture(name, TEXTURES[name])
+        elif name in EFFECTS:
+            effect(name, *EFFECTS[name])
         else:
             sys.exit(f'Unknown image {name}; known: {", ".join(known)}')
 

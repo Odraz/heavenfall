@@ -20,7 +20,7 @@ import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
 import { Particles } from '../render/particles';
 import { GameScene } from '../render/scene';
-import type { TerrainTextures } from '../render/textures';
+import type { GameTextures } from '../render/textures';
 import { Vfx } from '../render/vfx';
 import { DebugOverlay } from '../ui/debugOverlay';
 import { PauseOverlay } from '../ui/pause';
@@ -63,7 +63,7 @@ export interface GameOptions {
   root: HTMLElement;
   map: GameMap;
   atlas: Atlas;
-  terrainTextures: TerrainTextures;
+  textures: GameTextures;
   /** The animated 8-direction sprites of every enemy type that has an atlas, by type. */
   enemyAnims: Partial<Record<number, EnemyAnimSet>>;
   /** The animated sprites of every class another player in the roster plays. */
@@ -110,9 +110,11 @@ export class Game {
   private readonly animator = new EnemyAnimator();
   private readonly corpses: Corpse[] = [];
   private readonly particles: Particles;
-  private readonly vfx = new Vfx();
+  private readonly vfx: Vfx;
   /** The large growing glow on the Gatekeeper while it casts Judgment (§7.4). */
-  private readonly judgmentGlow: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
+  private readonly judgmentGlow: THREE.Sprite;
+  private readonly glowCenter = new THREE.Vector3();
+  private readonly glowToCam = new THREE.Vector3();
   private readonly frames: Record<string, SpriteFrame>;
   private readonly bot: Bot | null;
   private readonly bench: BenchRunner | null;
@@ -168,7 +170,7 @@ export class Game {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'game-canvas';
     o.root.appendChild(this.canvas);
-    this.scene = new GameScene(this.canvas, this.map, o.terrainTextures);
+    this.scene = new GameScene(this.canvas, this.map, o.textures.terrain);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
     for (const [type, set] of Object.entries(o.enemyAnims)) {
@@ -181,10 +183,10 @@ export class Game {
       this.playerBillboards.set(cls, b);
       this.scene.scene.add(b.mesh);
     }
+    this.vfx = new Vfx(o.textures.fx);
     this.scene.scene.add(this.vfx.group);
-    this.judgmentGlow = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 24, 16),
-      new THREE.MeshBasicMaterial({ color: 0xfff0b0, transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
+    this.judgmentGlow = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: o.textures.fx.glow, color: 0xfff0b0, transparent: true, depthWrite: false, fog: false }),
     );
     this.judgmentGlow.visible = false;
     this.scene.scene.add(this.judgmentGlow);
@@ -377,7 +379,7 @@ export class Game {
         break;
       case 'fallen:E': // landing shockwave, when the leap lands
         this.vfx.ring(now, e.x, e.y, e.z, 0xf08a24, 0.5, 5, 450, 400);
-        this.vfx.ring(now, e.x, e.y, e.z, 0x1b1513, 0.3, 4, 450, 400);
+        this.vfx.glow(now, e.x, e.y, e.z + 0.5, 0xf08a24, 1, 2.5, 450, 400);
         break;
       case 'heretic:Q': // heal ring
         this.vfx.ring(now, e.x, e.y, e.z, 0x5ee65e, 0.5, 15, 700);
@@ -394,17 +396,17 @@ export class Game {
           const d = 6 + Math.abs(i) * 2;
           pts.push([e.x, e.y, e.z + 0.8], [user.x + Math.cos(a) * d, user.y + Math.sin(a) * d, e.z + 0.8]);
         }
-        this.vfx.lines(now, pts, 0x9aa0a8, 500);
+        this.vfx.chain(now, pts, 0.3, 500);
         break;
       }
       case 'binder:E': // grey burst
-        this.vfx.sphere(now, e.x, e.y, e.z, 0x8a8f97, 0.5, 8, 600, 0.35);
+        this.vfx.smoke(now, e.x, e.y, e.z, 0x8a8f97, 0.5, 8, 700);
         break;
       case 'betrayer:Q': {
         // Mark beam: from the Betrayer to the marked enemy, and a column of light on it.
         const pts: Array<[number, number, number]> = [[e.x, e.y, e.z], [e.x, e.y, e.z + 8]];
         if (user) pts.push([user.x, user.y, user.z + PLAYER_EYE - 0.2], [e.x, e.y, e.z + 1]);
-        this.vfx.lines(now, pts, 0xe0301e, 600);
+        this.vfx.beam(now, pts, 0xe0301e, 0.4, 600);
         break;
       }
       case 'betrayer:E': // afterimage trail
@@ -596,7 +598,7 @@ export class Game {
       }
       pts.push([mx, my, mz], [ex + dx * end, ey + dy * end, ez + dz * end]);
     }
-    this.vfx.lines(now, pts, 0xffd27a, TRACER_MS);
+    this.vfx.beam(now, pts, 0xffc04a, 0.1, TRACER_MS);
     if (hit) this.hud.hit(now);
   }
 
@@ -715,12 +717,15 @@ export class Game {
     for (let i = this.pendingBursts.length - 1; i >= 0; i--) {
       const b = this.pendingBursts[i];
       if (now < b.at) continue;
-      if (b.censer) this.particles.emberBurst(b.x, b.y, b.z);
+      if (b.censer) {
+        this.particles.emberBurst(b.x, b.y, b.z);
+        this.vfx.glow(now, b.x, b.y, b.z, 0xf08a24, 0.6, 2, 350);
+      }
       else this.particles.featherBurst(b.x, b.y, b.z);
       this.pendingBursts.splice(i, 1);
     }
     this.particles.update(dt);
-    this.vfx.update(now);
+    this.vfx.update(now, this.scene.camera.position);
 
     const b = p.body;
     this.scene.setView(b.x, b.y, b.z, p.yaw, p.pitch);
@@ -783,9 +788,12 @@ export class Game {
         judgment = g;
         const r = JUDGMENT_GLOW_R0 + (JUDGMENT_GLOW_R1 - JUDGMENT_GLOW_R0) * t;
         this.judgmentGlow.visible = true;
-        this.judgmentGlow.position.set(ents.x[i], enemyZ[i] + def.height / 2, ents.y[i]);
-        this.judgmentGlow.scale.setScalar(r);
-        this.judgmentGlow.material.opacity = 0.15 + 0.3 * t;
+        // In front of the Gatekeeper's billboard, toward the camera, so it glows over it.
+        const c = this.glowCenter.set(ents.x[i], enemyZ[i] + def.height / 2, ents.y[i]);
+        const toCam = this.glowToCam.subVectors(this.scene.camera.position, c).normalize();
+        this.judgmentGlow.position.copy(c).addScaledVector(toCam, def.radius);
+        this.judgmentGlow.scale.setScalar(2.4 * r);
+        this.judgmentGlow.material.opacity = 0.25 + 0.5 * t;
       }
       if (this.flashUntil[ents.slot[i]] > now) glow = GLOW_FLASH;
       else if (judgment) glow = judgment;
