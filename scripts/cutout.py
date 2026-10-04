@@ -37,7 +37,13 @@ SPRITES = {
     'decor-cloud-tuft': 192,
     'decor-angel-statue': 512,
     'decor-fountain': 352,
+    # HUD: 10vh wide, so 256 stays sharp up to 2560 px tall screens.
+    'muzzle-flash': 256,
 }
+
+# Sprites drawn centered on a point (the muzzle flash on the muzzle): cropped symmetrically
+# around the image center, so the center stays where the painting put it.
+CENTERED = {'muzzle-flash'}
 
 # Icons: output size in pixels. Ability icons show at 64 CSS px, so 128 stays sharp on
 # high-DPI screens; class icons are for the party frames.
@@ -94,6 +100,11 @@ def cutout(name: str, height: int) -> None:
     # Crop to the pixels the game keeps (at least 50% opaque).
     ys, xs = np.nonzero(alpha >= 0.5)
     y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    if name in CENTERED:
+        h, w = alpha.shape
+        dy = max(h / 2 - y0, y1 - h / 2)
+        dx = max(w / 2 - x0, x1 - w / 2)
+        y0, y1, x0, x1 = round(h / 2 - dy), round(h / 2 + dy), round(w / 2 - dx), round(w / 2 + dx)
     rgba = np.dstack([color, alpha * 255])[y0:y1, x0:x1].round().astype(np.uint8)
 
     # Resize premultiplied, so transparent pixels don't bleed their color into the edges.
