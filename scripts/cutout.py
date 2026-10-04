@@ -1,11 +1,14 @@
-"""Cuts generated 2D art out of its green background into game sprites (§11.2).
+"""Turns generated 2D art into game sprites (§11.2).
 
-Reads assets/art-src/<name>.png (flat green background), writes assets/sprites/<name>.png:
-the green keyed out, the green spill removed from the edges, cropped to the subject and
-resized to the height in SPRITES. The atlas draws PNG sprites at their own size.
+Reads assets/art-src/<name>.png, writes assets/sprites/<name>.png.
+- SPRITES (flat green background): the green keyed out, the green spill removed from the
+  edges, cropped to the subject and resized to the listed height. The atlas draws PNG
+  sprites at their own size.
+- ICONS (painted background filling the square): any light frame around the painting
+  trimmed, then cropped to a centered square of the listed size.
 
 Needs Python 3 with Pillow and NumPy.
-Usage: python scripts/cutout.py [name ...]   (no names: every sprite)
+Usage: python scripts/cutout.py [name ...]   (no names: every sprite and icon)
 """
 import sys
 from pathlib import Path
@@ -34,6 +37,23 @@ SPRITES = {
     'decor-cloud-tuft': 192,
     'decor-angel-statue': 512,
     'decor-fountain': 352,
+}
+
+# Icons: output size in pixels. Ability icons show at 64 CSS px, so 128 stays sharp on
+# high-DPI screens; class icons are for the party frames.
+ICONS = {
+    'icon-blasphemy': 128,
+    'icon-falling-star': 128,
+    'icon-communion': 128,
+    'icon-shroud': 128,
+    'icon-chains': 128,
+    'icon-discord': 128,
+    'icon-kiss': 128,
+    'icon-shadowstep': 128,
+    'class-fallen': 128,
+    'class-heretic': 128,
+    'class-binder': 128,
+    'class-betrayer': 128,
 }
 
 # Sprites with some green of their own (the lilies' stems). Pixels with less than
@@ -86,12 +106,37 @@ def cutout(name: str, height: int) -> None:
     print(f'{name}: {out.width}x{out.height}')
 
 
+def icon(name: str, size: int) -> None:
+    img = Image.open(SRC / f'{name}.png').convert('RGB')
+
+    # Trim rows and columns of a light frame (some images come with a white border),
+    # plus 1% more, so the frame's soft inner edge goes too.
+    bright = np.asarray(img.convert('L')) > 200
+    rows = np.nonzero(bright.mean(axis=1) < 0.9)[0]
+    cols = np.nonzero(bright.mean(axis=0) < 0.9)[0]
+    y0, y1, x0, x1 = rows[0], rows[-1] + 1, cols[0], cols[-1] + 1
+    if (y0, y1, x0, x1) != (0, img.height, 0, img.width):
+        inset = round(0.01 * max(img.size))
+        y0, y1, x0, x1 = y0 + inset, y1 - inset, x0 + inset, x1 - inset
+
+    # A centered square.
+    side = min(y1 - y0, x1 - x0)
+    top = y0 + (y1 - y0 - side) // 2
+    left = x0 + (x1 - x0 - side) // 2
+    out = img.crop((left, top, left + side, top + side)).resize((size, size), Image.LANCZOS)
+    out.save(OUT / f'{name}.png', optimize=True)
+    print(f'{name}: {size}x{size}')
+
+
 def main() -> None:
-    names = sys.argv[1:] or list(SPRITES)
+    names = sys.argv[1:] or [*SPRITES, *ICONS]
     for name in names:
-        if name not in SPRITES:
-            sys.exit(f'Unknown sprite {name}; known: {", ".join(SPRITES)}')
-        cutout(name, SPRITES[name])
+        if name in SPRITES:
+            cutout(name, SPRITES[name])
+        elif name in ICONS:
+            icon(name, ICONS[name])
+        else:
+            sys.exit(f'Unknown sprite {name}; known: {", ".join([*SPRITES, *ICONS])}')
 
 
 if __name__ == '__main__':
