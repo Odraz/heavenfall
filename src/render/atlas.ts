@@ -8,7 +8,6 @@ const spriteName = (path: string) => path.replace(/^.*\//, '').replace(/\.svg$/,
 
 /** Sprites drawn in the world as billboards; the rest (weapons, muzzle flash, icons) are HUD images. */
 const BILLBOARD_SPRITES = new Set([
-  'fallen', 'heretic', 'binder', 'betrayer',
   'blessed', 'chorister', 'cherub', 'gatekeeper',
   'proj-censer', 'proj-orb', 'proj-arrow',
   'feather', 'spark', 'ember',

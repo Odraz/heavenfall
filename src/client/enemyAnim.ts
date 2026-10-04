@@ -25,11 +25,11 @@ export const CORPSE_LIE_MS = 3000;
 export const CORPSE_SINK_MS = 1000;
 export const CORPSE_SINK_M = 0.6;
 /** Smoothed speeds below this count as standing still. */
-const MOVING_SPEED = 0.4;
+export const MOVING_SPEED = 0.4;
 /** Time constant of the velocity smoothing, in seconds. */
-const VELOCITY_TAU = 0.12;
+export const VELOCITY_TAU = 0.12;
 /** Interpolated jumps longer than this in one frame aren't walking (a reused slot, a stall). */
-const MAX_STEP_M = 1.5;
+export const MAX_STEP_M = 1.5;
 
 /**
  * The sprite direction (0–7) showing an enemy with yaw `facing` to a viewer in direction

@@ -1,6 +1,12 @@
 /** The Title and Singleplayer Setup screens (§3). */
 import { CLASS_IDS, CLASSES, type ClassId } from '../data/classes';
-import { spriteUrl } from '../render/atlas';
+import fallenPortrait from '../../assets/ui/portrait-fallen.png';
+import hereticPortrait from '../../assets/ui/portrait-heretic.png';
+import binderPortrait from '../../assets/ui/portrait-binder.png';
+import betrayerPortrait from '../../assets/ui/portrait-betrayer.png';
+
+/** Each class's idle frame from the front, rendered from its 3D model (§11.2). */
+const PORTRAITS: Record<ClassId, string> = { fallen: fallenPortrait, heretic: hereticPortrait, binder: binderPortrait, betrayer: betrayerPortrait };
 
 const NAME_KEY = 'heavenfall.name';
 export const NAME_MAX = 16;
@@ -115,9 +121,8 @@ export function singleplayerSetupScreen(a: SetupActions): HTMLElement {
     card.type = 'button';
     card.dataset.classId = id;
     card.setAttribute('aria-pressed', 'false');
-    // The class portrait comes with the final art (milestone 6); until then, the placeholder sprite.
     const img = el('img', 'class-portrait', card);
-    img.src = spriteUrl(id);
+    img.src = PORTRAITS[id];
     img.alt = '';
     el('div', 'class-name', card, c.name);
     el('div', 'class-role', card, `${c.role} · ${c.hp} HP`);

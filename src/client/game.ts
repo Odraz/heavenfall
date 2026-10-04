@@ -15,7 +15,7 @@ import { lineOfSight, raycastTerrain } from '../sim/los';
 import { doorsClosedFor, setArenaDoors, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
 import { BOSS_CAST_JUDGMENT, PROJ_CENSER } from '../sim/sim';
-import type { AnimSet } from '../render/animAtlas';
+import type { AnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
 import { Particles } from '../render/particles';
@@ -32,6 +32,7 @@ import type { HostSession } from './hostSession';
 import { Hud } from './hud';
 import { Input, MOUSE_SENSITIVITY } from './input';
 import { LocalPlayer, wasdDirection } from './localPlayer';
+import { PlayerAnimator } from './playerAnim';
 import { SnapshotBuffer } from './snapshots';
 
 const BENCH_TURN_RATE = 0.3;
@@ -64,6 +65,8 @@ export interface GameOptions {
   atlas: Atlas;
   /** The Blessed's animated 8-direction sprites. */
   blessed: AnimSet;
+  /** The animated sprites of every class another player in the roster plays. */
+  players: Partial<Record<ClassId, PlayerAnimSet>>;
   params: Params;
   transport: Transport;
   /** The host session when this player is the host (singleplayer included). */
@@ -140,7 +143,10 @@ export class Game {
   private readonly botEnemies: BotEnemy[] = [];
   /** Delayed bursts, played when the render time reaches them. */
   private readonly pendingBursts: Array<{ at: number; censer: boolean; x: number; y: number; z: number }> = [];
-  private readonly afterimages: Array<{ start: number; x: number; y: number; z: number; sprite: string }> = [];
+  /** Shadowstep afterimages: the Betrayer's idle frame where it started, facing its yaw then. */
+  private readonly afterimages: Array<{ start: number; x: number; y: number; z: number; facing: number }> = [];
+  private readonly playerBillboards = new Map<ClassId, Billboards>();
+  private readonly playerAnimator = new PlayerAnimator();
   /** The Gatekeeper's cast and its progress (0–1) in the newest snapshot. */
   private bossCast = 0;
   private bossCastProgress = 0;
@@ -167,6 +173,11 @@ export class Game {
     this.scene.scene.add(this.billboards.mesh);
     this.blessedBillboards = new Billboards(o.blessed.texture, true);
     this.scene.scene.add(this.blessedBillboards.mesh);
+    for (const [cls, set] of Object.entries(o.players) as Array<[ClassId, PlayerAnimSet]>) {
+      const b = new Billboards(set.texture, true);
+      this.playerBillboards.set(cls, b);
+      this.scene.scene.add(b.mesh);
+    }
     this.scene.scene.add(this.vfx.group);
     this.judgmentGlow = new THREE.Mesh(
       new THREE.SphereGeometry(1, 24, 16),
@@ -395,7 +406,7 @@ export class Game {
         break;
       }
       case 'betrayer:E': // afterimage trail
-        for (let i = 0; i < 3; i++) this.afterimages.push({ start: now + i * 60, x: e.x, y: e.y, z: e.z, sprite: 'betrayer' });
+        for (let i = 0; i < 3; i++) this.afterimages.push({ start: now + i * 60, x: e.x, y: e.y, z: e.z, facing: user?.yaw ?? 0 });
         break;
     }
   }
@@ -730,6 +741,7 @@ export class Game {
     const bbBlessed = this.blessedBillboards;
     bb.begin();
     bbBlessed.begin();
+    for (const b of this.playerBillboards.values()) b.begin();
     const chain = this.frames['chain-ring'];
     const mark = this.frames.mark;
     const anims = this.o.blessed.anims;
@@ -804,12 +816,18 @@ export class Game {
       const k = proj.kind[i];
       bb.add(this.frames[PROJECTILE_SPRITES[k]], proj.x[i], proj.y[i], proj.z[i], PROJECTILE_SIZES[k], true);
     }
-    // Other players; the ally target is tinted gold (§10).
+    // Other players, facing their yaw (§11.1); the ally target is tinted gold (§10).
+    this.playerAnimator.begin();
     for (const q of this.snaps.playersOut) {
       if (q.id === this.localId || q.dead) continue;
       const cls = this.classOf(q.id);
-      if (!cls) continue;
-      bb.add(this.frames[cls], q.x, q.y, q.z, PLAYER_HEIGHT, false, 1, 1, 1, q.id === this.allyTargetId ? GLOW_ALLY : NO_GLOW);
+      const set = cls && this.o.players[cls];
+      const pb = cls && this.playerBillboards.get(cls);
+      if (!set || !pb) continue;
+      this.playerAnimator.update(q.id, q.x, q.y, dt);
+      const pick = this.playerAnimator.pick(q.id);
+      const pf = set.anims[pick.anim][spriteDirection(q.yaw, eye.x - q.x, eye.y - q.y)][pick.frame];
+      pb.add(pf, q.x, q.y, q.z, pf.height, false, 1, 1, 1, q.id === this.allyTargetId ? GLOW_ALLY : NO_GLOW);
     }
     // Decorations (§8.1): drawn only.
     for (const d of this.map.decorations) {
@@ -823,17 +841,21 @@ export class Game {
         this.afterimages.splice(i, 1);
         continue;
       }
-      if (t < 0 || a.sprite === undefined) continue;
+      const betrayer = this.o.players.betrayer;
+      const ab = this.playerBillboards.get('betrayer');
+      if (t < 0 || !betrayer || !ab) continue;
       const g = this.glowScratch;
       g.r = 0.1;
       g.g = 0.05;
       g.b = 0.05;
       g.a = 0.4 + 0.5 * t;
-      bb.add(this.frames[a.sprite], a.x, a.y, a.z, PLAYER_HEIGHT * (1 - 0.3 * t), false, 1, 1, 1, g);
+      const af = betrayer.anims.idle[spriteDirection(a.facing, eye.x - a.x, eye.y - a.y)][0];
+      ab.add(af, a.x, a.y, a.z, af.height * (1 - 0.3 * t), false, 1, 1, 1, g);
     }
     this.particles.draw(bb);
     bb.end(this.scene.camera);
     bbBlessed.end(this.scene.camera);
+    for (const b of this.playerBillboards.values()) b.end(this.scene.camera);
   }
 
   private lastAnimAt = 0;

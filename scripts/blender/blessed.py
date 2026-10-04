@@ -1,30 +1,24 @@
 """
 Builds the Blessed in Blender from primitives, rigs and animates it, and renders sprite frames.
+Shared code and the commands are in common.py.
 
 Run with Blender 5.2 (headless):
   blender -b --factory-startup -P scripts/blender/blessed.py -- <command> [args]
-
-Commands:
-  model <out.png>       turnaround preview of the rest pose
-  sheet <anim> <out.png> contact sheet of one animation (rows: 8 directions, columns: frames)
-  sprites <out-dir>     renders every frame and writes the atlas PNG and manifest JSON
-
-Conventions: meters, Z up, the character faces -Y, so its right side is -X. The camera looks
-along +Y. Direction d (0–7) means the character is turned d × 45° counterclockwise seen from
-above, away from facing the camera: d = 2 shows its right side.
 """
 import math
-import random
+import os
 import sys
 
 import bpy
-import bmesh
-from mathutils import Euler, Matrix, Vector
+from mathutils import Vector
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common import (PAL, Pose, Spec, add, bind_rigid, bind_skirt, blade_mesh, box, build_armature,  # noqa: E402
+                    face_camera, keys, lerp, main, robe_panel, smooth, sphere, torus, tube)
 
 # ---------------------------------------------------------------- palette
 
-PAL = {
-    'ink': (0.165, 0.129, 0.094),  # #2a2118, the outline color of the other sprites
+PAL.update({
     'ivory': (0.93, 0.89, 0.78),
     'white': (0.95, 0.95, 0.94),
     'steel': (0.80, 0.83, 0.87),
@@ -34,249 +28,7 @@ PAL = {
     'beard': (0.88, 0.87, 0.84),
     'eye': (1.0, 1.0, 1.0),
     'grip': (0.45, 0.30, 0.18),
-}
-
-
-def srgb_to_linear(c):
-    return tuple(x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in c)
-
-
-# ---------------------------------------------------------------- scene
-
-def reset_scene():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    scene = bpy.context.scene
-    engines = [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items]
-    scene.render.engine = 'BLENDER_EEVEE' if 'BLENDER_EEVEE' in engines else 'BLENDER_EEVEE_NEXT'
-    scene.render.film_transparent = True
-    scene.view_settings.view_transform = 'Standard'
-    scene.view_settings.look = 'None'
-    scene.render.image_settings.file_format = 'PNG'
-    scene.render.image_settings.color_mode = 'RGBA'
-    scene.render.fps = 30
-    world = bpy.data.worlds.new('World')
-    world.use_nodes = True
-    world.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.0
-    scene.world = world
-    return scene
-
-
-_mats = {}
-
-
-def toon(name):
-    """Two-to-three-tone cel material: diffuse lighting quantized by a constant color ramp."""
-    if name in _mats:
-        return _mats[name]
-    m = bpy.data.materials.new(name)
-    m.use_nodes = True
-    nt = m.node_tree
-    nt.nodes.clear()
-    out = nt.nodes.new('ShaderNodeOutputMaterial')
-    col = srgb_to_linear(PAL[name]) + (1.0,)
-    if name == 'eye':
-        em = nt.nodes.new('ShaderNodeEmission')
-        em.inputs['Color'].default_value = col
-        nt.links.new(em.outputs[0], out.inputs['Surface'])
-    else:
-        diff = nt.nodes.new('ShaderNodeBsdfDiffuse')
-        s2r = nt.nodes.new('ShaderNodeShaderToRGB')
-        bw = nt.nodes.new('ShaderNodeRGBToBW')
-        ramp = nt.nodes.new('ShaderNodeValToRGB')
-        ramp.color_ramp.interpolation = 'CONSTANT'
-        els = ramp.color_ramp.elements
-        els[0].position = 0.0
-        els[0].color = (0.60, 0.60, 0.66, 1)  # cool shadow
-        els[1].position = 0.10
-        els[1].color = (0.80, 0.80, 0.83, 1)
-        e3 = els.new(0.42)
-        e3.color = (1, 1, 1, 1)
-        mix = nt.nodes.new('ShaderNodeMix')
-        mix.data_type = 'RGBA'
-        mix.blend_type = 'MULTIPLY'
-        mix.inputs['Factor'].default_value = 1.0
-        mix.inputs['A'].default_value = col
-        em = nt.nodes.new('ShaderNodeEmission')
-        nt.links.new(diff.outputs[0], s2r.inputs[0])
-        nt.links.new(s2r.outputs['Color'], bw.inputs[0])
-        nt.links.new(bw.outputs[0], ramp.inputs['Fac'])
-        nt.links.new(ramp.outputs['Color'], mix.inputs['B'])
-        nt.links.new(mix.outputs['Result'], em.inputs['Color'])
-        nt.links.new(em.outputs[0], out.inputs['Surface'])
-    _mats[name] = m
-    return m
-
-
-def outline_mat():
-    if 'outline' in _mats:
-        return _mats['outline']
-    m = bpy.data.materials.new('outline')
-    m.use_nodes = True
-    nt = m.node_tree
-    nt.nodes.clear()
-    out = nt.nodes.new('ShaderNodeOutputMaterial')
-    em = nt.nodes.new('ShaderNodeEmission')
-    em.inputs['Color'].default_value = srgb_to_linear(PAL['ink']) + (1.0,)
-    nt.links.new(em.outputs[0], out.inputs['Surface'])
-    m.use_backface_culling = True
-    _mats['outline'] = m
-    return m
-
-
-# ---------------------------------------------------------------- mesh helpers
-
-def _finish(obj, mat, smooth=True, outline=0.008):
-    obj.data.materials.append(toon(mat) if isinstance(mat, str) else mat)
-    if smooth:
-        for p in obj.data.polygons:
-            p.use_smooth = True
-    if outline:
-        add_outline(obj, outline)
-    return obj
-
-
-def add_outline(obj, thickness):
-    """Inverted-hull ink line: a flipped, pushed-out shell that only shows its back faces."""
-    obj.data.materials.append(outline_mat())
-    mod = obj.modifiers.new('outline', 'SOLIDIFY')
-    mod.thickness = -thickness
-    mod.offset = -1.0
-    mod.use_flip_normals = True
-    mod.use_rim = False
-    mod.material_offset = len(obj.data.materials) - 1
-    mod.use_even_offset = False
-
-
-def _new_obj(name, bm):
-    me = bpy.data.meshes.new(name)
-    bm.to_mesh(me)
-    bm.free()
-    obj = bpy.data.objects.new(name, me)
-    bpy.context.collection.objects.link(obj)
-    return obj
-
-
-def sphere(name, loc, scale, mat, seg=20, rot=(0, 0, 0), outline=0.008):
-    bm = bmesh.new()
-    bmesh.ops.create_uvsphere(bm, u_segments=seg, v_segments=seg // 2 + 2, radius=1.0)
-    bmesh.ops.transform(bm, matrix=Matrix.LocRotScale(Vector(loc), Euler(rot), Vector(scale)), verts=bm.verts)
-    return _finish(_new_obj(name, bm), mat, outline=outline)
-
-
-def tube(name, p0, p1, r0, r1, mat, seg=14, cap=True, outline=0.008, squash=1.0):
-    """A truncated cone from p0 (radius r0) to p1 (radius r1); `squash` scales its depth axis."""
-    p0, p1 = Vector(p0), Vector(p1)
-    bm = bmesh.new()
-    bmesh.ops.create_cone(bm, cap_ends=cap, segments=seg, radius1=r0, radius2=r1, depth=1.0)
-    for v in bm.verts:
-        v.co.y *= squash
-    axis = p1 - p0
-    rot = Vector((0, 0, 1)).rotation_difference(axis.normalized()).to_matrix().to_4x4()
-    m = Matrix.Translation((p0 + p1) / 2) @ rot @ Matrix.Diagonal((1, 1, axis.length, 1))
-    bmesh.ops.transform(bm, matrix=m, verts=bm.verts)
-    return _finish(_new_obj(name, bm), mat, outline=outline)
-
-
-def torus(name, loc, major, minor, mat, rot=(0, 0, 0), scale=(1, 1, 1), seg=32, outline=0.006):
-    bm = bmesh.new()
-    rings, ring_seg = seg, 8
-    verts = []
-    for i in range(rings):
-        a = 2 * math.pi * i / rings
-        row = []
-        for j in range(ring_seg):
-            b = 2 * math.pi * j / ring_seg
-            r = major + minor * math.cos(b)
-            row.append(bm.verts.new((r * math.cos(a), r * math.sin(a), minor * math.sin(b))))
-        verts.append(row)
-    for i in range(rings):
-        for j in range(ring_seg):
-            bm.faces.new((verts[i][j], verts[(i + 1) % rings][j], verts[(i + 1) % rings][(j + 1) % ring_seg], verts[i][(j + 1) % ring_seg]))
-    bmesh.ops.transform(bm, matrix=Matrix.LocRotScale(Vector(loc), Euler(rot), Vector(scale)), verts=bm.verts)
-    return _finish(_new_obj(name, bm), mat, outline=outline)
-
-
-def box(name, loc, size, mat, rot=(0, 0, 0), outline=0.006, bevel=0.0):
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1.0)
-    if bevel:
-        bmesh.ops.bevel(bm, geom=bm.edges[:], offset=bevel, segments=2, affect='EDGES')
-    bmesh.ops.transform(bm, matrix=Matrix.LocRotScale(Vector(loc), Euler(rot), Vector(size)), verts=bm.verts)
-    return _finish(_new_obj(name, bm), mat, smooth=False, outline=outline)
-
-
-def blade_mesh(name, p0, p1, side, flat, w=0.026, t=0.006):
-    """A flat blade from p0 to a point at p1, `side` across its width, `flat` through its thickness."""
-    bm = bmesh.new()
-    d = p1 - p0
-    tip_start = p0 + d * 0.88
-    rows = [(p0, 1.0), (tip_start, 0.85)]
-    ring = []
-    for c, k in rows:
-        ring.append([bm.verts.new(c + side * w * k * sx + flat * t * fy) for sx, fy in ((1, 0), (0, 1), (-1, 0), (0, -1))])
-    tip = bm.verts.new(p1)
-    for i in range(4):
-        j = (i + 1) % 4
-        bm.faces.new((ring[0][i], ring[0][j], ring[1][j], ring[1][i]))
-        bm.faces.new((ring[1][i], ring[1][j], tip))
-    bm.faces.new(list(reversed(ring[0])))
-    bm.normal_update()
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
-    return _finish(_new_obj(name, bm), 'steel', smooth=False, outline=0.005)
-
-
-def robe_panel(name, a0, a1, z0, z1, rx0, ry0, rx1, ry1, trim=0.12, tatter=0.0, seed=0, push=0.0):
-    """
-    A curved cloth panel on an elliptical cone around the waist. Angles: 0 is the front (-Y),
-    positive toward the character's left (+X). z0 top, z1 bottom. The outer columns are blue trim.
-    """
-    rnd = random.Random(seed)
-    cols, rows = 12, 10
-    bm = bmesh.new()
-    grid = []
-    bottom_jag = [0.0] * (cols + 1)
-    if tatter:
-        for i in range(cols + 1):
-            bottom_jag[i] = (rnd.random() * tatter) if i % 2 else rnd.random() * tatter * 0.25
-    for r in range(rows + 1):
-        t = r / rows
-        z = z0 + (z1 - z0) * t
-        rx = rx0 + (rx1 - rx0) * t ** 0.8
-        ry = ry0 + (ry1 - ry0) * t ** 0.8
-        row = []
-        for c in range(cols + 1):
-            a = a0 + (a1 - a0) * c / cols
-            zz = z + (bottom_jag[c] if r == rows else 0.0)
-            row.append(bm.verts.new(((rx + push) * math.sin(a), -(ry + push) * math.cos(a), zz)))
-        grid.append(row)
-    trim_cols = max(1, round(cols * trim))
-    is_trim = []
-    for r in range(rows):
-        for c in range(cols):
-            bm.faces.new((grid[r][c], grid[r + 1][c], grid[r + 1][c + 1], grid[r][c + 1]))
-            is_trim.append(c < trim_cols or c >= cols - trim_cols)
-    bm.normal_update()
-    bm.faces.ensure_lookup_table()
-    # Normals point outward: flip if the first face points inward.
-    f0 = bm.faces[0]
-    center = f0.calc_center_median()
-    if f0.normal.dot(Vector((center.x, center.y, 0))) < 0:
-        for f in bm.faces:
-            f.normal_flip()
-    obj = _new_obj(name, bm)
-    obj.data.materials.append(toon('ivory'))
-    obj.data.materials.append(toon('blue'))
-    for p in obj.data.polygons:
-        p.use_smooth = True
-    for p in obj.data.polygons:
-        if is_trim[p.index]:
-            p.material_index = 1
-    sol = obj.modifiers.new('thick', 'SOLIDIFY')
-    sol.thickness = 0.012
-    sol.offset = 0.0
-    add_outline(obj, 0.007)
-    return obj
-
+})
 
 # ---------------------------------------------------------------- armature
 
@@ -306,56 +58,10 @@ SWORD_DIR = Vector((0.42, -0.38, -0.82)).normalized()
 BONES['sword'] = ((-0.255, -0.04, 0.79), tuple(Vector((-0.255, -0.04, 0.79)) + SWORD_DIR * 0.2), 'hand.R')
 
 
-def build_armature():
-    arm_data = bpy.data.armatures.new('rig')
-    arm = bpy.data.objects.new('rig', arm_data)
-    bpy.context.collection.objects.link(arm)
-    bpy.context.view_layer.objects.active = arm
-    bpy.ops.object.mode_set(mode='EDIT')
-    for name, (h, t, parent) in BONES.items():
-        b = arm_data.edit_bones.new(name)
-        b.head, b.tail = Vector(h), Vector(t)
-        b.roll = 0.0
-        if parent:
-            b.parent = arm_data.edit_bones[parent]
-    bpy.ops.object.mode_set(mode='OBJECT')
-    for pb in arm.pose.bones:
-        pb.rotation_mode = 'QUATERNION'
-    return arm
-
-
-def bind_rigid(obj, arm, bone):
-    bpy.context.view_layer.update()
-    mw = obj.matrix_world.copy()
-    obj.parent = arm
-    obj.parent_type = 'BONE'
-    obj.parent_bone = bone
-    bpy.context.view_layer.update()
-    obj.matrix_world = mw
-
-
-def bind_skirt(obj, arm, bone, z_top=0.98, z_free=0.80):
-    """Weights the panel to the hips at the waist, blending to its own bone below z_free."""
-    obj.parent = arm
-    g_hips = obj.vertex_groups.new(name='hips')
-    g_bone = obj.vertex_groups.new(name=bone)
-    for v in obj.data.vertices:
-        t = min(1.0, max(0.0, (z_top - v.co.z) / (z_top - z_free)))
-        w = t * t * (3 - 2 * t)
-        g_hips.add([v.index], 1.0 - w, 'REPLACE')
-        g_bone.add([v.index], w, 'REPLACE')
-    mod = obj.modifiers.new('rig', 'ARMATURE')
-    mod.object = arm
-    # The armature must deform before thickness and outline are added.
-    bpy.context.view_layer.objects.active = obj
-    while obj.modifiers[0].name != 'rig':
-        bpy.ops.object.modifier_move_up(modifier='rig')
-
-
 # ---------------------------------------------------------------- the model
 
 def build_model():
-    arm = build_armature()
+    arm = build_armature(BONES)
     parts = []  # (object, bone)
 
     def rigid(obj, bone):
@@ -372,7 +78,7 @@ def build_model():
         rigid(sphere(f'ear{sx}', (0.088 * sx, 0.0, 1.51), (0.014, 0.024, 0.032), 'skin', seg=10, outline=0.004), 'head')
     rigid(tube('neck', (0, 0, 1.33), (0, 0, 1.45), 0.045, 0.042, 'skin', outline=0.0), 'neck')
 
-    # Halo: a thin gold ring behind the head. It always faces the camera (see track_halo).
+    # Halo: a thin gold ring behind the head.
     halo = torus('halo', (0, 0, 0), 0.17, 0.012, 'gold', rot=(math.pi / 2, 0, 0), seg=40, outline=0.006)
 
     # Torso: ivory robe body, white breastplate with a gold Y, blue trims, gold collar.
@@ -435,103 +141,12 @@ def build_model():
         bind_rigid(obj, arm, bone)
     for obj, bone in skirt:
         bind_skirt(obj, arm, bone)
-    track_halo(halo, arm)
+    # Always faces the camera, centered above the head and 0.1 m behind it as seen from the camera.
+    face_camera(halo, arm, 'head', (0, 0, 1.56), (0, 0.10, 0))
     return arm
 
 
-def track_halo(halo, arm):
-    """
-    Keeps the halo upright and facing the camera, centered above the head and 0.1 m behind it
-    as seen from the camera, so it reads as a ring from every direction.
-    """
-    anchor = bpy.data.objects.new('halo_anchor', None)
-    bpy.context.collection.objects.link(anchor)
-    anchor.parent = arm
-    anchor.parent_type = 'BONE'
-    anchor.parent_bone = 'head'
-    bpy.context.view_layer.update()
-    anchor.matrix_world = Matrix.Translation((0, 0, 1.56))
-    c = halo.constraints.new('COPY_LOCATION')
-    c.target = anchor
-    c.use_offset = True
-    halo.location = (0, 0.10, 0)
-
-
-# ---------------------------------------------------------------- posing
-
-def set_pose(arm, rots=None, locs=None):
-    """
-    Poses bones with rotations given in armature axes (degrees, XYZ Euler), each relative to its
-    parent as if the parent were at rest. +X tips an upward bone forward (toward -Y) and swings a
-    downward bone backward. Locations are armature-axis offsets in meters.
-    """
-    rots = rots or {}
-    locs = locs or {}
-    for pb in arm.pose.bones:
-        rest = pb.bone.matrix_local.to_3x3()
-        r = rots.get(pb.name, (0, 0, 0))
-        world = Euler(tuple(math.radians(a) for a in r), 'XYZ').to_matrix()
-        pb.rotation_quaternion = (rest.inverted() @ world @ rest).to_quaternion()
-        pb.location = rest.inverted() @ Vector(locs.get(pb.name, (0, 0, 0)))
-
-
-def lowest_contact(arm):
-    """Height of the lowest point that should rest on the ground: soles, toes or knees."""
-    bpy.context.view_layer.update()
-    pb = arm.pose.bones
-    zs = []
-    for side in 'LR':
-        zs.append(pb[f'foot.{side}'].head.z - 0.09)
-        zs.append(pb[f'foot.{side}'].tail.z - 0.03)
-        zs.append(pb[f'shin.{side}'].head.z - 0.06)
-    return min(zs)
-
-
-class Pose:
-    """One frame: bone rotations and offsets, plus a forward fall around a point on the ground."""
-
-    def __init__(self, rots, locs=None, fall=0.0, pivot_y=0.0, halo=1.0, grounded=True):
-        self.rots, self.locs = rots, dict(locs or {})
-        self.fall, self.pivot_y, self.halo, self.grounded = fall, pivot_y, halo, grounded
-
-
-def apply_pose(arm, pose, halo):
-    rots = dict(pose.rots)
-    rots.pop('root', None)
-    locs = dict(pose.locs)
-    set_pose(arm, rots, locs)
-    if pose.grounded:
-        # Drop or lift the hips so the lowest foot or knee touches the ground.
-        hx, hy, hz = locs.get('hips', (0, 0, 0))
-        locs['hips'] = (hx, hy, hz - lowest_contact(arm))
-    if pose.fall:
-        r = Euler((math.radians(pose.fall), 0, 0)).to_matrix()
-        p = Vector((0, pose.pivot_y, 0))
-        rots['root'] = (pose.fall, 0, 0)
-        locs['root'] = tuple(p - r @ p)
-    set_pose(arm, rots, locs)
-    halo.scale = (pose.halo,) * 3
-    halo.hide_render = pose.halo < 0.05
-
-
 # ---------------------------------------------------------------- animations
-
-def smooth(t):
-    t = min(1.0, max(0.0, t))
-    return t * t * (3 - 2 * t)
-
-
-def lerp(a, b, t):
-    return a + (b - a) * t
-
-
-def keys(table, t):
-    """Piecewise-smooth interpolation through (t, value) pairs."""
-    for (t0, v0), (t1, v1) in zip(table, table[1:]):
-        if t <= t1:
-            return lerp(v0, v1, smooth((t - t0) / (t1 - t0)))
-    return table[-1][1]
-
 
 def guard():
     """The standing pose: a slight forward lean, sword low across the body."""
@@ -541,11 +156,6 @@ def guard():
         'upper_arm.R': (-6, 0, 0), 'forearm.R': (-12, 0, 0),
         'shin.L': (4, 0, 0), 'shin.R': (4, 0, 0), 'thigh.L': (-3, 0, 0), 'thigh.R': (-3, 0, 0),
     }
-
-
-def add(r, bone, dx=0, dy=0, dz=0):
-    x, y, z = r.get(bone, (0, 0, 0))
-    r[bone] = (x + dx, y + dy, z + dz)
 
 
 def pose_idle(t):
@@ -670,265 +280,17 @@ ANIMS = {
 }
 
 
-def anim_times(name):
-    n, _, loop = ANIMS[name]
-    return [i / n if loop or n == 1 else i / (n - 1) for i in range(n)]
+def after_pose(pose):
+    halo = bpy.data.objects['halo']
+    s = pose.extra.get('halo', 1.0)
+    halo.scale = (s,) * 3
+    halo.hide_render = s < 0.05
 
-
-# ---------------------------------------------------------------- camera and rendering
 
 # Sprite pixels per meter in the game. A Blessed 1 m from the camera covers about 700 screen px
 # per meter at 1080p, so close up it is magnified about 3.7×; 190 still fits one 4096² atlas.
-PX_PER_M = 190
-OUTLINE_M = 0.02  # thickness of the outer ink contour
-SUPERSAMPLE = 2
-# The render canvas in meters around the character's ground point: room for a raised sword and
-# a body lying on the ground in any direction.
-CANVAS = (-2.0, 2.0, -0.4, 2.6)  # x0, x1, z0, z1
-
-
-def setup_camera(scene, px_per_m, elevation_deg=8.0):
-    x0, x1, z0, z1 = CANVAS
-    w, h = x1 - x0, z1 - z0
-    cam_data = bpy.data.cameras.new('cam')
-    cam_data.type = 'ORTHO'
-    cam_data.ortho_scale = max(w, h)
-    cam = bpy.data.objects.new('cam', cam_data)
-    bpy.context.collection.objects.link(cam)
-    el = math.radians(elevation_deg)
-    dist = 10.0
-    cz = (z0 + z1) / 2
-    cam.location = ((x0 + x1) / 2, -dist * math.cos(el), cz + dist * math.sin(el))
-    cam.rotation_euler = (math.pi / 2 - el, 0, 0)
-    scene.camera = cam
-    scene.render.resolution_x = round(w * px_per_m)
-    scene.render.resolution_y = round(h * px_per_m)
-    scene.render.resolution_percentage = 100
-    scene.eevee.taa_render_samples = 16
-    # Key light from the upper front-left of the viewer, fixed relative to the camera.
-    sun = bpy.data.lights.new('sun', 'SUN')
-    sun.energy = 3.0
-    sun_obj = bpy.data.objects.new('sun', sun)
-    bpy.context.collection.objects.link(sun_obj)
-    sun_obj.rotation_euler = Euler((math.radians(50), math.radians(-35), math.radians(-25)), 'XYZ')
-    return cam
-
-
-def ground_pixel(scene, cam):
-    """Pixel (x from left, y from bottom) where the character's ground point lands."""
-    from bpy_extras.object_utils import world_to_camera_view
-    bpy.context.view_layer.update()
-    v = world_to_camera_view(scene, cam, Vector((0, 0, 0)))
-    return v.x * scene.render.resolution_x, v.y * scene.render.resolution_y
-
-
-def render_to_array(scene, path):
-    import numpy as np
-    scene.render.filepath = path
-    bpy.ops.render.render(write_still=True)
-    img = bpy.data.images.load(path)
-    w, h = img.size
-    a = np.empty(w * h * 4, dtype=np.float32)
-    img.pixels.foreach_get(a)
-    bpy.data.images.remove(img)
-    return a.reshape(h, w, 4)  # row 0 is the bottom
-
-
-def save_array(arr, path):
-    import numpy as np
-    h, w, _ = arr.shape
-    img = bpy.data.images.new('out', w, h, alpha=True)
-    img.pixels.foreach_set(np.ascontiguousarray(arr, dtype=np.float32).ravel())
-    img.filepath_raw = path
-    img.file_format = 'PNG'
-    img.save()
-    bpy.data.images.remove(img)
-
-
-def ink_frame(arr, ss):
-    """
-    Downsamples a supersampled render and adds the bold outer contour: an ink layer made from
-    the silhouette dilated by OUTLINE_M, under the figure. Fully transparent pixels get the ink color so
-    texture filtering bleeds dark, not black or white, at the edges.
-    """
-    import numpy as np
-    h, w, _ = arr.shape
-    rgb, a = arr[..., :3], arr[..., 3:4]
-    pre = np.concatenate([rgb * a, a], axis=2)
-    pre = pre[: h - h % ss, : w - w % ss].reshape(h // ss, ss, w // ss, ss, 4).mean(axis=(1, 3))
-    a = pre[..., 3:4]
-    rgb = np.where(a > 1e-4, pre[..., :3] / np.maximum(a, 1e-4), 0)
-    # Max-filter the alpha with a disk.
-    rad = max(1, round(OUTLINE_M * PX_PER_M))
-    d = a[..., 0].copy()
-    src = a[..., 0]
-    for dy in range(-rad, rad + 1):
-        for dx in range(-rad, rad + 1):
-            if dx * dx + dy * dy > rad * rad + rad:
-                continue
-            sh = np.zeros_like(src)
-            ys = slice(max(dy, 0), src.shape[0] + min(dy, 0))
-            yd = slice(max(-dy, 0), src.shape[0] + min(-dy, 0))
-            xs = slice(max(dx, 0), src.shape[1] + min(dx, 0))
-            xd = slice(max(-dx, 0), src.shape[1] + min(-dx, 0))
-            sh[yd, xd] = src[ys, xs]
-            d = np.maximum(d, sh)
-    d = d[..., None]
-    ink = np.array(PAL['ink'], dtype=np.float32)
-    out_a = a + d * (1 - a)
-    out_rgb = (rgb * a + ink * d * (1 - a)) / np.maximum(out_a, 1e-4)
-    out_rgb = np.where(out_a > 1e-4, out_rgb, ink)
-    return np.concatenate([out_rgb, out_a], axis=2)
-
-
-def crop(arr, gx, gy, pad=1):
-    """Crops to the visible pixels; returns the image and the ground point relative to it."""
-    import numpy as np
-    ys, xs = np.nonzero(arr[..., 3] > 0.02)
-    y0, y1 = max(ys.min() - pad, 0), min(ys.max() + pad + 1, arr.shape[0])
-    x0, x1 = max(xs.min() - pad, 0), min(xs.max() + pad + 1, arr.shape[1])
-    return arr[y0:y1, x0:x1], gx - x0, gy - y0
-
-
-class Renderer:
-    def __init__(self, tmp):
-        self.scene = reset_scene()
-        self.arm = build_model()
-        self.halo = bpy.data.objects['halo']
-        self.cam = setup_camera(self.scene, PX_PER_M * SUPERSAMPLE)
-        self.tmp = tmp
-        gx, gy = ground_pixel(self.scene, self.cam)
-        self.ground = (gx / SUPERSAMPLE, gy / SUPERSAMPLE)
-
-    def frame(self, anim, i, d):
-        """One processed, cropped frame: (image, ground x, ground y) in final pixels."""
-        _, fn, _ = ANIMS[anim]
-        apply_pose(self.arm, fn(anim_times(anim)[i]), self.halo)
-        self.arm.rotation_euler = (0, 0, math.radians(45 * d))
-        arr = render_to_array(self.scene, f'{self.tmp}.frame.png')
-        return crop(ink_frame(arr, SUPERSAMPLE), *self.ground)
-
-
-def compose_sheet(cells, bg=(0.55, 0.62, 0.70)):
-    """Lays out rows of (image, gx, gy) cells, each with its ground point at its cell's bottom center."""
-    import numpy as np
-    left = max(gx for row in cells for _, gx, _ in row)
-    right = max(img.shape[1] - gx for row in cells for img, gx, _ in row)
-    down = max(gy for row in cells for _, _, gy in row)
-    up = max(img.shape[0] - gy for row in cells for img, _, gy in row)
-    cw, ch = int(left + right) + 8, int(down + up) + 8
-    rows = len(cells)
-    cols = max(len(r) for r in cells)
-    sheet = np.zeros((rows * ch, cols * cw, 4), dtype=np.float32)
-    sheet[..., :3] = bg
-    sheet[..., 3] = 1
-    for ri, row in enumerate(cells):
-        for ci, (img, gx, gy) in enumerate(row):
-            ox = ci * cw + int(round(4 + left - gx))
-            oy = (rows - 1 - ri) * ch + int(round(4 + down - gy))
-            h, w, _ = img.shape
-            dst = sheet[oy:oy + h, ox:ox + w]
-            a = img[..., 3:4]
-            dst[..., :3] = img[..., :3] * a + dst[..., :3] * (1 - a)
-    return sheet
-
-
-# ---------------------------------------------------------------- commands
-
-def cmd_model(out, px_per_m=None, dirs='01234567'):
-    """Rest-pose turnaround at a larger scale, for checking the model."""
-    global PX_PER_M
-    if px_per_m:
-        PX_PER_M = int(px_per_m)
-    r = Renderer(out + '.tmp')
-    cells = [[r.frame('idle', 0, int(d)) for d in dirs]]
-    save_array(compose_sheet(cells), out)
-
-
-def cmd_sheet(anim, out, dirs='01234567', px_per_m=None):
-    global PX_PER_M
-    if px_per_m:
-        PX_PER_M = int(px_per_m)
-    r = Renderer(out + '.tmp')
-    n = ANIMS[anim][0]
-    cells = [[r.frame(anim, i, int(d)) for i in range(n)] for d in dirs]
-    save_array(compose_sheet(cells), out)
-
-
-def pack(frames, width=2048, pad=2):
-    """Shelf-packs images, tallest first. Returns positions (x, y from the top) and the atlas height."""
-    order = sorted(range(len(frames)), key=lambda k: (-frames[k].shape[0], -frames[k].shape[1]))
-    pos = [None] * len(frames)
-    x = y = pad
-    shelf = 0
-    for k in order:
-        h, w, _ = frames[k].shape
-        if x + w + pad > width:
-            x, y, shelf = pad, y + shelf + pad, 0
-        pos[k] = (x, y)
-        x += w + pad
-        shelf = max(shelf, h)
-    # WebGL 2 mipmaps any size, so the height is only rounded up to a multiple of 64.
-    return pos, -(-(y + shelf + pad) // 64) * 64
-
-
-def cmd_sprites(out_dir, width=4096):
-    """Renders every animation from 8 directions and writes atlas.png and atlas.json."""
-    import json
-    import os
-    import numpy as np
-    os.makedirs(out_dir, exist_ok=True)
-    r = Renderer(os.path.join(out_dir, 'render'))
-    images, refs = [], []
-    for anim, (n, _, _) in ANIMS.items():
-        for d in range(8):
-            for i in range(n):
-                img, gx, gy = r.frame(anim, i, d)
-                images.append(img)
-                refs.append((anim, d, i, gx, gy))
-    os.remove(os.path.join(out_dir, 'render.frame.png'))
-    width = int(width)
-    pos, height = pack(images, width)
-    atlas = np.zeros((height, width, 4), dtype=np.float32)
-    atlas[..., :3] = PAL['ink']
-    manifest = {'pxPerMeter': PX_PER_M, 'width': width, 'height': height, 'anims': {}}
-    for img, (x, y), (anim, d, i, gx, gy) in zip(images, pos, refs):
-        h, w, _ = img.shape
-        # Arrays have row 0 at the bottom; atlas positions count from the top.
-        atlas[height - y - h:height - y, x:x + w] = img
-        dirs = manifest['anims'].setdefault(anim, [[] for _ in range(8)])
-        dirs[d].append([x, y, w, h, round(gx, 1), round(gy, 1)])
-    save_array(atlas, os.path.join(out_dir, 'atlas.png'))
-    # One line per direction keeps the manifest readable and its diffs small.
-    lines = ['{', f'  "pxPerMeter": {PX_PER_M}, "width": {width}, "height": {height},',
-             '  "_frame": "[x, y from top, w, h, ground x from left, ground y from bottom] in pixels; anims[name][direction][frame]",',
-             '  "anims": {']
-    names = list(manifest['anims'])
-    for ai, name in enumerate(names):
-        lines.append(f'    "{name}": [')
-        dirs = manifest['anims'][name]
-        lines += ['      ' + json.dumps(fr) + (',' if d < 7 else '') for d, fr in enumerate(dirs)]
-        lines.append('    ]' + (',' if ai < len(names) - 1 else ''))
-    lines += ['  }', '}', '']
-    with open(os.path.join(out_dir, 'atlas.json'), 'w', encoding='utf8', newline='\n') as f:
-        f.write('\n'.join(lines))
-    print(f'atlas {width}x{height}, {len(images)} frames')
-
-
-def main():
-    argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
-    if not argv:
-        raise SystemExit(__doc__)
-    cmd, args = argv[0], argv[1:]
-    if cmd == 'model':
-        cmd_model(*args)
-    elif cmd == 'sheet':
-        cmd_sheet(*args)
-    elif cmd == 'sprites':
-        cmd_sprites(*args)
-    else:
-        raise SystemExit(f'Unknown command {cmd}')
-
+# The canvas leaves room for a raised sword and a body lying on the ground in any direction.
+SPEC = Spec(build_model, ANIMS, px_per_m=190, canvas=(-2.0, 2.0, -0.4, 2.6), after_pose=after_pose)
 
 if __name__ == '__main__':
-    main()
+    main(SPEC, __doc__)
