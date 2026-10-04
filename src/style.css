@@ -219,16 +219,29 @@ body {
   position: absolute;
   left: 24px;
   bottom: 24px;
-  width: 300px;
+  width: 320px;
+}
+
+/*
+ * The 9-slice bar frame (§11.2) around the HP bar and the Gatekeeper's bars: the slices keep
+ * the rims and the end ornaments, drawn at about 0.3 of the image's size (--frame-y, --frame-x).
+ * The fill is drawn inside it, over the dark trough.
+ */
+.hp-bar,
+.boss-bar,
+.boss-cast {
+  position: relative;
+  background: rgba(27, 21, 19, 0.85) padding-box;
+  border-style: solid;
+  border-width: var(--frame-y) var(--frame-x);
+  border-image: url('../assets/ui/ui-bar-frame.png') 25 120 / var(--frame-y) var(--frame-x) stretch;
+  overflow: hidden;
 }
 
 .hp-bar {
-  position: relative;
-  height: 24px;
-  background: rgba(27, 21, 19, 0.85);
-  border: 3px solid var(--soot);
-  border-radius: 5px;
-  overflow: hidden;
+  --frame-y: 8px;
+  --frame-x: 36px;
+  height: 38px;
 }
 
 .hp-fill {
@@ -382,21 +395,16 @@ body {
   text-shadow: 0 1px 3px #000;
 }
 
-.boss-bar,
-.boss-cast {
-  position: relative;
-  background: rgba(27, 21, 19, 0.85);
-  border: 3px solid var(--soot);
-  border-radius: 5px;
-  overflow: hidden;
-}
-
 .boss-bar {
-  height: 20px;
+  --frame-y: 8px;
+  --frame-x: 36px;
+  height: 34px;
 }
 
 .boss-cast {
-  height: 12px;
+  --frame-y: 5px;
+  --frame-x: 24px;
+  height: 18px;
   margin: 6px auto 0;
   width: 70%;
 }

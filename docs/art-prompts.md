@@ -26,7 +26,7 @@ Save every image as PNG with exactly this name. Part A goes in `assets/art-src/r
 - [x] B3 HUD: `muzzle-flash.png`, `icon-blasphemy.png`, `icon-falling-star.png`, `icon-communion.png`, `icon-shroud.png`, `icon-chains.png`, `icon-discord.png`, `icon-kiss.png`, `icon-shadowstep.png`, `class-fallen.png`, `class-heretic.png`, `class-binder.png`, `class-betrayer.png`
 - [x] B4 Terrain textures: `tex-floor.png`, `tex-riser.png`, `tex-wall.png`, `tex-door.png`
 - [x] B5 Effect textures: `fx-ring.png`, `fx-beam.png`, `fx-chain.png`, `fx-glow.png`, `fx-smoke.png`
-- [ ] B6 UI: `ui-logo.png`, `ui-title-bg.png`, `ui-panel.png`, `ui-button.png`, `ui-button-hover.png`, `ui-bar-frame.png`, `ui-slot-frame.png`
+- [x] B6 UI: `ui-logo.png`, `ui-title-bg.png`, `ui-panel.png`, `ui-button.png`, `ui-button-hover.png`, `ui-bar-frame.png`, `ui-slot-frame.png`
 
 ---
 

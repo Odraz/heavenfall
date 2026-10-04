@@ -103,11 +103,12 @@ UI = {
     'ui-button': (192, 0),
     'ui-button-hover': (192, 0),
     'ui-slot-frame': (256, 0),
+    'ui-bar-frame': (128, 0),
 }
 
 # Frames whose inside must be empty (the generated green inside can be uneven or smudged):
 # everything within the rim's inner edge, found scanning out from the center, is cleared.
-HOLLOW = {'ui-slot-frame'}
+HOLLOW = {'ui-slot-frame', 'ui-bar-frame'}
 
 # Full-frame paintings: output width in pixels.
 BACKGROUNDS = {
