@@ -114,7 +114,7 @@ def build_shotgun(rig):
     rig.add(tube('Lbracer', (-0.07, 0.33, -0.17), (-0.13, 0.25, -0.31), 0.052, 0.062, cracked('rust', 'molten', scale=7.0, width=0.04), seg=14, outline=0.005))
     rig.muzzle = Vector((0, 0.73, 0.085))
     # Grip in the lower right, aimed just under the crosshair.
-    return Vector((0.24, 0.62, -0.30)), Vector((0.0, 9, -0.5))
+    return Vector((0.24, 0.62, -0.30)), 8.0
 
 
 def build_censer(rig):
@@ -143,7 +143,7 @@ def build_censer(rig):
             p = a.lerp(b, 0.25 + 0.2 * k)
             rig.add(torus(f'{name}band{k}', p, 0.05 + 0.004 * k, 0.012, 'trim', rot=(b - a).to_track_quat('Z', 'Y').to_euler(), seg=14, outline=0.003))
     rig.muzzle = Vector((0, 0.45, 0.08))
-    return Vector((0.30, 0.95, -0.40)), Vector((-0.2, 2.2, -0.62))
+    return Vector((0.30, 0.95, -0.40)), 3.0
 
 
 def build_chaingun(rig):
@@ -183,7 +183,7 @@ def build_chaingun(rig):
         coil = [a + d * (0.08 + 0.10 * i / 24) + (u * math.cos(w) + v * math.sin(w)) * 0.062 for i, w in ((i, 2 * math.pi * 2 * i / 24) for i in range(25))]
         rig.add(chain(f'{name}wristchain', coil, 'chain', link=0.035, thick=0.008, outline=0.002))
     rig.muzzle = Vector((0, 0.88, 0.06))
-    return Vector((0.33, 0.95, -0.46)), Vector((-0.1, 2.8, -0.75))
+    return Vector((0.33, 0.95, -0.46)), 3.5
 
 
 def build_revolver(rig):
@@ -208,7 +208,7 @@ def build_revolver(rig):
     arm(rig, 'R', (0.008, -0.01, -0.02), (0.14, -0.30, -0.30), 0.032, 0.045, 'leather', fist_scale=(0.035, 0.045, 0.045))
     arm(rig, 'L', (-0.02, -0.005, -0.035), (-0.18, -0.28, -0.32), 0.032, 0.045, 'leather', fist_scale=(0.035, 0.045, 0.04))
     rig.muzzle = Vector((0, 0.425, 0.07))
-    return Vector((0.17, 0.50, -0.22)), Vector((0.0, 6, -0.3))
+    return Vector((0.17, 0.50, -0.22)), 6.0
 
 
 WEAPONS = {'fallen': build_shotgun, 'heretic': build_censer, 'binder': build_chaingun, 'betrayer': build_revolver}
@@ -243,7 +243,7 @@ def pose(cls, rig, base_loc, base_rot, frame):
         kick(rig, base_loc, base_rot, shake[0], shake[1], shake[2])
         p['barrels'].rotation_euler = (0, math.radians(15 * frame), 0)
     elif cls == 'betrayer':
-        back, up = [(0, 0), (0.05, 22), (0.03, 12), (0.012, 4), (0.0, 1)][frame]
+        back, up = [(0, 0), (0.05, 12), (0.03, 7), (0.012, 3), (0.0, 1)][frame]
         kick(rig, base_loc, base_rot, back, up)
         p['hammer'].rotation_euler = (math.radians([0, 0, -25, -40, 0][frame]), 0, 0)
         p['cylinder'].rotation_euler = (0, math.radians([0, 0, 20, 45, 60][frame]), 0)
@@ -272,10 +272,16 @@ def setup(cls):
     bpy.context.collection.objects.link(sun_obj)
     sun_obj.rotation_euler = Euler((math.radians(50), math.radians(-35), math.radians(-25)), 'XYZ')
     rig = Rig()
-    grip, aim_at = WEAPONS[cls](rig)
-    # Aim the weapon's +Y at the aim point.
-    d = (aim_at - grip).normalized()
-    rot = d.to_track_quat('Y', 'Z').to_euler()
+    # Each builder returns the grip position and how far ahead its barrel crosses the view axis.
+    grip, converge = WEAPONS[cls](rig)
+    target = Vector((0, converge, 0))
+    # Aim so the barrel's axis (through the muzzle, along the weapon's +Y) passes through the
+    # crosshair point; the axis sits above and beside the grip, so refine the aim a few times.
+    axis_base = Vector((rig.muzzle.x, 0, rig.muzzle.z))
+    rot = (target - grip).normalized().to_track_quat('Y', 'Z').to_euler()
+    for _ in range(8):
+        base = grip + rot.to_matrix() @ axis_base
+        rot = (target - base).normalized().to_track_quat('Y', 'Z').to_euler()
     rig.root.location = grip
     rig.root.rotation_euler = rot
     return scene, cam, rig, grip, rot
@@ -314,8 +320,22 @@ def crop_columns(frames):
     return [(img[:, x0:x1], mx - x0, my) for img, mx, my in frames], x0
 
 
+def aim_error(cls):
+    """How far, in screen pixels at 1200 px tall, the idle barrel's line passes from the crosshair."""
+    from bpy_extras.object_utils import world_to_camera_view
+    scene, cam, rig, _, _ = setup(cls)
+    bpy.context.view_layer.update()
+    w = rig.root.matrix_world
+    base = Vector((rig.muzzle.x, 0, rig.muzzle.z))
+    pts = [world_to_camera_view(scene, cam, w @ (base + Vector((0, t, 0)))) for t in (0.0, rig.muzzle.y)]
+    (x0, y0), (x1, y1) = [(p.x * 4 * FRAME_H, p.y * 2 * FRAME_H) for p in pts]
+    cx, cy = 2 * FRAME_H, FRAME_H
+    return abs((x1 - x0) * (y0 - cy) - (y1 - y0) * (x0 - cx)) / math.hypot(x1 - x0, y1 - y0)
+
+
 def cmd_preview(cls, out):
     import numpy as np
+    print(f'{cls}: barrel line passes {aim_error(cls):.1f} px from the crosshair')
     frames, _ = crop_columns(render_frames(cls, out + '.tmp.png'))
     h, w, _ = frames[0][0].shape
     sheet = np.zeros((h, w * len(frames), 4), dtype=np.float32)
