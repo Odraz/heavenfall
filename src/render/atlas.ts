@@ -32,9 +32,8 @@ export function spriteUrl(name: string): string {
 
 export const ATLAS_SIZE = 2048;
 const PAD = 4;
-/** Rasterized height in pixels per SVG sprite; the default is 192. PNG sprites keep their own size. */
-const RASTER_HEIGHT: Record<string, number> = { 'decor-angel-statue': 320, 'decor-fountain': 256, 'decor-candelabrum': 256 };
-const DEFAULT_HEIGHT = 192;
+/** Rasterized height in pixels of an SVG sprite. PNG sprites keep their own size. */
+const SVG_HEIGHT = 192;
 
 export interface SpriteFrame {
   /** UV rectangle: bottom-left (u0, v0) to top-right (u1, v1). */
@@ -85,7 +84,7 @@ export async function buildAtlas(): Promise<Atlas> {
   const entries = loaded
     .map(({ name, source, img }) => {
       const size = source.svg ? svgSize(source.svg) : { w: img.naturalWidth, h: img.naturalHeight };
-      const ph = source.svg ? (RASTER_HEIGHT[name] ?? DEFAULT_HEIGHT) : size.h;
+      const ph = source.svg ? SVG_HEIGHT : size.h;
       const pw = Math.round((ph * size.w) / size.h);
       return { name, img, pw, ph, aspect: size.w / size.h };
     })

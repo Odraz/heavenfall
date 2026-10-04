@@ -27,7 +27,19 @@ SPRITES = {
     'ember': 192,
     'mark': 192,
     'chain-ring': 128,
+    # Decorations: about 170 px per meter of their height in src/data/decor.ts, at least 192.
+    'decor-candelabrum': 320,
+    'decor-lily-urn': 192,
+    'decor-harp': 256,
+    'decor-cloud-tuft': 192,
+    'decor-angel-statue': 512,
+    'decor-fountain': 352,
 }
+
+# Sprites with some green of their own (the lilies' stems). Pixels with less than
+# OWN_GREEN of the background's greenness are kept as they are, not keyed or despilled.
+HAS_GREEN = {'decor-lily-urn'}
+OWN_GREEN = 0.15
 
 # Transparent margin around the cropped subject, in output pixels.
 MARGIN = 2
@@ -50,13 +62,14 @@ def cutout(name: str, height: int) -> None:
     # Each pixel is a mix of the subject and the background; its greenness says how much
     # background it holds. Unmixing recovers the subject's color at the edges.
     bg_share = np.clip(greenness(rgb) / bg_green, 0, 1)
-    bg_share[bg_share < 0.08] = 0  # JPEG noise inside the subject
+    bg_share[bg_share < (OWN_GREEN if name in HAS_GREEN else 0.08)] = 0  # JPEG noise inside the subject
     alpha = 1 - bg_share
     with np.errstate(divide='ignore', invalid='ignore'):
         color = (rgb - bg_share[..., None] * bg) / alpha[..., None]
     color = np.nan_to_num(np.clip(color, 0, 255))
     # Whatever green is left is spill: no palette color has more green than red or blue.
-    color[..., 1] = np.minimum(color[..., 1], np.maximum(color[..., 0], color[..., 2]))
+    spill = bg_share > 0 if name in HAS_GREEN else np.full(alpha.shape, True)
+    color[..., 1] = np.where(spill, np.minimum(color[..., 1], np.maximum(color[..., 0], color[..., 2])), color[..., 1])
 
     # Crop to the pixels the game keeps (at least 50% opaque).
     ys, xs = np.nonzero(alpha >= 0.5)
