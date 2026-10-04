@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { PLAYER_EYE } from '../sim/constants';
 import type { GameMap } from '../sim/map';
 import { buildTerrain, type Terrain } from './terrain';
-import { brickTexture, stoneTexture } from './textures';
+import type { TerrainTextures } from './textures';
 
 export const FOG_COLOR = 0xcfe2f3;
 const FOG_NEAR = 40;
@@ -55,13 +55,14 @@ export class GameScene {
   constructor(
     readonly canvas: HTMLCanvasElement,
     map: GameMap,
+    textures: TerrainTextures,
   ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.scene.background = new THREE.Color(FOG_COLOR);
     this.scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR, FOG_FAR);
     this.scene.add(this.sky);
-    this.terrain = buildTerrain(map, stoneTexture(), brickTexture());
+    this.terrain = buildTerrain(map, textures);
     this.scene.add(this.terrain.mesh);
     for (const d of this.terrain.doors) if (d) this.scene.add(d);
     this.resize();

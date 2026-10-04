@@ -20,6 +20,7 @@ import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
 import { Particles } from '../render/particles';
 import { GameScene } from '../render/scene';
+import type { TerrainTextures } from '../render/textures';
 import { Vfx } from '../render/vfx';
 import { DebugOverlay } from '../ui/debugOverlay';
 import { PauseOverlay } from '../ui/pause';
@@ -62,6 +63,7 @@ export interface GameOptions {
   root: HTMLElement;
   map: GameMap;
   atlas: Atlas;
+  terrainTextures: TerrainTextures;
   /** The animated 8-direction sprites of every enemy type that has an atlas, by type. */
   enemyAnims: Partial<Record<number, EnemyAnimSet>>;
   /** The animated sprites of every class another player in the roster plays. */
@@ -166,7 +168,7 @@ export class Game {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'game-canvas';
     o.root.appendChild(this.canvas);
-    this.scene = new GameScene(this.canvas, this.map);
+    this.scene = new GameScene(this.canvas, this.map, o.terrainTextures);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
     for (const [type, set] of Object.entries(o.enemyAnims)) {

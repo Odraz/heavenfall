@@ -2,6 +2,10 @@
 import * as THREE from 'three';
 import { WALL_TOP } from '../sim/constants';
 import type { GameMap } from '../sim/map';
+import type { TerrainTextures } from './textures';
+
+/** Every terrain texture covers this many meters, aligned to world coordinates (§11.1). */
+const TEXTURE_METERS = 4;
 
 class GeometryBuilder {
   readonly pos: number[] = [];
@@ -33,11 +37,13 @@ class GeometryBuilder {
 
   /** Vertical quad on the cell edge between (x0, y0) and (x1, y1), from z0 to z1, facing `normal`. */
   side(x0: number, y0: number, x1: number, y1: number, z0: number, z1: number, normal: [number, number, number], shade: number): void {
-    const u0 = (x0 + y0) / 2;
-    const u1 = (x1 + y1) / 2;
+    const u0 = (x0 + y0) / TEXTURE_METERS;
+    const u1 = (x1 + y1) / TEXTURE_METERS;
+    const v0 = z0 / TEXTURE_METERS;
+    const v1 = z1 / TEXTURE_METERS;
     this.quad(
       [[x0, y0, z0], [x1, y1, z0], [x1, y1, z1], [x0, y0, z1]],
-      [[u0, z0 / 2], [u1, z0 / 2], [u1, z1 / 2], [u0, z1 / 2]],
+      [[u0, v0], [u1, v0], [u1, v1], [u0, v1]],
       // Darker at the bottom, so edges and corners read without lighting.
       [shade * 0.8, shade * 0.8, shade, shade],
       normal,
@@ -70,9 +76,10 @@ export interface Terrain {
   doors: Array<THREE.Mesh | null>;
 }
 
-export function buildTerrain(map: GameMap, stone: THREE.Texture, brick: THREE.Texture): Terrain {
+export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   const tops = new GeometryBuilder();
-  const sides = new GeometryBuilder();
+  const risers = new GeometryBuilder();
+  const walls = new GeometryBuilder();
   const { w, h } = map;
   const isWall = (c: number, r: number) => c < 0 || r < 0 || c >= w || r >= h || map.wall[r * w + c] === 1;
 
@@ -81,9 +88,10 @@ export function buildTerrain(map: GameMap, stone: THREE.Texture, brick: THREE.Te
       if (isWall(c, r)) continue;
       const f = map.floor[r * w + c];
       const shade = 0.9 + 0.1 * (f / 8.75);
+      const [u0, v0, u1, v1] = [c, r, c + 1, r + 1].map((m) => m / TEXTURE_METERS);
       tops.quad(
         [[c, r, f], [c + 1, r, f], [c + 1, r + 1, f], [c, r + 1, f]],
-        [[c / 2, r / 2], [(c + 1) / 2, r / 2], [(c + 1) / 2, (r + 1) / 2], [c / 2, (r + 1) / 2]],
+        [[u0, v0], [u1, v0], [u1, v1], [u0, v1]],
         shade,
         [0, 0, 1],
       );
@@ -93,31 +101,32 @@ export function buildTerrain(map: GameMap, stone: THREE.Texture, brick: THREE.Te
         const [ex0, ey0, ex1, ey1] = edge.e;
         // The face is seen from this cell for walls (normal toward this cell), from the neighbor for ledges.
         if (isWall(nc, nr)) {
-          sides.side(c + ex0, r + ey0, c + ex1, r + ey1, f, WALL_TOP, [-edge.dx, -edge.dy, 0], edge.shade * 0.92);
+          walls.side(c + ex0, r + ey0, c + ex1, r + ey1, f, WALL_TOP, [-edge.dx, -edge.dy, 0], edge.shade * 0.92);
         } else {
           const nf = map.floor[nr * w + nc];
-          if (nf < f) sides.side(c + ex0, r + ey0, c + ex1, r + ey1, nf, f, [edge.dx, edge.dy, 0], edge.shade);
+          if (nf < f) risers.side(c + ex0, r + ey0, c + ex1, r + ey1, nf, f, [edge.dx, edge.dy, 0], edge.shade);
         }
       }
     }
   }
 
-  // One mesh with two material groups: tops first, then sides and walls.
-  const topIndexCount = tops.index.length;
-  const topVertexCount = tops.pos.length / 3;
-  for (const v of sides.pos) tops.pos.push(v);
-  for (const v of sides.uv) tops.uv.push(v);
-  for (const v of sides.color) tops.color.push(v);
-  for (const i of sides.index) tops.index.push(i + topVertexCount);
-  const merged = tops.toGeometry();
-  merged.addGroup(0, topIndexCount, 0);
-  merged.addGroup(topIndexCount, tops.index.length - topIndexCount, 1);
+  // One mesh with a material group per texture: tops, then risers, then walls.
+  const merged = new GeometryBuilder();
+  const groups: Array<[number, number]> = [];
+  for (const part of [tops, risers, walls]) {
+    const base = merged.pos.length / 3;
+    groups.push([merged.index.length, part.index.length]);
+    for (const v of part.pos) merged.pos.push(v);
+    for (const v of part.uv) merged.uv.push(v);
+    for (const v of part.color) merged.color.push(v);
+    for (const i of part.index) merged.index.push(i + base);
+  }
+  const geometry = merged.toGeometry();
+  groups.forEach(([start, count], i) => geometry.addGroup(start, count, i));
+  const material = (map: THREE.Texture) => new THREE.MeshBasicMaterial({ map, vertexColors: true });
+  const mesh = new THREE.Mesh(geometry, [textures.floor, textures.riser, textures.wall].map(material));
 
-  const topMat = new THREE.MeshBasicMaterial({ map: stone, vertexColors: true });
-  const sideMat = new THREE.MeshBasicMaterial({ map: brick, vertexColors: true });
-  const mesh = new THREE.Mesh(merged, [topMat, sideMat]);
-
-  const doorMat = new THREE.MeshBasicMaterial({ map: brick, vertexColors: true, color: 0xf0c75a });
+  const doorMat = material(textures.door);
   const doors = map.arenas.map((arena) => {
     if (arena.doors.length === 0) return null;
     const b = new GeometryBuilder();

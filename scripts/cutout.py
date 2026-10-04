@@ -6,9 +6,11 @@ Reads assets/art-src/<name>.png, writes assets/sprites/<name>.png.
   sprites at their own size.
 - ICONS (painted background filling the square): any light frame around the painting
   trimmed, then cropped to a centered square of the listed size.
+- TEXTURES (seamless terrain textures): resized to the listed size, wrapping around the
+  edges so they stay seamless; written to assets/textures/<name>.png.
 
 Needs Python 3 with Pillow and NumPy.
-Usage: python scripts/cutout.py [name ...]   (no names: every sprite and icon)
+Usage: python scripts/cutout.py [name ...]   (no names: every image)
 """
 import sys
 from pathlib import Path
@@ -19,6 +21,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / 'assets' / 'art-src'
 OUT = ROOT / 'assets' / 'sprites'
+TEX_OUT = ROOT / 'assets' / 'textures'
 
 # Output height in pixels per sprite.
 SPRITES = {
@@ -60,6 +63,14 @@ ICONS = {
     'class-heretic': 128,
     'class-binder': 128,
     'class-betrayer': 128,
+}
+
+# Terrain textures (§11.1): output size in pixels, each covering 4 × 4 m.
+TEXTURES = {
+    'tex-floor': 1024,
+    'tex-riser': 1024,
+    'tex-wall': 1024,
+    'tex-door': 1024,
 }
 
 # Sprites with some green of their own (the lilies' stems). Pixels with less than
@@ -139,15 +150,31 @@ def icon(name: str, size: int) -> None:
     print(f'{name}: {size}x{size}')
 
 
+def texture(name: str, size: int) -> None:
+    rgb = np.asarray(Image.open(SRC / f'{name}.png').convert('RGB'))
+    # Pad with the opposite edges, so resampling near an edge sees what the tiling puts there.
+    scale = size / rgb.shape[1]
+    pad = 16
+    padded = Image.fromarray(np.pad(rgb, ((pad, pad), (pad, pad), (0, 0)), mode='wrap'))
+    big = round((rgb.shape[1] + 2 * pad) * scale)
+    p = round(pad * scale)
+    out = padded.resize((big, big), Image.LANCZOS).crop((p, p, p + size, p + size))
+    TEX_OUT.mkdir(exist_ok=True)
+    out.save(TEX_OUT / f'{name}.png', optimize=True)
+    print(f'{name}: {size}x{size}')
+
+
 def main() -> None:
-    names = sys.argv[1:] or [*SPRITES, *ICONS]
-    for name in names:
+    known = [*SPRITES, *ICONS, *TEXTURES]
+    for name in sys.argv[1:] or known:
         if name in SPRITES:
             cutout(name, SPRITES[name])
         elif name in ICONS:
             icon(name, ICONS[name])
+        elif name in TEXTURES:
+            texture(name, TEXTURES[name])
         else:
-            sys.exit(f'Unknown sprite {name}; known: {", ".join([*SPRITES, *ICONS])}')
+            sys.exit(f'Unknown image {name}; known: {", ".join(known)}')
 
 
 if __name__ == '__main__':
