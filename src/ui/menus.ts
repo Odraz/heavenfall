@@ -4,6 +4,7 @@ import fallenPortrait from '../../assets/ui/portrait-fallen.png';
 import hereticPortrait from '../../assets/ui/portrait-heretic.png';
 import binderPortrait from '../../assets/ui/portrait-binder.png';
 import betrayerPortrait from '../../assets/ui/portrait-betrayer.png';
+import logoUrl from '../../assets/ui/ui-logo.png';
 
 /** Each class's idle frame from the front, rendered from its 3D model (§11.2). */
 const PORTRAITS: Record<ClassId, string> = { fallen: fallenPortrait, heretic: hereticPortrait, binder: binderPortrait, betrayer: betrayerPortrait };
@@ -60,7 +61,9 @@ export interface TitleActions {
 export function titleScreen(a: TitleActions): HTMLElement {
   const screen = el('div', 'screen menu title-screen');
   const logo = el('div', 'title-logo', screen);
-  el('h1', '', logo, 'Heavenfall');
+  const logoImg = el('img', '', el('h1', '', logo));
+  logoImg.src = logoUrl;
+  logoImg.alt = 'Heavenfall';
   el('div', 'tagline', logo, 'The damned storm Heaven');
 
   const panel = el('div', 'panel', screen);

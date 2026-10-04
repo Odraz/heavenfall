@@ -12,6 +12,10 @@ Reads assets/art-src/<name>.png, writes assets/sprites/<name>.png.
   transparent and the color stays true over the bright world; resized to the listed width
   and written to assets/textures/<name>.png. Strips (beam, chain) repeat along their
   length: they are cropped to the rows that aren't black and their side seams smoothed.
+- UI (flat green background): cut out like SPRITES, written to assets/ui/<name>.png; the
+  frames (panel, buttons, slot frame) without a margin, since CSS slices them at their edges.
+- BACKGROUNDS (full-frame paintings): resized to the listed width, written to
+  assets/ui/<name>.jpg.
 
 Needs Python 3 with Pillow and NumPy.
 Usage: python scripts/cutout.py [name ...]   (no names: every image)
@@ -26,6 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / 'assets' / 'art-src'
 OUT = ROOT / 'assets' / 'sprites'
 TEX_OUT = ROOT / 'assets' / 'textures'
+UI_OUT = ROOT / 'assets' / 'ui'
 
 # Output height in pixels per sprite.
 SPRITES = {
@@ -87,13 +92,33 @@ EFFECTS = {
     'fx-chain': (512, True, 2.5),
 }
 
+# Transparent margin around the cropped subject, in output pixels.
+MARGIN = 2
+
+# UI images: output height in pixels and margin. The frames are 9-slice images (CSS
+# border-image): about twice the size they're drawn at, for high-DPI screens.
+UI = {
+    'ui-logo': (480, MARGIN),
+    'ui-panel': (512, 0),
+    'ui-button': (192, 0),
+    'ui-button-hover': (192, 0),
+    'ui-slot-frame': (256, 0),
+}
+
+# Frames whose inside must be empty (the generated green inside can be uneven or smudged):
+# everything within the rim's inner edge, found scanning out from the center, is cleared.
+HOLLOW = {'ui-slot-frame'}
+
+# Full-frame paintings: output width in pixels.
+BACKGROUNDS = {
+    'ui-title-bg': 1920,
+}
+
 # Sprites with some green of their own (the lilies' stems). Pixels with less than
 # OWN_GREEN of the background's greenness are kept as they are, not keyed or despilled.
 HAS_GREEN = {'decor-lily-urn'}
 OWN_GREEN = 0.15
 
-# Transparent margin around the cropped subject, in output pixels.
-MARGIN = 2
 
 
 def greenness(rgb: np.ndarray) -> np.ndarray:
@@ -101,7 +126,7 @@ def greenness(rgb: np.ndarray) -> np.ndarray:
     return rgb[..., 1] - np.maximum(rgb[..., 0], rgb[..., 2])
 
 
-def cutout(name: str, height: int) -> None:
+def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN) -> None:
     rgb = np.asarray(Image.open(SRC / f'{name}.png').convert('RGB')).astype(np.float32)
 
     # The background color, from the corners.
@@ -122,6 +147,16 @@ def cutout(name: str, height: int) -> None:
     spill = bg_share > 0 if name in HAS_GREEN else np.full(alpha.shape, True)
     color[..., 1] = np.where(spill, np.minimum(color[..., 1], np.maximum(color[..., 0], color[..., 2])), color[..., 1])
 
+    if name in HOLLOW:
+        h, w = alpha.shape
+        cy, cx = h // 2, w // 2
+        rim = alpha >= 0.9
+        top = cy - np.argmax(rim[cy::-1, cx])
+        bottom = cy + np.argmax(rim[cy:, cx])
+        left = cx - np.argmax(rim[cy, cx::-1])
+        right = cx + np.argmax(rim[cy, cx:])
+        alpha[top + 1:bottom, left + 1:right] = np.where(rim[top + 1:bottom, left + 1:right], alpha[top + 1:bottom, left + 1:right], 0)
+
     # Crop to the pixels the game keeps (at least 50% opaque).
     ys, xs = np.nonzero(alpha >= 0.5)
     y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
@@ -133,12 +168,12 @@ def cutout(name: str, height: int) -> None:
     rgba = np.dstack([color, alpha * 255])[y0:y1, x0:x1].round().astype(np.uint8)
 
     # Resize premultiplied, so transparent pixels don't bleed their color into the edges.
-    inner = height - 2 * MARGIN
+    inner = height - 2 * margin
     width = max(1, round(inner * (x1 - x0) / (y1 - y0)))
     img = Image.fromarray(rgba, 'RGBA').convert('RGBa').resize((width, inner), Image.LANCZOS).convert('RGBA')
-    out = Image.new('RGBA', (width + 2 * MARGIN, height), (0, 0, 0, 0))
-    out.paste(img, (MARGIN, MARGIN))
-    out.save(OUT / f'{name}.png', optimize=True)
+    out = Image.new('RGBA', (width + 2 * margin, height), (0, 0, 0, 0))
+    out.paste(img, (margin, margin))
+    out.save(out_dir / f'{name}.png', optimize=True)
     print(f'{name}: {out.width}x{out.height}')
 
 
@@ -219,8 +254,15 @@ def effect(name: str, width: int, strip: bool, gain: float) -> None:
     print(f'{name}: {width}x{height}')
 
 
+def background(name: str, width: int) -> None:
+    img = Image.open(SRC / f'{name}.png').convert('RGB')
+    height = round(width * img.height / img.width)
+    img.resize((width, height), Image.LANCZOS).save(UI_OUT / f'{name}.jpg', quality=88, optimize=True)
+    print(f'{name}: {width}x{height}')
+
+
 def main() -> None:
-    known = [*SPRITES, *ICONS, *TEXTURES, *EFFECTS]
+    known = [*SPRITES, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS]
     for name in sys.argv[1:] or known:
         if name in SPRITES:
             cutout(name, SPRITES[name])
@@ -230,6 +272,10 @@ def main() -> None:
             texture(name, TEXTURES[name])
         elif name in EFFECTS:
             effect(name, *EFFECTS[name])
+        elif name in UI:
+            cutout(name, UI[name][0], UI_OUT, UI[name][1])
+        elif name in BACKGROUNDS:
+            background(name, BACKGROUNDS[name])
         else:
             sys.exit(f'Unknown image {name}; known: {", ".join(known)}')
 

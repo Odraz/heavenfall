@@ -1,4 +1,6 @@
 :root {
+  /* Behind the menus and Results: the title painting, darkened toward the bottom for the text. */
+  --menu-bg: linear-gradient(rgba(27, 21, 19, 0.1), rgba(27, 21, 19, 0.55)), url('../assets/ui/ui-title-bg.jpg') center / cover var(--soot);
   --ember: #d9431e;
   --soot: #1b1513;
   --brimstone: #f08a24;
@@ -260,26 +262,33 @@ body {
   position: relative;
   width: 64px;
   height: 64px;
-  border-radius: 10px;
-  overflow: hidden;
   filter: grayscale(0.6) brightness(0.8);
 }
 
 .ability.ready {
-  filter: none;
-  box-shadow: 0 0 10px rgba(240, 138, 36, 0.8);
+  filter: drop-shadow(0 0 6px rgba(240, 138, 36, 0.9));
+}
+
+/* The slot frame (§11.2) over the icon; its rim is 6 px at this size. */
+.ability::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('../assets/ui/ui-slot-frame.png') center / 100% 100%;
+  pointer-events: none;
 }
 
 .ability-icon,
 .ability-sweep {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  inset: 6px;
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
 }
 
 .ability-cd {
   position: absolute;
+  z-index: 1;
   inset: 0;
   display: flex;
   align-items: center;
@@ -290,8 +299,9 @@ body {
 
 .ability-key {
   position: absolute;
-  right: 4px;
-  bottom: 2px;
+  z-index: 1;
+  right: 8px;
+  bottom: 7px;
   font: 700 13px/1 Consolas, monospace;
   text-shadow: 0 1px 2px #000;
 }
@@ -411,7 +421,7 @@ body {
 /* ---------------------------------------------------------------- Results */
 
 .results {
-  background: radial-gradient(ellipse at top, #3a2620, var(--soot) 70%);
+  background: var(--menu-bg);
 }
 
 .results h1 {
@@ -436,32 +446,37 @@ body {
   border-bottom: 1px solid rgba(247, 240, 220, 0.2);
 }
 
+/* 9-slice button images (§11.2): the slices keep the gold border and its end ornaments. */
 .button {
-  padding: 10px 26px;
+  padding: 4px 6px;
   font: 600 20px/1 'Segoe UI', system-ui, sans-serif;
   color: var(--ivory);
-  background: var(--ember);
-  border: 3px solid var(--soot);
-  border-radius: 6px;
+  text-shadow: 0 1px 2px #000;
+  /* Zero-size, so the hover image is already loaded on the first hover. */
+  background: url('../assets/ui/ui-button-hover.png') 0 0 / 0 0 no-repeat;
+  border-style: solid;
+  border-width: 16px 30px;
+  border-image: url('../assets/ui/ui-button.png') 32 60 fill / 16px 30px stretch;
   cursor: pointer;
 }
 
 .button:hover {
-  background: var(--brimstone);
+  border-image-source: url('../assets/ui/ui-button-hover.png');
 }
 
 .button:disabled {
-  background: #5a4a44;
+  border-image-source: url('../assets/ui/ui-button.png');
   color: rgba(247, 240, 220, 0.5);
+  filter: grayscale(1) brightness(0.7);
   cursor: default;
 }
 
 .button.secondary {
-  background: #3a2c27;
+  filter: brightness(0.8);
 }
 
 .button.secondary:hover {
-  background: #4d3a33;
+  filter: none;
 }
 
 /* ---------------------------------------------------------------- Menus (§3) */
@@ -470,20 +485,19 @@ body {
   gap: 24px;
   padding: 24px;
   overflow-y: auto;
-  background:
-    radial-gradient(ellipse 120% 60% at 50% -10%, rgba(243, 198, 75, 0.35), transparent 60%),
-    linear-gradient(#2b3a52 0%, #3a2620 55%, var(--soot) 100%);
+  background: var(--menu-bg);
 }
 
+/* 9-slice panel image (§11.2): the slices keep the corner ornaments. */
 .panel {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 24px 28px;
-  background: rgba(27, 21, 19, 0.82);
-  border: 3px solid var(--soot);
-  border-radius: 8px;
-  box-shadow: 0 0 0 1px rgba(243, 198, 75, 0.35), 0 10px 30px rgba(0, 0, 0, 0.5);
+  padding: 4px 8px;
+  border-style: solid;
+  border-width: 40px;
+  border-image: url('../assets/ui/ui-panel.png') 96 fill / 40px round;
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.5));
 }
 
 .title-logo {
@@ -492,18 +506,20 @@ body {
 
 .title-logo h1 {
   margin: 0;
-  font: 800 88px/1 Georgia, serif;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--gold);
-  text-shadow: 0 0 24px rgba(243, 198, 75, 0.5), 0 4px 0 var(--soot), 0 6px 12px #000;
+}
+
+.title-logo img {
+  display: block;
+  width: min(720px, 90vw);
+  height: auto;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.6));
 }
 
 .tagline {
   margin-top: 10px;
   font: italic 22px/1.2 Georgia, serif;
   color: var(--brimstone);
-  text-shadow: 0 2px 4px #000;
+  text-shadow: 0 2px 4px #000, 0 0 10px #000, 0 0 18px rgba(0, 0, 0, 0.8);
 }
 
 .title-screen .panel {
