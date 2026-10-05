@@ -87,20 +87,20 @@ describe('damage pipeline (§5.5)', () => {
     expect(p.shield).toBe(0);
   });
 
-  it('singleplayer regenerates 3% of max HP per second after 4 s without damage', () => {
+  it('singleplayer regenerates 1.5% of max HP per second after 8 s without damage', () => {
     const sim = makeSim(room(20, 10), ['fallen'], { singleplayer: true });
     const p = sim.players[0];
     sim.step();
     sim.damagePlayer(p, 100 / 0.6); // 100 after Brimstone Hide
     expect(p.hp).toBeCloseTo(300);
-    for (let i = 0; i < 119; i++) sim.step();
+    for (let i = 0; i < 239; i++) sim.step();
     expect(p.hp).toBeCloseTo(300);
     for (let i = 0; i < 31; i++) sim.step();
-    // 1 s of regeneration: 12 HP.
-    expect(p.hp).toBeCloseTo(312, 0);
+    // 1 s of regeneration: 6 HP.
+    expect(p.hp).toBeCloseTo(306, 0);
     const multi = makeSim(room(20, 10), ['fallen', 'binder']);
     multi.damagePlayer(multi.players[0], 100);
-    for (let i = 0; i < 200; i++) multi.step();
+    for (let i = 0; i < 300; i++) multi.step();
     expect(multi.players[0].hp).toBe(340);
   });
 });

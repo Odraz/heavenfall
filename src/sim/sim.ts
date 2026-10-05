@@ -293,8 +293,8 @@ export const BOSS_CAST_JUDGMENT = 2;
 const COUNTDOWN = 60;
 const COUNTDOWN_ALL_IN = 5;
 
-const REGEN_DELAY_TICKS = 4 * TICK_HZ;
-const REGEN_FRACTION = 0.03;
+const REGEN_DELAY_TICKS = 8 * TICK_HZ;
+const REGEN_FRACTION = 0.015;
 /** Bound enemies take this much damage (M8 §8). */
 const BOUND_FACTOR = 2;
 

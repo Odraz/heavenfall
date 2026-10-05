@@ -355,7 +355,7 @@ The **Gatekeeper is immune** to slow, root, pull and knockback. It can be silenc
 - **While dead:** the host ignores that player's position, fire and ability input. Dead players aren't targeted, hit, healed or shielded, and can't be ally targets.
 - **Boss arena:** it is never cleared (§8.2), so players who die there don't respawn. Their death text is *"You are dead — your party fights on"*.
 - **Defeat:** the run is a defeat when **all connected players are dead** at the same time.
-- **Singleplayer only:** after 4 s without taking damage (a hit with more than 0 damage left after step 3 of §5.5), the player regenerates 3% of max HP per second.
+- **Singleplayer only:** after 8 s without taking damage (a hit with more than 0 damage left after step 3 of §5.5), the player regenerates 1.5% of max HP per second.
 
 ---
 

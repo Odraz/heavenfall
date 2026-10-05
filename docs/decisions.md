@@ -17,7 +17,7 @@ Choices made where [mvp.md](mvp.md) is silent or ambiguous, one per line (§0).
 - §5.2 — Feet are compared with floors using a 1e-6 m tolerance, so a jump peaking exactly at a ledge height still lands on it.
 - §5.4 — Projectiles test the heightfield with their center point; their radius only enlarges the target cylinders. A projectile removed to make room for a new one (the 400 cap) doesn't explode.
 - §5.6 — Knockback moves the enemy on the 6 ticks after it's applied (20 m/s for 0.2 s). A pulled enemy doesn't act during the 0.3 s pull and shows the rooted flag during it. Slow also slows Cherub strafing.
-- §5.7 — Singleplayer regeneration starts 4 s after the last damaging hit or the start of the game, and only while alive.
+- §5.7 — Singleplayer regeneration starts 8 s after the last damaging hit or the start of the game, and only while alive.
 - §6 — A cooldown starts on the tick the ability is used and counts down from the next tick. Chains of Tartarus and Discord start their cooldown even when they affect no enemy; only Kiss of Betrayal and Falling Star are exempt (§6).
 - §6.1 — Falling Star's landing applies its damage first, then knocks back the survivors; an enemy exactly on the landing point is pushed along a fixed angle from its slot number.
 - §6.2 — The Censer deals 40 dmg only to the enemy it hits; the 6 other enemies nearest the explosion within 2 m take 10 each (spec: 40 dmg to all within 3 m), and its ember burst (§10) has a 2 m radius to match. The spec's splash killed every Blessed in a packed swarm, so the Heretic out-killed every other class, and a smaller splash alone didn't fix that; the limit of 6 puts its swarm kills level with the Fallen and the Binder. Single-target damage, which matters for the Gatekeeper, is unchanged.
