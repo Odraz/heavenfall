@@ -2,12 +2,27 @@
 import type { PeerOptions } from 'peerjs';
 
 /**
- * The public PeerJS cloud signaling server (PeerJS's default) and Google's public STUN server.
- * PeerJS's default ICE list also has a TURN relay, which is out of scope (§14), so it's replaced.
+ * The Metered TURN relay (§9.1), for players whose networks can't connect directly. Browsers need
+ * these credentials to use it, so they are public by nature.
+ */
+const RELAY = { username: 'fc00000f6016e940755ed2cf', credential: 'UFBj23I5aG8oop37' };
+
+/**
+ * The public PeerJS cloud signaling server (PeerJS's default), Google's public STUN server, and the
+ * Metered relay over UDP, TCP and TLS on port 443 (which passes most firewalls). PeerJS's default
+ * ICE list has its own relay, which no longer works, so it's replaced.
  */
 export const PEER_OPTIONS: Partial<PeerOptions> = {
   debug: 0,
-  config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] },
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      {
+        urls: ['turn:global.relay.metered.ca:80', 'turn:global.relay.metered.ca:80?transport=tcp', 'turns:global.relay.metered.ca:443?transport=tcp'],
+        ...RELAY,
+      },
+    ],
+  },
 };
 
 /** Both sides send `ping` on `ctrl` this often (§9.1). */

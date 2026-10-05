@@ -61,7 +61,7 @@ Art rules:
 | Language | TypeScript (strict) |
 | Build / dev server | Vite |
 | Rendering | Three.js (WebGL2) |
-| Networking | PeerJS (WebRTC data channels), public PeerJS cloud signaling server, Google public STUN |
+| Networking | PeerJS (WebRTC data channels), public PeerJS cloud signaling server, Google public STUN, Metered TURN relay (free plan) |
 | UI (menus, HUD) | Plain HTML/CSS overlaid on the canvas |
 | Unit tests | Vitest (§13.1) |
 | End-to-end tests | Playwright with Chromium (§13.2) |
@@ -885,11 +885,11 @@ These are automated browser tests that click through the real built game the way
 
 ## 14. Out of scope for the MVP
 
-Audio, ultimates, halos and loot, progression and saving, other dungeons and enemy types, overlapping floors, bridges, ceilings, moving platforms, decorations that block movement or animate, 3D props, wall decals, player animations other than idle and walk, first-person animations other than firing, settings screen, gamepad, mobile, reconnecting, joining mid-game, lag compensation, client-side prediction beyond local movement, TURN relay, a self-hosted signaling server, dedicated servers, anti-cheat, chat.
+Audio, ultimates, halos and loot, progression and saving, other dungeons and enemy types, overlapping floors, bridges, ceilings, moving platforms, decorations that block movement or animate, 3D props, wall decals, player animations other than idle and walk, first-person animations other than firing, settings screen, gamepad, mobile, reconnecting, joining mid-game, lag compensation, client-side prediction beyond local movement, a self-hosted signaling server or TURN server, dedicated servers, anti-cheat, chat.
 
 ## 15. Known risks
 
-- **Strict NAT:** without a TURN relay, some players behind strict NAT can't connect (`Connection failed`). The fix after the MVP is adding a TURN server.
+- **Strict NAT:** players whose networks can't connect directly go through the Metered TURN relay, whose free plan has a monthly traffic limit. Past it, they get `Connection failed` again; the fix is a paid plan or a self-hosted TURN server.
 - **Signaling:** the public PeerJS signaling server is a free third-party service. The fix after the MVP is self-hosting `peerjs-server`.
 - **Bandwidth:** The Pearly Gates peaks at about 800 living enemies, about 7.5 KB per snapshot and 1.8 Mbit/s with 3 clients. At the 1 500 enemy cap, a snapshot can reach about 16 KB, which is about 3.8 Mbit/s and over the target; that happens in the sandbox, or in the boss arena if the party lets many summons pile up. If real games go over budget, add relevance filtering or delta encoding before cutting the enemy count.
 - **Hitscan for remote clients:** without lag compensation, remote clients see enemies about 150 ms plus half the round trip behind the host. A Blessed crossing sideways at 6 m/s is then about 1.2 m from where the client sees it, wider than its body, so the client sees hit markers for shots the host counts as misses. Enemies running toward the shooter are barely affected. If the 4-player playtest finds this hurts the Binder or Betrayer, the fix after the MVP is host-side rewinding of enemy positions by each client's render delay.

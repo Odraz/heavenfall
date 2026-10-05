@@ -59,7 +59,7 @@ Up to 4 players, each in their own browser, connect directly to the host's brows
 2. Each friend clicks `Multiplayer` → `Join game`, types the game ID and the password, and clicks `Join`.
 3. Everyone picks a different class; the host clicks `Start`.
 
-To try it on one computer, open the game in two browser windows. Players behind a strict NAT (some corporate or mobile networks) may not be able to connect (`Connection failed`), since there's no relay server.
+To try it on one computer, open the game in two browser windows. Players whose networks can't connect directly (some office, mobile or VPN networks) go through a relay server ([Metered](https://www.metered.ca/), free plan); its credentials are in [src/net/peerConfig.ts](src/net/peerConfig.ts).
 
 ### Blessed sprites
 
