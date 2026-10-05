@@ -52,6 +52,8 @@ try {
       // Keep rendering at full rate if another window covers this one.
       '--disable-features=CalculateNativeWinOcclusion',
       '--disable-renderer-backgrounding',
+      // Audio runs without a user gesture, as in play (M8 §12.2).
+      '--autoplay-policy=no-user-gesture-required',
     ],
   };
   // Playwright's Chromium first; if its headed build can't start on this machine, the installed

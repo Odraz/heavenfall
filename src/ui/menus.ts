@@ -3,6 +3,7 @@ import { CLASS_IDS, CLASSES, type ClassId } from '../data/classes';
 import { ABILITIES, WEAPONS } from '../data/weapons';
 import { spriteUrl } from '../render/atlas';
 import { attachTooltip } from './tooltip';
+import { volumeSliders } from './volume';
 import fallenPortrait from '../../assets/ui/portrait-fallen.png';
 import hereticPortrait from '../../assets/ui/portrait-heretic.png';
 import binderPortrait from '../../assets/ui/portrait-binder.png';
@@ -117,6 +118,7 @@ export function titleScreen(a: TitleActions): HTMLElement {
     update();
   });
   update();
+  volumeSliders(panel);
   el('div', 'version', screen, `v${__BUILD_VERSION__}`);
   queueMicrotask(() => input.focus());
   return screen;

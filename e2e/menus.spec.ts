@@ -17,8 +17,12 @@ test('menus', async ({ page }) => {
   await page.getByRole('button', { name: 'Resume' }).click();
   await expect.poll(async () => (await state(page)).paused).toBe(false);
 
+  // From M8: Pause has the volume sliders, and a value changed there is still set on Title.
   await page.keyboard.press('Escape');
   await expect.poll(async () => (await state(page)).paused).toBe(true);
+  for (const name of ['Master', 'Music', 'SFX']) await expect(page.getByRole('slider', { name })).toBeVisible();
+  await page.getByRole('slider', { name: 'Music' }).fill('23');
   await page.getByRole('button', { name: 'Leave game' }).click();
   await expect.poll(async () => (await state(page)).screen).toBe('title');
+  await expect(page.getByRole('slider', { name: 'Music' })).toHaveValue('23');
 });

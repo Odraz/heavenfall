@@ -42,6 +42,8 @@ function players(n: number): SnapshotPlayer[] {
     cdQ: 4000,
     cdE: 250,
     kills: 42 + i,
+    // Wrapping: 255 + 2 shots read back as 1.
+    shots: (250 + i * 3) & 0xff,
   }));
 }
 
@@ -122,7 +124,7 @@ describe('snapshot protocol', () => {
   it('round-trips header, players, enemies and projectiles', () => {
     const parts = encodeSnapshot(header, players(4), entities(100, 20));
     expect(parts.length).toBe(1);
-    expect(parts[0].byteLength).toBe(25 + 4 * 28 + 100 * 8 + 20 * 9);
+    expect(parts[0].byteLength).toBe(25 + 4 * 29 + 100 * 8 + 20 * 9);
     const s = decodeSnapshot(parts[0])!;
     expect(s).toMatchObject({ ...header, partIndex: 0, partCount: 1, enemyCount: 100, projectileCount: 20 });
     expect(s.players).toEqual(players(4));
@@ -137,10 +139,10 @@ describe('snapshot protocol', () => {
     expect(s.projZ[5]).toBe(15.984375);
   });
 
-  it('fits the largest snapshot at the current caps in one part (15 745 bytes)', () => {
+  it('fits the largest snapshot at the current caps in one part (15 749 bytes)', () => {
     const parts = encodeSnapshot(header, players(4), entities(1501, 400));
     expect(parts.length).toBe(1);
-    expect(parts[0].byteLength).toBe(15745);
+    expect(parts[0].byteLength).toBe(15749);
   });
 
   it('splits snapshots above 16 000 bytes into parts that each carry the header and all players', () => {

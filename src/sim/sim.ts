@@ -172,6 +172,8 @@ export interface SimPlayer {
   /** Tick of a pending Falling Star landing, or -1. */
   landingTick: number;
   kills: number;
+  /** Shots fired, for others' shot sounds (M8 §9.1). */
+  shots: number;
   /** Seconds of cooldown remaining. */
   cdQ: number;
   cdE: number;
@@ -470,6 +472,7 @@ export class Simulation {
         pendingEAlly: ALLY_NONE,
         landingTick: -1,
         kills: 0,
+        shots: 0,
         cdQ: 0,
         cdE: 0,
         lastDamageTick: 0,
@@ -1119,6 +1122,7 @@ export class Simulation {
     const w = WEAPONS[p.classId];
     if (p.fireHeld && p.fireTimer <= 1e-6) {
       this.fireWeapon(p);
+      p.shots++;
       p.fireTimer += w.interval;
     }
     p.fireTimer -= TICK_DT;
@@ -2161,6 +2165,7 @@ export class Simulation {
         cdQ: Math.round(p.cdQ * 1000),
         cdE: Math.round(p.cdE * 1000),
         kills: p.kills,
+        shots: p.shots & 0xff,
       });
     }
     return encodeSnapshot(header, players, e);

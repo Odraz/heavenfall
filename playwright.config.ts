@@ -10,7 +10,8 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:4173',
     viewport: { width: 1280, height: 720 },
-    launchOptions: { args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'] },
+    // Audio runs during the tests without a user gesture (M8 §12.2).
+    launchOptions: { args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--autoplay-policy=no-user-gesture-required'] },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 720 } } }],
   webServer: {

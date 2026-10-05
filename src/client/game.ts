@@ -33,7 +33,9 @@ import { FpsCounter } from './fps';
 import type { HostSession } from './hostSession';
 import { Hud } from './hud';
 import { Input, MOUSE_SENSITIVITY } from './input';
+import { audio } from '../audio/audio';
 import { pickAllyTarget } from './allyTarget';
+import { GameSounds } from './sounds';
 import { ViewBob } from './bob';
 import { LocalPlayer, MAX_FRAME_DT, wasdDirection } from './localPlayer';
 import { PartyFrames } from './partyFrames';
@@ -166,7 +168,8 @@ export class Game {
   private readonly tauntAt = new Float64Array(ENEMY_SLOTS).fill(-1);
   private readonly botEnemies: BotEnemy[] = [];
   /** Delayed bursts, played when the render time reaches them. */
-  private readonly pendingBursts: Array<{ at: number; censer: boolean; x: number; y: number; z: number }> = [];
+  private readonly pendingBursts: Array<{ at: number; censer: boolean; type: number; x: number; y: number; z: number }> = [];
+  private readonly sounds: GameSounds;
   /** Shadowstep afterimages: the Betrayer's idle frame where it started, facing its yaw then. */
   private readonly afterimages: Array<{ start: number; x: number; y: number; z: number; facing: number }> = [];
   private readonly playerBillboards = new Map<ClassId, Billboards>();
@@ -219,6 +222,8 @@ export class Game {
     this.hud.setRemaining(null);
     this.hud.setDeath(null);
     this.party = o.singleplayer ? null : new PartyFrames(this.hud.root);
+    this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id));
+    this.hud.onReady = () => this.sounds.abilityReady();
     this.overlay = new DebugOverlay(o.root);
     this.pause = new PauseOverlay(o.root, () => this.resume(), () => this.leave());
 
@@ -394,7 +399,9 @@ export class Game {
 
   /** A `ctrl` message from the host; the game handles its events (§9.2). */
   handleCtrl(msg: CtrlMessage): void {
-    if (msg.type === 'event' && !this.disposed) this.onEvent(msg.event, performance.now());
+    if (msg.type !== 'event' || this.disposed) return;
+    this.onEvent(msg.event, performance.now());
+    this.sounds.event(msg.event, (id) => this.playerPose(id));
   }
 
   private onEvent(e: GameEvent, now: number): void {
@@ -543,7 +550,10 @@ export class Game {
           this.hud.shakeHp(now);
         } else if (me.hp > was.hp && !was.dead) this.hud.vignette('green', 0.3, now);
         if ((me.shield > 0 && me.shield > was.shield) || (was.shield > 0 && me.shield === 0)) this.hud.vignette('blue', 0.5, now);
-        if (me.kills > was.kills) this.hud.kill(now);
+        if (me.kills > was.kills) {
+          this.hud.kill(now);
+          this.sounds.kill();
+        }
       }
     }
     // Hurt flashes, and bursts for enemies and censers that disappeared.
@@ -561,7 +571,7 @@ export class Game {
         const def = ENEMIES[type];
         const g = groundHeight(this.map, prev.enemyX[i], prev.enemyY[i], def.radius, Infinity, false, true);
         const z = (g === -Infinity ? 0 : g) + (type === CHERUB ? CHERUB_HOVER : 0) + def.height / 2;
-        this.pendingBursts.push({ at: now + delay, censer: false, x: prev.enemyX[i], y: prev.enemyY[i], z });
+        this.pendingBursts.push({ at: now + delay, censer: false, type, x: prev.enemyX[i], y: prev.enemyY[i], z });
         if (this.o.enemyAnims[type]?.anims.death) {
           const ground = g === -Infinity ? 0 : g;
           // A Cherub falls from its hover height to the ground while it dies (§11.1).
@@ -573,7 +583,7 @@ export class Game {
       const alive = new Set(s.projSlot.subarray(0, s.projectileCount));
       for (let i = 0; i < prev.projectileCount; i++) {
         if (prev.projKind[i] !== PROJ_CENSER || alive.has(prev.projSlot[i])) continue;
-        this.pendingBursts.push({ at: now + delay, censer: true, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i] });
+        this.pendingBursts.push({ at: now + delay, censer: true, type: -1, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i] });
       }
     }
     debugState.lastSnapshotTick = s.tick;
@@ -602,6 +612,7 @@ export class Game {
     this.bossCast = s.bossCast;
     this.bossCastProgress = s.bossCastProgress / 255;
     this.bench?.onSnapshot(s);
+    this.sounds.snapshot(s, prev);
   }
 
   /**
@@ -663,6 +674,7 @@ export class Game {
    */
   private cosmeticShot(now: number, ents: { count: number; x: Float32Array; y: Float32Array; type: Uint8Array }, enemyZ: Float32Array): void {
     this.hud.shot(now);
+    this.sounds.ownShot(this.classId);
     const w = WEAPONS[this.classId];
     if (!w.hitscan) return;
     const p = this.player;
@@ -696,7 +708,10 @@ export class Game {
       pts.push([mx, my, mz], [ex + dx * end, ey + dy * end, ez + dz * end]);
     }
     this.vfx.beam(now, pts, 0xffc04a, 0.1, TRACER_MS);
-    if (hit) this.hud.hit(now);
+    if (hit) {
+      this.hud.hit(now);
+      this.sounds.hit();
+    }
   }
 
   private readonly frame = (now: number): void => {
@@ -809,14 +824,18 @@ export class Game {
       if (b.censer) {
         this.particles.emberBurst(b.x, b.y, b.z);
         this.vfx.glow(now, b.x, b.y, b.z, 0xf08a24, 0.6, 2, 350);
+        this.sounds.censerBurst(b);
+      } else {
+        this.particles.featherBurst(b.x, b.y, b.z);
+        this.sounds.enemyDeath(b.type, b);
       }
-      else this.particles.featherBurst(b.x, b.y, b.z);
       this.pendingBursts.splice(i, 1);
     }
     this.particles.update(dt);
     this.vfx.update(now, this.scene.camera.position);
 
     const b = p.body;
+    audio()?.setListener(b.x, b.y, p.yaw);
     // The bob only lowers the drawn view; aiming and input use the unbobbed eye (M8 §3.4).
     this.scene.setView(b.x, b.y, b.z, p.yaw, p.pitch, PLAYER_EYE - this.bob.eyeDrop);
     this.drawBillboards(now, ents, enemyZ);
@@ -1031,6 +1050,7 @@ export class Game {
     this.overlay.dispose();
     this.pause.dispose();
     this.party?.dispose();
+    this.sounds.dispose();
     this.hud.dispose();
     this.bench?.dispose();
     this.scene.dispose();

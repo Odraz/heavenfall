@@ -63,6 +63,16 @@ Up to 4 players, each in their own browser, connect directly to the host's brows
 
 To try it on one computer, open the game in two browser windows. Players whose networks can't connect directly (some office, mobile or VPN networks) go through a relay server ([Metered](https://www.metered.ca/), free plan); its credentials are in [src/net/peerConfig.ts](src/net/peerConfig.ts).
 
+### Sound and music
+
+Sound effects are synthesized in code: each is a parameter set in [src/audio/sfx.ts](src/audio/sfx.ts), rendered by [src/audio/synth.ts](src/audio/synth.ts). The music tracks are MP3s in `assets/music/`, made from the prompts in [docs/music-prompts.md](docs/music-prompts.md) and listed with their loop points in [src/data/music.ts](src/data/music.ts); a track that isn't listed isn't played. After replacing or adding a track, find its loop points with:
+
+```bash
+node scripts/music-loops.mjs calm arena-1
+```
+
+The volume sliders are on the Title and in the Pause overlay.
+
 ### Blessed sprites
 
 The Blessed's animated 8-direction sprites are rendered from a 3D model built in code. To regenerate `assets/sprites/blessed/` after changing [scripts/blender/blessed.py](scripts/blender/blessed.py), run it with Blender 5.2 (about 2 minutes):

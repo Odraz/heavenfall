@@ -1142,7 +1142,7 @@ body {
 }
 
 .pause-overlay .panel {
-  width: 300px;
+  width: 340px;
   text-align: center;
 }
 
@@ -1150,4 +1150,34 @@ body {
   margin: 0 0 6px;
   font: 700 36px/1 var(--display-font);
   color: var(--gold);
+}
+
+/* ---------------------------------------------------------------- Volume (M8 §9.3) */
+
+.volume-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.volume-row {
+  display: grid;
+  grid-template-columns: 64px 1fr 44px;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.volume-label {
+  color: rgba(247, 240, 220, 0.85);
+}
+
+.volume-row input[type='range'] {
+  width: 100%;
+  accent-color: var(--brimstone);
+}
+
+.volume-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }

@@ -20,6 +20,7 @@ import { loadingScreen, singleplayerSetupScreen, titleScreen, validName } from '
 import { hostSetupScreen, joinScreen, lobbyScreen, multiplayerScreen } from './ui/multiplayer';
 import { showResults } from './ui/results';
 import { hideTooltip } from './ui/tooltip';
+import { initAudio, setMusic, sfx } from './audio/audio';
 
 const params = parseParams(window.location.search);
 const root = document.getElementById('app')!;
@@ -27,8 +28,13 @@ const root = document.getElementById('app')!;
 /** The DOM screen currently shown over `#app`, if any. */
 let screenEl: HTMLElement | null = null;
 
+/** Screens with the calm track (M8 §9.2); the game sets its own music, and Results stays silent. */
+const CALM_SCREENS: ReadonlySet<Screen> = new Set(['title', 'singleplayerSetup', 'multiplayer', 'hostSetup', 'join', 'lobby', 'loading']);
+
 function show(screen: Screen, el: HTMLElement | null): void {
   hideTooltip();
+  if (CALM_SCREENS.has(screen)) setMusic('calm');
+  else if (screen === 'results') setMusic(null);
   screenEl?.remove();
   screenEl = el;
   if (el) document.body.appendChild(el);
@@ -334,6 +340,21 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
     };
   }
 }
+
+// Audio starts on the first user gesture; with dev=1 or bench=1 at load, where it may stay
+// suspended until a gesture (M8 §9.1).
+if (params.bench || params.dev) initAudio();
+for (const type of ['pointerdown', 'keydown'] as const) document.addEventListener(type, () => initAudio(), { capture: true });
+// UI sounds: a button under the pointer, and a click.
+let hovered: Element | null = null;
+document.addEventListener('pointerover', (e) => {
+  const b = (e.target as Element | null)?.closest?.('button:not(:disabled)') ?? null;
+  if (b && b !== hovered) sfx('buttonHover');
+  hovered = b;
+});
+document.addEventListener('click', (e) => {
+  if ((e.target as Element | null)?.closest?.('button:not(:disabled)')) sfx('buttonClick');
+});
 
 if (params.bench || params.dev) void startSingleplayer('Dev', params.classId, params.mapId, params.seed);
 // Bot auto-join skips the Title and Join screens (M8 §6.4).

@@ -1,4 +1,5 @@
-/** The Pause overlay (§3): `Resume` and `Leave game`. */
+/** The Pause overlay (§3): `Resume` and `Leave game`, and the volume sliders (M8 §9.3). */
+import { volumeSliders } from './volume';
 
 export class PauseOverlay {
   readonly root: HTMLDivElement;
@@ -24,7 +25,9 @@ export class PauseOverlay {
       b.addEventListener('click', fn);
       buttons.appendChild(b);
     }
-    panel.append(h, buttons);
+    panel.append(h);
+    volumeSliders(panel);
+    panel.append(buttons);
     this.root.appendChild(panel);
     parent.appendChild(this.root);
   }

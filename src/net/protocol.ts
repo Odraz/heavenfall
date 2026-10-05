@@ -59,7 +59,8 @@ export function decodeInput(buf: ArrayBuffer): InputMsg | null {
 // ---------------------------------------------------------------- snapshots
 
 export const HEADER_BYTES = 25;
-export const PLAYER_BYTES = 28;
+/** The MVP's 28 bytes plus `shots` (M8 §10). */
+export const PLAYER_BYTES = 29;
 export const ENEMY_BYTES = 8;
 export const PROJECTILE_BYTES = 9;
 export const MAX_SNAPSHOT_BYTES = 16000;
@@ -103,6 +104,8 @@ export interface SnapshotPlayer {
   cdQ: number;
   cdE: number;
   kills: number;
+  /** A wrapping counter of shots fired, for others' shot sounds (M8 §9.1). */
+  shots: number;
 }
 
 /** Dense entity arrays for encoding; only the first `enemyCount` / `projectileCount` entries are used. */
@@ -186,6 +189,7 @@ export function encodeSnapshot(
       v.setUint16(o + 22, clamp16(p.cdQ), true);
       v.setUint16(o + 24, clamp16(p.cdE), true);
       v.setUint16(o + 26, Math.min(0xffff, p.kills), true);
+      v.setUint8(o + 28, p.shots & 0xff);
       o += PLAYER_BYTES;
     }
     for (let i = e0; i < e0 + ne; i++) {
@@ -275,6 +279,7 @@ export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
       cdQ: v.getUint16(o + 22, true),
       cdE: v.getUint16(o + 24, true),
       kills: v.getUint16(o + 26, true),
+      shots: v.getUint8(o + 28),
     });
     o += PLAYER_BYTES;
   }
