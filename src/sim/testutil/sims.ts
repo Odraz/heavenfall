@@ -57,3 +57,12 @@ export function press(p: SimPlayer, key: 'Q' | 'E', allyTargetId = 255): void {
     p.pendingEAlly = allyTargetId;
   }
 }
+
+/**
+ * Ends an arena's countdown (M8 §5) at the next tick, as if its timer ran out, and steps once.
+ * The arena must be in its countdown.
+ */
+export function sealNow(sim: Simulation, ai = 0): void {
+  sim.arenas[ai].sealTick = sim.tick + 1;
+  sim.step();
+}

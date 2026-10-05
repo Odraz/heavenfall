@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, ST_WINDUP } from '../data/enemies';
+import { WEAPONS } from '../data/weapons';
 import { PROJ_ORB } from './sim';
 import { aimAt, enemyAt, makeSim, put, room } from './testutil/sims';
 
@@ -298,7 +299,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     expect(sim.pAlive[first]).toBe(0);
   });
 
-  it('a held Chain Gun fires on ticks 0, 3, 6, …; a revolver carries fractions over', () => {
+  it('a held Chain Gun fires on ticks 0, 3, 5, 8, 10, … (12 per second); a revolver carries fractions over', () => {
     const sim = makeSim(room(30, 5), ['binder', 'betrayer']);
     const [binder, betrayer] = sim.players;
     const shots: Array<[number, number]> = [];
@@ -310,36 +311,37 @@ describe('combat (§5.3, §5.4, §6)', () => {
     binder.fireHeld = true;
     betrayer.fireHeld = true;
     for (let i = 0; i < 22; i++) sim.step();
-    expect(shots.filter((s) => s[0] === 0).map((s) => s[1] - t0)).toEqual([0, 3, 6, 9, 12, 15, 18, 21]);
+    expect(shots.filter((s) => s[0] === 0).map((s) => s[1] - t0)).toEqual([0, 3, 5, 8, 10, 13, 15, 18, 20]);
     // 0.35 s = 10.5 ticks: fires on ticks 0, 11, 21.
     expect(shots.filter((s) => s[0] === 1).map((s) => s[1] - t0)).toEqual([0, 11, 21]);
     spy.mockRestore();
   });
 
-  it('the censer explodes on the first enemy: 40 damage to it, 10 to others within 2 m', () => {
+  it('the censer explodes on the first enemy: 40 damage to it, 20 to others within 2.5 m (doubled: they are bound)', () => {
     const sim = makeSim(room(30, 5), ['heretic']);
     const p = sim.players[0];
     put(sim, p, 2.5, 3.5);
     const a = enemyAt(sim, CHORISTER, 10.5, 3.5);
     // The explosion point is about 0.65 m in front of a's center.
     const b = enemyAt(sim, CHORISTER, 12, 3.5);
-    const far = enemyAt(sim, CHORISTER, 13, 3.5);
+    const far = enemyAt(sim, CHORISTER, 13.2, 3.5);
+    // Rooted, so they hold still, and bound: they take double damage (M8 §8).
     for (const s of [a, b, far]) sim.root(s, 10);
     aimAt(sim, p, a);
     sim.fireWeapon(p);
     for (let i = 0; i < 15; i++) sim.step();
-    expect(sim.eHp[a]).toBe(20);
-    expect(sim.eHp[b]).toBe(50);
+    expect(sim.eAlive[a]).toBe(0);
+    expect(sim.eHp[b]).toBe(20);
     expect(sim.eHp[far]).toBe(60);
   });
 
-  it('the censer splash hits only the 6 enemies nearest the explosion', () => {
+  it('the censer splash hits only the 8 enemies nearest the explosion', () => {
     const sim = makeSim(room(30, 10), ['heretic']);
     const p = sim.players[0];
     put(sim, p, 2.5, 5.5);
     const a = enemyAt(sim, CHORISTER, 10.5, 5.5);
-    // The explosion point is about (9.85, 5.5). Seven Blessed within 2 m of it, clear of the flight path;
-    // the seventh is the farthest (1.95 m).
+    // The explosion point is about (9.85, 5.5). Nine Blessed within 2.5 m of it, clear of the flight
+    // path; the ninth is the farthest (2.45 m).
     const near = [
       [9.85, 6.2],
       [9.85, 4.75],
@@ -347,15 +349,17 @@ describe('combat (§5.3, §5.4, §6)', () => {
       [10.6, 4.4],
       [9.85, 7.0],
       [9.85, 3.9],
+      [11.2, 7.1],
+      [11.2, 3.9],
     ].map(([x, y]) => enemyAt(sim, BLESSED, x, y));
-    const seventh = enemyAt(sim, BLESSED, 9.85, 7.8);
-    for (const s of [a, ...near, seventh]) sim.root(s, 10);
+    const ninth = enemyAt(sim, BLESSED, 9.85, 8.3);
+    for (const s of [a, ...near, ninth]) sim.root(s, 10);
     aimAt(sim, p, a);
     sim.fireWeapon(p);
     for (let i = 0; i < 15; i++) sim.step();
-    expect(sim.eHp[a]).toBe(20);
-    for (const s of near) expect(sim.eHp[s]).toBe(10);
-    expect(sim.eHp[seventh]).toBe(20);
+    // 20 splash, bound: every Blessed it reaches dies; the ninth is untouched.
+    for (const s of near) expect(sim.eAlive[s]).toBe(0);
+    expect(sim.eHp[ninth]).toBe(20);
   });
 
   it('the censer explodes after flying 25 m, with splash damage only', () => {
@@ -368,7 +372,8 @@ describe('combat (§5.3, §5.4, §6)', () => {
     sim.fireWeapon(p);
     for (let i = 0; i < 40; i++) sim.step();
     expect(sim.projectiles.length).toBe(0);
-    expect(sim.eHp[at25]).toBe(50);
+    // 20 splash, doubled while bound.
+    expect(sim.eHp[at25]).toBe(20);
   });
 });
 
@@ -432,5 +437,52 @@ describe('defeat (§5.7)', () => {
     const sim = makeSim(room(20, 10), ['heretic'], { god: true });
     sim.damagePlayer(sim.players[0], 1000);
     expect(sim.players[0].dead).toBe(false);
+  });
+});
+
+describe('balance (M8 §8)', () => {
+  it('Bound doubles damage on rooted enemies, and multiplies with Kiss (×6)', () => {
+    const sim = makeSim(room(30, 5), ['binder']);
+    const a = enemyAt(sim, CHORISTER, 10.5, 3.5);
+    sim.damageEnemy(a, 5, -1);
+    expect(sim.eHp[a]).toBe(55);
+    sim.root(a, 5);
+    sim.damageEnemy(a, 5, -1);
+    expect(sim.eHp[a]).toBe(45);
+    sim.mark(a, 5);
+    sim.damageEnemy(a, 5, -1);
+    expect(sim.eHp[a]).toBe(15);
+  });
+
+  it('Bound includes the 0.3 s pull', () => {
+    const sim = makeSim(room(30, 5), ['binder']);
+    const a = enemyAt(sim, CHORISTER, 10.5, 3.5);
+    sim.pull(a, 12.5, 3.5, 0);
+    sim.damageEnemy(a, 5, -1);
+    expect(sim.eHp[a]).toBe(50);
+  });
+
+  it('the Gatekeeper is never bound', () => {
+    const sim = makeSim(room(30, 5), ['binder']);
+    const g = enemyAt(sim, GATEKEEPER, 15.5, 3.5);
+    sim.root(g, 5);
+    sim.damageEnemy(g, 100, -1);
+    expect(sim.eHp[g]).toBe(45000 - 100);
+  });
+
+  it('a revolver shot pierces up to 6 enemies', () => {
+    const sim = makeSim(room(40, 5), ['betrayer']);
+    const p = sim.players[0];
+    put(sim, p, 2.5, 3.5);
+    const line = [6, 8, 10, 12, 14, 16, 18].map((x) => enemyAt(sim, CHORISTER, x + 0.5, 3.5));
+    p.yaw = 0;
+    p.pitch = 0;
+    sim.fireWeapon(p);
+    expect(line.slice(0, 6).every((s) => sim.eHp[s] === 0 || !sim.eAlive[s])).toBe(true);
+    expect(sim.eHp[line[6]]).toBe(60);
+  });
+
+  it('the shotgun fires 8 pellets of 12 every 0.8 s', () => {
+    expect(WEAPONS.fallen).toMatchObject({ pellets: 8, damage: 12, interval: 0.8 });
   });
 });

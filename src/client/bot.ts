@@ -1,6 +1,6 @@
 /** The bot (`?bot=1`): replaces the local player's input in game (§2.5). */
 import { ENEMIES } from '../data/enemies';
-import { PHASE_CLEARED, PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
+import { PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, PHASE_IDLE } from '../net/protocol';
 import { PLAYER_EYE } from '../sim/constants';
 import { FlowField } from '../sim/flowfield';
 import { lineOfSight } from '../sim/los';
@@ -30,6 +30,10 @@ export interface BotView {
   eReady: boolean;
   /** Horizontal movement was blocked in the previous frame. */
   blockedLastFrame: boolean;
+  /** The local player's index: its entry cell in each arena. */
+  entryIndex: number;
+  /** Teammates' souls: their ground points (M8 §4.1). */
+  souls: ReadonlyArray<{ x: number; y: number; z: number }>;
 }
 
 export interface BotOutput {
@@ -48,6 +52,11 @@ const LOS_INTERVAL = 250;
 const FIELD_INTERVAL = 500;
 const FOLLOW_HOST_DIST = 6;
 const ARRIVE_DIST = 0.2;
+/** Reviving (M8 §6.4): a soul within 30 m in line of sight, while no enemy is within 6 m. */
+const REVIVE_RANGE = 30;
+const REVIVE_SAFE = 6;
+/** The soul's center, above its ground point, once it floats. */
+const SOUL_AIM_HEIGHT = 1.9;
 
 export class Bot {
   private targetSlot = -1;
@@ -87,7 +96,16 @@ export class Bot {
     } else if (!target) {
       this.targetSlot = -1;
     }
-    if (target) {
+    // Reviving comes first when no enemy is close: aim at the soul's center and fire (M8 §6.4).
+    const soul = this.soulToRevive(v, ex, ey, ez);
+    if (soul) {
+      const dx = soul.x - ex;
+      const dy = soul.y - ey;
+      const dz = soul.z + SOUL_AIM_HEIGHT - ez;
+      o.yaw = Math.atan2(dy, dx);
+      o.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, Math.atan2(dz, Math.hypot(dx, dy))));
+      o.fire = true;
+    } else if (target) {
       const h = ENEMIES[target.type].height;
       const dx = target.x - ex;
       const dy = target.y - ey;
@@ -102,7 +120,11 @@ export class Bot {
 
     // Goal.
     let goal: { x: number; y: number } | null = null;
-    if (v.hostPlayer) {
+    if (v.arenaPhase === PHASE_COUNTDOWN) {
+      // Every bot heads for its own entry cell in the arena counting down (M8 §6.4).
+      const cell = v.map.arenas[v.arenaIndex]?.entryCells[v.entryIndex];
+      if (cell) goal = { x: cell[0] + 0.5, y: cell[1] + 0.5 };
+    } else if (v.hostPlayer) {
       if (Math.hypot(v.hostPlayer.x - ex, v.hostPlayer.y - ey) > FOLLOW_HOST_DIST) goal = v.hostPlayer;
     } else if (v.arenaPhase === PHASE_COMBAT) {
       if (!target) {
@@ -124,6 +146,21 @@ export class Bot {
     if (goal) this.steer(now, v, goal, o);
     o.jump = v.blockedLastFrame;
     return o;
+  }
+
+  /** The nearest teammate's soul within 30 m in line of sight, if no living enemy is within 6 m. */
+  private soulToRevive(v: BotView, ex: number, ey: number, ez: number): { x: number; y: number; z: number } | null {
+    if (v.souls.length === 0) return null;
+    for (const e of v.enemies) if (Math.hypot(e.x - ex, e.y - ey) <= REVIVE_SAFE) return null;
+    let best: { x: number; y: number; z: number } | null = null;
+    let bestD = REVIVE_RANGE;
+    for (const s of v.souls) {
+      const d = Math.hypot(s.x - ex, s.y - ey, s.z + SOUL_AIM_HEIGHT - ez);
+      if (d > bestD || !lineOfSight(v.map, ex, ey, ez, s.x, s.y, s.z + SOUL_AIM_HEIGHT)) continue;
+      best = s;
+      bestD = d;
+    }
+    return best;
   }
 
   private findVisible(v: BotView, ex: number, ey: number, ez: number): BotEnemy | undefined {

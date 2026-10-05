@@ -62,6 +62,7 @@ import {
   FLAG_TAUNTED,
   PHASE_CLEARED,
   PHASE_COMBAT,
+  PHASE_COUNTDOWN,
   PHASE_IDLE,
   type InputMsg,
   type SnapshotEntities,
@@ -89,6 +90,7 @@ import { lineOfSight, raycastTerrain } from './los';
 import { insideRect, isSolid, loadMap, setArenaDoors, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
+import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, SOUL_HEIGHT, SOUL_RADIUS, soulRise } from './souls';
 
 /** Party-size multipliers ×10 (§7.5), indexed by party size. */
 const MULT10 = [0, 4, 6, 8, 10];
@@ -174,6 +176,10 @@ export interface SimPlayer {
   kills: number;
   /** Shots fired, for others' shot sounds (M8 §9.1). */
   shots: number;
+  /** Revive progress of the player's soul, 0–1, while dead (M8 §4.2). */
+  revive: number;
+  /** Tick the soul started rising (the death); its ground point is the dead player's feet. */
+  soulTick: number;
   /** Seconds of cooldown remaining. */
   cdQ: number;
   cdE: number;
@@ -210,6 +216,8 @@ interface ArenaState {
   waveFullySpawned: boolean[];
   /** Living enemies belonging to this arena (not counting the Gatekeeper). */
   alive: number;
+  /** During the countdown: the tick the arena seals (M8 §5). */
+  sealTick: number;
 }
 
 /** Projectile kinds, as encoded in snapshots (§9.4). */
@@ -281,8 +289,14 @@ export const BOSS_CAST_NONE = 0;
 export const BOSS_CAST_VOLLEY = 1;
 export const BOSS_CAST_JUDGMENT = 2;
 
+/** The arena countdown (M8 §5): 60 s, cut to 5 s once every living player is inside. */
+const COUNTDOWN = 60;
+const COUNTDOWN_ALL_IN = 5;
+
 const REGEN_DELAY_TICKS = 4 * TICK_HZ;
 const REGEN_FRACTION = 0.03;
+/** Bound enemies take this much damage (M8 §8). */
+const BOUND_FACTOR = 2;
 
 const ticks = (seconds: number) => Math.round(seconds * TICK_HZ);
 
@@ -473,6 +487,8 @@ export class Simulation {
         landingTick: -1,
         kills: 0,
         shots: 0,
+        revive: 0,
+        soulTick: 0,
         cdQ: 0,
         cdE: 0,
         lastDamageTick: 0,
@@ -493,6 +509,7 @@ export class Simulation {
       waveAlive: a.waves.map(() => 0),
       waveFullySpawned: a.waves.map(() => false),
       alive: 0,
+      sealTick: 0,
     }));
     this.groundFields = this.players.map(() => new FlowField(this.map, false));
     this.airFields = this.players.map(() => new FlowField(this.map, true));
@@ -623,6 +640,7 @@ export class Simulation {
     this.separate(0);
     this.separate(1);
     this.updateProjectiles();
+    this.updateSouls();
     this.checkVictory();
     this.checkArenaClears();
     this.checkDefeat();
@@ -639,11 +657,42 @@ export class Simulation {
     return p.connected && !p.dead;
   }
 
+  /**
+   * Arena countdown (M8 §5): a living player entering an idle arena, once every earlier one is
+   * cleared, starts a 60 s countdown; it drops to 5 s when every living player is inside (none on a
+   * door cell), never restarts, and seals the arena at 0. The benchmark's arena starts at once.
+   */
   private checkArenaStarts(): void {
     this.map.arenas.forEach((a, ai) => {
-      if (this.arenas[ai].phase !== PHASE_IDLE) return;
-      if (this.players.some((p) => this.livingTargetable(p) && insideRect(a, p.x, p.y))) this.startArena(ai);
+      const st = this.arenas[ai];
+      if (st.phase === PHASE_IDLE) {
+        if (!this.players.some((p) => this.livingTargetable(p) && insideRect(a, p.x, p.y))) return;
+        if (this.arenas.slice(0, ai).some((e) => e.phase !== PHASE_CLEARED)) return;
+        if (this.bench) {
+          this.startArena(ai);
+          return;
+        }
+        st.phase = PHASE_COUNTDOWN;
+        st.sealTick = this.tick + ticks(COUNTDOWN);
+      }
+      if (st.phase !== PHASE_COUNTDOWN) return;
+      const living = this.players.filter((p) => this.livingTargetable(p));
+      if (living.length > 0 && living.every((p) => insideRect(a, p.x, p.y) && !this.onDoor(p))) {
+        st.sealTick = Math.min(st.sealTick, this.tick + ticks(COUNTDOWN_ALL_IN));
+      }
+      if (this.tick >= st.sealTick) this.startArena(ai);
     });
+  }
+
+  private onDoor(p: SimPlayer): boolean {
+    return this.map.doorArena[Math.floor(p.y) * this.map.w + Math.floor(p.x)] >= 0;
+  }
+
+  /** Seconds until the countdown arena seals, or 0 (M8 §5). */
+  countdownLeft(): number {
+    const { arenaIndex, arenaPhase } = this.arenaStatus();
+    if (arenaPhase !== PHASE_COUNTDOWN) return 0;
+    return Math.max(0, this.arenas[arenaIndex].sealTick - this.tick) / TICK_HZ;
   }
 
   private startArena(ai: number): void {
@@ -655,9 +704,7 @@ export class Simulation {
     this.events.push({ to: 'all', event: { type: 'arenaStarted', arenaIndex: ai } });
     for (const p of this.players) {
       if (!this.livingTargetable(p)) continue;
-      const cell = Math.floor(p.y) * this.map.w + Math.floor(p.x);
-      const onDoor = this.map.doorArena[cell] >= 0;
-      if (!insideRect(a, p.x, p.y) || onDoor) {
+      if (!insideRect(a, p.x, p.y) || this.onDoor(p)) {
         const [c, r] = a.entryCells[p.index];
         this.teleport(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
       }
@@ -709,6 +756,7 @@ export class Simulation {
         p.dead = false;
         p.hp = p.maxHp;
         p.shield = 0;
+        p.revive = 0;
         p.lastDamageTick = this.tick;
         const [c, r] = a.entryCells[p.index];
         this.events.push({ to: 'all', event: { type: 'playerRespawned', playerId: p.id } });
@@ -975,6 +1023,8 @@ export class Simulation {
       this.judgmentDamage += amount;
       if (this.judgmentDamage >= JUDGMENT_INTERRUPT * partyMultiplier(this.partySize) - 1e-9) this.interruptJudgment();
     }
+    // 2. Bound (M8 §8): a rooted enemy, during the pull too, takes double damage.
+    if (this.isRooted(slot)) amount *= BOUND_FACTOR;
     this.eHp[slot] -= amount;
     this.eHurtTick[slot] = this.tick;
     // 5. Death and kill credit.
@@ -1008,6 +1058,11 @@ export class Simulation {
     p.dead = true;
     p.hp = 0;
     p.shield = 0;
+    // The soul (M8 §4.1): its ground point is the feet, dropped to the ground under them.
+    const g = groundHeight(this.map, p.x, p.y, PLAYER_RADIUS, Infinity, false, true);
+    if (g !== -Infinity) p.z = g;
+    p.soulTick = this.tick;
+    p.revive = 0;
     p.fireHeld = false;
     p.pendingQ = false;
     p.pendingE = false;
@@ -1045,6 +1100,11 @@ export class Simulation {
   root(slot: number, seconds: number): void {
     if (this.immune(slot)) return;
     this.eRootUntil[slot] = Math.max(this.eRootUntil[slot], this.tick + ticks(seconds));
+  }
+
+  /** Rooted: by Chains, including the 0.3 s pull. The Gatekeeper can't be rooted. */
+  isRooted(slot: number): boolean {
+    return this.tick < this.eRootUntil[slot] || this.ePullStart[slot] >= 0;
   }
 
   /** Silence: a cast in progress is cancelled. */
@@ -1140,15 +1200,68 @@ export class Simulation {
       this.spawnProjectile(PROJ_CENSER, ex, ey, ez, dx, dy, dz, CENSER_SPEED, CENSER_RADIUS, w.damage, w.range, p.index);
       return;
     }
+    // Souls this trigger pull hit: all pellets together count one hit per soul (M8 §4.2).
+    const souls = new Set<SimPlayer>();
     for (let i = 0; i < w.pellets; i++) {
       const yaw = w.spreadYaw > 0 ? p.yaw + (this.random() * 2 - 1) * w.spreadYaw : p.yaw;
       const pitch = w.spreadPitch > 0 ? p.pitch + (this.random() * 2 - 1) * w.spreadPitch : p.pitch;
       const [dx, dy, dz] = aimDir(yaw, pitch);
       const hits = this.rayEnemies(ex, ey, ez, dx, dy, dz, w.range, w.maxHits);
+      // Where the ray stops: the terrain or its range, or the last enemy it can pierce.
+      let stop = raycastTerrain(this.map, ex, ey, ez, dx, dy, dz, w.range);
+      if (hits.length >= w.maxHits) {
+        const last = hits[hits.length - 1];
+        const def = ENEMIES[this.eType[last]];
+        stop = rayCylinder(ex, ey, ez, dx, dy, dz, this.eX[last], this.eY[last], this.eZ[last], def.radius, def.height);
+      }
+      for (const o of this.players) {
+        if (o === p || !this.hasSoul(o) || souls.has(o)) continue;
+        if (rayCylinder(ex, ey, ez, dx, dy, dz, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= stop) souls.add(o);
+      }
       for (const slot of hits) {
         this.damageEnemy(slot, w.damage, p.index);
         if (w.slow > 0 && this.eAlive[slot]) this.slow(slot, w.slow);
       }
+    }
+    for (const o of souls) this.addRevive(o, reviveHit(w.interval, p.classId === 'heretic'));
+  }
+
+  // ------------------------------------------------------------------ souls (M8 §4)
+
+  /** A dead, connected player has a soul. */
+  private hasSoul(p: SimPlayer): boolean {
+    return p.dead && p.connected;
+  }
+
+  /** The base of a soul's hit cylinder: its ground point plus the rise since death. */
+  soulBase(p: SimPlayer): number {
+    return p.z + soulRise((this.tick - p.soulTick) / TICK_HZ);
+  }
+
+  /** Adds revive progress to a soul; at 1 the player is revived. */
+  addRevive(p: SimPlayer, amount: number): void {
+    if (!this.hasSoul(p)) return;
+    p.revive = Math.min(1, p.revive + amount);
+    if (p.revive >= 1 - 1e-9) this.revivePlayer(p);
+  }
+
+  /** Revived on the soul's ground point with half HP, invulnerable for 2 s. */
+  private revivePlayer(p: SimPlayer): void {
+    p.dead = false;
+    p.revive = 0;
+    p.hp = p.maxHp * REVIVE_HP;
+    p.shield = 0;
+    p.lastDamageTick = this.tick;
+    p.invulUntil = Math.max(p.invulUntil, this.tick + ticks(REVIVE_INVULNERABLE));
+    this.invalidateFields();
+    this.events.push({ to: 'all', event: { type: 'playerRevived', playerId: p.id } });
+    this.teleport(p, p.x, p.y, p.z);
+  }
+
+  /** Revive progress decays every tick. */
+  private updateSouls(): void {
+    for (const p of this.players) {
+      if (this.hasSoul(p)) p.revive = Math.max(0, p.revive - REVIVE_DECAY * TICK_DT);
     }
   }
 
@@ -1222,6 +1335,11 @@ export class Simulation {
           if (distToCylinder(bx, by, bz, o.x, o.y, o.z, PLAYER_RADIUS, PLAYER_HEIGHT) > COMMUNION_RADIUS) continue;
           this.heal(o, COMMUNION_HEAL);
           healed.push(o.id);
+        }
+        // It also adds to every soul within its radius.
+        for (const o of this.players) {
+          if (o === p || !this.hasSoul(o)) continue;
+          if (distToCylinder(bx, by, bz, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= COMMUNION_RADIUS) this.addRevive(o, REVIVE_COMMUNION);
         }
         p.cdQ = cd;
         this.abilityEvent(p, 'Q', p.x, p.y, p.z, healed);
@@ -1437,6 +1555,17 @@ export class Simulation {
           hitSlot = s;
         }
       }
+      // A censer explodes on a soul like on an enemy (M8 §4.2); the explosion counts the hit.
+      let soulT = Infinity;
+      for (const o of this.players) {
+        if (o.index === owner || !this.hasSoul(o)) continue;
+        const t = rayCylinder(x, y, z, dx, dy, dz, o.x, o.y, this.soulBase(o) - pr, SOUL_RADIUS + pr, SOUL_HEIGHT + 2 * pr);
+        if (t <= terrainT) soulT = Math.min(soulT, t);
+      }
+      if (soulT < hitT) {
+        this.explodeCenser(slot, x + dx * soulT, y + dy * soulT, z + dz * soulT, -1);
+        return;
+      }
     } else {
       for (const p of this.players) {
         if (!this.livingTargetable(p)) continue;
@@ -1498,6 +1627,15 @@ export class Simulation {
     hit.sort((a, b) => a.d - b.d);
     if (direct >= 0) this.damageEnemy(direct, damage, owner);
     for (let i = 0; i < hit.length && i < CENSER_SPLASH_MAX; i++) this.damageEnemy(hit[i].s, CENSER_SPLASH_DAMAGE, owner);
+    // Souls within 2.5 m count one hit each (M8 §4.2).
+    const shooter = this.players[owner];
+    if (!shooter) return;
+    for (const o of this.players) {
+      if (o === shooter || !this.hasSoul(o)) continue;
+      if (distToCylinder(x, y, z, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= REVIVE_CENSER_RADIUS) {
+        this.addRevive(o, reviveHit(WEAPONS[shooter.classId].interval, shooter.classId === 'heretic'));
+      }
+    }
   }
 
   // ------------------------------------------------------------------ enemies
@@ -2115,7 +2253,7 @@ export class Simulation {
       e.enemyTypeState[k] = (this.eType[s] & 0x0f) | (this.eState[s] << 4);
       let f = 0;
       if (s === this.markSlot && tick < this.markUntil) f |= FLAG_MARKED;
-      if (tick < this.eRootUntil[s] || this.ePullStart[s] >= 0) f |= FLAG_ROOTED;
+      if (this.isRooted(s)) f |= FLAG_ROOTED;
       if (tick < this.eSilenceUntil[s]) f |= FLAG_SILENCED;
       if (tick < this.eSlowUntil[s]) f |= FLAG_SLOWED;
       if (tick < this.eTauntUntil[s]) f |= FLAG_TAUNTED;
@@ -2146,6 +2284,7 @@ export class Simulation {
       tick: this.tick,
       arenaIndex,
       arenaPhase,
+      countdown: Math.ceil(this.countdownLeft() * 10 - 1e-6),
       enemiesRemaining: this.enemiesRemaining(),
       ...this.bossHeader(),
     };
@@ -2165,6 +2304,7 @@ export class Simulation {
         cdQ: Math.round(p.cdQ * 1000),
         cdE: Math.round(p.cdE * 1000),
         kills: p.kills,
+        revive: p.dead ? p.revive * 255 : 0,
         shots: p.shots & 0xff,
       });
     }

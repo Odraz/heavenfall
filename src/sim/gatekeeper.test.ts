@@ -5,6 +5,7 @@ import type { DungeonDef } from '../data/dungeons/types';
 import { BLESSED, CHERUB, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import { decodeSnapshot } from '../net/protocol';
 import { BOSS_CAST_JUDGMENT, BOSS_CAST_NONE, BOSS_CAST_VOLLEY, PHASE_COMBAT, PROJ_ORB, Simulation, type SimPlayer } from './sim';
+import { sealNow } from './testutil/sims';
 
 // A lobby (x 1–4) open to a boss arena (x 6–30). The Gatekeeper's dais is 3 m high around B (25, 10).
 // A wall at x 15–16, y 13–18 hides the arena's south-west corner from the boss.
@@ -54,10 +55,11 @@ function place(p: SimPlayer, [x, y]: [number, number]): void {
   p.z = 0;
 }
 
-/** Puts the players at the given spots and starts the boss arena with one tick. Returns the start tick. */
+/** Puts the players at the given spots and seals the boss arena (M8 §5). Returns the start tick. */
 function startFight(sim: Simulation, spots: Array<[number, number]>): number {
   sim.players.forEach((p, i) => place(p, spots[i]));
   sim.step();
+  sealNow(sim);
   // The arena start teleports nobody here (everyone is inside), so the spots hold.
   expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
   return sim.tick;
@@ -78,7 +80,7 @@ describe('the Gatekeeper (§7.4)', () => {
     expect(b).toBeGreaterThanOrEqual(0);
     expect(sim.eType[b]).toBe(GATEKEEPER);
     expect([sim.eX[b], sim.eY[b], sim.eZ[b]]).toEqual([25.5, 10.5, 3]);
-    expect(sim.eHp[b]).toBe(40000 * 0.6);
+    expect(sim.eHp[b]).toBe(45000 * 0.6);
     // It isn't counted among the living enemies or the enemies remaining.
     expect(sim.living).toBe(0);
     expect(sim.enemiesRemaining()).toBe(0);
@@ -290,8 +292,8 @@ describe('the Gatekeeper (§7.4)', () => {
     sim.volleyDue = Infinity;
     runTo(sim, t0 + 10 + 45);
     snap = decodeSnapshot(sim.encodeFor(0)[0])!;
-    expect(snap.bossHp).toBe(16000);
-    expect(snap.bossMaxHp).toBe(16000);
+    expect(snap.bossHp).toBe(18000);
+    expect(snap.bossMaxHp).toBe(18000);
     expect(snap.bossCast).toBe(BOSS_CAST_JUDGMENT);
     expect(snap.bossCastProgress).toBe(128);
   });

@@ -10,6 +10,8 @@ export type GameEvent =
   | { type: 'teleport'; teleportId: number; x: number; y: number; z: number }
   | { type: 'playerDied'; playerId: number }
   | { type: 'playerRespawned'; playerId: number }
+  /** Revived by the party at the soul's ground point (M8 §4.2). */
+  | { type: 'playerRevived'; playerId: number }
   | { type: 'arenaStarted'; arenaIndex: number }
   | { type: 'arenaCleared'; arenaIndex: number }
   | { type: 'bossCast'; phase: 'start' | 'interrupted' | 'completed' }

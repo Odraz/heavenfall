@@ -92,7 +92,7 @@ describe('Falling Star (Fallen E)', () => {
     expect(usedEvents(sim)).toEqual([]);
   });
 
-  it('with an ally: cooldown, 0.4 s invulnerability, then 30 damage and a 4 m knockback within 5 m', () => {
+  it('with an ally: cooldown, 0.4 s invulnerability, then 40 damage and a 4 m knockback within 5 m', () => {
     const sim = makeSim(room(40, 20), ['fallen', 'binder']);
     const [fallen, binder] = sim.players;
     put(sim, fallen, 5.5, 10.5);
@@ -111,12 +111,16 @@ describe('Falling Star (Fallen E)', () => {
     put(sim, fallen, 20.5, 10.5);
     for (let i = 0; i < 11; i++) sim.step();
     expect(sim.eHp[near]).toBe(60);
+    // Unbound for the landing, so its damage isn't doubled (M8 §8); they stand still while casting.
+    for (const s of [near, far]) sim.eRootUntil[s] = 0;
     sim.step();
-    expect(sim.eHp[near]).toBe(30);
+    expect(sim.eHp[near]).toBe(20);
     expect(sim.eHp[far]).toBe(60);
-    // Rooted enemies can still be knocked back: 4 m away from the landing point.
+    // Knocked back 4 m away from the landing point (rooted again so it doesn't walk; it walked one
+    // tick's step, 0.1 m, while unrooted).
+    sim.root(near, 20);
     for (let i = 0; i < 8; i++) sim.step();
-    expect(sim.eX[near]).toBeCloseTo(27.5, 5);
+    expect(Math.abs(sim.eX[near] - 27.5)).toBeLessThanOrEqual(0.1 + 1e-6);
   });
 
   it('is accepted when the cooldown has 0.25 s or less remaining', () => {
@@ -197,7 +201,7 @@ describe("Martyr's Shroud (Heretic E)", () => {
 });
 
 describe('Chains of Tartarus (Binder Q)', () => {
-  it('pulls enemies in a 30° cone within 20 m to 5 m ahead over 0.3 s, then roots them for 1.5 s', () => {
+  it('pulls enemies in a 30° cone within 20 m to 5 m ahead over 0.3 s, then roots them for 1.5 s; cooldown 8 s', () => {
     const sim = makeSim(room(40, 20), ['binder']);
     const p = sim.players[0];
     put(sim, p, 5.5, 10.5);
@@ -218,7 +222,7 @@ describe('Chains of Tartarus (Binder Q)', () => {
     expect(sim.eX[boss]).toBe(18.5);
     expect(sim.ePullStart[outside]).toBe(-1);
     expect(sim.ePullStart[tooFar]).toBe(-1);
-    expect(p.cdQ).toBeCloseTo(10 - 9 / 30, 6);
+    expect(p.cdQ).toBeCloseTo(8 - 9 / 30, 6);
   });
 
   it('stops the destination before a wall', () => {

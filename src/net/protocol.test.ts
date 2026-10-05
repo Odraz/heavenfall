@@ -9,6 +9,7 @@ import {
   encodeSnapshot,
   FLAG_HURT,
   HEADER_BYTES,
+  PLAYER_BYTES,
   INPUT_BYTES,
   MAX_SNAPSHOT_BYTES,
   SnapshotAssembler,
@@ -21,7 +22,8 @@ import {
 const header: SnapshotHeader = {
   tick: 123456,
   arenaIndex: 2,
-  arenaPhase: 1,
+  arenaPhase: 3,
+  countdown: 473,
   enemiesRemaining: 777,
   bossHp: 31234,
   bossMaxHp: 40000,
@@ -42,6 +44,7 @@ function players(n: number): SnapshotPlayer[] {
     cdQ: 4000,
     cdE: 250,
     kills: 42 + i,
+    revive: i * 60,
     // Wrapping: 255 + 2 shots read back as 1.
     shots: (250 + i * 3) & 0xff,
   }));
@@ -124,7 +127,7 @@ describe('snapshot protocol', () => {
   it('round-trips header, players, enemies and projectiles', () => {
     const parts = encodeSnapshot(header, players(4), entities(100, 20));
     expect(parts.length).toBe(1);
-    expect(parts[0].byteLength).toBe(25 + 4 * 29 + 100 * 8 + 20 * 9);
+    expect(parts[0].byteLength).toBe(27 + 4 * 30 + 100 * 8 + 20 * 9);
     const s = decodeSnapshot(parts[0])!;
     expect(s).toMatchObject({ ...header, partIndex: 0, partCount: 1, enemyCount: 100, projectileCount: 20 });
     expect(s.players).toEqual(players(4));
@@ -139,10 +142,10 @@ describe('snapshot protocol', () => {
     expect(s.projZ[5]).toBe(15.984375);
   });
 
-  it('fits the largest snapshot at the current caps in one part (15 749 bytes)', () => {
+  it('fits the largest snapshot at the current caps in one part (15 755 bytes)', () => {
     const parts = encodeSnapshot(header, players(4), entities(1501, 400));
     expect(parts.length).toBe(1);
-    expect(parts[0].byteLength).toBe(15749);
+    expect(parts[0].byteLength).toBe(15755);
   });
 
   it('splits snapshots above 16 000 bytes into parts that each carry the header and all players', () => {
@@ -163,8 +166,8 @@ describe('snapshot protocol', () => {
     });
     expect(enemies).toBe(2500);
     expect(projectiles).toBe(400);
-    // The first part is as full as fits: (16 000 − 25 − 112) ÷ 8 enemies.
-    expect(decodeSnapshot(parts[0])!.enemyCount).toBe(Math.floor((MAX_SNAPSHOT_BYTES - HEADER_BYTES - 4 * 28) / 8));
+    // The first part is as full as fits: (16 000 − 27 − 120) ÷ 8 enemies.
+    expect(decodeSnapshot(parts[0])!.enemyCount).toBe(Math.floor((MAX_SNAPSHOT_BYTES - HEADER_BYTES - 4 * PLAYER_BYTES) / 8));
   });
 
   it('reassembles parts that arrive out of order', () => {

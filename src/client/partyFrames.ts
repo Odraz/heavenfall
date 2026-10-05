@@ -12,6 +12,8 @@ export interface PartyMember {
   hp: number;
   shield: number;
   dead: boolean;
+  /** Revive progress 0–1 while dead (M8 §3.1). */
+  revive: number;
 }
 
 /** Party frame flashes (M8 §3.1): healed, shielded and (from stage 4) revived. */
@@ -26,6 +28,7 @@ interface Frame {
   total: number;
   hp: HTMLDivElement;
   shield: HTMLDivElement;
+  revive: HTMLDivElement;
   status: HTMLDivElement;
 }
 
@@ -65,7 +68,9 @@ export class PartyFrames {
       f.shield.style.left = f.hp.style.width;
       f.shield.style.width = `${(m.shield / total) * 100}%`;
       f.root.classList.toggle('dead', m.dead);
-      f.status.textContent = m.dead ? 'Dead' : m.shield > 0 ? `${Math.ceil(m.hp)} + ${Math.ceil(m.shield)}` : `${Math.ceil(m.hp)}`;
+      // A dead player's frame shows their revive progress, without text (M8 §3.1).
+      f.revive.style.width = m.dead ? `${Math.max(0, Math.min(1, m.revive)) * 100}%` : '0';
+      f.status.textContent = m.dead ? '' : m.shield > 0 ? `${Math.ceil(m.hp)} + ${Math.ceil(m.shield)}` : `${Math.ceil(m.hp)}`;
     }
     for (const [id, f] of this.frames) {
       if (seen.has(id)) continue;
@@ -104,7 +109,8 @@ export class PartyFrames {
     const bar = div('party-bar', info);
     const hp = div('party-hp', bar);
     const shield = div('party-shield', bar);
-    return { root, bar, total: m.hp + m.shield, hp, shield, status };
+    const revive = div('party-revive', bar);
+    return { root, bar, total: m.hp + m.shield, hp, shield, revive, status };
   }
 
   dispose(): void {

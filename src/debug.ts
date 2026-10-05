@@ -17,6 +17,8 @@ export interface DebugPlayer {
   hp: number;
   dead: boolean;
   kills: number;
+  /** Revive progress 0–1 while dead (M8 §10). */
+  revive: number;
 }
 
 export interface DebugState {
@@ -29,7 +31,9 @@ export interface DebugState {
   enemyCountsByTick: Record<number, number>;
   projectiles: number;
   arenaIndex: number;
-  arenaPhase: 'idle' | 'combat' | 'cleared';
+  arenaPhase: 'idle' | 'countdown' | 'combat' | 'cleared';
+  /** Seconds until the arena seals, 0 outside the countdown (M8 §10). */
+  countdown: number;
   netInKBps: number;
   netOutKBps: number;
   players: DebugPlayer[];
@@ -47,6 +51,7 @@ export const debugState: DebugState = {
   projectiles: 0,
   arenaIndex: 0,
   arenaPhase: 'idle',
+  countdown: 0,
   netInKBps: 0,
   netOutKBps: 0,
   players: [],
@@ -65,6 +70,7 @@ export function resetGameDebug(): void {
     projectiles: 0,
     arenaIndex: 0,
     arenaPhase: 'idle',
+    countdown: 0,
     netInKBps: 0,
     netOutKBps: 0,
     players: [],

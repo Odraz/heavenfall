@@ -26,7 +26,8 @@ export const ENEMIES: readonly EnemyDef[] = [
   { hp: 20, radius: 0.35, height: 1.6, speed: 4, flying: false },
   { hp: 60, radius: 0.45, height: 2.0, speed: 3, flying: false },
   { hp: 30, radius: 0.4, height: 0.8, speed: 7, flying: true },
-  { hp: 40000, radius: 2.0, height: 6.0, speed: 0, flying: false },
+  // The Gatekeeper: 45 000 HP (M8 §8; the MVP's 40 000), as party damage on one target rose about 13%.
+  { hp: 45000, radius: 2.0, height: 6.0, speed: 0, flying: false },
 ];
 
 /** Cherubs hover with their feet this far above the ground height. */

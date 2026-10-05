@@ -24,10 +24,10 @@ export interface WeaponDef {
 }
 
 export const WEAPONS: Record<ClassId, WeaponDef> = {
-  fallen: { name: 'Brimstone Shotgun', description: '8 pellets of hellfire. Deadly up close.', interval: 0.9, hitscan: true, pellets: 8, damage: 10, spreadYaw: 8 * DEG, spreadPitch: 4 * DEG, range: 20, maxHits: 1, slow: 0 },
+  fallen: { name: 'Brimstone Shotgun', description: '8 pellets of hellfire. Deadly up close.', interval: 0.8, hitscan: true, pellets: 8, damage: 12, spreadYaw: 8 * DEG, spreadPitch: 4 * DEG, range: 20, maxHits: 1, slow: 0 },
   heretic: { name: 'Censer Launcher', description: 'Fires a censer that bursts on impact, hitting the enemies around it.', interval: 1.0, hitscan: false, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 25, maxHits: 1, slow: 0 },
-  binder: { name: 'Chain Gun', description: 'Fast and accurate. Slows every enemy it hits.', interval: 0.1, hitscan: true, pellets: 1, damage: 12, spreadYaw: 2 * DEG, spreadPitch: 2 * DEG, range: 40, maxHits: 1, slow: 1 },
-  betrayer: { name: 'Silver Revolver', description: 'Each shot pierces up to 6 enemies.', interval: 0.35, hitscan: true, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: 3, slow: 0 },
+  binder: { name: 'Chain Gun', description: 'Fast and accurate. Slows every enemy it hits.', interval: 1 / 12, hitscan: true, pellets: 1, damage: 12, spreadYaw: 2 * DEG, spreadPitch: 2 * DEG, range: 40, maxHits: 1, slow: 1 },
+  betrayer: { name: 'Silver Revolver', description: 'Each shot pierces up to 6 enemies.', interval: 0.35, hitscan: true, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: 6, slow: 0 },
 };
 
 export interface AbilityDef {
@@ -53,7 +53,7 @@ export const ABILITIES: Record<ClassId, { Q: AbilityDef; E: AbilityDef }> = {
     E: { name: "Martyr's Shroud", description: 'Shields the ally you aim at. With no ally aimed at, shields you.', cooldown: 10, movement: false, allyRange: 40, icon: 'icon-shroud' },
   },
   binder: {
-    Q: { name: 'Chains of Tartarus', description: 'Pulls the enemies in front of you into a clump and binds them. Bound enemies take double damage.', cooldown: 10, movement: false, allyRange: 0, icon: 'icon-chains' },
+    Q: { name: 'Chains of Tartarus', description: 'Pulls the enemies in front of you into a clump and binds them. Bound enemies take double damage.', cooldown: 8, movement: false, allyRange: 0, icon: 'icon-chains' },
     E: { name: 'Discord', description: "Silences every enemy around the point you aim at. Stops casters and the Gatekeeper's Judgment.", cooldown: 12, movement: false, allyRange: 0, icon: 'icon-discord' },
   },
   betrayer: {
@@ -66,7 +66,7 @@ export const ABILITIES: Record<ClassId, { Q: AbilityDef; E: AbilityDef }> = {
 export const BLASPHEMY_RADIUS = 15;
 export const BLASPHEMY_DURATION = 5;
 export const FALLING_STAR_TIME = 0.4;
-export const FALLING_STAR_DAMAGE = 30;
+export const FALLING_STAR_DAMAGE = 40;
 export const FALLING_STAR_RADIUS = 5;
 export const KNOCKBACK_DIST = 4;
 export const KNOCKBACK_TIME = 0.2;
@@ -97,9 +97,10 @@ export const MOVEMENT_SPEED_CHECK_SKIP = 0.6;
 export const CENSER_SPEED = 20;
 export const CENSER_RADIUS = 0.2;
 // §6.2 says 40 dmg to all within 3 m; changed after playtesting to 40 for the enemy hit directly
-// and 10 splash to the 6 nearest others within 2 m (decisions.md).
-export const CENSER_BLAST = 2;
-export const CENSER_SPLASH_DAMAGE = 10;
-export const CENSER_SPLASH_MAX = 6;
+// and splash to the nearest others (decisions.md); M8 §8 raised the splash to 20 dmg to the 8
+// nearest within 2.5 m, so it kills Blessed.
+export const CENSER_BLAST = 2.5;
+export const CENSER_SPLASH_DAMAGE = 20;
+export const CENSER_SPLASH_MAX = 8;
 
 export const SLOW_FACTOR = 0.7;

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ArenaDef, WaveDef } from '../data/dungeons/types';
 import { BLESSED, CHERUB } from '../data/enemies';
-import { PHASE_CLEARED, PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
+import { decodeSnapshot, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, PHASE_IDLE } from '../net/protocol';
 import { MAX_LIVING_ENEMIES } from './constants';
 import { scaleCount, Simulation, SPAWN_RATE } from './sim';
 import { dungeonOf } from './testutil/maps';
+import { sealNow } from './testutil/sims';
 
 // Start room (x 1–4) | door x 5 | arena 0 (x 6–12) | door x 13, corridor x 14, door x 15 | arena 1 (x 16–22).
 const HEIGHTS = [
@@ -56,18 +57,19 @@ function makeSim(waves0: WaveDef[], players = 4, opts: { markers?: string[]; hei
   });
 }
 
-/** Moves player 0 into arena 0 and runs one tick. */
+/** Moves player 0 into arena 0, which starts its countdown, then seals it (M8 §5). */
 function enterArena0(sim: Simulation): void {
   const p = sim.players[0];
   p.x = 9.5;
   p.y = 2.5;
   sim.step();
+  sealNow(sim);
 }
 
 const wave = (blessed: number, cherubs = 0): WaveDef => ({ blessed, choristers: 0, cherubs });
 
 describe('arenas', () => {
-  it('start when a living player enters the rect, and doors close', () => {
+  it('seal after the countdown, and doors close', () => {
     const sim = makeSim([wave(10)]);
     sim.step();
     expect(sim.arenas[0].phase).toBe(PHASE_IDLE);
@@ -236,6 +238,9 @@ describe('arenas', () => {
     p.x = 18.5;
     p.y = 2.5;
     sim.step();
+    // The countdown counts as having left idle (M8 §5).
+    expect(sim.arenaStatus()).toEqual({ arenaIndex: 1, arenaPhase: PHASE_COUNTDOWN });
+    sealNow(sim, 1);
     expect(sim.arenaStatus()).toEqual({ arenaIndex: 1, arenaPhase: PHASE_COMBAT });
   });
 
@@ -266,5 +271,73 @@ describe('party-size scaling', () => {
     enterArena0(duo);
     // ceil(25 × 0.6) + ceil(3 × 0.6) = 15 + 2
     expect(duo.enemiesRemaining()).toBe(17);
+  });
+});
+
+describe('arena countdown (M8 §5)', () => {
+  const put = (sim: Simulation, i: number, x: number, y: number) => {
+    sim.players[i].x = x;
+    sim.players[i].y = y;
+  };
+
+  it('starts when a living player enters, with 60 s, and nothing spawns or closes during it', () => {
+    const sim = makeSim([wave(10)]);
+    put(sim, 0, 9.5, 2.5);
+    sim.step();
+    expect(sim.arenaStatus()).toEqual({ arenaIndex: 0, arenaPhase: PHASE_COUNTDOWN });
+    expect(sim.countdownLeft()).toBeCloseTo(60, 6);
+    for (let i = 0; i < 60; i++) sim.step();
+    expect(sim.activeCount).toBe(0);
+    for (const [c, r] of sim.map.arenas[0].doors) expect(sim.map.solid[r * sim.map.w + c]).toBe(0);
+    expect(sim.countdownLeft()).toBeCloseTo(58, 6);
+    const snap = decodeSnapshot(sim.encodeFor(0)[0])!;
+    expect(snap.arenaPhase).toBe(PHASE_COUNTDOWN);
+    expect(snap.countdown).toBe(580);
+  });
+
+  it("doesn't start before every earlier arena is cleared", () => {
+    const sim = makeSim([wave(10)]);
+    put(sim, 0, 18.5, 2.5);
+    sim.step();
+    expect(sim.arenas[1].phase).toBe(PHASE_IDLE);
+  });
+
+  it('drops to 5 s once every living player is inside, never rises, and never restarts', () => {
+    const sim = makeSim([wave(10)], 2);
+    put(sim, 0, 9.5, 2.5);
+    sim.step();
+    for (let i = 0; i < 30; i++) sim.step();
+    expect(sim.countdownLeft()).toBeCloseTo(59, 6);
+    // Player 1 on a door cell doesn't count as inside.
+    put(sim, 1, 5.5, 1.5);
+    sim.step();
+    expect(sim.countdownLeft()).toBeCloseTo(59 - 1 / 30, 6);
+    put(sim, 1, 8.5, 1.5);
+    sim.step();
+    expect(sim.countdownLeft()).toBeCloseTo(5, 6);
+    // Leaving again neither restarts it nor raises it.
+    put(sim, 0, 2.5, 2.5);
+    put(sim, 1, 2.5, 1.5);
+    for (let i = 0; i < 30; i++) sim.step();
+    expect(sim.arenaStatus()).toEqual({ arenaIndex: 0, arenaPhase: PHASE_COUNTDOWN });
+    expect(sim.countdownLeft()).toBeCloseTo(4, 6);
+  });
+
+  it('a dead player needs not be inside; at 0 it seals, teleporting the others, and wave 1 starts', () => {
+    const sim = makeSim([wave(10)], 3);
+    put(sim, 0, 9.5, 2.5);
+    sim.players[2].dead = true;
+    sim.step();
+    put(sim, 1, 8.5, 1.5);
+    sim.step();
+    expect(sim.countdownLeft()).toBeCloseTo(5, 6);
+    // Player 1 walks back out before the seal.
+    put(sim, 1, 2.5, 1.5);
+    while (sim.arenas[0].phase === PHASE_COUNTDOWN) sim.step();
+    expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
+    const [c, r] = sim.map.arenas[0].entryCells[1];
+    expect([sim.players[1].x, sim.players[1].y]).toEqual([c + 0.5, r + 0.5]);
+    expect(sim.arenas[0].wave).toBe(0);
+    expect(sim.events.some((e) => e.event.type === 'arenaStarted')).toBe(true);
   });
 });

@@ -31,6 +31,13 @@ interface Effect {
 const groundGeo = new THREE.PlaneGeometry(2, 2);
 groundGeo.rotateX(-Math.PI / 2);
 const sphereGeo = new THREE.SphereGeometry(1, 20, 12);
+/**
+ * A 1 × 1 m strip standing on its bottom edge, with the beam texture running up it: scaled to a
+ * vertical beam's width and height, and turned around the vertical axis to face the camera.
+ */
+const columnGeo = new THREE.PlaneGeometry(1, 1);
+columnGeo.rotateZ(Math.PI / 2);
+columnGeo.translate(0, 0.5, 0);
 
 /** Line segments drawn as strips that face the camera, the texture repeating along each one. */
 class Ribbon {
@@ -87,8 +94,49 @@ class Ribbon {
 export class Vfx {
   readonly group = new THREE.Group();
   private readonly effects: Effect[] = [];
+  /** Soul tethers (M8 §4.1), reused frame to frame. */
+  private readonly tethers: THREE.Mesh[] = [];
+  private readonly tetherMaterial: THREE.MeshBasicMaterial;
+  /** Vertical beams turn to the camera every frame. */
+  private readonly columns = new Set<THREE.Mesh>();
 
-  constructor(private readonly tex: EffectTextures) {}
+  constructor(private readonly tex: EffectTextures) {
+    this.tetherMaterial = this.material(tex.beam, 0xff7a3a);
+    this.tetherMaterial.opacity = 0.55;
+  }
+
+  /** A vertical beam mesh, `width` wide, from z up by `height` (three.js placement is set here). */
+  private column(material: THREE.Material, x: number, y: number, z: number, width: number, height: number): THREE.Mesh {
+    const mesh = new THREE.Mesh(columnGeo, material);
+    mesh.position.set(x, z, y);
+    mesh.scale.set(width, Math.max(1e-3, height), 1);
+    mesh.frustumCulled = false;
+    this.columns.add(mesh);
+    return mesh;
+  }
+
+  /** The faint ember tethers from each soul's ground point up to its base: [x, y, ground z, base z]. */
+  setTethers(list: ReadonlyArray<[number, number, number, number]>): void {
+    while (this.tethers.length < list.length) {
+      const m = this.column(this.tetherMaterial, 0, 0, 0, 0.1, 1);
+      this.tethers.push(m);
+      this.group.add(m);
+    }
+    this.tethers.forEach((m, i) => {
+      const t = list[i];
+      m.visible = !!t && t[3] - t[2] > 0.02;
+      if (!t) return;
+      m.position.set(t[0], t[2], t[1]);
+      m.scale.set(0.1, Math.max(1e-3, t[3] - t[2]), 1);
+    });
+  }
+
+  /** The revive pillar (M8 §3.1): an ember beam 1.2 m wide and 8 m tall where the player rises, fading over 1 s. */
+  pillar(now: number, x: number, y: number, z: number): void {
+    const material = this.material(this.tex.beam, 0xff7a3a);
+    const mesh = this.column(material, x, y, z, 1.2, 8);
+    this.add({ obj: mesh, material, duration: 1000, update: (f) => (material.opacity = 1 - f) }, now, 0);
+  }
 
   private material(map: THREE.Texture, color: number): THREE.MeshBasicMaterial {
     return new THREE.MeshBasicMaterial({ map, color, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false });
@@ -199,11 +247,13 @@ export class Vfx {
 
   /** `camera` is the camera's position in three.js coordinates. */
   update(now: number, camera: THREE.Vector3): void {
+    for (const c of this.columns) c.rotation.y = Math.atan2(camera.x - c.position.x, camera.z - c.position.z);
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i];
       const f = (now - e.start) / e.duration;
       if (f < 0) continue;
       if (f >= 1) {
+        this.columns.delete(e.obj as THREE.Mesh);
         this.group.remove(e.obj);
         e.material.dispose();
         e.ribbon?.mesh.geometry.dispose();

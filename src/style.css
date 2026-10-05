@@ -324,7 +324,8 @@ body {
   box-shadow: 0 0 12px rgba(243, 198, 75, 0.6);
 }
 
-.party-frame.dead {
+.party-frame.dead .party-icon,
+.party-frame.dead .party-head {
   filter: grayscale(1) brightness(0.7);
 }
 
@@ -1180,4 +1181,104 @@ body {
 .volume-value {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- Souls and the countdown (M8 §4, §5) */
+
+.death-sub {
+  margin-top: 6px;
+  font-size: 20px;
+  opacity: 0.85;
+}
+
+.death-bar {
+  width: 240px;
+  height: 8px;
+  margin: 14px auto 0;
+  background: rgba(27, 21, 19, 0.85);
+  border: 1px solid rgba(255, 122, 58, 0.6);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.death-fill,
+.soul-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #f08a24, #ff7a3a);
+  box-shadow: 0 0 8px #ff7a3a;
+}
+
+.vignette-ember {
+  opacity: 0.35;
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(255, 110, 40, 0.95) 100%);
+}
+
+.soul-markers {
+  position: absolute;
+  inset: 0;
+}
+
+/* Projected 2.2 m above the soul's base; the transform puts the marker's bottom center there. */
+.soul-marker {
+  position: absolute;
+  left: -24px;
+  top: -42px;
+  width: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.soul-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  filter: drop-shadow(0 0 6px #ff7a3a) drop-shadow(0 0 2px #ff7a3a);
+}
+
+.soul-bar {
+  width: 48px;
+  height: 5px;
+  background: rgba(27, 21, 19, 0.85);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.countdown-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18px;
+  text-align: center;
+  font: 600 20px/1.2 var(--display-font);
+  color: var(--ivory);
+  text-shadow: 0 1px 3px #000, 0 0 2px #000;
+}
+
+.countdown-big {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 30%;
+  text-align: center;
+  font: 800 110px/1 var(--display-font);
+  color: var(--gold);
+  text-shadow: 0 3px 10px #000, 0 0 3px #000;
+}
+
+/* A dead player's party frame: the revive progress instead of the HP bar, and no text (M8 §3.1). */
+.party-frame.dead .party-hp,
+.party-frame.dead .party-shield {
+  display: none;
+}
+
+.party-revive {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: linear-gradient(90deg, #f08a24, #ff7a3a);
 }

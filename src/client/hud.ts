@@ -77,6 +77,19 @@ export class Hud {
   private readonly center: HTMLDivElement;
   private readonly remaining: HTMLDivElement;
   private readonly death: HTMLDivElement;
+  private readonly deathMain: HTMLDivElement;
+  private readonly deathSub: HTMLDivElement;
+  /** The dead player's own revive progress (M8 §4.5). */
+  private readonly deathBar: HTMLDivElement;
+  private readonly deathFill: HTMLDivElement;
+  /** The joined-as-soul screen's ember vignette (M8 §4.5). */
+  private readonly emberVignette: HTMLDivElement;
+  /** The arena countdown (M8 §5): a top-center line, and a large number in the last 5 s. */
+  private readonly countdownLine: HTMLDivElement;
+  private readonly countdownBig: HTMLDivElement;
+  /** Soul markers (M8 §4.1), by player ID. */
+  private readonly souls = new Map<number, { root: HTMLDivElement; fill: HTMLDivElement }>();
+  private readonly soulLayer: HTMLDivElement;
   private readonly result: HTMLDivElement;
   private readonly boss: HTMLDivElement;
   private readonly bossFill: HTMLDivElement;
@@ -194,7 +207,18 @@ export class Hud {
 
     this.remaining = el('div', 'remaining', this.root);
     this.center = el('div', 'center-text', this.root);
+    this.soulLayer = el('div', 'soul-markers', this.root);
+    this.emberVignette = el('div', 'vignette vignette-ember', this.root);
+    this.emberVignette.hidden = true;
     this.death = el('div', 'death-text', this.root);
+    this.deathMain = el('div', 'death-main', this.death);
+    this.deathSub = el('div', 'death-sub', this.death);
+    this.deathBar = el('div', 'death-bar', this.death);
+    this.deathFill = el('div', 'death-fill', this.deathBar);
+    this.countdownLine = el('div', 'countdown-line', this.root);
+    this.countdownLine.hidden = true;
+    this.countdownBig = el('div', 'countdown-big', this.root);
+    this.countdownBig.hidden = true;
     this.result = el('div', 'result-text', this.root);
   }
 
@@ -343,9 +367,62 @@ export class Hud {
     this.centerUntil = now + ms;
   }
 
-  setDeath(text: string | null): void {
+  /**
+   * The dead player's screen (M8 §4.5): a line, an optional smaller second line, and their revive
+   * bar; `ember` is the joined-as-soul look (an ember vignette instead of the grey). Null hides it.
+   */
+  setDeath(text: string | null, sub: string | null = null, ember = false): void {
     this.death.hidden = text === null;
-    this.death.textContent = text ?? '';
+    this.deathMain.textContent = text ?? '';
+    this.deathSub.textContent = sub ?? '';
+    this.deathSub.hidden = sub === null;
+    this.emberVignette.hidden = !(text !== null && ember);
+  }
+
+  /** The dead player's own revive progress, 0–1. */
+  setOwnRevive(progress: number): void {
+    this.deathFill.style.width = `${Math.max(0, Math.min(1, progress)) * 100}%`;
+  }
+
+  /**
+   * The arena countdown (M8 §5): `The doors seal in 0:47`, and the number alone, large, in the last
+   * 5 s; null hides both.
+   */
+  setCountdown(seconds: number | null): void {
+    this.countdownLine.hidden = seconds === null;
+    this.countdownBig.hidden = seconds === null || seconds > 5;
+    if (seconds === null) return;
+    const s = Math.ceil(seconds - 1e-6);
+    this.countdownLine.textContent = `The doors seal in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    this.countdownBig.textContent = String(Math.max(1, s));
+  }
+
+  /**
+   * Soul markers (M8 §4.1): a class icon with an ember glow and the revive bar, at screen positions
+   * in pixels; souls not listed are hidden.
+   */
+  setSoulMarkers(list: ReadonlyArray<{ id: number; classId: ClassId; x: number; y: number; progress: number }>): void {
+    const seen = new Set<number>();
+    for (const m of list) {
+      seen.add(m.id);
+      let s = this.souls.get(m.id);
+      if (!s) {
+        const root = el('div', 'soul-marker', this.soulLayer);
+        const icon = el('img', 'soul-icon', root);
+        icon.src = spriteUrl(`class-${m.classId}`);
+        icon.alt = '';
+        const bar = el('div', 'soul-bar', root);
+        s = { root, fill: el('div', 'soul-fill', bar) };
+        this.souls.set(m.id, s);
+      }
+      s.root.style.transform = `translate(${m.x.toFixed(1)}px, ${m.y.toFixed(1)}px)`;
+      s.fill.style.width = `${Math.max(0, Math.min(1, m.progress)) * 100}%`;
+    }
+    for (const [id, s] of this.souls) {
+      if (seen.has(id)) continue;
+      s.root.remove();
+      this.souls.delete(id);
+    }
   }
 
   showResult(text: string): void {

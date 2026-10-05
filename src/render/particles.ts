@@ -13,6 +13,8 @@ const HEAL_GLOW: Glow = { r: 0.36, g: 1, b: 0.42, a: 0.7 };
 /** The heal column's embers rise from the feet to this height. */
 const HEAL_COLUMN_TOP = 2.2;
 const HEAL_COLUMN_TIME = 0.8;
+/** An ember drifting up from a soul, or bursting up from a revive (M8 §3.1, §4.1). */
+const P_RISE = 4;
 
 export class Particles {
   private readonly kind = new Uint8Array(MAX_PARTICLES);
@@ -84,6 +86,22 @@ export class Particles {
     }
   }
 
+  /** One ember rising slowly from a soul (M8 §4.1). */
+  soulEmber(x: number, y: number, z: number): void {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * 0.35;
+    this.spawn(P_RISE, x + Math.cos(a) * r, y + Math.sin(a) * r, z, 0, 0, 0.8 + Math.random() * 0.4, 1.2, 0.18);
+  }
+
+  /** The revive pillar's burst (M8 §3.1): 40 embers bursting upward. */
+  reviveBurst(x: number, y: number, z: number): void {
+    for (let i = 0; i < 40; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 0.5 + Math.random() * 1.5;
+      this.spawn(P_RISE, x + Math.cos(a) * 0.3, y + Math.sin(a) * 0.3, z + Math.random() * 0.5, Math.cos(a) * s, Math.sin(a) * s, 3 + Math.random() * 4, 0.9, 0.25);
+    }
+  }
+
   update(dt: number): void {
     const n = this.count;
     for (let i = 0; i < n; i++) {
@@ -101,6 +119,10 @@ export class Particles {
         this.vx[i] *= Math.exp(-3 * dt);
         this.vy[i] *= Math.exp(-3 * dt);
         this.vz[i] *= Math.exp(-3 * dt);
+      } else if (k === P_RISE) {
+        this.vx[i] *= Math.exp(-3 * dt);
+        this.vy[i] *= Math.exp(-3 * dt);
+        this.vz[i] *= Math.exp(-1.2 * dt);
       }
       this.x[i] += this.vx[i] * dt;
       this.y[i] += this.vy[i] * dt;
@@ -116,6 +138,7 @@ export class Particles {
       const f = 1 - Math.max(0, (this.age[i] / this.life[i] - 0.6) / 0.4);
       const k = this.kind[i];
       if (k === P_HEAL) b.add(this.frames[P_EMBER], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, HEAL_GLOW);
+      else if (k === P_RISE) b.add(this.frames[P_EMBER], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, NO_GLOW);
       else b.add(this.frames[k], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, NO_GLOW);
     }
   }

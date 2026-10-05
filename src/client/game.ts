@@ -7,7 +7,7 @@ import { ABILITIES, WEAPONS } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent } from '../net/messages';
 import type { NetStats } from '../net/netStats';
-import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_MARKED, FLAG_ROOTED, FLAG_SILENCED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, type Snapshot } from '../net/protocol';
+import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_MARKED, FLAG_ROOTED, FLAG_SILENCED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
 import { aimDir, rayCylinder } from '../sim/combat';
@@ -33,10 +33,12 @@ import { FpsCounter } from './fps';
 import type { HostSession } from './hostSession';
 import { Hud } from './hud';
 import { Input, MOUSE_SENSITIVITY } from './input';
-import { audio } from '../audio/audio';
+import { audio, type LoopHandle } from '../audio/audio';
+import { SOUL_HEIGHT, SOUL_RADIUS } from '../sim/souls';
 import { pickAllyTarget } from './allyTarget';
 import { GameSounds } from './sounds';
 import { ViewBob } from './bob';
+import { SoulView } from './soulView';
 import { LocalPlayer, MAX_FRAME_DT, wasdDirection } from './localPlayer';
 import { PartyFrames } from './partyFrames';
 import { PlayerAnimator } from './playerAnim';
@@ -62,6 +64,14 @@ const JUDGMENT_GLOW_R1 = 9;
 const CHEVRON_HEIGHT = 2.15;
 /** Martyr's Shroud's mote flies to its target in this long (M8 §3.1). */
 const MOTE_MS = 250;
+/** Souls (M8 §4.1): ember-tinted at 55% opacity, embers rising at 4 per second, markers within 60 m. */
+const GLOW_SOUL: Glow = { r: 1, g: 0.48, b: 0.23, a: 0.65 };
+const SOUL_OPACITY = 0.55;
+const SOUL_EMBERS_PER_S = 4;
+const SOUL_MARKER_RANGE = 60;
+const SOUL_MARKER_HEIGHT = 2.2;
+/** The revive hum plays while a shot hit a soul this recently, or the player's own progress rose. */
+const HUM_HOLD_MS = 300;
 /** The taunt `!` (M8 §3.1): 0.5 m tall, 0.3 m above the head; pops in, holds, then fades. */
 const TAUNT_MARK_HEIGHT = 0.5;
 const TAUNT_MARK_GAP = 0.3;
@@ -155,6 +165,17 @@ export class Game {
   /** With no ally target, an ally in the aim but out of range, for the grey chevron. */
   private allyOutOfRange = ALLY_NONE;
   private readonly bob = new ViewBob();
+  private readonly souls = new SoulView();
+  /** The local player's index: its spawn and entry cells. */
+  private readonly entryIndex: number;
+  /** While dead: the soul's ground point (the feet in snapshots) and own revive progress. */
+  private ownGround = 0;
+  private ownRevive = 0;
+  private reviveRisingAt = -Infinity;
+  /** When a local shot last hit a soul, and whose (M8 §9.1, the revive hum). */
+  private soulHitAt = -Infinity;
+  private soulHitId = -1;
+  private hum: LoopHandle | null = null;
   private doorState: boolean[];
   /** Smoothed Cherub heights per slot (§9.4). */
   private readonly cherubZ = new Float32Array(ENEMY_SLOTS);
@@ -189,6 +210,7 @@ export class Game {
     this.localId = o.localPlayerId;
     const me = o.roster.find((r) => r.id === this.localId)!;
     const index = o.roster.indexOf(me);
+    this.entryIndex = index;
     this.classId = me.classId;
     this.maxHp = CLASSES[me.classId].hp;
 
@@ -244,7 +266,7 @@ export class Game {
     this.bot = this.params.bot ? new Bot(this.map) : null;
     this.bench = this.params.bench && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString()) : null;
 
-    debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0 }));
+    debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0 }));
   }
 
   /** Compiles shaders and uploads textures during Loading, so entering the game doesn't stall. */
@@ -416,6 +438,16 @@ export class Game {
       case 'arenaCleared':
         this.hud.centerText('Arena cleared', 2000, now);
         break;
+      case 'playerRevived': {
+        // The hellfire pillar where the player rises (M8 §3.1); the soul sinks back into the body.
+        const at = e.playerId === this.localId ? this.player.body : this.snaps.playersOut.find((q) => q.id === e.playerId);
+        if (at) {
+          this.vfx.pillar(now, at.x, at.y, at.z);
+          this.particles.reviveBurst(at.x, at.y, at.z);
+        }
+        if (e.playerId !== this.localId) this.party?.flash(e.playerId, 'ember');
+        break;
+      }
       case 'abilityUsed':
         this.abilityVfx(e, now);
         break;
@@ -532,6 +564,7 @@ export class Game {
         this.scene.setDoorsClosed(ai, closed);
       }
     }
+    this.souls.update(s.players, now);
     const me = s.players.find((p) => p.id === this.localId);
     const was = prev?.players.find((p) => p.id === this.localId);
     if (me) {
@@ -539,9 +572,19 @@ export class Game {
         this.dead = me.dead;
         if (this.dead) this.input.release();
         this.canvas.classList.toggle('dead', this.dead);
+        // The dead player's screen (M8 §4.5); outside the boss arena, clearing it also brings them back.
         const boss = this.map.arenas[s.arenaIndex]?.boss;
-        this.hud.setDeath(this.dead ? (boss ? 'You are dead — your party fights on' : 'You are dead — you respawn when this arena is cleared') : null);
+        if (this.dead) this.hud.setDeath('You have fallen — your party can revive you', boss ? null : 'or you rise when the arena is cleared');
+        else this.hud.setDeath(null);
       }
+      if (this.dead) {
+        this.ownGround = me.z;
+        const progress = me.revive / 255;
+        // Being revived: the hum plays while the progress rises.
+        if (progress > this.ownRevive + 1e-6) this.reviveRisingAt = now;
+        this.ownRevive = progress;
+        this.hud.setOwnRevive(progress);
+      } else this.ownRevive = 0;
       this.hud.setHp(me.hp, me.shield, this.maxHp);
       if (was) {
         const lost = was.hp + was.shield - (me.hp + me.shield);
@@ -590,7 +633,9 @@ export class Game {
     debugState.enemies = s.enemyCount;
     debugState.projectiles = s.projectileCount;
     debugState.arenaIndex = s.arenaIndex;
-    debugState.arenaPhase = s.arenaPhase === PHASE_COMBAT ? 'combat' : s.arenaPhase === PHASE_CLEARED ? 'cleared' : 'idle';
+    debugState.arenaPhase = s.arenaPhase === PHASE_COMBAT ? 'combat' : s.arenaPhase === PHASE_CLEARED ? 'cleared' : s.arenaPhase === PHASE_COUNTDOWN ? 'countdown' : 'idle';
+    debugState.countdown = s.arenaPhase === PHASE_COUNTDOWN ? s.countdown / 10 : 0;
+    this.hud.setCountdown(s.arenaPhase === PHASE_COUNTDOWN ? s.countdown / 10 : null);
     debugState.enemyCountsByTick = Object.fromEntries(this.snaps.enemyCountsByTick);
     debugState.players = s.players.map((p) => ({
       id: p.id,
@@ -598,13 +643,14 @@ export class Game {
       hp: p.hp,
       dead: p.dead,
       kills: p.kills,
+      revive: p.revive / 255,
     }));
     this.party?.set(
       s.players
         .filter((p) => p.id !== this.localId)
         .flatMap((p) => {
           const r = this.o.roster.find((q) => q.id === p.id);
-          return r ? [{ id: p.id, name: r.name, classId: r.classId, hp: p.hp, shield: p.shield, dead: p.dead }] : [];
+          return r ? [{ id: p.id, name: r.name, classId: r.classId, hp: p.hp, shield: p.shield, dead: p.dead, revive: p.revive / 255 }] : [];
         }),
     );
     this.hud.setRemaining(s.arenaPhase === PHASE_COMBAT ? s.enemiesRemaining : null);
@@ -657,6 +703,46 @@ export class Game {
     else this.hud.setChevron(id === this.allyTargetId ? 'gold' : 'grey', at[0], at[1]);
   }
 
+  /**
+   * Soul markers (M8 §4.1): shown to a living player for teammates' souls within 60 m in front of the
+   * camera, 2.2 m above the soul's base, drawn over everything.
+   */
+  private placeSoulMarkers(now: number): void {
+    const list: Array<{ id: number; classId: ClassId; x: number; y: number; progress: number }> = [];
+    const newest = this.snaps.newest;
+    if (!this.dead && newest) {
+      const me = this.player.body;
+      for (const q of this.snaps.playersOut) {
+        if (q.id === this.localId || !q.dead) continue;
+        const cls = this.classOf(q.id);
+        if (!cls || Math.hypot(q.x - me.x, q.y - me.y) > SOUL_MARKER_RANGE) continue;
+        const at = this.project(q.x, q.y, q.z + this.souls.drawnRise(q.id, now) + SOUL_MARKER_HEIGHT);
+        if (!at) continue;
+        const rec = newest.players.find((r) => r.id === q.id);
+        list.push({ id: q.id, classId: cls, x: at[0], y: at[1], progress: (rec?.revive ?? 0) / 255 });
+      }
+    }
+    this.hud.setSoulMarkers(list);
+  }
+
+  /** The revive hum (M8 §9.1): while a shot hits a soul or the player is being revived, rising in pitch with the progress. */
+  private updateReviveHum(now: number): void {
+    const a = audio();
+    let progress = -1;
+    if (this.dead && now - this.reviveRisingAt < HUM_HOLD_MS + 100) progress = this.ownRevive;
+    else if (!this.dead && now - this.soulHitAt < HUM_HOLD_MS) {
+      const rec = this.snaps.newest?.players.find((r) => r.id === this.soulHitId);
+      if (rec?.dead) progress = rec.revive / 255;
+    }
+    if (progress < 0 || !a || this.over) {
+      this.hum?.stop();
+      this.hum = null;
+      return;
+    }
+    this.hum ??= a.loop('reviveHum');
+    this.hum.setRate(0.8 + 0.8 * progress);
+  }
+
   private readonly projScratch = new THREE.Vector3();
 
   /** A world point (simulation coordinates) on screen in CSS pixels, or null if behind the camera. */
@@ -704,6 +790,14 @@ export class Game {
       if (ts.length > 0) {
         hit = true;
         if (ts.length >= w.maxHits) end = ts[w.maxHits - 1];
+      }
+      // A shot through a teammate's soul (for the revive hum).
+      for (const q of this.snaps.playersOut) {
+        if (q.id === this.localId || !q.dead) continue;
+        if (rayCylinder(ex, ey, ez, dx, dy, dz, q.x, q.y, q.z + this.souls.rise(q.id, now), SOUL_RADIUS, SOUL_HEIGHT) <= end) {
+          this.soulHitAt = now;
+          this.soulHitId = q.id;
+        }
       }
       pts.push([mx, my, mz], [ex + dx * end, ey + dy * end, ez + dz * end]);
     }
@@ -768,6 +862,8 @@ export class Game {
         qReady: this.displayedCooldown('Q', now) <= 0,
         eReady: this.displayedCooldown('E', now) <= 0,
         blockedLastFrame: p.moveResult.blocked,
+        entryIndex: this.entryIndex,
+        souls: this.snaps.playersOut.filter((q) => q.dead && q.id !== this.localId),
       });
       if (out.yaw !== null) p.yaw = out.yaw;
       if (out.pitch !== null) p.pitch = out.pitch;
@@ -836,11 +932,15 @@ export class Game {
 
     const b = p.body;
     audio()?.setListener(b.x, b.y, p.yaw);
-    // The bob only lowers the drawn view; aiming and input use the unbobbed eye (M8 §3.4).
-    this.scene.setView(b.x, b.y, b.z, p.yaw, p.pitch, PLAYER_EYE - this.bob.eyeDrop);
+    // The bob only lowers the drawn view; aiming and input use the unbobbed eye (M8 §3.4). While dead,
+    // the camera rises with the soul: 1.6 m above its base (M8 §4.3).
+    if (this.dead) this.scene.setView(b.x, b.y, this.ownGround, p.yaw, p.pitch, PLAYER_EYE + this.souls.rise(this.localId, now));
+    else this.scene.setView(b.x, b.y, b.z, p.yaw, p.pitch, PLAYER_EYE - this.bob.eyeDrop);
     this.drawBillboards(now, ents, enemyZ);
     this.scene.render();
     this.placeChevron();
+    this.placeSoulMarkers(now);
+    this.updateReviveHum(now);
 
     this.hud.setCooldowns(this.displayedCooldown('Q', simNow), ABILITIES[this.classId].Q.cooldown, this.displayedCooldown('E', simNow), ABILITIES[this.classId].E.cooldown);
     this.hud.update(now);
@@ -952,12 +1052,23 @@ export class Game {
     }
     // Other players, facing their yaw (§11.1); the ally target is tinted gold (§10).
     this.playerAnimator.begin();
+    const tethers: Array<[number, number, number, number]> = [];
     for (const q of this.snaps.playersOut) {
-      if (q.id === this.localId || q.dead) continue;
+      if (q.id === this.localId) continue;
       const cls = this.classOf(q.id);
       const set = cls && this.o.players[cls];
       const pb = cls && this.playerBillboards.get(cls);
       if (!set || !pb) continue;
+      if (q.dead) {
+        // The soul (M8 §4.1): the idle frame, ember-tinted at 55% opacity, floating over its ground
+        // point with a tether down to it, and embers rising from it.
+        const base = q.z + this.souls.drawnRise(q.id, now);
+        const sf = set.anims.idle[spriteDirection(q.yaw, eye.x - q.x, eye.y - q.y)][0];
+        pb.add(sf, q.x, q.y, base, sf.height, false, 1, 1, 1, GLOW_SOUL, SOUL_OPACITY);
+        tethers.push([q.x, q.y, q.z, base]);
+        if (Math.random() < SOUL_EMBERS_PER_S * dt) this.particles.soulEmber(q.x, q.y, base + 0.4 + Math.random() * 1.2);
+        continue;
+      }
       this.playerAnimator.update(q.id, q.x, q.y, dt);
       const pick = this.playerAnimator.pick(q.id);
       const pf = set.anims[pick.anim][spriteDirection(q.yaw, eye.x - q.x, eye.y - q.y)][pick.frame];
@@ -986,6 +1097,7 @@ export class Game {
       const af = betrayer.anims.idle[spriteDirection(a.facing, eye.x - a.x, eye.y - a.y)][0];
       ab.add(af, a.x, a.y, a.z, af.height * (1 - 0.3 * t), false, 1, 1, 1, g);
     }
+    this.vfx.setTethers(tethers);
     this.particles.draw(bb);
     bb.end(this.scene.camera);
     for (const b of this.enemyBillboards.values()) b.end(this.scene.camera);
@@ -1051,6 +1163,7 @@ export class Game {
     this.pause.dispose();
     this.party?.dispose();
     this.sounds.dispose();
+    this.hum?.stop();
     this.hud.dispose();
     this.bench?.dispose();
     this.scene.dispose();

@@ -58,9 +58,10 @@ export function decodeInput(buf: ArrayBuffer): InputMsg | null {
 
 // ---------------------------------------------------------------- snapshots
 
-export const HEADER_BYTES = 25;
-/** The MVP's 28 bytes plus `shots` (M8 §10). */
-export const PLAYER_BYTES = 29;
+/** The MVP's 25 bytes plus `countdown` (M8 §10). */
+export const HEADER_BYTES = 27;
+/** The MVP's 28 bytes plus `revive` and `shots` (M8 §10). */
+export const PLAYER_BYTES = 30;
 export const ENEMY_BYTES = 8;
 export const PROJECTILE_BYTES = 9;
 export const MAX_SNAPSHOT_BYTES = 16000;
@@ -70,6 +71,8 @@ export const POS_SCALE = 64;
 export const PHASE_IDLE = 0;
 export const PHASE_COMBAT = 1;
 export const PHASE_CLEARED = 2;
+/** The arena countdown before it seals (M8 §5). */
+export const PHASE_COUNTDOWN = 3;
 
 /** Enemy `flags` bits. */
 export const FLAG_HURT = 1;
@@ -84,6 +87,8 @@ export interface SnapshotHeader {
   tick: number;
   arenaIndex: number;
   arenaPhase: number;
+  /** Tenths of a second until the arena seals, 0 outside the countdown (M8 §5). */
+  countdown: number;
   enemiesRemaining: number;
   bossHp: number;
   bossMaxHp: number;
@@ -104,6 +109,8 @@ export interface SnapshotPlayer {
   cdQ: number;
   cdE: number;
   kills: number;
+  /** Revive progress × 255, 0 while alive (M8 §4.2). */
+  revive: number;
   /** A wrapping counter of shots fired, for others' shot sounds (M8 §9.1). */
   shots: number;
 }
@@ -168,14 +175,15 @@ export function encodeSnapshot(
     v.setUint8(5, ranges.length);
     v.setUint8(6, h.arenaIndex);
     v.setUint8(7, h.arenaPhase);
-    v.setUint16(8, Math.min(0xffff, h.enemiesRemaining), true);
-    v.setUint32(10, Math.max(0, Math.ceil(h.bossHp)), true);
-    v.setUint32(14, h.bossMaxHp, true);
-    v.setUint8(18, h.bossCast);
-    v.setUint8(19, h.bossCastProgress);
-    v.setUint8(20, players.length);
-    v.setUint16(21, ne, true);
-    v.setUint16(23, np, true);
+    v.setUint16(8, Math.min(0xffff, h.countdown), true);
+    v.setUint16(10, Math.min(0xffff, h.enemiesRemaining), true);
+    v.setUint32(12, Math.max(0, Math.ceil(h.bossHp)), true);
+    v.setUint32(16, h.bossMaxHp, true);
+    v.setUint8(20, h.bossCast);
+    v.setUint8(21, h.bossCastProgress);
+    v.setUint8(22, players.length);
+    v.setUint16(23, ne, true);
+    v.setUint16(25, np, true);
     let o = HEADER_BYTES;
     for (const p of players) {
       v.setUint8(o, p.id);
@@ -189,7 +197,8 @@ export function encodeSnapshot(
       v.setUint16(o + 22, clamp16(p.cdQ), true);
       v.setUint16(o + 24, clamp16(p.cdE), true);
       v.setUint16(o + 26, Math.min(0xffff, p.kills), true);
-      v.setUint8(o + 28, p.shots & 0xff);
+      v.setUint8(o + 28, Math.max(0, Math.min(255, Math.round(p.revive))));
+      v.setUint8(o + 29, p.shots & 0xff);
       o += PLAYER_BYTES;
     }
     for (let i = e0; i < e0 + ne; i++) {
@@ -235,9 +244,9 @@ export interface Snapshot extends SnapshotHeader {
 export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
   if (buf.byteLength < HEADER_BYTES) return null;
   const v = new DataView(buf);
-  const playerCount = v.getUint8(20);
-  const ne = v.getUint16(21, true);
-  const np = v.getUint16(23, true);
+  const playerCount = v.getUint8(22);
+  const ne = v.getUint16(23, true);
+  const np = v.getUint16(25, true);
   if (buf.byteLength !== HEADER_BYTES + playerCount * PLAYER_BYTES + ne * ENEMY_BYTES + np * PROJECTILE_BYTES) return null;
   const s: Snapshot = {
     tick: v.getUint32(0, true),
@@ -245,11 +254,12 @@ export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
     partCount: v.getUint8(5),
     arenaIndex: v.getUint8(6),
     arenaPhase: v.getUint8(7),
-    enemiesRemaining: v.getUint16(8, true),
-    bossHp: v.getUint32(10, true),
-    bossMaxHp: v.getUint32(14, true),
-    bossCast: v.getUint8(18),
-    bossCastProgress: v.getUint8(19),
+    countdown: v.getUint16(8, true),
+    enemiesRemaining: v.getUint16(10, true),
+    bossHp: v.getUint32(12, true),
+    bossMaxHp: v.getUint32(16, true),
+    bossCast: v.getUint8(20),
+    bossCastProgress: v.getUint8(21),
     players: [],
     enemyCount: ne,
     enemySlot: new Uint16Array(ne),
@@ -279,7 +289,8 @@ export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
       cdQ: v.getUint16(o + 22, true),
       cdE: v.getUint16(o + 24, true),
       kills: v.getUint16(o + 26, true),
-      shots: v.getUint8(o + 28),
+      revive: v.getUint8(o + 28),
+      shots: v.getUint8(o + 29),
     });
     o += PLAYER_BYTES;
   }

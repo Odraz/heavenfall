@@ -61,6 +61,8 @@ Up to 4 players, each in their own browser, connect directly to the host's brows
 2. Each friend opens the invite link, enters a name, clicks `Join game <ID>`, types the password (if any) and clicks `Join`. Without the link: `Multiplayer` → `Join game`, then type the game ID and the password.
 3. Everyone picks a different class; the host clicks `Start`.
 
+In game, an arena seals 60 s after the first player enters it, or 5 s after the whole party is inside. A player who falls leaves a soul floating where they fell: shoot it to revive them (the Heretic Saint revives twice as fast, and Unholy Communion helps too). Clearing the arena brings back everyone who's still down.
+
 To try it on one computer, open the game in two browser windows. Players whose networks can't connect directly (some office, mobile or VPN networks) go through a relay server ([Metered](https://www.metered.ca/), free plan); its credentials are in [src/net/peerConfig.ts](src/net/peerConfig.ts).
 
 ### Sound and music
