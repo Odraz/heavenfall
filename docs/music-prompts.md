@@ -37,6 +37,7 @@ Save each as MP3 in `assets/music/` with exactly this name:
 3. **Length:** let the looping tracks run 2–3 minutes. Claude cuts a seamless loop from the middle, so intros and endings don't matter. Avoid a long fade-out.
 4. **Reject a take** with sung lyrics in a modern pop style, a lead singer, a key that sounds bright and happy (except Victory), or silence gaps in the middle.
 5. **License:** check that your plan lets you use the tracks in a game you share.
+6. **"Your lyrics contain copyrighted material":** Suno's filter flags old Latin prayers because copyrighted songs quote them. Keep a short hook such as *Sanctus* or *Dies irae* and write the other lines as original Latin. Never paste the English meanings into Suno; it sings them.
 
 ---
 
@@ -131,34 +132,47 @@ symphonic metal, instrumental, D minor, 135 BPM, double kick drums, tremolo-pick
 
 ## 4. Arena 3, Cloister of Hymns — `arena-3.mp3`
 
-A hymn under siege. The Choristers' song fights the metal.
+A hymn under siege. A pure angelic choir sings against a cracked, hellish one, and the metal sides with hell.
 
 **Style:**
 ```
-dark symphonic metal, D minor, 150 BPM, Gregorian male chant in Latin, crushing down-tuned guitars, blast beats alternating with groove, church bells, pipe organ counterpoint, low brass, cathedral reverb, ominous and holy, epic FPS combat music
+dark symphonic metal, D minor, 150 BPM, call and response between two choirs in Latin, ethereal angelic soprano and boys choir, demonic distorted growling male choir, crushing down-tuned guitars, blast beats alternating with groove, church bells, pipe organ, low brass, cathedral reverb, heaven versus hell, epic FPS combat music
 ```
-**Exclude styles:** `pop, female lead vocals, english lyrics, ballad, electronic`
+**Exclude styles:** `pop, solo singer, english lyrics, ballad, electronic`
 
-**Lyrics** (vocals on; *Sanctus* is the traditional Latin hymn):
+**Lyrics** (vocals on; original Latin, because Suno rejects the full traditional *Sanctus* as copyrighted):
 ```
 [Intro]
-[Church bells, Gregorian chant alone]
+[Church bells, angelic choir alone]
 Sanctus, sanctus, sanctus
 
 [Verse]
-[Crushing riff, chant over the top]
-Sanctus Dominus Deus Sabaoth
+[Crushing riff, demonic choir, guttural growls]
+Caro et ferrum, sanguis et ossa
+
+[Angelic choir answers]
+Lux in tenebris
+
+[Demonic choir]
+Ignis et cinis
 
 [Chorus]
-[Blast beats, full male choir, organ]
-Pleni sunt caeli et terra gloria tua
+[Blast beats, organ, both choirs clash]
+[Angelic choir]
+Gloria, gloria
+[Demonic choir]
+Nulla misericordia
 
 [Breakdown]
-[Bells and half-time riff]
+[Bells, half-time riff, demonic whispers]
+Frangite, frangite
 
-[Chorus]
-Hosanna in excelsis
+[Final Chorus]
+[Angelic choir soaring, demonic choir growling underneath]
+Gloria in sanguine
+Fortes in proelio
 ```
+Meaning, for reference only (do not paste into Suno): flesh and iron, blood and bones / light in darkness / fire and ash / glory, glory / no mercy / break, break / glory in blood / the strong in battle.
 
 ## 5. Boss, The Gate — `boss.mp3`
 
@@ -170,28 +184,31 @@ epic orchestral metal, D minor, 165 BPM, massive full choir chanting in Latin, t
 ```
 **Exclude styles:** `pop, lead vocals, english lyrics, ballad, electronic, lo-fi`
 
-**Lyrics** (vocals on; *Dies irae*, "day of wrath", fits Judgment):
+**Lyrics** (vocals on; *Dies irae*, "day of wrath", fits Judgment; the rest is original Latin, because Suno rejects the traditional *Dies irae* verses as copyrighted):
 ```
 [Intro]
 [Organ and timpani, choir enters]
-Dies irae, dies illa
+Dies irae, dies irae
 
 [Verse]
 [Double kick, string ostinato, guitars]
-Solvet saeclum in favilla
+Porta clausa, iudex venit
+Ferrum et ignis, sanguis et cinis
 
 [Chorus]
 [Full choir, brass, everything]
-Dies irae, dies illa
-Quantus tremor est futurus
+Dies irae, dies irae
+Nemo evadet
 
 [Bridge]
 [Choir alone, then the whole orchestra slams back]
-Tuba mirum spargens sonum
+Tremite, tremite
+Ultima porta
 
 [Chorus]
-Dies irae, dies illa
+Dies irae, dies irae
 ```
+Meaning, for reference only (do not paste into Suno): day of wrath / the gate is shut, the judge comes / iron and fire, blood and ash / no one will escape / tremble, tremble / the final gate.
 
 ## 6. Victory — `victory.mp3`
 
