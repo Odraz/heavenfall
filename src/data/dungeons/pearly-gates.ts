@@ -38,7 +38,8 @@ g.stairs(36, 35, 36, 36, 'E', 0.5, 0.5);
 markAll('x', [[26, 4], [44, 3], [61, 4], [61, 21], [61, 39], [44, 40], [28, 30], [43, 21]]);
 markAll('u', [[38, 16], [49, 16], [38, 27], [49, 27]]);
 markAll('t', [[28, 6], [58, 6], [58, 36], [30, 37], [44, 8]]);
-const arena1Doors = [...doors(23, 20, 23, 23), ...doors(64, 20, 64, 22)];
+const arena1Doors = doors(23, 20, 23, 23);
+const arena1Exit = doors(64, 20, 64, 22);
 // Corridor to Arena 2, climbing 3.5 m in 0.25 m steps.
 g.fillRect(64, 20, 64, 22, 0);
 g.stairs(65, 20, 78, 22, 'E', 0.25, 0.25);
@@ -60,7 +61,8 @@ g.stairs(81, 32, 85, 34, 'E', 1, 0.5);
 for (const [x, y] of [[107, 23], [107, 35], [91, 23], [103, 19], [111, 31]] as const) g.pillar(x, y, x, y);
 markAll('x', [[84, 4], [122, 4], [122, 39], [84, 39], [100, 10], [95, 21], [109, 38], [100, 33]]);
 markAll('h', [[84, 20], [92, 22], [100, 20], [106, 22], [110, 26], [108, 36], [96, 34]]);
-const arena2Doors = [...doors(80, 20, 80, 22), ...doors(108, 42, 110, 42)];
+const arena2Doors = doors(80, 20, 80, 22);
+const arena2Exit = doors(108, 42, 110, 42);
 // Corridor south to Arena 3.
 g.fillRect(108, 42, 110, 50, 3.5);
 g.fillRect(108, 51, 110, 51, 3.75);
@@ -79,7 +81,8 @@ g.stairs(115, 84, 119, 86, 'E', 4.5, 0.5);
 for (const x of [90, 98, 106, 112]) for (const y of [63, 73, 83]) g.pillar(x, y, x + 1, y + 1);
 markAll('x', [[84, 56], [117, 56], [117, 92], [84, 92], [100, 92], [78, 56], [123, 56], [123, 92], [78, 70]]);
 markAll('c', [[94, 58], [102, 58], [94, 90], [102, 90], [110, 78], [88, 68], [79, 64], [122, 75]]);
-const arena3Doors = [...doors(108, 53, 110, 53), ...doors(75, 85, 75, 88)];
+const arena3Doors = doors(108, 53, 110, 53);
+const arena3Exit = doors(75, 85, 75, 88);
 // Corridor west to the boss arena.
 g.fillRect(70, 85, 75, 88, 4);
 g.fillRect(70, 85, 70, 88, 4.25);
@@ -121,6 +124,7 @@ export const pearlyGates: DungeonDef = {
       name: 'Courtyard of Clouds',
       rect: { x0: 24, y0: 2, x1: 63, y1: 41 },
       doors: arena1Doors,
+      exitDoors: arena1Exit,
       entryCells: [[25, 21], [25, 22], [26, 21], [26, 22]],
       waves: [
         { blessed: 150, choristers: 0, cherubs: 0 },
@@ -133,6 +137,7 @@ export const pearlyGates: DungeonDef = {
       name: 'The Cloudbridge',
       rect: { x0: 81, y0: 2, x1: 125, y1: 41 },
       doors: arena2Doors,
+      exitDoors: arena2Exit,
       entryCells: [[81, 20], [81, 21], [81, 22], [82, 21]],
       waves: [
         { blessed: 250, choristers: 0, cherubs: 15 },
@@ -145,6 +150,7 @@ export const pearlyGates: DungeonDef = {
       name: 'Cloister of Hymns',
       rect: { x0: 76, y0: 54, x1: 125, y1: 93 },
       doors: arena3Doors,
+      exitDoors: arena3Exit,
       entryCells: [[108, 54], [109, 54], [110, 54], [109, 55]],
       waves: [
         { blessed: 300, choristers: 20, cherubs: 20 },

@@ -1,4 +1,4 @@
-/** The Master, Music and SFX sliders on Title and the Pause overlay (M8 §9.3). */
+/** The Master, Music and SFX sliders on Title and the Pause overlay, in a Settings view (M8 §9.3). */
 import { audio, sfx } from '../audio/audio';
 import { loadVolume, saveVolume, VOLUME_KEYS, VOLUME_LABELS, volumeText, type VolumeKey } from '../audio/volume';
 
@@ -41,4 +41,50 @@ export function volumeSliders(parent: HTMLElement): HTMLDivElement {
   }
   parent.appendChild(box);
   return box;
+}
+
+/**
+ * A `Settings` button in `buttons` that turns `panel` into the Settings view: its title, the sliders
+ * and `Back`. The panel keeps its size meanwhile, so the window doesn't move. The returned function
+ * goes back to the panel's own contents.
+ */
+export function settingsButton(panel: HTMLElement, buttons: HTMLElement): () => void {
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'button';
+  open.textContent = 'Settings';
+  buttons.appendChild(open);
+
+  const view = document.createElement('div');
+  view.className = 'settings-view';
+  view.hidden = true;
+  const title = document.createElement('h2');
+  title.className = 'settings-title';
+  title.textContent = 'Settings';
+  view.appendChild(title);
+  volumeSliders(view);
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'button secondary';
+  back.textContent = 'Back';
+  view.appendChild(back);
+  panel.appendChild(view);
+
+  // The panel's own contents that were showing when Settings opened.
+  let hidden: HTMLElement[] = [];
+  const close = (): void => {
+    if (view.hidden) return;
+    view.hidden = true;
+    for (const e of hidden) e.hidden = false;
+    hidden = [];
+    panel.style.height = '';
+  };
+  open.addEventListener('click', () => {
+    panel.style.height = `${panel.offsetHeight}px`;
+    hidden = [...panel.children].filter((e): e is HTMLElement => e instanceof HTMLElement && e !== view && !e.hidden);
+    for (const e of hidden) e.hidden = true;
+    view.hidden = false;
+  });
+  back.addEventListener('click', close);
+  return close;
 }

@@ -72,8 +72,8 @@ const EDGES = [
 export interface Terrain {
   /** Tops, sides and walls, with doors open. */
   mesh: THREE.Mesh;
-  /** Closed-door columns, one mesh per arena (null if the arena has no doors). */
-  doors: Array<THREE.Mesh | null>;
+  /** Closed-door columns per arena, entry and exit door (null where the arena has none). */
+  doors: Array<{ entry: THREE.Mesh | null; exit: THREE.Mesh | null }>;
 }
 
 export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
@@ -127,10 +127,10 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   const mesh = new THREE.Mesh(geometry, [textures.floor, textures.riser, textures.wall].map(material));
 
   const doorMat = material(textures.door);
-  const doors = map.arenas.map((arena) => {
-    if (arena.doors.length === 0) return null;
+  const doorMesh = (cells: ReadonlyArray<[number, number]>): THREE.Mesh | null => {
+    if (cells.length === 0) return null;
     const b = new GeometryBuilder();
-    for (const [c, r] of arena.doors) {
+    for (const [c, r] of cells) {
       const f = map.floor[r * w + c];
       for (const edge of EDGES) {
         const [ex0, ey0, ex1, ey1] = edge.e;
@@ -140,7 +140,8 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
     const m = new THREE.Mesh(b.toGeometry(), doorMat);
     m.visible = false;
     return m;
-  });
+  };
+  const doors = map.arenas.map((arena) => ({ entry: doorMesh(arena.doors), exit: doorMesh(arena.exitDoors ?? []) }));
 
   return { mesh, doors };
 }

@@ -45,7 +45,7 @@ export interface AbilityDef {
 
 export const ABILITIES: Record<ClassId, { Q: AbilityDef; E: AbilityDef }> = {
   fallen: {
-    Q: { name: 'Blasphemy', description: 'Every enemy within 15 m turns on you for 5 s.', cooldown: 12, movement: false, allyRange: 0, icon: 'icon-blasphemy' },
+    Q: { name: 'Blasphemy', description: 'Every enemy within 12 m turns on you for 5 s.', cooldown: 12, movement: false, allyRange: 0, icon: 'icon-blasphemy' },
     E: { name: 'Falling Star', description: 'Aim at an ally and leap to them, smashing and scattering the enemies where you land.', cooldown: 15, movement: true, allyRange: 30, icon: 'icon-falling-star' },
   },
   heretic: {
@@ -63,7 +63,7 @@ export const ABILITIES: Record<ClassId, { Q: AbilityDef; E: AbilityDef }> = {
 };
 
 // Ability numbers (§6).
-export const BLASPHEMY_RADIUS = 15;
+export const BLASPHEMY_RADIUS = 12;
 export const BLASPHEMY_DURATION = 5;
 export const FALLING_STAR_TIME = 0.4;
 export const FALLING_STAR_DAMAGE = 40;

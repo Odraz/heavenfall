@@ -6,13 +6,13 @@ import { aimAt, enemyAt, makeSim, press, put, room } from './testutil/sims';
 const usedEvents = (sim: ReturnType<typeof makeSim>) => sim.events.filter((e) => e.event.type === 'abilityUsed').map((e) => e.event);
 
 describe('Blasphemy (Fallen Q)', () => {
-  it('makes every enemy within 15 m target the Fallen for 5 s, then cools down 12 s', () => {
+  it('makes every enemy within 12 m target the Fallen for 5 s, then cools down 12 s', () => {
     const sim = makeSim(room(60, 10), ['fallen', 'binder']);
     const [fallen, binder] = sim.players;
     put(sim, fallen, 20.5, 5.5);
-    put(sim, binder, 40.5, 5.5);
-    const near = enemyAt(sim, CHORISTER, 34.5, 5.5); // 13.6 m from the Fallen, next to the Binder
-    const far = enemyAt(sim, CHORISTER, 37.5, 5.5); // 16.6 m away
+    put(sim, binder, 34.5, 5.5);
+    const near = enemyAt(sim, CHORISTER, 32, 5.5); // 11.1 m from the Fallen, next to the Binder
+    const far = enemyAt(sim, CHORISTER, 33.5, 5.5); // 12.6 m away
     for (const s of [near, far]) sim.root(s, 20);
     expect(sim.eTarget[near]).toBe(1);
     press(fallen, 'Q');
@@ -33,7 +33,7 @@ describe('Blasphemy (Fallen Q)', () => {
     const [fallen, binder] = sim.players;
     put(sim, fallen, 20.5, 5.5);
     put(sim, binder, 40.5, 5.5);
-    const a = enemyAt(sim, CHORISTER, 34.5, 5.5);
+    const a = enemyAt(sim, CHORISTER, 31.5, 5.5);
     sim.root(a, 20);
     press(fallen, 'Q');
     sim.step();

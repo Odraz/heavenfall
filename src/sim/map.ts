@@ -1,5 +1,6 @@
 import { isDecorId, type DecorId } from '../data/decor';
 import type { ArenaDef, DungeonDef } from '../data/dungeons/types';
+import { PHASE_CLEARED, PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
 import { HEIGHT_STEP, MAX_MAP_SIZE, WALL_TOP } from './constants';
 
 /** A map that failed to load, naming the row and column of the problem (§8.1). */
@@ -119,7 +120,7 @@ export function loadMap(def: DungeonDef): GameMap {
   if (spawns.length !== 4) throw new MapError(0, 0, `expected exactly 4 S markers, found ${spawns.length}`);
 
   def.arenas.forEach((arena, ai) => {
-    for (const [c, r] of arena.doors) {
+    for (const [c, r] of [...arena.doors, ...(arena.exitDoors ?? [])]) {
       if (c < 0 || r < 0 || c >= w || r >= h || markers[r][c] !== 'D') {
         throw new MapError(r, c, `arena '${arena.id}' lists a door that isn't a D cell`);
       }
@@ -144,17 +145,32 @@ export function loadMap(def: DungeonDef): GameMap {
 }
 
 /** Opens or closes the doors of one arena. */
-export function setArenaDoors(map: GameMap, arenaIndex: number, closed: boolean): void {
-  for (const [c, r] of map.arenas[arenaIndex].doors) {
+export function setArenaDoors(map: GameMap, arenaIndex: number, phase: number): void {
+  const a = map.arenas[arenaIndex];
+  const closed = doorsClosed(phase);
+  setCells(map, a.doors, closed.entry);
+  setCells(map, a.exitDoors ?? [], closed.exit);
+}
+
+function setCells(map: GameMap, cells: ReadonlyArray<[number, number]>, closed: boolean): void {
+  for (const [c, r] of cells) {
     const i = r * map.w + c;
     map.solid[i] = closed ? 1 : 0;
     map.top[i] = closed ? WALL_TOP : map.floor[i];
   }
 }
 
-/** Whether a door of `arenaIndex` is closed for the given arena state (§8.2 lifecycle). */
-export function doorsClosedFor(doorArenaIndex: number, arenaIndex: number, arenaPhase: number): boolean {
-  return doorArenaIndex === arenaIndex && arenaPhase === 1;
+/**
+ * An arena's doors for its phase (§8.2 lifecycle): the entry door is closed only in combat; the exit
+ * door, toward the next arena, stays closed until the arena is cleared.
+ */
+export function doorsClosed(phase: number): { entry: boolean; exit: boolean } {
+  return { entry: phase === PHASE_COMBAT, exit: phase !== PHASE_CLEARED };
+}
+
+/** Arena `ai`'s phase, from the snapshot's `arenaIndex` and `arenaPhase`: arenas are entered in order. */
+export function arenaPhaseOf(ai: number, arenaIndex: number, arenaPhase: number): number {
+  return ai < arenaIndex ? PHASE_CLEARED : ai === arenaIndex ? arenaPhase : PHASE_IDLE;
 }
 
 /** Whether the cell is solid (wall, closed door, or outside the grid). */

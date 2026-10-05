@@ -471,6 +471,8 @@ export class Simulation {
       sealTick: 0,
       partySize: 0,
     }));
+    // Idle arenas keep their exit doors closed.
+    this.map.arenas.forEach((_, ai) => setArenaDoors(this.map, ai, PHASE_IDLE));
     this.god = !!opts.god;
     for (const p of opts.players) {
       const [c, r] = this.bench ? this.map.arenas[0].entryCells[0] : this.map.spawns[p.id];
@@ -749,7 +751,7 @@ export class Simulation {
     st.phase = PHASE_COMBAT;
     // Party-size scaling counts the players in the game at the seal (M8 §6.3).
     st.partySize = Math.max(1, this.players.length);
-    setArenaDoors(this.map, ai, true);
+    setArenaDoors(this.map, ai, PHASE_COMBAT);
     this.invalidateFields();
     this.events.push({ to: 'all', event: { type: 'arenaStarted', arenaIndex: ai } });
     for (const p of this.players) {
@@ -799,7 +801,7 @@ export class Simulation {
       const allWavesStarted = this.noWaves || st.wave >= a.waves.length - 1;
       if (!allWavesStarted || st.queue.length > 0 || st.alive > 0) return;
       st.phase = PHASE_CLEARED;
-      setArenaDoors(this.map, ai, false);
+      setArenaDoors(this.map, ai, PHASE_CLEARED);
       this.invalidateFields();
       this.events.push({ to: 'all', event: { type: 'arenaCleared', arenaIndex: ai } });
       for (const p of this.players) {

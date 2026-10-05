@@ -11,8 +11,10 @@ export interface ArenaDef {
   name: string;
   /** Inclusive cell bounds. */
   rect: { x0: number; y0: number; x1: number; y1: number };
-  /** [col, row] of D cells. */
+  /** [col, row] of the D cells of the door the arena is entered by. */
   doors: Array<[number, number]>;
+  /** [col, row] of the D cells of the door the arena is left by, toward the next arena (none in the boss arena). */
+  exitDoors?: Array<[number, number]>;
   /** One floor cell per player index. */
   entryCells: Array<[number, number]>;
   /** Values for 4 players (§7.5). */

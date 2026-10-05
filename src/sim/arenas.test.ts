@@ -31,7 +31,8 @@ function arenas(waves0: WaveDef[], waves1: WaveDef[] = [{ blessed: 4, choristers
       id: 'a0',
       name: 'A0',
       rect: { x0: 6, y0: 1, x1: 12, y1: 4 },
-      doors: [[5, 1], [5, 2], [13, 1], [13, 2]],
+      doors: [[5, 1], [5, 2]],
+      exitDoors: [[13, 1], [13, 2]],
       entryCells: [[6, 1], [6, 2], [7, 1], [7, 2]],
       waves: waves0,
       boss: false,
@@ -75,11 +76,19 @@ describe('arenas', () => {
     expect(sim.arenas[0].phase).toBe(PHASE_IDLE);
     expect(sim.arenaStatus()).toEqual({ arenaIndex: 0, arenaPhase: PHASE_IDLE });
     expect(sim.map.solid[1 * sim.map.w + 5]).toBe(0);
+    // The exit door toward arena 1 is closed while arena 0 isn't cleared.
+    expect(sim.map.solid[1 * sim.map.w + 13]).toBe(1);
+    sim.players[0].x = 9.5;
+    sim.players[0].y = 2.5;
+    sim.step();
+    expect(sim.arenas[0].phase).toBe(PHASE_COUNTDOWN);
+    expect(sim.map.solid[1 * sim.map.w + 5]).toBe(0);
+    expect(sim.map.solid[1 * sim.map.w + 13]).toBe(1);
     enterArena0(sim);
     expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
     expect(sim.arenaStatus()).toEqual({ arenaIndex: 0, arenaPhase: PHASE_COMBAT });
-    for (const [c, r] of sim.map.arenas[0].doors) expect(sim.map.solid[r * sim.map.w + c]).toBe(1);
-    // Arena 1's doors stay open.
+    for (const [c, r] of [...sim.map.arenas[0].doors, ...sim.map.arenas[0].exitDoors!]) expect(sim.map.solid[r * sim.map.w + c]).toBe(1);
+    // Arena 1's entry door stays open.
     expect(sim.map.solid[1 * sim.map.w + 15]).toBe(0);
     expect(sim.events.some((e) => e.event.type === 'arenaStarted' && e.event.arenaIndex === 0)).toBe(true);
   });
@@ -217,7 +226,7 @@ describe('arenas', () => {
     sim.step();
     expect(sim.arenas[0].phase).toBe(PHASE_CLEARED);
     expect(sim.arenaStatus()).toEqual({ arenaIndex: 0, arenaPhase: PHASE_CLEARED });
-    for (const [c, r] of sim.map.arenas[0].doors) expect(sim.map.solid[r * sim.map.w + c]).toBe(0);
+    for (const [c, r] of [...sim.map.arenas[0].doors, ...sim.map.arenas[0].exitDoors!]) expect(sim.map.solid[r * sim.map.w + c]).toBe(0);
     expect(sim.events.some((e) => e.event.type === 'arenaCleared')).toBe(true);
     expect(dead.dead).toBe(false);
     expect(dead.hp).toBe(dead.maxHp);

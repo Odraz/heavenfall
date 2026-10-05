@@ -3,7 +3,7 @@ import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
 import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, ST_WINDUP } from '../data/enemies';
-import { ABILITIES, WEAPONS } from '../data/weapons';
+import { ABILITIES, BLASPHEMY_RADIUS, WEAPONS } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
@@ -13,7 +13,7 @@ import type { Params } from '../params';
 import { aimDir, rayCylinder } from '../sim/combat';
 import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, TICK_DT, TICK_MS } from '../sim/constants';
 import { raycastTerrain } from '../sim/los';
-import { doorsClosedFor, setArenaDoors, type GameMap } from '../sim/map';
+import { arenaPhaseOf, doorsClosed, setArenaDoors, type GameMap } from '../sim/map';
 import { groundHeight } from '../sim/movement';
 import { BOSS_CAST_JUDGMENT, PROJ_CENSER } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
@@ -48,12 +48,17 @@ const BENCH_TURN_RATE = 0.3;
 const PROJECTILE_SPRITES = ['proj-censer', 'proj-orb', 'proj-arrow'];
 const PROJECTILE_SIZES = [0.4, 0.6, 0.3];
 const RESULT_OVERLAY_MS = 3000;
-const ENEMY_FLASH_MS = 100;
+/**
+ * A hurt enemy flashes white, fading out over ENEMY_FLASH_MS, and flashes again no sooner than
+ * ENEMY_FLASH_GAP_MS later, so under constant fire its texture still shows most of the time.
+ */
+const ENEMY_FLASH_MS = 120;
+const ENEMY_FLASH_GAP_MS = 250;
+const ENEMY_FLASH_PEAK = 0.7;
 const TRACER_MS = 70;
 /** At most this many corpses lie around; the oldest vanish first. */
 const MAX_CORPSES = 1000;
 
-const GLOW_FLASH: Glow = { r: 1, g: 1, b: 1, a: 1 };
 const GLOW_WINDUP: Glow = { r: 1, g: 0.78, b: 0.2, a: 0.5 };
 const GLOW_MARKED: Glow = { r: 1, g: 0.12, b: 0.08, a: 0.45 };
 const GLOW_ALLY: Glow = { r: 1, g: 0.8, b: 0.2, a: 0.55 };
@@ -73,7 +78,7 @@ const SOUL_MARKER_HEIGHT = 2.2;
 /** The revive hum plays while a shot hit a soul this recently, or the player's own progress rose. */
 const HUM_HOLD_MS = 300;
 /** The taunt `!` (M8 §3.1): 0.5 m tall, 0.3 m above the head; pops in, holds, then fades. */
-const TAUNT_MARK_HEIGHT = 0.5;
+const TAUNT_MARK_HEIGHT = 0.4;
 const TAUNT_MARK_GAP = 0.3;
 const TAUNT_POP_MS = 150;
 const TAUNT_HOLD_MS = 600;
@@ -184,15 +189,17 @@ export class Game {
   private soulHitAt = -Infinity;
   private soulHitId = -1;
   private hum: LoopHandle | null = null;
-  private doorState: boolean[];
+  /** Each arena's phase its doors were last set for, or -1 before the first snapshot. */
+  private doorPhase: number[];
   /** Smoothed Cherub heights per slot (§9.4). */
   private readonly cherubZ = new Float32Array(ENEMY_SLOTS);
   /** Frame number when each slot's Cherub height was last updated. */
   private readonly cherubFrame = new Uint32Array(ENEMY_SLOTS);
   private frameNo = 1;
   private readonly zScratch = new Float32Array(ENEMY_SLOTS);
-  /** performance.now() until which each enemy flashes white. */
-  private readonly flashUntil = new Float64Array(ENEMY_SLOTS);
+  /** performance.now() when each enemy's last white flash started. */
+  private readonly flashAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
+  private readonly flashGlow: Glow = { r: 1, g: 1, b: 1, a: 0 };
   /** performance.now() when each enemy was seen taunted, or -1 while it isn't (M8 §3.1). */
   private readonly tauntAt = new Float64Array(ENEMY_SLOTS).fill(-1);
   private readonly botEnemies: BotEnemy[] = [];
@@ -267,7 +274,7 @@ export class Game {
 
     const [sc, sr] = this.params.bench ? this.map.arenas[0].entryCells[0] : this.map.spawns[index];
     this.player = new LocalPlayer(sc + 0.5, sr + 0.5, this.map.floor[sr * this.map.w + sc], CLASSES[me.classId].speed);
-    this.doorState = this.map.arenas.map(() => false);
+    this.doorPhase = this.map.arenas.map(() => -1);
 
     this.snaps = new SnapshotBuffer(o.host ? 1.5 : 4.5);
     this.snaps.onComplete = (s, prev) => this.onSnapshot(s, prev);
@@ -527,7 +534,7 @@ export class Game {
     const user = this.playerPose(e.playerId);
     switch (key) {
       case 'fallen:Q': // taunt sphere, growing to Blasphemy's radius (M8 §3.1)
-        this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0xe0301e, 1, 15, 400, 0.3);
+        this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0xe0301e, 1, BLASPHEMY_RADIUS, 400, 0.3);
         break;
       case 'fallen:E': // landing shockwave, when the leap lands
         this.vfx.ring(now, e.x, e.y, e.z, 0xf08a24, 0.5, 5, 450, 400);
@@ -608,11 +615,12 @@ export class Game {
     const now = performance.now();
     // Doors follow from arenaIndex and arenaPhase (§8.2).
     for (let ai = 0; ai < this.map.arenas.length; ai++) {
-      const closed = doorsClosedFor(ai, s.arenaIndex, s.arenaPhase);
-      if (closed !== this.doorState[ai]) {
-        this.doorState[ai] = closed;
-        setArenaDoors(this.map, ai, closed);
-        this.scene.setDoorsClosed(ai, closed);
+      const phase = arenaPhaseOf(ai, s.arenaIndex, s.arenaPhase);
+      if (phase !== this.doorPhase[ai]) {
+        this.doorPhase[ai] = phase;
+        setArenaDoors(this.map, ai, phase);
+        const closed = doorsClosed(phase);
+        this.scene.setDoorsClosed(ai, closed.entry, closed.exit);
       }
     }
     this.souls.update(s.players, now);
@@ -659,7 +667,7 @@ export class Game {
     // Hurt flashes, and bursts for enemies and censers that disappeared.
     for (let i = 0; i < s.enemyCount; i++) {
       if (!(s.enemyFlags[i] & FLAG_HURT)) continue;
-      this.flashUntil[s.enemySlot[i]] = now + ENEMY_FLASH_MS;
+      if (now - this.flashAt[s.enemySlot[i]] >= ENEMY_FLASH_GAP_MS) this.flashAt[s.enemySlot[i]] = now;
       if (this.o.enemyAnims[s.enemyType[i]]?.anims.pain) this.animator.hurt(s.enemySlot[i], now);
     }
     if (prev) {
@@ -1065,8 +1073,11 @@ export class Game {
         this.judgmentGlow.scale.setScalar(2.4 * r);
         this.judgmentGlow.material.opacity = 0.25 + 0.5 * t;
       }
-      if (this.flashUntil[ents.slot[i]] > now) glow = GLOW_FLASH;
-      else if (judgment) glow = judgment;
+      const flashT = now - this.flashAt[ents.slot[i]];
+      if (flashT < ENEMY_FLASH_MS) {
+        this.flashGlow.a = ENEMY_FLASH_PEAK * (1 - flashT / ENEMY_FLASH_MS);
+        glow = this.flashGlow;
+      } else if (judgment) glow = judgment;
       else if (ents.state[i] === ST_WINDUP) glow = GLOW_WINDUP;
       else if (flags & FLAG_MARKED) glow = GLOW_MARKED;
       const grey = (flags & FLAG_SILENCED) !== 0;

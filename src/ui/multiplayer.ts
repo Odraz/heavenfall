@@ -185,12 +185,13 @@ export function lobbyScreen(a: LobbyActions): LobbyView {
     return { row, name, tag, cls };
   });
 
-  // Chat (M8 §7): the last 50 messages and a field; Enter sends.
-  const chat = el('div', 'lobby-chat', panel);
+  // Chat (M8 §7): the last 50 messages and a field, in its own panel; Enter sends.
+  const chat = el('div', 'panel lobby-chat', screen);
+  el('div', 'section-label', chat, 'Chat');
   const log = el('div', 'lobby-chat-log', chat);
   const field = el('input', 'text-input lobby-chat-input', chat);
   field.maxLength = CHAT_MAX;
-  field.placeholder = 'Chat — Enter sends';
+  field.placeholder = 'Enter sends';
   field.setAttribute('aria-label', 'Chat');
   field.autocomplete = 'off';
   field.addEventListener('keydown', (e) => {

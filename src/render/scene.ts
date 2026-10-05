@@ -64,7 +64,7 @@ export class GameScene {
     this.scene.add(this.sky);
     this.terrain = buildTerrain(map, textures);
     this.scene.add(this.terrain.mesh);
-    for (const d of this.terrain.doors) if (d) this.scene.add(d);
+    for (const d of this.terrain.doors) for (const m of [d.entry, d.exit]) if (m) this.scene.add(m);
     this.resize();
     window.addEventListener('resize', this.resize);
   }
@@ -77,10 +77,11 @@ export class GameScene {
     this.camera.updateProjectionMatrix();
   };
 
-  /** Shows or hides each arena's closed-door columns. */
-  setDoorsClosed(arenaIndex: number, closed: boolean): void {
+  /** Shows or hides an arena's closed entry and exit door columns. */
+  setDoorsClosed(arenaIndex: number, entry: boolean, exit: boolean): void {
     const d = this.terrain.doors[arenaIndex];
-    if (d) d.visible = closed;
+    if (d.entry) d.entry.visible = entry;
+    if (d.exit) d.exit.visible = exit;
   }
 
   /** Places the camera at a player's eye (simulation coordinates of the feet) with yaw and pitch. */

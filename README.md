@@ -59,7 +59,7 @@ Up to 4 players, each in their own browser, connect directly to the host's brows
 
 1. The host clicks `Multiplayer` → `Host game`, optionally sets a password, and clicks `Create`. The Lobby shows a 6-character game ID; `Copy invite link` copies a link to the game.
 2. Each friend opens the invite link, enters a name, clicks `Join game <ID>`, types the password (if any) and clicks `Join`. Without the link: `Multiplayer` → `Join game`, then type the game ID and the password.
-3. Everyone picks a different class; the host clicks `Start`. The Lobby has a chat; in game, press Enter to chat.
+3. Everyone picks a different class; the host clicks `Start`. The Lobby has a chat window in the bottom-left corner; in game, press Enter to chat.
 
 Friends can also join a game that's already running, with the same link or ID: they wait in the Lobby, pick a free class and click `Enter game`. Someone who enters during a fight arrives as a soul for the party to revive; otherwise they arrive next to the party. Only the few seconds of Loading at the start turn them away. Each arena's enemy count and the Gatekeeper's health follow the number of players in the game when the arena seals.
 
@@ -75,7 +75,7 @@ Sound effects are synthesized in code: each is a parameter set in [src/audio/sfx
 node scripts/music-loops.mjs calm arena-1
 ```
 
-The volume sliders are on the Title and in the Pause overlay.
+The volume sliders are in the Settings view (the `Settings` button) on the Title and in the Pause overlay.
 
 ### Blessed sprites
 
