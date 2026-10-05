@@ -1,6 +1,7 @@
 /** The in-game HUD and screen feedback (§10), plain DOM over the canvas. */
 import { CLASSES, GENERAL_HINTS, type ClassId } from '../data/classes';
 import { ABILITIES, WEAPONS } from '../data/weapons';
+import { CHAT_MAX } from '../net/lobby';
 import { spriteUrl } from '../render/atlas';
 import { fireFrame, weaponAtlas, type WeaponManifest } from '../render/weaponAtlas';
 
@@ -37,6 +38,10 @@ const SHAKE_MS = 150;
 const JUDGMENT_TEXT_MS = 3000;
 const INTERRUPTED_MS = 1000;
 const JUDGMENT_FLASH_MS = 600;
+/** Chat messages (M8 §7) show for 10 s, fading over the last 1 s, at most 6 at once. */
+const CHAT_SHOW_MS = 10000;
+const CHAT_FADE_MS = 1000;
+const CHAT_LINES = 6;
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, parent: HTMLElement): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -99,6 +104,13 @@ export class Hud {
   private readonly judgmentFlash: HTMLDivElement;
   /** The ally target's chevron (M8 §3.5): gold over the target, grey over an ally out of range. */
   private readonly chevron: HTMLDivElement;
+  /** Chat (M8 §7): the messages shown, oldest first, and the chat line. */
+  private readonly chatMessages: HTMLDivElement;
+  private readonly chatShown: Array<{ el: HTMLDivElement; at: number }> = [];
+  private readonly chatInput: HTMLInputElement;
+  private chatClosed: (() => void) | null = null;
+  /** Called with the text when Enter sends a non-empty chat line. */
+  onChatSend: (text: string) => void = () => {};
   /** Weapon bob offset in vh (M8 §3.4). */
   private bobX = 0;
   private bobY = 0;
@@ -133,6 +145,29 @@ export class Hud {
       svg.appendChild(path);
     }
     this.chevron.appendChild(svg);
+
+    // Chat, above the HP bar (M8 §7).
+    const chat = el('div', 'chat', this.root);
+    this.chatMessages = el('div', 'chat-messages', chat);
+    this.chatInput = el('input', 'chat-input', chat);
+    this.chatInput.maxLength = CHAT_MAX;
+    this.chatInput.autocomplete = 'off';
+    this.chatInput.spellcheck = false;
+    this.chatInput.setAttribute('aria-label', 'Chat');
+    this.chatInput.hidden = true;
+    this.chatInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      // Not a game key: the line closes here, so the Enter mustn't open it again.
+      e.stopPropagation();
+      e.preventDefault();
+      const text = this.chatInput.value.trim();
+      this.closeChat();
+      // Enter on an empty line just closes it.
+      if (text) this.onChatSend(text);
+    });
+    this.chatInput.addEventListener('blur', () => {
+      if (!this.chatInput.hidden) queueMicrotask(() => this.chatInput.focus());
+    });
 
     const hp = el('div', 'hp', this.root);
     this.hpBar = el('div', 'hp-bar', hp);
@@ -228,6 +263,38 @@ export class Hud {
     this.shieldFill.style.left = `${(Math.max(0, hp) / total) * 100}%`;
     this.shieldFill.style.width = `${(shield / total) * 100}%`;
     this.hpText.textContent = shield > 0 ? `${Math.ceil(hp)} + ${Math.ceil(shield)}` : `${Math.ceil(hp)} / ${maxHp}`;
+  }
+
+  get chatOpen(): boolean {
+    return !this.chatInput.hidden;
+  }
+
+  /** Opens the chat line and focuses it; `onClose` is called when it closes. */
+  openChat(onClose: () => void): void {
+    this.chatInput.value = '';
+    this.chatInput.hidden = false;
+    this.chatClosed = onClose;
+    this.chatInput.focus();
+  }
+
+  /** Closes the chat line, discarding its text. */
+  closeChat(): void {
+    if (this.chatInput.hidden) return;
+    this.chatInput.hidden = true;
+    this.chatInput.value = '';
+    this.chatInput.blur();
+    const done = this.chatClosed;
+    this.chatClosed = null;
+    done?.();
+  }
+
+  /** A message above the chat line, as plain text (M8 §7). */
+  addChat(name: string, text: string, now: number): void {
+    const line = el('div', 'chat-message', this.chatMessages);
+    el('span', 'chat-name', line).textContent = `${name}: `;
+    line.append(text);
+    this.chatShown.push({ el: line, at: now });
+    while (this.chatShown.length > CHAT_LINES) this.chatShown.shift()!.el.remove();
   }
 
   /** Toggles the hints panel; the first opening hides the discovery prompt for good (M8 §2.2). */
@@ -460,6 +527,8 @@ export class Hud {
     const shaking = now - this.shakeAt < SHAKE_MS;
     this.hpBar.style.transform = shaking ? `translate(${(Math.random() - 0.5) * 8}px, ${(Math.random() - 0.5) * 6}px)` : '';
     if (now > this.centerUntil) this.center.hidden = true;
+    while (this.chatShown.length && now - this.chatShown[0].at >= CHAT_SHOW_MS) this.chatShown.shift()!.el.remove();
+    for (const m of this.chatShown) m.el.style.opacity = String(Math.min(1, (CHAT_SHOW_MS - (now - m.at)) / CHAT_FADE_MS));
     if (now > this.judgmentUntil) this.judgment.hidden = true;
     for (let i = this.fades.length - 1; i >= 0; i--) {
       const f = this.fades[i];

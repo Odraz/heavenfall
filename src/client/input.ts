@@ -12,6 +12,11 @@ export class Input {
   enabled = true;
   /** The bot and the benchmark never request pointer lock. */
   pointerLockAllowed = true;
+  /**
+   * The chat line is open (M8 §7): keys type into it, so none count as game keys except Esc, which
+   * still opens Pause; fire is ignored. Mouse look goes on.
+   */
+  typing = false;
   /** Called on every key press (not repeats): F3, Q, E and the dev keys. */
   onKey: (code: string) => void = () => {};
 
@@ -79,6 +84,10 @@ export class Input {
       if (!e.repeat) this.onKey(e.code);
       return;
     }
+    if (this.typing) {
+      if (e.code === 'Escape' && this.enabled) this.onKey(e.code);
+      return;
+    }
     if (!this.enabled) return;
     if (e.repeat) return;
     this.keys.add(e.code);
@@ -94,6 +103,11 @@ export class Input {
   };
 
   private readonly mousedown = (e: MouseEvent): void => {
+    if (this.typing) {
+      // Keeps the focus in the chat line.
+      e.preventDefault();
+      return;
+    }
     if (!this.enabled || !this.pointerLockAllowed) return;
     if (!this.pointerLocked) {
       this.requestPointerLock();

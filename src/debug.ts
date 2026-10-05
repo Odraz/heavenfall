@@ -38,6 +38,8 @@ export interface DebugState {
   netOutKBps: number;
   players: DebugPlayer[];
   gameResult: null | 'victory' | 'defeat';
+  /** The last 50 chat messages of the session (M8 §10). */
+  chat: Array<{ playerId: number; text: string }>;
 }
 
 export const debugState: DebugState = {
@@ -56,6 +58,7 @@ export const debugState: DebugState = {
   netOutKBps: 0,
   players: [],
   gameResult: null,
+  chat: [],
 };
 
 /** Resets the game fields to their outside-a-game values. */
@@ -75,6 +78,7 @@ export function resetGameDebug(): void {
     netOutKBps: 0,
     players: [],
     gameResult: null,
+    chat: [],
   });
 }
 

@@ -297,6 +297,45 @@ body {
   text-shadow: 0 1px 2px #000, 0 0 6px #000;
 }
 
+/* Chat (M8 §7): messages and the chat line, above the HP bar. */
+.chat {
+  position: absolute;
+  left: 24px;
+  bottom: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(440px, 45vw);
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-message {
+  font-size: 15px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-shadow: 0 1px 2px #000, 0 0 5px #000;
+}
+
+.chat-name {
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.chat-input {
+  padding: 5px 8px;
+  font: 500 15px/1.2 'Segoe UI', system-ui, sans-serif;
+  color: var(--ivory);
+  background: rgba(18, 13, 12, 0.8);
+  border: 2px solid var(--brimstone);
+  border-radius: 4px;
+  outline: none;
+}
+
 /* Party frames (§10), multiplayer only: left, above the own HP bar. */
 .party {
   position: absolute;
@@ -1097,6 +1136,30 @@ body {
   color: var(--soot);
   background: var(--gold);
   border-radius: 3px;
+}
+
+.lobby-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lobby-chat-log {
+  height: 66px;
+  padding: 6px 10px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  user-select: text;
+  background: #120d0c;
+  border: 2px solid #3a2c27;
+  border-radius: 5px;
+}
+
+.lobby-chat-input {
+  padding: 6px 10px;
+  font-size: 15px;
 }
 
 .slot-class {

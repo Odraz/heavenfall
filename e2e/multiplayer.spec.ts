@@ -29,7 +29,8 @@ async function join(page: Page, gameId: string, password: string): Promise<void>
   await page.getByRole('button', { name: 'Join', exact: true }).click();
 }
 
-// From milestone 7: four players through the real menus over the public PeerJS server (§13.2).
+// From milestone 7: four players through the real menus over the public PeerJS server (§13.2); from
+// M8 the fourth joins the game in progress from an invite link, and B chats (M8 §12.2).
 test('multiplayer', async ({ page: a, browser }) => {
   test.setTimeout(300_000);
   const errors: string[] = [];
@@ -45,22 +46,17 @@ test('multiplayer', async ({ page: a, browser }) => {
   const gameId = (await a.locator('.game-id').textContent())!.trim();
   expect(gameId).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
 
-  // (2) B joins with password `x` and sees `Wrong password`, then joins with `pw`; C and D join.
+  // (2) B joins with password `x` and sees `Wrong password`, then joins with `pw`; C joins.
   await toMultiplayer(b, '/?bot=1', 'Bob');
   await b.getByRole('button', { name: 'Join game' }).click();
   await join(b, gameId.toLowerCase(), 'x');
   await expect(b.getByText('Wrong password')).toBeVisible({ timeout: 30_000 });
   await join(b, gameId, 'pw');
   await b.waitForFunction(() => window.__heavenfall.screen === 'lobby', null, { timeout: 30_000 });
-  for (const [page, name] of [
-    [c, 'Cleo'],
-    [d, 'Dan'],
-  ] as const) {
-    await toMultiplayer(page, '/?bot=1', name);
-    await page.getByRole('button', { name: 'Join game' }).click();
-    await join(page, gameId, 'pw');
-    await page.waitForFunction(() => window.__heavenfall.screen === 'lobby', null, { timeout: 30_000 });
-  }
+  await toMultiplayer(c, '/?bot=1', 'Cleo');
+  await c.getByRole('button', { name: 'Join game' }).click();
+  await join(c, gameId, 'pw');
+  await c.waitForFunction(() => window.__heavenfall.screen === 'lobby', null, { timeout: 30_000 });
 
   // (3) A picks the Fallen; on B's screen the Fallen becomes greyed out and shows A's name.
   await a.getByRole('button', { name: /The Fallen/ }).click();
@@ -69,14 +65,69 @@ test('multiplayer', async ({ page: a, browser }) => {
   await expect(fallenOnB).toContainText('Alice');
   await b.getByRole('button', { name: /The Heretic Saint/ }).click();
   await c.getByRole('button', { name: /The Binder/ }).click();
-  await d.getByRole('button', { name: /The Betrayer/ }).click();
   const start = a.getByRole('button', { name: 'Start' });
   await expect(start).toBeEnabled();
   await start.click();
 
   // (4) Everyone reaches inGame within 30 s, and A's arenaPhase becomes combat within 60 s.
-  await Promise.all([a, ...clients].map((p) => p.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 })));
+  await Promise.all([a, b, c].map((p) => p.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 })));
   await a.waitForFunction(() => window.__heavenfall.arenaPhase === 'combat', null, { timeout: 60_000 });
+
+  // D joins the game in progress from an invite link, and picks the Betrayer (M8 §12.2). Until the
+  // chat check, the three running games are drawn small: software rendering them at full size starves
+  // D's Loading past the 20 s timeout.
+  const sizes = await Promise.all([a, b, c].map((p) => p.viewportSize()!));
+  await Promise.all([a, b, c].map((p) => p.setViewportSize({ width: 320, height: 180 })));
+  await d.goto(`/?join=${gameId}&bot=1`);
+  await d.waitForFunction(() => window.__heavenfall?.screen === 'title');
+  await d.getByLabel('Player name').fill('Dan');
+  await d.getByRole('button', { name: `Join game ${gameId}` }).click();
+  await d.waitForFunction(() => window.__heavenfall.screen === 'join');
+  await expect(d.getByLabel('Game ID')).toHaveValue(gameId);
+  await expect(d.getByLabel('Password')).toBeFocused();
+  await d.getByLabel('Password').fill('pw');
+  await d.getByRole('button', { name: 'Join', exact: true }).click();
+  await d.waitForFunction(() => window.__heavenfall.screen === 'lobby', null, { timeout: 30_000 });
+  await expect(d.getByRole('button', { name: /The Fallen/ })).toBeDisabled();
+  await d.getByRole('button', { name: /The Betrayer/ }).click();
+  const enter = d.getByRole('button', { name: 'Enter game' });
+  await expect(enter).toBeEnabled();
+  await enter.click();
+  // A's players include D. A is read the moment D appears, since the bots revive a soul within a
+  // second or two: if A's arena was in combat when D entered, D entered as a soul.
+  const atGo = (await (
+    await a.waitForFunction(
+      () => {
+        const s = window.__heavenfall;
+        const p = s.players.find((q) => q.id === 3);
+        return p ? { arenaPhase: s.arenaPhase, ...p } : null;
+      },
+      null,
+      { polling: 50, timeout: 30_000 },
+    )
+  ).jsonValue())!;
+  expect(atGo.classId).toBe('betrayer');
+  if (atGo.arenaPhase === 'combat') {
+    expect(atGo.dead).toBe(true);
+    expect(typeof atGo.revive).toBe('number');
+  }
+  await d.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 });
+  await a.waitForFunction(() => window.__heavenfall.players.some((p) => p.id === 3));
+  // B chats: Enter opens the chat line, Enter sends; every page has the message within 3 s (M8 §7).
+  // Still drawn small, so a starved page doesn't miss the 3 s.
+  await b.keyboard.press('Enter');
+  await expect(b.locator('.chat-input')).toBeFocused();
+  await b.keyboard.type('Rise, brothers!');
+  await b.keyboard.press('Enter');
+  // Polled on a timer: a software-rendered page draws too few frames for the default per-frame polling.
+  await Promise.all(
+    [a, ...clients].map((p) =>
+      p.waitForFunction(() => window.__heavenfall.chat.some((m) => m.playerId === 1 && m.text === 'Rise, brothers!'), null, { timeout: 3_000, polling: 100 }),
+    ),
+  );
+  await expect(a.locator('.chat-message')).toContainText('Bob: Rise, brothers!');
+
+  await Promise.all([a, b, c].map((p, i) => p.setViewportSize(sizes[i])));
 
   // (5) For 30 s, sampled every 1 s: every client's snapshots advance, each client's enemy count at its
   // newest tick equals A's at the same tick, and A's upload stays within budget.

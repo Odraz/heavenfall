@@ -15,7 +15,8 @@ const WELCOME_TIMEOUT_MS = 10000;
 const REJECT_TEXT: Record<RejectReason, string> = {
   bad_password: 'Wrong password',
   full: 'Game is full',
-  in_progress: 'Game already started',
+  // Only Loading turns players away; a game in progress takes them in (M8 §6.2).
+  in_progress: 'The game is starting — try again in a moment',
   version: 'Version mismatch',
   load_timeout: 'Connection failed',
 };
@@ -27,6 +28,8 @@ export interface Joined {
   transport: PeerTransport;
   playerId: number;
   lobby: { dungeonId: string; players: LobbyPlayer[] };
+  /** The game is running: the client waits in the in-progress Lobby (M8 §6.2). */
+  inProgress: boolean;
 }
 
 function isCtrl(data: unknown): data is CtrlMessage {
@@ -172,7 +175,7 @@ export function joinGame(gameId: string, name: string, password: string, cancell
       clearTimeout(timer);
       clearInterval(cancelTimer);
       transport.startHeartbeat();
-      resolve({ transport, playerId: welcome.playerId, lobby: welcome.lobby });
+      resolve({ transport, playerId: welcome.playerId, lobby: welcome.lobby, inProgress: welcome.inProgress });
     }
 
     peer.on('error', (e) => fail(e.type === 'peer-unavailable' ? 'Game not found' : 'Connection failed'));

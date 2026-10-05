@@ -2,7 +2,7 @@
 import { CLASS_IDS, CLASSES, type ClassId } from '../data/classes';
 import { GAME_ID_LENGTH, normalizeGameId } from '../net/gameId';
 import { inviteLink } from '../net/invite';
-import { PASSWORD_MAX } from '../net/lobby';
+import { CHAT_MAX, PASSWORD_MAX } from '../net/lobby';
 import type { LobbyPlayer } from '../net/messages';
 import { button, classCard, dungeonPicker, el, MENU_DUNGEONS } from './menus';
 
@@ -121,17 +121,27 @@ export function joinScreen(a: JoinActions, prefillId: string | null = null): For
 }
 
 export interface LobbyActions {
-  /** The game ID, shown with a `Copy` button for the host; null for clients. */
+  /** The game ID, shown large; null hides it (a client before the game). */
   gameId: string | null;
+  /** The host gets `Copy invite link` and `Start`. */
+  isHost: boolean;
+  /** The in-progress Lobby (M8 §6.2): no `Start`, and `Enter game` once a free class is picked. */
+  inProgress: boolean;
   playerId: number;
   onPick: (classId: ClassId) => void;
   onStart: () => void;
+  onEnterGame: () => void;
+  onChat: (text: string) => void;
   onLeave: () => void;
 }
 
 export interface LobbyView {
   el: HTMLElement;
   update: (lobby: { dungeonId: string; players: LobbyPlayer[] }) => void;
+  /** Shows the chat log (M8 §7): `Name: text` per message, oldest first. */
+  setChat: (lines: ReadonlyArray<{ name: string; text: string }>) => void;
+  /** Presses `Enter game` if it's enabled (bot auto-join, M8 §6.4). */
+  pressEnterGame: () => void;
 }
 
 const SLOTS = 4;
@@ -140,30 +150,32 @@ export function lobbyScreen(a: LobbyActions): LobbyView {
   const screen = el('div', 'screen menu lobby-screen');
   el('h2', 'screen-title', screen, 'Lobby');
   const panel = el('div', 'panel', screen);
-  const isHost = a.gameId !== null;
 
   if (a.gameId !== null) {
     const row = el('div', 'game-id-row', panel);
     const box = el('div', 'game-id-box', row);
     el('div', 'field-label', box, 'Game ID');
     el('div', 'game-id', box, a.gameId);
-    // The host copies an invite link; the ID stays shown large, for typing (M8 §6.1).
-    const copy = button('Copy invite link', row, () => {
-      const done = (text: string): void => {
-        copy.textContent = text;
-        setTimeout(() => (copy.textContent = 'Copy invite link'), 1500);
-      };
-      navigator.clipboard?.writeText(inviteLink(window.location.href, a.gameId!)).then(
-        () => done('Copied'),
-        () => done('Copy failed'),
-      );
-    });
-    copy.classList.add('secondary');
-    el('div', 'field-hint', panel, 'Send the invite link (and the password, if any) to your friends.');
+    if (a.isHost) {
+      // The host copies an invite link; the ID stays shown large, for typing (M8 §6.1).
+      const copy = button('Copy invite link', row, () => {
+        const done = (text: string): void => {
+          copy.textContent = text;
+          setTimeout(() => (copy.textContent = 'Copy invite link'), 1500);
+        };
+        navigator.clipboard?.writeText(inviteLink(window.location.href, a.gameId!)).then(
+          () => done('Copied'),
+          () => done('Copy failed'),
+        );
+      });
+      copy.classList.add('secondary');
+      el('div', 'field-hint', panel, 'Send the invite link (and the password, if any) to your friends.');
+    }
   }
   const dungeon = el('div', 'lobby-dungeon', panel);
+  if (a.inProgress) el('div', 'field-hint', panel, 'The game is in progress. Pick a free class and enter.');
 
-  el('div', 'section-label', panel, 'Players');
+  el('div', 'section-label', panel, a.inProgress ? 'Players in the game' : 'Players');
   const slotList = el('div', 'lobby-slots', panel);
   const slots = Array.from({ length: SLOTS }, () => {
     const row = el('div', 'lobby-slot', slotList);
@@ -171,6 +183,21 @@ export function lobbyScreen(a: LobbyActions): LobbyView {
     const tag = el('span', 'slot-tag', row);
     const cls = el('span', 'slot-class', row);
     return { row, name, tag, cls };
+  });
+
+  // Chat (M8 §7): the last 50 messages and a field; Enter sends.
+  const chat = el('div', 'lobby-chat', panel);
+  const log = el('div', 'lobby-chat-log', chat);
+  const field = el('input', 'text-input lobby-chat-input', chat);
+  field.maxLength = CHAT_MAX;
+  field.placeholder = 'Chat — Enter sends';
+  field.setAttribute('aria-label', 'Chat');
+  field.autocomplete = 'off';
+  field.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const text = field.value.trim();
+    field.value = '';
+    if (text) a.onChat(text);
   });
 
   el('div', 'section-label', panel, 'Choose your class');
@@ -185,8 +212,18 @@ export function lobbyScreen(a: LobbyActions): LobbyView {
 
   const buttons = el('div', 'buttons', panel);
   button('Leave', buttons, a.onLeave, 'secondary');
-  const start = isHost ? button('Start', buttons, a.onStart) : null;
+  const start = a.isHost && !a.inProgress ? button('Start', buttons, a.onStart) : null;
   if (start) start.disabled = true;
+  let entering = false;
+  const enter = a.inProgress
+    ? button('Enter game', buttons, () => {
+        if (enter!.disabled) return;
+        entering = true;
+        enter!.disabled = true;
+        a.onEnterGame();
+      })
+    : null;
+  if (enter) enter.disabled = true;
 
   return {
     el: screen,
@@ -207,12 +244,28 @@ export function lobbyScreen(a: LobbyActions): LobbyView {
         const owner = lobby.players.find((p) => p.classId === id);
         const mine = owner?.id === a.playerId;
         card.setAttribute('aria-pressed', String(mine));
-        card.disabled = !!owner && !mine;
+        card.disabled = (!!owner && !mine) || entering;
         card.classList.toggle('taken', !!owner && !mine);
         taken.textContent = owner && !mine ? `Taken by ${owner.name}` : '';
       }
-      // Start is enabled only when every connected player has picked a class (§3).
+      // Start is enabled only when every connected player has picked a class (§3); Enter game once
+      // this player has (M8 §6.2).
       if (start) start.disabled = !lobby.players.every((p) => p.classId);
+      if (enter) enter.disabled = entering || !lobby.players.find((p) => p.id === a.playerId)?.classId;
+    },
+    pressEnterGame: () => enter?.click(),
+    setChat: (lines) => {
+      const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
+      log.replaceChildren(
+        ...lines.map((l) => {
+          const line = document.createElement('div');
+          line.className = 'chat-line';
+          // Plain text, never HTML (M8 §7).
+          line.textContent = `${l.name}: ${l.text}`;
+          return line;
+        }),
+      );
+      if (atEnd) log.scrollTop = log.scrollHeight;
     },
   };
 }

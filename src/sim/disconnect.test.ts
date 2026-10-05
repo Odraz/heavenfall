@@ -14,7 +14,7 @@ describe('disconnects', () => {
     // Next to the Heretic, far from the Fallen even with Sinful.
     const slot = enemyAt(sim, BLESSED, 16.5, 2.5);
     expect(sim.eTarget[slot]).toBe(b.index);
-    sim.disconnect(b.id);
+    sim.removePlayer(b.id);
     sim.step();
     expect(sim.eTarget[slot]).toBe(a.index);
     const snap = decodeSnapshot(sim.encodeFor(a.id)[0])!;
@@ -28,29 +28,29 @@ describe('disconnects', () => {
     sim.damagePlayer(a, 10000);
     sim.step();
     expect(sim.result).toBeNull();
-    sim.disconnect(b.id);
+    sim.removePlayer(b.id);
     expect(sim.result).toBe('defeat');
     // gameOver lists the players still connected.
     const over = sim.events.find((e) => e.event.type === 'gameOver')!.event;
     expect(over.type === 'gameOver' && Object.keys(over.kills)).toEqual(['0']);
   });
 
-  it('keeps the index of a player dropped during Loading, and leaves it out of the party size', () => {
+  it('makes each player index its ID, whoever else is in the game (M8 §6.2)', () => {
     const sim = new Simulation({
       dungeon: dungeonOf(room(10, 5)),
       players: [
         { id: 0, name: 'A', classId: 'fallen' },
-        { id: 1, name: 'B', classId: 'heretic', connected: false },
         { id: 2, name: 'C', classId: 'binder' },
       ],
       seed: 1,
     });
-    expect(sim.partySize).toBe(2);
-    expect(sim.players.map((p) => [p.id, p.index, p.connected])).toEqual([
-      [0, 0, true],
-      [1, 1, false],
-      [2, 2, true],
+    expect(sim.players.map((p) => [p.id, p.index])).toEqual([
+      [0, 0],
+      [2, 2],
     ]);
+    // Placed on the S marker of its index.
+    const [c, r] = sim.map.spawns[2];
+    expect([sim.players[1].x, sim.players[1].y]).toEqual([c + 0.5, r + 0.5]);
     const snap = decodeSnapshot(sim.encodeFor(0)[0])!;
     expect(snap.players.map((p) => p.id)).toEqual([0, 2]);
   });

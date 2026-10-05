@@ -76,6 +76,7 @@ import {
   PLAYER_EYE,
   PLAYER_HEIGHT,
   PLAYER_RADIUS,
+  PLAYER_SLOTS,
   PROJECTILE_SLOTS,
   SLOT_REUSE_TICKS,
   STEP_UP,
@@ -90,7 +91,7 @@ import { lineOfSight, raycastTerrain } from './los';
 import { insideRect, isSolid, loadMap, setArenaDoors, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
-import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, SOUL_HEIGHT, SOUL_RADIUS, soulRise } from './souls';
+import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
 
 /** Party-size multipliers ×10 (§7.5), indexed by party size. */
 const MULT10 = [0, 4, 6, 8, 10];
@@ -107,19 +108,15 @@ export function scaleCount(count: number, partySize: number): number {
 }
 
 export interface SimPlayerInit {
+  /** The player ID, which is also its index: its spawn and entry cells (M8 §6.2). */
   id: number;
   name: string;
   classId: ClassId;
-  /**
-   * False for a player listed in `start` who left or was dropped during Loading: it keeps its index
-   * (§3) but takes no part in the game. Default true.
-   */
-  connected?: boolean;
 }
 
 export interface SimOptions {
   dungeon: DungeonDef;
-  /** Players at `start`, sorted by id internally; their index is their position (§3). */
+  /** Players at `go`; each one's index is its ID (M8 §6.2). */
   players: SimPlayerInit[];
   seed: number;
   /** Every player is invulnerable (`god=1`). */
@@ -139,6 +136,7 @@ export interface SimEvent {
 
 export interface SimPlayer {
   id: number;
+  /** Equal to the ID (M8 §6.2). */
   index: number;
   name: string;
   classId: ClassId;
@@ -218,6 +216,8 @@ interface ArenaState {
   alive: number;
   /** During the countdown: the tick the arena seals (M8 §5). */
   sealTick: number;
+  /** Players in the game when it sealed, for party-size scaling (M8 §6.3); 0 before. */
+  partySize: number;
 }
 
 /** Projectile kinds, as encoded in snapshots (§9.4). */
@@ -302,11 +302,15 @@ const ticks = (seconds: number) => Math.round(seconds * TICK_HZ);
 
 export class Simulation {
   readonly map: GameMap;
-  readonly players: SimPlayer[];
-  readonly partySize: number;
+  /** The players in the game, sorted by ID. */
+  readonly players: SimPlayer[] = [];
+  /** The players by index, which is their ID (M8 §6.2); empty slots are undefined. */
+  readonly slots: Array<SimPlayer | undefined> = new Array(PLAYER_SLOTS).fill(undefined);
   readonly bench: boolean;
   readonly noWaves: boolean;
   readonly singleplayer: boolean;
+  /** Every player is invulnerable (`god=1`). */
+  private readonly god: boolean;
   /** Seeded PRNG for all simulation randomness (§2.2); tests may replace it. */
   random: () => number;
   /** Ticks simulated so far; the tick being simulated during step(). */
@@ -379,6 +383,8 @@ export class Simulation {
   private judgmentDamage = 0;
   /** The Gatekeeper died this tick or since the last one (dev key K); the run ends in victory. */
   private bossKilled = false;
+  /** The boss arena's party size, for the Judgment interrupt threshold and summons (M8 §6.3). */
+  private bossParty = 1;
 
   /** Dense list of living enemy slots. */
   readonly active = new Int32Array(ENEMY_SLOTS);
@@ -413,9 +419,10 @@ export class Simulation {
   private readonly pFree: number[] = [];
   private pNextFresh = 0;
 
-  readonly groundFields: FlowField[];
-  readonly airFields: FlowField[];
-  private readonly fieldValid: boolean[];
+  /** Flow fields by player index, made when a player first takes the slot. */
+  readonly groundFields: FlowField[] = [];
+  readonly airFields: FlowField[] = [];
+  private readonly fieldValid: boolean[] = new Array(PLAYER_SLOTS).fill(false);
 
   // Separation spatial hashes (ground, air): counting sort of slots by cell.
   private readonly hashStart: [Int32Array, Int32Array];
@@ -450,54 +457,6 @@ export class Simulation {
     this.noWaves = !!opts.noWaves;
     this.singleplayer = !!opts.singleplayer;
     this.random = mulberry32(opts.seed);
-    const sorted = [...opts.players].sort((a, b) => a.id - b.id);
-    // The party size is the number of players at `go` (§7.5).
-    this.partySize = Math.max(1, sorted.filter((p) => p.connected !== false).length);
-    this.players = sorted.map((p, index) => {
-      const cls = CLASSES[p.classId];
-      const [c, r] = this.bench ? this.map.arenas[0].entryCells[0] : this.map.spawns[index];
-      return {
-        id: p.id,
-        index,
-        name: p.name,
-        classId: p.classId,
-        speed: cls.speed,
-        maxHp: cls.hp,
-        hp: cls.hp,
-        shield: 0,
-        shieldUntil: 0,
-        dead: false,
-        connected: p.connected !== false,
-        god: !!opts.god || this.bench,
-        devGod: false,
-        invulUntil: 0,
-        x: c + 0.5,
-        y: r + 0.5,
-        z: this.map.floor[r * this.map.w + c],
-        yaw: 0,
-        pitch: 0,
-        fireHeld: false,
-        fireTimer: 0,
-        qPresses: 0,
-        ePresses: 0,
-        allyTargetId: ALLY_NONE,
-        pendingQ: false,
-        pendingE: false,
-        pendingEAlly: ALLY_NONE,
-        landingTick: -1,
-        kills: 0,
-        shots: 0,
-        revive: 0,
-        soulTick: 0,
-        cdQ: 0,
-        cdE: 0,
-        lastDamageTick: 0,
-        lastSeq: -1,
-        lastAcceptMs: 0,
-        teleportId: 0,
-        speedCheckSkipUntil: 0,
-      };
-    });
     this.arenas = this.map.arenas.map((a, i) => ({
       phase: PHASE_IDLE,
       wave: -1,
@@ -510,10 +469,13 @@ export class Simulation {
       waveFullySpawned: a.waves.map(() => false),
       alive: 0,
       sealTick: 0,
+      partySize: 0,
     }));
-    this.groundFields = this.players.map(() => new FlowField(this.map, false));
-    this.airFields = this.players.map(() => new FlowField(this.map, true));
-    this.fieldValid = this.players.map(() => false);
+    this.god = !!opts.god;
+    for (const p of opts.players) {
+      const [c, r] = this.bench ? this.map.arenas[0].entryCells[0] : this.map.spawns[p.id];
+      this.insertPlayer(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
+    }
     const cells = this.map.w * this.map.h;
     this.hashStart = [new Int32Array(cells + 1), new Int32Array(cells + 1)];
     this.hashItems = [new Int32Array(ENEMY_SLOTS), new Int32Array(ENEMY_SLOTS)];
@@ -604,18 +566,104 @@ export class Simulation {
     this.events.push({ to: p.id, event: { type: 'teleport', teleportId: p.teleportId, x, y, z } });
   }
 
+  /** Adds a player to the game in its slot, with its feet at (x, y, z). */
+  private insertPlayer(init: SimPlayerInit, x: number, y: number, z: number): SimPlayer {
+    const cls = CLASSES[init.classId];
+    const p: SimPlayer = {
+      id: init.id,
+      index: init.id,
+      name: init.name,
+      classId: init.classId,
+      speed: cls.speed,
+      maxHp: cls.hp,
+      hp: cls.hp,
+      shield: 0,
+      shieldUntil: 0,
+      dead: false,
+      connected: true,
+      god: this.god || this.bench,
+      devGod: false,
+      invulUntil: 0,
+      x,
+      y,
+      z,
+      yaw: 0,
+      pitch: 0,
+      fireHeld: false,
+      fireTimer: 0,
+      qPresses: 0,
+      ePresses: 0,
+      allyTargetId: ALLY_NONE,
+      pendingQ: false,
+      pendingE: false,
+      pendingEAlly: ALLY_NONE,
+      landingTick: -1,
+      kills: 0,
+      shots: 0,
+      revive: 0,
+      soulTick: 0,
+      cdQ: 0,
+      cdE: 0,
+      lastDamageTick: this.tick,
+      lastSeq: -1,
+      lastAcceptMs: this.nowMs,
+      teleportId: 0,
+      speedCheckSkipUntil: 0,
+    };
+    this.slots[p.index] = p;
+    this.players.push(p);
+    this.players.sort((a, b) => a.id - b.id);
+    this.groundFields[p.index] ??= new FlowField(this.map, false);
+    this.airFields[p.index] ??= new FlowField(this.map, true);
+    this.fieldValid[p.index] = false;
+    return p;
+  }
+
   /**
-   * A player left or timed out (§9.4): their player is removed and the game continues. Enemies
-   * retarget at once, and the run is a defeat if every player still connected is dead.
+   * A player joins the game in progress (M8 §6.2), placed by the state of arena `arenaIndex`: in
+   * combat as a soul on its entry cell, already floating; in the countdown alive on its entry cell;
+   * otherwise alive on the feet of the living player with the lowest ID or, with none alive, on its
+   * entry cell of the next arena. The host tells its client where with a `teleport`.
    */
-  disconnect(playerId: number): void {
+  addPlayer(init: SimPlayerInit): SimPlayer | null {
+    if (init.id < 0 || init.id >= PLAYER_SLOTS || this.slots[init.id] || this.result) return null;
+    const { arenaIndex, arenaPhase } = this.arenaStatus();
+    const lead = this.players.find((q) => this.livingTargetable(q));
+    const p = this.insertPlayer(init, 0, 0, 0);
+    let x: number;
+    let y: number;
+    let z: number;
+    if (arenaPhase === PHASE_COMBAT || arenaPhase === PHASE_COUNTDOWN || !lead) {
+      const next = arenaPhase === PHASE_CLEARED && !lead ? arenaIndex + 1 : arenaIndex;
+      const a = this.map.arenas[next];
+      const [c, r] = a ? a.entryCells[p.index] : this.map.spawns[p.index];
+      [x, y, z] = [c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]];
+    } else [x, y, z] = [lead.x, lead.y, lead.z];
+    if (arenaPhase === PHASE_COMBAT) {
+      // A soul with progress 0 that starts already floating (M8 §4.1).
+      p.dead = true;
+      p.hp = 0;
+      p.soulTick = this.tick - ticks(SOUL_RISE_TIME);
+    }
+    this.teleport(p, x, y, z);
+    return p;
+  }
+
+  /**
+   * A player left or timed out (§9.4, M8 §6.2): their player is removed, with their soul, and the game
+   * continues. Enemies retarget at once, and the run is a defeat if every player left is dead.
+   */
+  removePlayer(playerId: number): void {
     const p = this.playerById(playerId);
-    if (!p || !p.connected) return;
+    if (!p) return;
     p.connected = false;
-    p.fireHeld = false;
-    p.pendingQ = false;
-    p.pendingE = false;
-    p.landingTick = -1;
+    this.players.splice(this.players.indexOf(p), 1);
+    this.slots[p.index] = undefined;
+    // Enemies that targeted them retarget at once (§7.2).
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      if (this.eTarget[s] === p.index) this.retarget(s);
+    }
     if (!this.result) this.checkDefeat();
   }
 
@@ -653,8 +701,8 @@ export class Simulation {
     this.finish('victory');
   }
 
-  private livingTargetable(p: SimPlayer): boolean {
-    return p.connected && !p.dead;
+  private livingTargetable(p: SimPlayer | undefined): p is SimPlayer {
+    return !!p && p.connected && !p.dead;
   }
 
   /**
@@ -699,6 +747,8 @@ export class Simulation {
     const a = this.map.arenas[ai];
     const st = this.arenas[ai];
     st.phase = PHASE_COMBAT;
+    // Party-size scaling counts the players in the game at the seal (M8 §6.3).
+    st.partySize = Math.max(1, this.players.length);
     setArenaDoors(this.map, ai, true);
     this.invalidateFields();
     this.events.push({ to: 'all', event: { type: 'arenaStarted', arenaIndex: ai } });
@@ -718,7 +768,8 @@ export class Simulation {
     const [c, r] = this.map.boss!;
     const slot = this.allocSlot();
     if (slot < 0) return;
-    this.bossMaxHp = ENEMIES[GATEKEEPER].hp * partyMultiplier(this.partySize);
+    this.bossParty = this.arenas[ai].partySize;
+    this.bossMaxHp = ENEMIES[GATEKEEPER].hp * partyMultiplier(this.bossParty);
     this.bossCast = BOSS_CAST_NONE;
     this.bossCastTicks = 0;
     this.volleyDue = this.tick + ticks(VOLLEY_FIRST);
@@ -732,7 +783,7 @@ export class Simulation {
   private startWave(ai: number, n: number): void {
     const st = this.arenas[ai];
     const w = this.map.arenas[ai].waves[n];
-    const counts = [scaleCount(w.blessed, this.partySize), scaleCount(w.choristers, this.partySize), scaleCount(w.cherubs, this.partySize)];
+    const counts = [scaleCount(w.blessed, st.partySize), scaleCount(w.choristers, st.partySize), scaleCount(w.cherubs, st.partySize)];
     st.wave = n;
     st.waveStartTick = this.tick;
     st.waveTotals[n] = counts[0] + counts[1] + counts[2];
@@ -1021,7 +1072,7 @@ export class Simulation {
     // Judgment is interrupted by the boss taking 2 000 damage during it, counted after step 1.
     if (slot === this.bossSlot && this.bossCast === BOSS_CAST_JUDGMENT) {
       this.judgmentDamage += amount;
-      if (this.judgmentDamage >= JUDGMENT_INTERRUPT * partyMultiplier(this.partySize) - 1e-9) this.interruptJudgment();
+      if (this.judgmentDamage >= JUDGMENT_INTERRUPT * partyMultiplier(this.bossParty) - 1e-9) this.interruptJudgment();
     }
     // 2. Bound (M8 §8): a rooted enemy, during the pull too, takes double damage.
     if (this.isRooted(slot)) amount *= BOUND_FACTOR;
@@ -1029,7 +1080,8 @@ export class Simulation {
     this.eHurtTick[slot] = this.tick;
     // 5. Death and kill credit.
     if (this.eHp[slot] <= 0) {
-      if (source >= 0) this.players[source].kills++;
+      const shooter = source >= 0 ? this.slots[source] : undefined;
+      if (shooter) shooter.kills++;
       this.removeEnemy(slot);
     }
   }
@@ -1154,7 +1206,7 @@ export class Simulation {
       p.cdQ = Math.max(0, p.cdQ - TICK_DT);
       p.cdE = Math.max(0, p.cdE - TICK_DT);
       if (p.shield > 0 && this.tick >= p.shieldUntil) p.shield = 0;
-      if (!this.livingTargetable(p)) {
+      if (p.dead) {
         p.fireTimer = Math.max(0, p.fireTimer - TICK_DT);
         continue;
       }
@@ -1579,7 +1631,7 @@ export class Simulation {
     if (hitSlot >= 0) {
       if (owner >= 0) this.explodeCenser(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT, hitSlot);
       else {
-        this.damagePlayer(this.players[hitSlot], this.pDamage[slot]);
+        this.damagePlayer(this.slots[hitSlot]!, this.pDamage[slot]);
         this.removeProjectile(slot);
       }
       return;
@@ -1628,7 +1680,7 @@ export class Simulation {
     if (direct >= 0) this.damageEnemy(direct, damage, owner);
     for (let i = 0; i < hit.length && i < CENSER_SPLASH_MAX; i++) this.damageEnemy(hit[i].s, CENSER_SPLASH_DAMAGE, owner);
     // Souls within 2.5 m count one hit each (M8 §4.2).
-    const shooter = this.players[owner];
+    const shooter = this.slots[owner];
     if (!shooter) return;
     for (const o of this.players) {
       if (o === shooter || !this.hasSoul(o)) continue;
@@ -1656,7 +1708,7 @@ export class Simulation {
     }
     if (this.eTauntUntil[slot] > this.tick) {
       const f = this.fallenIndex();
-      if (f >= 0 && this.livingTargetable(this.players[f])) {
+      if (f >= 0 && this.livingTargetable(this.slots[f])) {
         this.eTarget[slot] = f;
         return;
       }
@@ -1700,9 +1752,9 @@ export class Simulation {
     const ez = this.eyeZ(slot);
     if (this.eTauntUntil[slot] > this.tick) {
       const f = this.fallenIndex();
-      if (f >= 0 && this.livingTargetable(this.players[f])) {
+      if (f >= 0 && this.livingTargetable(this.slots[f])) {
         this.eTarget[slot] = f;
-        this.eLos[slot] = this.bossSees(slot, this.players[f]) ? 1 : 0;
+        this.eLos[slot] = this.bossSees(slot, this.slots[f]) ? 1 : 0;
         return;
       }
     }
@@ -1730,7 +1782,7 @@ export class Simulation {
       return;
     }
     const cur = this.eTarget[slot];
-    if (cur < 0 || !this.livingTargetable(this.players[cur])) this.eTarget[slot] = nearest;
+    if (cur < 0 || !this.livingTargetable(this.slots[cur])) this.eTarget[slot] = nearest;
     this.eLos[slot] = 0;
   }
 
@@ -1742,7 +1794,7 @@ export class Simulation {
       this.eStartX[slot] = this.eX[slot];
       this.eStartY[slot] = this.eY[slot];
       const t = this.eTarget[slot];
-      const targetGone = t >= 0 && !this.livingTargetable(this.players[t]);
+      const targetGone = t >= 0 && !this.livingTargetable(this.slots[t]);
       if (targetGone || slot % RETARGET_TICKS === tick % RETARGET_TICKS) this.retarget(slot);
       const type = this.eType[slot];
       if (type === GATEKEEPER) {
@@ -1782,7 +1834,8 @@ export class Simulation {
   private updateLos(slot: number): void {
     const t = this.eTarget[slot];
     if (t < 0 || slot % LOS_TICKS !== this.tick % LOS_TICKS) return;
-    const p = this.players[t];
+    const p = this.slots[t];
+    if (!p) return;
     this.eLos[slot] = lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eyeZ(slot), p.x, p.y, p.z + PLAYER_HEIGHT / 2) ? 1 : 0;
   }
 
@@ -1800,7 +1853,7 @@ export class Simulation {
     if (tick >= this.summonDue) {
       // Not a cast: silence doesn't stop it.
       const ai = this.eArena[slot];
-      const counts = [scaleCount(SUMMON.blessed, this.partySize), 0, scaleCount(SUMMON.cherubs, this.partySize)];
+      const counts = [scaleCount(SUMMON.blessed, this.bossParty), 0, scaleCount(SUMMON.cherubs, this.bossParty)];
       if (ai >= 0) this.arenas[ai].queue.push({ counts, spawned: [0, 0, 0], wave: -1 });
       this.summonDue += ticks(SUMMON_INTERVAL);
     }
@@ -1837,7 +1890,8 @@ export class Simulation {
 
   /** Orb Volley: 8 orbs at the target's body center, rotated by evenly spread angles from −25° to +25°. */
   private fireVolley(slot: number): void {
-    const p = this.players[this.eTarget[slot]];
+    const p = this.slots[this.eTarget[slot]];
+    if (!p) return;
     const ox = this.eX[slot];
     const oy = this.eY[slot];
     const oz = this.eyeZ(slot);
@@ -1883,7 +1937,8 @@ export class Simulation {
   private casterInRange(slot: number): boolean {
     const t = this.eTarget[slot];
     if (t < 0 || !this.eLos[slot]) return false;
-    const p = this.players[t];
+    const p = this.slots[t];
+    if (!p) return false;
     const def = ENEMIES[this.eType[slot]];
     const range = CASTERS[this.eType[slot]].range;
     return distToCylinder(this.eX[slot], this.eY[slot], this.eZ[slot] + def.height / 2, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) <= range;
@@ -1970,8 +2025,8 @@ export class Simulation {
     let my = 0;
     const rooted = this.tick < this.eRootUntil[slot];
     const holds = type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot));
-    if (t >= 0 && !rooted && !holds) {
-      const p = this.players[t];
+    const p = t >= 0 ? this.slots[t] : undefined;
+    if (p && !rooted && !holds) {
       const s = this.steerOut;
       if (this.steer(slot, this.groundFields[t], p, s)) {
         let step = this.speedOf(slot) * TICK_DT;
@@ -1995,8 +2050,8 @@ export class Simulation {
     let my = 0;
     let strafing = false;
     const rooted = this.tick < this.eRootUntil[slot];
-    if (t >= 0 && !rooted) {
-      const p = this.players[t];
+    const p = t >= 0 ? this.slots[t] : undefined;
+    if (p && !rooted) {
       if (this.casterInRange(slot)) {
         strafing = true;
         const base = Math.atan2(p.y - b.y, p.x - b.x);
@@ -2041,8 +2096,8 @@ export class Simulation {
   private updateMelee(slot: number): void {
     const t = this.eTarget[slot];
     let inRange = false;
-    if (t >= 0) {
-      const p = this.players[t];
+    const p = t >= 0 ? this.slots[t] : undefined;
+    if (p) {
       inRange = Math.hypot(p.x - this.eX[slot], p.y - this.eY[slot]) <= MELEE_RANGE && Math.abs(p.z - this.eZ[slot]) < MELEE_HEIGHT;
     }
     if (!inRange) {
@@ -2052,7 +2107,7 @@ export class Simulation {
     if (this.eMeleeNext[slot] < 0) this.eMeleeNext[slot] = MELEE_FIRST;
     this.eMeleeNext[slot] -= TICK_DT;
     if (this.eMeleeNext[slot] <= 1e-9) {
-      this.damagePlayer(this.players[t], MELEE_DAMAGE);
+      this.damagePlayer(p!, MELEE_DAMAGE);
       this.eMeleeNext[slot] += MELEE_INTERVAL;
     }
     if (this.eState[slot] !== ST_FALLING) this.eState[slot] = ST_ATTACKING;
@@ -2093,7 +2148,8 @@ export class Simulation {
   }
 
   private fireCast(slot: number, c: CasterDef): void {
-    const p = this.players[this.eTarget[slot]];
+    const p = this.slots[this.eTarget[slot]];
+    if (!p) return;
     const def = ENEMIES[this.eType[slot]];
     const ox = this.eX[slot];
     const oy = this.eY[slot];
@@ -2224,7 +2280,7 @@ export class Simulation {
     if (!this.noWaves && !this.bench) {
       for (let i = st.wave + 1; i < waves.length; i++) {
         const w = waves[i];
-        n += scaleCount(w.blessed, this.partySize) + scaleCount(w.choristers, this.partySize) + scaleCount(w.cherubs, this.partySize);
+        n += scaleCount(w.blessed, st.partySize) + scaleCount(w.choristers, st.partySize) + scaleCount(w.cherubs, st.partySize);
       }
     }
     return n;

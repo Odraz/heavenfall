@@ -16,6 +16,8 @@ export const PLAYER_RADIUS = 0.4;
 export const PLAYER_HEIGHT = 1.8;
 export const PLAYER_EYE = 1.6;
 
+/** Player slots in the simulation: a player's index is its player ID (M8 §6.2). */
+export const PLAYER_SLOTS = 4;
 export const MAX_LIVING_ENEMIES = 1500;
 export const ENEMY_SLOTS = 4096;
 export const PROJECTILE_SLOTS = 1024;

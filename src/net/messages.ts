@@ -28,12 +28,18 @@ export type RejectReason = 'bad_password' | 'full' | 'in_progress' | 'version' |
 
 export type CtrlMessage =
   | { type: 'hello'; name: string; password: string; version: string }
-  | { type: 'welcome'; playerId: number; lobby: { dungeonId: string; players: LobbyPlayer[] } }
+  /** `inProgress`: the game is running, so the client waits in the in-progress Lobby (M8 §6.2). */
+  | { type: 'welcome'; playerId: number; lobby: { dungeonId: string; players: LobbyPlayer[] }; inProgress: boolean }
   | { type: 'reject'; reason: RejectReason }
   | { type: 'pickClass'; classId: ClassId }
+  /** Sent on every change, during the game too (M8 §6.2). */
   | { type: 'lobby'; dungeonId: string; players: LobbyPlayer[] }
   | { type: 'start'; dungeonId: string; players: Array<{ id: number; name: string; classId: ClassId }> }
   | { type: 'ready' }
+  /** From the in-progress Lobby: the client enters the game (M8 §6.2). */
+  | { type: 'enterGame' }
+  /** C→H with `text` only; H→all with the sender's `playerId` too (M8 §7). */
+  | { type: 'chat'; text: string; playerId?: number }
   | { type: 'go' }
   | { type: 'event'; event: GameEvent }
   | { type: 'ping' }

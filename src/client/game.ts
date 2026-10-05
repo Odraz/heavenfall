@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, ST_WINDUP } from '../data/enemies';
 import { ABILITIES, WEAPONS } from '../data/weapons';
 import { debugState } from '../debug';
-import type { CtrlMessage, GameEvent } from '../net/messages';
+import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
 import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_MARKED, FLAG_ROOTED, FLAG_SILENCED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
@@ -99,7 +99,7 @@ export interface GameOptions {
   /** The host session when this player is the host (singleplayer included). */
   host: HostSession | null;
   localPlayerId: number;
-  /** Players at `start`, sorted by id. */
+  /** Players at `start`, sorted by id; `setRoster` keeps it current (M8 §6.2). */
   roster: RosterEntry[];
   /** Singleplayer pauses the simulation while the Pause overlay is open (§3); multiplayer shows party frames. */
   singleplayer: boolean;
@@ -109,6 +109,8 @@ export interface GameOptions {
   onResults: (data: ResultsData) => void;
   /** Called when the player clicks `Leave game`, after `leave` was sent. */
   onLeave: () => void;
+  /** Sends a chat message (M8 §7); absent in singleplayer, which has no chat. */
+  onChat?: (text: string) => void;
 }
 
 export class Game {
@@ -116,6 +118,8 @@ export class Game {
   private readonly map: GameMap;
   private readonly params: Params;
   private readonly localId: number;
+  /** The players' names and classes by id, kept current during the game (M8 §6.2). */
+  private roster: RosterEntry[];
   private readonly classId: ClassId;
   private readonly maxHp: number;
   private readonly scene: GameScene;
@@ -166,8 +170,12 @@ export class Game {
   private allyOutOfRange = ALLY_NONE;
   private readonly bob = new ViewBob();
   private readonly souls = new SoulView();
-  /** The local player's index: its spawn and entry cells. */
+  /** The local player's index, its spawn and entry cells: its player ID (M8 §6.2). */
   private readonly entryIndex: number;
+  /** Whether a snapshot has shown the local player yet; one that shows it dead means it joined as a soul. */
+  private seenSelf = false;
+  /** Joined the fight as a soul (M8 §4.5), until revived. */
+  private joinedAsSoul = false;
   /** While dead: the soul's ground point (the feet in snapshots) and own revive progress. */
   private ownGround = 0;
   private ownRevive = 0;
@@ -208,8 +216,9 @@ export class Game {
     this.map = o.map;
     this.params = o.params;
     this.localId = o.localPlayerId;
+    this.roster = o.roster.map((r) => ({ ...r }));
     const me = o.roster.find((r) => r.id === this.localId)!;
-    const index = o.roster.indexOf(me);
+    const index = this.localId;
     this.entryIndex = index;
     this.classId = me.classId;
     this.maxHp = CLASSES[me.classId].hp;
@@ -240,6 +249,7 @@ export class Game {
     this.frames = o.atlas.frames;
     this.particles = new Particles([o.atlas.frames.feather, o.atlas.frames.spark, o.atlas.frames.ember]);
     this.hud = new Hud(o.root, this.classId, !o.singleplayer);
+    this.hud.onChatSend = (text) => o.onChat?.(text);
     this.hud.setHp(this.maxHp, 0, this.maxHp);
     this.hud.setRemaining(null);
     this.hud.setDeath(null);
@@ -288,6 +298,11 @@ export class Game {
     if (this.over || this.params.bench) return;
     if (code === 'Escape') {
       this.openPause();
+      return;
+    }
+    // Enter opens the chat line (M8 §7), bot or not.
+    if ((code === 'Enter' || code === 'NumpadEnter') && this.o.onChat) {
+      this.openChat();
       return;
     }
     if (code === 'KeyH') {
@@ -351,6 +366,8 @@ export class Game {
     this.pausedAt = performance.now();
     debugState.paused = true;
     this.pause.open = true;
+    // Opening Pause closes the chat line and discards its text (M8 §7).
+    this.closeChat();
     this.input.release();
     this.input.enabled = false;
     if (document.pointerLockElement) document.exitPointerLock();
@@ -371,6 +388,39 @@ export class Game {
       this.snaps.shiftArrivals(ms);
     }
     if (!this.over) this.input.enabled = true;
+  }
+
+  /**
+   * The chat line (M8 §7): while it's open every key types into it, so movement, fire and abilities
+   * are released and ignored; pointer lock is kept. Enter sends and closes it.
+   */
+  private openChat(): void {
+    if (this.hud.chatOpen) return;
+    this.input.release();
+    this.input.typing = true;
+    this.hud.openChat(() => {
+      this.input.typing = false;
+    });
+  }
+
+  private closeChat(): void {
+    this.hud.closeChat();
+    this.input.typing = false;
+  }
+
+  /** A chat message from the host, shown above the chat line for 10 s (M8 §7). */
+  chat(name: string, text: string): void {
+    if (!this.disposed) this.hud.addChat(name, text, performance.now());
+  }
+
+  /** The players in the session from a `lobby` message: their names and classes (M8 §6.2). */
+  setRoster(players: LobbyPlayer[]): void {
+    for (const p of players) {
+      if (!p.classId) continue;
+      const r = this.roster.find((q) => q.id === p.id);
+      if (r) Object.assign(r, { name: p.name, classId: p.classId });
+      else this.roster.push({ id: p.id, name: p.name, classId: p.classId });
+    }
   }
 
   /** `Resume`: closes the overlay and requests pointer lock; the click is the required user gesture. */
@@ -461,7 +511,7 @@ export class Game {
   }
 
   private classOf(playerId: number): ClassId | undefined {
-    return this.o.roster.find((r) => r.id === playerId)?.classId;
+    return this.roster.find((r) => r.id === playerId)?.classId;
   }
 
   /** The position and yaw of a player: the local one from local movement, others interpolated. */
@@ -542,10 +592,11 @@ export class Game {
     this.resultData = {
       result: e.result,
       timeMs: e.timeMs,
-      kills: Object.entries(e.kills).map(([id, kills]) => ({ name: this.o.roster.find((r) => r.id === Number(id))?.name ?? `Player ${id}`, kills })),
+      kills: Object.entries(e.kills).map(([id, kills]) => ({ name: this.roster.find((r) => r.id === Number(id))?.name ?? `Player ${id}`, kills })),
     };
     this.hud.showResult(e.result === 'victory' ? 'Victory' : 'Defeat');
     this.hud.closeHints();
+    this.closeChat();
     this.closePause();
     // At the result, pointer lock is released and input stops.
     this.input.release();
@@ -568,14 +619,20 @@ export class Game {
     const me = s.players.find((p) => p.id === this.localId);
     const was = prev?.players.find((p) => p.id === this.localId);
     if (me) {
+      // First seen already dead: joined during a fight, as a soul (M8 §6.2).
+      if (!this.seenSelf && me.dead) this.joinedAsSoul = true;
+      this.seenSelf = true;
       if (me.dead !== this.dead) {
         this.dead = me.dead;
         if (this.dead) this.input.release();
-        this.canvas.classList.toggle('dead', this.dead);
-        // The dead player's screen (M8 §4.5); outside the boss arena, clearing it also brings them back.
+        else this.joinedAsSoul = false;
+        // The dead player's screen (M8 §4.5): a soul that joined gets an ember vignette instead of the
+        // grey; outside the boss arena, clearing it also brings back a player who fell.
+        this.canvas.classList.toggle('dead', this.dead && !this.joinedAsSoul);
         const boss = this.map.arenas[s.arenaIndex]?.boss;
-        if (this.dead) this.hud.setDeath('You have fallen — your party can revive you', boss ? null : 'or you rise when the arena is cleared');
-        else this.hud.setDeath(null);
+        if (!this.dead) this.hud.setDeath(null);
+        else if (this.joinedAsSoul) this.hud.setDeath('Your party must revive you to join the fight', null, true);
+        else this.hud.setDeath('You have fallen — your party can revive you', boss ? null : 'or you rise when the arena is cleared');
       }
       if (this.dead) {
         this.ownGround = me.z;
@@ -649,7 +706,7 @@ export class Game {
       s.players
         .filter((p) => p.id !== this.localId)
         .flatMap((p) => {
-          const r = this.o.roster.find((q) => q.id === p.id);
+          const r = this.roster.find((q) => q.id === p.id);
           return r ? [{ id: p.id, name: r.name, classId: r.classId, hp: p.hp, shield: p.shield, dead: p.dead, revive: p.revive / 255 }] : [];
         }),
     );

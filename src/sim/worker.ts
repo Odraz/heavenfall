@@ -4,7 +4,7 @@
  * (§3): every `ctrl` message to or from the host is handled here.
  */
 import { getDungeon } from '../data/dungeons/index';
-import { Lobby } from '../net/lobby';
+import { cleanChat, Lobby } from '../net/lobby';
 import type { CtrlMessage } from '../net/messages';
 import { decodeInput } from '../net/protocol';
 import { PING_MS } from '../net/peerConfig';
@@ -112,6 +112,8 @@ function host(dungeonId: string, password: string, name: string, godMode: boolea
   localPlayerId = 0;
   send(0, lobby.lobbyMessage());
   heartbeatTimer = setInterval(() => post({ t: 'heartbeat', loading: lobby?.loadingIds() ?? [] }), PING_MS);
+  // Players load at Loading, and later one at a time from the in-progress Lobby (M8 §6.2).
+  loadTimer = setInterval(checkLoadTimeout, LOAD_CHECK_MS);
 }
 
 function broadcastLobby(): void {
@@ -131,7 +133,7 @@ function hello(conn: number, msg: Extract<CtrlMessage, { type: 'hello' }>): void
   playerConn.set(r.playerId, conn);
   post({ t: 'bind', conn, playerId: r.playerId });
   const { dungeonId, players } = lobby.lobbyMessage();
-  send(r.playerId, { type: 'welcome', playerId: r.playerId, lobby: { dungeonId, players } });
+  send(r.playerId, { type: 'welcome', playerId: r.playerId, lobby: { dungeonId, players }, inProgress: r.inProgress });
   broadcastLobby();
 }
 
@@ -142,10 +144,31 @@ function playerCtrl(playerId: number, msg: CtrlMessage): void {
     case 'pickClass':
       if (lobby.pickClass(playerId, msg.classId)) broadcastLobby();
       break;
-    case 'ready':
-      lobby.ready(playerId);
-      maybeGo();
+    case 'ready': {
+      const joiner = lobby.ready(playerId);
+      if (!joiner) maybeGo();
+      // A player from the in-progress Lobby joins the game now (M8 §6.2); `go` goes out before the
+      // simulation's teleport placing them.
+      else if (sim?.addPlayer(joiner)) {
+        send(playerId, { type: 'go' });
+        broadcastLobby();
+      }
       break;
+    }
+    case 'enterGame': {
+      const start = lobby.enterGame(playerId, performance.now());
+      if (start && !sim?.result) {
+        send(playerId, start);
+        broadcastLobby();
+      }
+      break;
+    }
+    case 'chat': {
+      // Trimmed, dropped if empty, cut to 120 characters (M8 §7).
+      const text = cleanChat(msg.text);
+      if (text) send('all', { type: 'chat', playerId, text });
+      break;
+    }
     case 'leave':
       playerGone(playerId);
       break;
@@ -154,8 +177,8 @@ function playerCtrl(playerId: number, msg: CtrlMessage): void {
 
 /**
  * A client left or disconnected (§3, §9.4). In the lobby it frees the slot and class; during Loading
- * it's dropped and the game starts without it; in the game its player is removed. The host leaving
- * ends the session on the main thread instead.
+ * it's dropped and the game starts without it; in the game its player is removed, soul and all. Every
+ * client gets the new roster (M8 §6.2). The host leaving ends the session on the main thread instead.
  */
 function playerGone(playerId: number): void {
   if (!lobby || playerId === 0) return;
@@ -165,11 +188,10 @@ function playerGone(playerId: number): void {
     playerConn.delete(playerId);
     post({ t: 'drop', conn });
   }
-  const wasInLobby = lobby.remove(playerId);
-  if (lobby.phase === 'lobby') {
-    if (wasInLobby) broadcastLobby();
-  } else if (lobby.phase === 'loading') maybeGo();
-  else sim?.disconnect(playerId);
+  if (!lobby.remove(playerId)) return;
+  if (lobby.phase === 'loading') maybeGo();
+  else if (lobby.phase === 'game') sim?.removePlayer(playerId);
+  broadcastLobby();
 }
 
 function startGame(): void {
@@ -177,10 +199,9 @@ function startGame(): void {
   const msg = lobby.start(performance.now());
   if (!msg) return;
   send('all', msg);
-  loadTimer = setInterval(checkLoadTimeout, LOAD_CHECK_MS);
 }
 
-/** A client not ready 20 s after `start` gets `reject { reason: 'load_timeout' }` and is dropped (§3). */
+/** A client not ready 20 s after its `start` gets `reject { reason: 'load_timeout' }` and is dropped (§3). */
 function checkLoadTimeout(): void {
   if (!lobby) return;
   for (const id of lobby.loadTimedOut(performance.now())) {
@@ -192,7 +213,6 @@ function checkLoadTimeout(): void {
 /** When every player still connected is ready, the host sends `go` and the game starts (§3). */
 function maybeGo(): void {
   if (!lobby?.allReady()) return;
-  clearInterval(loadTimer);
   const players = lobby.go();
   send('all', { type: 'go' });
   start(players, lobby.dungeonId, (Math.random() * 2 ** 32) >>> 0, god, false, false, 0);

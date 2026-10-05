@@ -341,3 +341,98 @@ describe('arena countdown (M8 §5)', () => {
     expect(sim.events.some((e) => e.event.type === 'arenaStarted')).toBe(true);
   });
 });
+
+describe('joining in progress (M8 §6.2)', () => {
+  const join = (sim: Simulation, id: number) => sim.addPlayer({ id, name: `P${id}`, classId: (['fallen', 'heretic', 'binder', 'betrayer'] as const)[id] })!;
+  const teleportTo = (sim: Simulation, id: number) => sim.events.filter((e) => e.to === id && e.event.type === 'teleport').map((e) => e.event)[0];
+
+  it('enters a fight as a soul on its entry cell, already floating, with progress 0', () => {
+    const sim = makeSim([wave(10)], 1);
+    enterArena0(sim);
+    sim.events.length = 0;
+    const p = join(sim, 2);
+    expect(p.index).toBe(2);
+    expect([p.dead, p.hp, p.revive]).toEqual([true, 0, 0]);
+    const [c, r] = sim.map.arenas[0].entryCells[2];
+    expect([p.x, p.y, p.z]).toEqual([c + 0.5, r + 0.5, 0]);
+    expect(teleportTo(sim, 2)).toEqual({ type: 'teleport', teleportId: 1, x: c + 0.5, y: r + 0.5, z: 0 });
+    expect(sim.soulBase(p)).toBeCloseTo(1, 6);
+    // No death event: it never died.
+    expect(sim.events.some((e) => e.event.type === 'playerDied')).toBe(false);
+    sim.step();
+    const snap = decodeSnapshot(sim.encodeFor(0)[0])!;
+    expect(snap.players.map((q) => [q.id, q.dead])).toEqual([
+      [0, false],
+      [2, true],
+    ]);
+  });
+
+  it('enters a countdown alive on its entry cell', () => {
+    const sim = makeSim([wave(10)], 1);
+    sim.players[0].x = 9.5;
+    sim.players[0].y = 2.5;
+    sim.step();
+    const p = join(sim, 3);
+    const [c, r] = sim.map.arenas[0].entryCells[3];
+    expect([p.dead, p.x, p.y]).toEqual([false, c + 0.5, r + 0.5]);
+  });
+
+  it('otherwise enters alive on the living player with the lowest ID', () => {
+    const sim = makeSim([wave(10)], 2);
+    sim.players[0].dead = true;
+    sim.players[1].x = 3.5;
+    sim.players[1].y = 3.5;
+    const p = join(sim, 3);
+    expect([p.dead, p.x, p.y]).toEqual([false, 3.5, 3.5]);
+  });
+
+  it('with no living player, enters on its entry cell of the next arena', () => {
+    const sim = makeSim([wave(1)], 1);
+    enterArena0(sim);
+    for (let i = 0; i < 90 && sim.arenas[0].phase !== PHASE_CLEARED; i++) {
+      sim.step();
+      sim.killAll();
+    }
+    expect(sim.arenas[0].phase).toBe(PHASE_CLEARED);
+    sim.players[0].dead = true;
+    const p = join(sim, 1);
+    const [c, r] = sim.map.arenas[1].entryCells[1];
+    expect([p.dead, p.x, p.y]).toEqual([false, c + 0.5, r + 0.5]);
+  });
+
+  it('a player who leaves is removed with their soul', () => {
+    const sim = makeSim([wave(10)], 2);
+    enterArena0(sim);
+    const p = join(sim, 2);
+    sim.removePlayer(2);
+    expect(sim.players.map((q) => q.id)).toEqual([0, 1]);
+    expect(sim.slots[2]).toBeUndefined();
+    expect(p.connected).toBe(false);
+    sim.step();
+    expect(decodeSnapshot(sim.encodeFor(0)[0])!.players.map((q) => q.id)).toEqual([0, 1]);
+    // The slot can be taken again; kills don't carry over.
+    expect(join(sim, 2).kills).toBe(0);
+  });
+});
+
+describe('party-size scaling at the seal (M8 §6.3)', () => {
+  it('counts the players in the game at the seal, not at go', () => {
+    const sim = makeSim([wave(25, 3)], 1);
+    sim.addPlayer({ id: 1, name: 'B', classId: 'heretic' });
+    enterArena0(sim);
+    // Two players at the seal: ceil(25 × 0.6) + ceil(3 × 0.6) = 15 + 2.
+    expect(sim.arenas[0].partySize).toBe(2);
+    expect(sim.enemiesRemaining()).toBe(17);
+  });
+
+  it("isn't changed by a join or a leave after the seal", () => {
+    const sim = makeSim([wave(25, 3), wave(25, 3)], 1);
+    enterArena0(sim);
+    sim.addPlayer({ id: 1, name: 'B', classId: 'heretic' });
+    sim.addPlayer({ id: 2, name: 'C', classId: 'binder' });
+    sim.removePlayer(0);
+    expect(sim.arenas[0].partySize).toBe(1);
+    // Both waves at 0.4: (10 + 2) × 2.
+    expect(sim.enemiesRemaining()).toBe(24);
+  });
+});

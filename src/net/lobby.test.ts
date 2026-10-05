@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GAME_ID_ALPHABET, normalizeGameId, randomGameId } from './gameId';
-import { cleanName, LOAD_TIMEOUT_MS, Lobby } from './lobby';
+import { cleanChat, cleanName, LOAD_TIMEOUT_MS, Lobby } from './lobby';
 
 const V = '0.1.0-abc1234';
 
@@ -11,11 +11,11 @@ function lobby(password = 'pw'): Lobby {
 describe('lobby', () => {
   it('gives the host id 0 and each client the lowest free id from 1 to 3', () => {
     const l = lobby();
-    expect(l.join('B', 'pw', V)).toEqual({ ok: true, playerId: 1 });
-    expect(l.join('C', 'pw', V)).toEqual({ ok: true, playerId: 2 });
-    expect(l.join('D', 'pw', V)).toEqual({ ok: true, playerId: 3 });
+    expect(l.join('B', 'pw', V)).toEqual({ ok: true, playerId: 1, inProgress: false });
+    expect(l.join('C', 'pw', V)).toEqual({ ok: true, playerId: 2, inProgress: false });
+    expect(l.join('D', 'pw', V)).toEqual({ ok: true, playerId: 3, inProgress: false });
     l.remove(2);
-    expect(l.join('E', 'pw', V)).toEqual({ ok: true, playerId: 2 });
+    expect(l.join('E', 'pw', V)).toEqual({ ok: true, playerId: 2, inProgress: false });
     const msg = l.lobbyMessage();
     expect(msg.players.map((p) => [p.id, p.name, p.isHost])).toEqual([
       [0, 'Host', true],
@@ -35,8 +35,8 @@ describe('lobby', () => {
     const l = lobby();
     expect(l.join('B', 'x', V)).toEqual({ ok: false, reason: 'bad_password' });
     expect(l.join('B', '', V)).toEqual({ ok: false, reason: 'bad_password' });
-    expect(l.join('B', 'pw', V)).toEqual({ ok: true, playerId: 1 });
-    expect(lobby('').join('B', '', V)).toEqual({ ok: true, playerId: 1 });
+    expect(l.join('B', 'pw', V)).toEqual({ ok: true, playerId: 1, inProgress: false });
+    expect(lobby('').join('B', '', V)).toEqual({ ok: true, playerId: 1, inProgress: false });
   });
 
   it('rejects a version mismatch before anything else', () => {
@@ -45,11 +45,79 @@ describe('lobby', () => {
     expect(l.join('B', 'pw', undefined)).toEqual({ ok: false, reason: 'version' });
   });
 
-  it('rejects joining once the game has started', () => {
+  it('rejects joining during Loading, but accepts it in the game, in progress (M8 §6.2)', () => {
     const l = lobby();
     l.pickClass(0, 'fallen');
     expect(l.start(0)).not.toBeNull();
+    // Loading: in_progress, checked before the password.
+    expect(l.join('B', 'x', V)).toEqual({ ok: false, reason: 'in_progress' });
     expect(l.join('B', 'pw', V)).toEqual({ ok: false, reason: 'in_progress' });
+    l.ready(0);
+    l.go();
+    expect(l.join('B', 'x', V)).toEqual({ ok: false, reason: 'bad_password' });
+    expect(l.join('B', 'pw', V)).toEqual({ ok: true, playerId: 1, inProgress: true });
+    expect(l.join('C', 'pw', V)).toEqual({ ok: true, playerId: 2, inProgress: true });
+    expect(l.join('D', 'pw', V)).toEqual({ ok: true, playerId: 3, inProgress: true });
+    // Still full, and the version is checked first.
+    expect(l.join('E', 'pw', V)).toEqual({ ok: false, reason: 'full' });
+    expect(l.join('E', 'pw', 'old')).toEqual({ ok: false, reason: 'version' });
+  });
+
+  it('lets a joiner pick a free class, then enterGame → start → ready, while the game goes on', () => {
+    const l = lobby();
+    l.join('B', 'pw', V);
+    l.pickClass(0, 'fallen');
+    l.pickClass(1, 'heretic');
+    l.start(0);
+    l.ready(0);
+    l.ready(1);
+    expect(l.go()).toEqual([
+      { id: 0, name: 'Host', classId: 'fallen' },
+      { id: 1, name: 'B', classId: 'heretic' },
+    ]);
+    // Players in the game can't switch classes any more.
+    expect(l.pickClass(1, 'binder')).toBe(false);
+    l.join('C', 'pw', V);
+    // No class yet: can't enter.
+    expect(l.enterGame(2, 1000)).toBeNull();
+    expect(l.pickClass(2, 'heretic')).toBe(false);
+    expect(l.pickClass(2, 'betrayer')).toBe(true);
+    expect(l.lobbyMessage().players.map((p) => [p.id, p.classId])).toEqual([
+      [0, 'fallen'],
+      [1, 'heretic'],
+      [2, 'betrayer'],
+    ]);
+    const start = l.enterGame(2, 1000)!;
+    expect(start).toEqual({
+      type: 'start',
+      dungeonId: 'pearly-gates',
+      players: [
+        { id: 0, name: 'Host', classId: 'fallen' },
+        { id: 1, name: 'B', classId: 'heretic' },
+        { id: 2, name: 'C', classId: 'betrayer' },
+      ],
+    });
+    // Loading: no second start, no class change, and the heartbeat spares it.
+    expect(l.enterGame(2, 1000)).toBeNull();
+    expect(l.pickClass(2, 'binder')).toBe(false);
+    expect(l.loadingIds()).toEqual([2]);
+    expect(l.ready(1)).toBeNull();
+    expect(l.ready(2)).toEqual({ id: 2, name: 'C', classId: 'betrayer' });
+    expect(l.loadingIds()).toEqual([]);
+    expect(l.ready(2)).toBeNull();
+  });
+
+  it('times out a joiner still loading 20 s after its own start', () => {
+    const l = lobby();
+    l.pickClass(0, 'fallen');
+    l.start(0);
+    l.ready(0);
+    l.go();
+    l.join('B', 'pw', V);
+    l.pickClass(1, 'binder');
+    l.enterGame(1, 5000);
+    expect(l.loadTimedOut(5000 + LOAD_TIMEOUT_MS - 1)).toEqual([]);
+    expect(l.loadTimedOut(5000 + LOAD_TIMEOUT_MS)).toEqual([1]);
   });
 
   it('lets each class be taken by only one player, and frees it when the player leaves', () => {
@@ -97,14 +165,10 @@ describe('lobby', () => {
     l.ready(0);
     l.ready(2);
     expect(l.allReady()).toBe(false);
-    // Player 1 leaves during Loading: dropped, and the game starts without it, keeping the indices.
+    // Player 1 leaves during Loading: removed, and the game starts without it (M8 §6.2).
     l.remove(1);
     expect(l.allReady()).toBe(true);
-    expect(l.go().map((p) => [p.id, p.connected])).toEqual([
-      [0, true],
-      [1, false],
-      [2, true],
-    ]);
+    expect(l.go().map((p) => p.id)).toEqual([0, 2]);
   });
 
   it('times out clients (not the host) still loading 20 s after start', () => {
@@ -125,6 +189,17 @@ describe('lobby', () => {
     expect(cleanName('abcdefghijklmnopqrstuvwxyz')).toBe('abcdefghijklmnop');
     expect(cleanName('   ')).toBe('Player');
     expect(cleanName(42)).toBe('Player');
+  });
+});
+
+describe('chat', () => {
+  it('trims, drops empty messages and cuts to 120 characters (M8 §7)', () => {
+    expect(cleanChat('  hello  ')).toBe('hello');
+    expect(cleanChat('   ')).toBeNull();
+    expect(cleanChat('')).toBeNull();
+    expect(cleanChat(42)).toBeNull();
+    expect(cleanChat('x'.repeat(200))).toBe('x'.repeat(120));
+    expect(cleanChat('<b>hi</b>')).toBe('<b>hi</b>');
   });
 });
 
