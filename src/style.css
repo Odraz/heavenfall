@@ -167,52 +167,67 @@ body {
   background: radial-gradient(ellipse at center, transparent 50%, rgba(60, 150, 240, 0.95) 100%);
 }
 
+/* Hit and kill markers (M8 §3.2): four ticks on the diagonals, starting 7 px from the center. */
 .marker {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 34px;
-  height: 34px;
-  margin: -17px 0 0 -17px;
+  width: 0;
+  height: 0;
   opacity: 0;
 }
 
-.marker::before,
-.marker::after {
-  content: '';
+.marker-tick {
   position: absolute;
-  left: 15px;
+  left: -1px;
   top: 0;
-  width: 4px;
-  height: 34px;
-  border-radius: 2px;
-  background: currentColor;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  width: 2px;
+  height: 6px;
+  transform-origin: 1px 0;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
 }
 
-.marker::before {
-  transform: rotate(45deg);
+.marker-kill .marker-tick {
+  height: 9px;
+  background: #ff7a3a;
 }
 
-.marker::after {
-  transform: rotate(-45deg);
+/* The ally target's chevron (M8 §3.5), projected above the ally's head and drawn over everything. */
+.ally-chevron {
+  position: absolute;
+  left: -9px;
+  top: -13px;
+  width: 18px;
+  height: 13px;
 }
 
-.marker-hit {
-  color: #fff;
+.ally-chevron svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-.marker-kill {
-  color: #e8261a;
-  width: 44px;
-  height: 44px;
-  margin: -22px 0 0 -22px;
+.chevron-outline,
+.chevron-fill {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.marker-kill::before,
-.marker-kill::after {
-  left: 20px;
-  height: 44px;
+.chevron-outline {
+  stroke: var(--soot);
+  stroke-width: 5.5;
+}
+
+.chevron-fill {
+  stroke: var(--gold);
+  stroke-width: 3;
+}
+
+.ally-chevron.grey .chevron-fill {
+  stroke: #9a9590;
 }
 
 .hp {
@@ -400,11 +415,13 @@ body {
   background-repeat: no-repeat;
 }
 
+/* Behind the weapon frame, blended as light (M8 §3.3). */
 .muzzle-flash {
   position: absolute;
-  width: 10vh;
+  width: 16vh;
   translate: -50% -50%;
   opacity: 0;
+  mix-blend-mode: screen;
 }
 
 .abilities {

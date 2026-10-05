@@ -55,6 +55,9 @@ export function button(label: string, parent: HTMLElement, onClick: () => void, 
 export interface TitleActions {
   /** The message line, empty unless set by a return to Title; the next button press clears it. */
   message: string;
+  /** The game ID of an invite link (M8 §6.1): Title offers `Join game <ID>`. */
+  joinId: string | null;
+  onJoinInvite: (name: string) => void;
   onSingleplayer: (name: string) => void;
   onMultiplayer: (name: string) => void;
 }
@@ -82,6 +85,14 @@ export function titleScreen(a: TitleActions): HTMLElement {
   const pressed = (): void => {
     message.textContent = '';
   };
+  // An invite link adds `Join game <ID>` above `Singleplayer`.
+  const invite = a.joinId
+    ? button(`Join game ${a.joinId}`, buttons, () => {
+        pressed();
+        const name = validName(input.value);
+        if (name) a.onJoinInvite(name);
+      })
+    : null;
   const single = button('Singleplayer', buttons, () => {
     pressed();
     const name = validName(input.value);
@@ -93,9 +104,10 @@ export function titleScreen(a: TitleActions): HTMLElement {
     if (name) a.onMultiplayer(name);
   });
 
-  // Both are disabled while the name is empty (§3).
+  // Every button is disabled while the name is empty (§3).
   const update = (): void => {
     single.disabled = multi.disabled = validName(input.value) === null;
+    if (invite) invite.disabled = single.disabled;
   };
   input.addEventListener('input', () => {
     saveName(input.value);

@@ -1,6 +1,7 @@
 /** The Multiplayer, Host Setup, Join and Lobby screens (§3). */
 import { CLASS_IDS, CLASSES, type ClassId } from '../data/classes';
 import { GAME_ID_LENGTH, normalizeGameId } from '../net/gameId';
+import { inviteLink } from '../net/invite';
 import { PASSWORD_MAX } from '../net/lobby';
 import type { LobbyPlayer } from '../net/messages';
 import { button, classCard, dungeonPicker, el, MENU_DUNGEONS } from './menus';
@@ -73,12 +74,14 @@ export interface JoinActions {
   onBack: () => void;
 }
 
-export function joinScreen(a: JoinActions): FormScreen {
+/** The Join screen; an invite link fills in the game ID and focuses the password (M8 §6.1). */
+export function joinScreen(a: JoinActions, prefillId: string | null = null): FormScreen {
   const screen = el('div', 'screen menu form-screen');
   el('h2', 'screen-title', screen, 'Join game');
   const panel = el('div', 'panel', screen);
   const gameId = textField(panel, 'Game ID', 'gameId', GAME_ID_LENGTH);
   gameId.classList.add('game-id-input');
+  if (prefillId) gameId.value = prefillId;
   const password = textField(panel, 'Password', 'password', PASSWORD_MAX);
   const status = el('div', 'message', panel);
   const buttons = el('div', 'buttons', panel);
@@ -103,7 +106,7 @@ export function joinScreen(a: JoinActions): FormScreen {
     });
   }
   update();
-  queueMicrotask(() => gameId.focus());
+  queueMicrotask(() => (prefillId ? password : gameId).focus());
   return {
     el: screen,
     setStatus: (text, b) => {
@@ -144,18 +147,19 @@ export function lobbyScreen(a: LobbyActions): LobbyView {
     const box = el('div', 'game-id-box', row);
     el('div', 'field-label', box, 'Game ID');
     el('div', 'game-id', box, a.gameId);
-    const copy = button('Copy', row, () => {
+    // The host copies an invite link; the ID stays shown large, for typing (M8 §6.1).
+    const copy = button('Copy invite link', row, () => {
       const done = (text: string): void => {
         copy.textContent = text;
-        setTimeout(() => (copy.textContent = 'Copy'), 1500);
+        setTimeout(() => (copy.textContent = 'Copy invite link'), 1500);
       };
-      navigator.clipboard?.writeText(a.gameId!).then(
+      navigator.clipboard?.writeText(inviteLink(window.location.href, a.gameId!)).then(
         () => done('Copied'),
         () => done('Copy failed'),
       );
     });
     copy.classList.add('secondary');
-    el('div', 'field-hint', panel, 'Send this ID (and the password, if any) to your friends.');
+    el('div', 'field-hint', panel, 'Send the invite link (and the password, if any) to your friends.');
   }
   const dungeon = el('div', 'lobby-dungeon', panel);
 

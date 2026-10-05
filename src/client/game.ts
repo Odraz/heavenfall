@@ -3,7 +3,7 @@ import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
 import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, ST_WINDUP } from '../data/enemies';
-import { ABILITIES, ALLY_TARGET_ANGLE, WEAPONS } from '../data/weapons';
+import { ABILITIES, WEAPONS } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent } from '../net/messages';
 import type { NetStats } from '../net/netStats';
@@ -11,10 +11,10 @@ import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_MARKED, FLAG_ROOTED, FLAG_SILEN
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
 import { aimDir, rayCylinder } from '../sim/combat';
-import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, PLAYER_RADIUS, TICK_DT, TICK_MS } from '../sim/constants';
-import { lineOfSight, raycastTerrain } from '../sim/los';
+import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, TICK_DT, TICK_MS } from '../sim/constants';
+import { raycastTerrain } from '../sim/los';
 import { doorsClosedFor, setArenaDoors, type GameMap } from '../sim/map';
-import { distToCylinder, groundHeight } from '../sim/movement';
+import { groundHeight } from '../sim/movement';
 import { BOSS_CAST_JUDGMENT, PROJ_CENSER } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
@@ -33,7 +33,9 @@ import { FpsCounter } from './fps';
 import type { HostSession } from './hostSession';
 import { Hud } from './hud';
 import { Input, MOUSE_SENSITIVITY } from './input';
-import { LocalPlayer, wasdDirection } from './localPlayer';
+import { pickAllyTarget } from './allyTarget';
+import { ViewBob } from './bob';
+import { LocalPlayer, MAX_FRAME_DT, wasdDirection } from './localPlayer';
 import { PartyFrames } from './partyFrames';
 import { PlayerAnimator } from './playerAnim';
 import { SnapshotBuffer } from './snapshots';
@@ -54,6 +56,8 @@ const GLOW_ALLY: Glow = { r: 1, g: 0.8, b: 0.2, a: 0.55 };
 /** Judgment: the glow sphere around the Gatekeeper grows from this radius to the next over the cast. */
 const JUDGMENT_GLOW_R0 = 3;
 const JUDGMENT_GLOW_R1 = 9;
+/** The ally chevron's tip sits this high above the ally's feet, just over the head. */
+const CHEVRON_HEIGHT = 2.15;
 
 export interface RosterEntry {
   id: number;
@@ -138,6 +142,9 @@ export class Game {
   /** Local timer for movement abilities (§9.3): performance.now() when it's ready again. */
   private localEReadyAt = 0;
   private allyTargetId = ALLY_NONE;
+  /** With no ally target, an ally in the aim but out of range, for the grey chevron. */
+  private allyOutOfRange = ALLY_NONE;
+  private readonly bob = new ViewBob();
   private doorState: boolean[];
   /** Smoothed Cherub heights per slot (§9.4). */
   private readonly cherubZ = new Float32Array(ENEMY_SLOTS);
@@ -579,35 +586,42 @@ export class Game {
   }
 
   /**
-   * Ally target (§5.3): the living ally with the smallest angle to the aim, at most 10°, within the
-   * E ability's range and in line of sight. Only the Fallen and the Heretic Saint use one.
+   * Ally target (M8 §3.5): acquired at 15°, kept at 25°, within the E ability's range and in line of
+   * sight; and the out-of-range ally for the grey chevron. Only the Fallen and the Heretic Saint use one.
    */
-  private computeAllyTarget(): number {
+  private computeAllyTarget(): void {
     const range = ABILITIES[this.classId].E.allyRange;
-    if (range <= 0 || this.dead) return ALLY_NONE;
-    const p = this.player;
-    const ex = p.body.x;
-    const ey = p.body.y;
-    const ez = p.body.z + PLAYER_EYE;
-    const [ax, ay, az] = aimDir(p.yaw, p.pitch);
-    let best = ALLY_NONE;
-    let bestAngle = ALLY_TARGET_ANGLE + 1e-9;
-    for (const q of this.snaps.playersOut) {
-      if (q.id === this.localId || q.dead) continue;
-      const cz = q.z + PLAYER_HEIGHT / 2;
-      if (distToCylinder(ex, ey, ez, q.x, q.y, q.z, PLAYER_RADIUS, PLAYER_HEIGHT) > range) continue;
-      const dx = q.x - ex;
-      const dy = q.y - ey;
-      const dz = cz - ez;
-      const len = Math.hypot(dx, dy, dz);
-      if (len < 1e-6) continue;
-      const angle = Math.acos(Math.max(-1, Math.min(1, (dx * ax + dy * ay + dz * az) / len)));
-      if (angle > bestAngle) continue;
-      if (!lineOfSight(this.map, ex, ey, ez, q.x, q.y, cz)) continue;
-      best = q.id;
-      bestAngle = angle;
+    if (range <= 0 || this.dead) {
+      this.allyTargetId = ALLY_NONE;
+      this.allyOutOfRange = ALLY_NONE;
+      return;
     }
-    return best;
+    const p = this.player;
+    const [ax, ay, az] = aimDir(p.yaw, p.pitch);
+    const others = this.snaps.playersOut.filter((q) => q.id !== this.localId);
+    const r = pickAllyTarget(this.map, p.body.x, p.body.y, p.body.z + PLAYER_EYE, ax, ay, az, others, range, this.allyTargetId);
+    this.allyTargetId = r.target;
+    this.allyOutOfRange = r.outOfRange;
+  }
+
+  /** The gold chevron over the ally target, or the grey one over an ally out of range (M8 §3.5). */
+  private placeChevron(): void {
+    const id = this.allyTargetId !== ALLY_NONE ? this.allyTargetId : this.allyOutOfRange;
+    const q = id === ALLY_NONE ? undefined : this.snaps.playersOut.find((o) => o.id === id);
+    const at = q ? this.project(q.x, q.y, q.z + CHEVRON_HEIGHT) : null;
+    if (!at) this.hud.setChevron(null);
+    else this.hud.setChevron(id === this.allyTargetId ? 'gold' : 'grey', at[0], at[1]);
+  }
+
+  private readonly projScratch = new THREE.Vector3();
+
+  /** A world point (simulation coordinates) on screen in CSS pixels, or null if behind the camera. */
+  private project(x: number, y: number, z: number): [number, number] | null {
+    const v = this.projScratch.set(x, z, y).applyMatrix4(this.scene.camera.matrixWorldInverse);
+    // The camera looks along its local -z.
+    if (v.z > -this.scene.camera.near) return null;
+    v.applyMatrix4(this.scene.camera.projectionMatrix);
+    return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
   }
 
   /**
@@ -670,7 +684,7 @@ export class Game {
     // Enemies at the render time, and their derived heights.
     const ents = this.snaps.interpolate(simNow);
     const enemyZ = this.enemyHeights(ents, dt);
-    this.allyTargetId = this.computeAllyTarget();
+    this.computeAllyTarget();
     this.party?.setAllyTarget(this.allyTargetId);
 
     let mx = 0;
@@ -730,7 +744,11 @@ export class Game {
     }
     this.input.jumpQueued = false;
     this.fireHeld = fire && !this.dead && !this.over;
+    const bx = p.body.x;
+    const by = p.body.y;
     if (!this.dead && !this.bench && !this.over) p.update(this.map, dt, mx, my, wantJump);
+    this.bob.update(Math.min(dt, MAX_FRAME_DT), Math.hypot(p.body.x - bx, p.body.y - by), p.speed, p.body.grounded && !p.leaping, this.dead);
+    this.hud.setBob(this.bob.weaponX, this.bob.weaponY);
 
     // The cosmetic fire timer, at 30 Hz like the host's.
     this.fireAcc = Math.min(this.fireAcc + dt, 5 * TICK_DT);
@@ -766,9 +784,11 @@ export class Game {
     this.vfx.update(now, this.scene.camera.position);
 
     const b = p.body;
-    this.scene.setView(b.x, b.y, b.z, p.yaw, p.pitch);
+    // The bob only lowers the drawn view; aiming and input use the unbobbed eye (M8 §3.4).
+    this.scene.setView(b.x, b.y, b.z, p.yaw, p.pitch, PLAYER_EYE - this.bob.eyeDrop);
     this.drawBillboards(now, ents, enemyZ);
     this.scene.render();
+    this.placeChevron();
 
     this.hud.setCooldowns(this.displayedCooldown('Q', simNow), ABILITIES[this.classId].Q.cooldown, this.displayedCooldown('E', simNow), ABILITIES[this.classId].E.cooldown);
     this.hud.update(now);

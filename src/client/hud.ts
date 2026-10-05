@@ -6,8 +6,11 @@ import { fireFrame, weaponAtlas, type WeaponManifest } from '../render/weaponAtl
 
 const RECOIL_MS = 120;
 const FLASH_MS = 60;
-const HIT_MARKER_MS = 100;
-const KILL_MARKER_MS = 150;
+const HIT_MARKER_MS = 80;
+const KILL_MARKER_MS = 120;
+/** The hit and kill markers' ticks, in degrees around the crosshair (M8 §3.2). */
+const MARKER_TICKS = [45, 135, 225, 315];
+const SVG_NS = 'http://www.w3.org/2000/svg';
 const VIGNETTE_MS = 300;
 const SHAKE_MS = 150;
 const JUDGMENT_TEXT_MS = 3000;
@@ -55,6 +58,13 @@ export class Hud {
   private readonly bossCastFill: HTMLDivElement;
   private readonly judgment: HTMLDivElement;
   private readonly judgmentFlash: HTMLDivElement;
+  /** The ally target's chevron (M8 §3.5): gold over the target, grey over an ally out of range. */
+  private readonly chevron: HTMLDivElement;
+  /** Weapon bob offset in vh (M8 §3.4). */
+  private bobX = 0;
+  private bobY = 0;
+  private flashRotate = 0;
+  private flashScale = 1;
   private judgmentUntil = 0;
   private shotAt = -Infinity;
   private hitAt = -Infinity;
@@ -71,8 +81,19 @@ export class Hud {
       blue: el('div', 'vignette vignette-blue', this.root),
     };
     el('div', 'crosshair', this.root);
-    this.hitMarker = el('div', 'marker marker-hit', this.root);
-    this.killMarker = el('div', 'marker marker-kill', this.root);
+    this.hitMarker = this.marker('marker-hit');
+    this.killMarker = this.marker('marker-kill');
+    this.chevron = el('div', 'ally-chevron', this.root);
+    this.chevron.hidden = true;
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 18 13');
+    for (const cls of ['chevron-outline', 'chevron-fill']) {
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('d', 'M2.5 2.5 L9 10 L15.5 2.5');
+      path.setAttribute('class', cls);
+      svg.appendChild(path);
+    }
+    this.chevron.appendChild(svg);
 
     const hp = el('div', 'hp', this.root);
     this.hpBar = el('div', 'hp-bar', hp);
@@ -87,14 +108,16 @@ export class Hud {
     const vh = (px: number) => `${(px / m.frameH) * 50}vh`;
     this.weaponManifest = m;
     this.fireIntervalMs = WEAPONS[classId].interval * 1000;
+    // The muzzle flash is drawn behind the weapon frame, so the barrel overlaps it, and outside the
+    // weapon's box so its screen blend reaches the game view (M8 §3.3).
+    this.flash = el('img', 'muzzle-flash', this.root);
+    this.flash.src = spriteUrl('muzzle-flash');
     this.weaponBox = el('div', 'weapon', this.root);
     this.weaponBox.style.left = `calc(50% - ${vh(m.centerX)})`;
     this.weaponBox.style.width = vh(m.frameW);
     this.weapon = el('div', 'weapon-sprite', this.weaponBox);
     this.weapon.style.backgroundImage = `url(${wa.url})`;
     this.weapon.style.backgroundSize = `${vh(m.width)} ${vh(m.height)}`;
-    this.flash = el('img', 'muzzle-flash', this.weaponBox);
-    this.flash.src = spriteUrl('muzzle-flash');
     this.setWeaponFrame(-1);
 
     const abil = el('div', 'abilities', this.root);
@@ -180,8 +203,32 @@ export class Hud {
     this.judgmentUntil = now + ms;
   }
 
+  /** Hit and kill markers: four short ticks on the diagonals around the crosshair (M8 §3.2). */
+  private marker(className: string): HTMLDivElement {
+    const m = el('div', `marker ${className}`, this.root);
+    for (const a of MARKER_TICKS) el('div', 'marker-tick', m).style.transform = `rotate(${a}deg) translateY(7px)`;
+    return m;
+  }
+
+  /** Each shot's muzzle flash gets a random rotation and scale (M8 §3.3). */
   shot(now: number): void {
     this.shotAt = now;
+    this.flashRotate = Math.random() * 360;
+    this.flashScale = 0.8 + Math.random() * 0.4;
+  }
+
+  /** The weapon frame's bob offset in % of the screen height (M8 §3.4). */
+  setBob(x: number, y: number): void {
+    this.bobX = x;
+    this.bobY = y;
+  }
+
+  /** The ally chevron at a screen position in pixels, or hidden for null (M8 §3.5). */
+  setChevron(kind: 'gold' | 'grey' | null, x = 0, y = 0): void {
+    this.chevron.hidden = kind === null;
+    if (kind === null) return;
+    this.chevron.classList.toggle('grey', kind === 'grey');
+    this.chevron.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
   }
 
   hit(now: number): void {
@@ -232,18 +279,24 @@ export class Hud {
     const [x, y, mx, my] = f < 0 ? m.idle[0] : m.fire[f];
     const vh = (px: number) => `${(px / m.frameH) * 50}vh`;
     this.weapon.style.backgroundPosition = `-${vh(x)} -${vh(y)}`;
-    this.flash.style.left = vh(mx);
-    this.flash.style.top = vh(my);
+    // The weapon frame's top is at half the screen height.
+    this.flash.style.left = `calc(50% - ${vh(m.centerX)} + ${vh(mx)})`;
+    this.flash.style.top = `calc(50vh + ${vh(my)})`;
   }
 
   update(now: number): void {
-    // Recoil: 8% of the screen height, recovering over 120 ms.
+    // Recoil: 8% of the screen height, recovering over 120 ms; plus the bob.
     const r = Math.max(0, 1 - (now - this.shotAt) / RECOIL_MS);
-    this.weaponBox.style.transform = `translateY(${r * 8}vh)`;
+    const offset = `translate(${this.bobX.toFixed(3)}vh, ${(r * 8 + this.bobY).toFixed(3)}vh)`;
+    this.weaponBox.style.transform = offset;
     this.setWeaponFrame(fireFrame(now - this.shotAt, this.fireIntervalMs));
-    this.flash.style.opacity = now - this.shotAt < FLASH_MS ? '1' : '0';
-    this.hitMarker.style.opacity = now - this.hitAt < HIT_MARKER_MS ? '1' : '0';
-    this.killMarker.style.opacity = now - this.killAt < KILL_MARKER_MS ? '1' : '0';
+    const flashing = now - this.shotAt < FLASH_MS;
+    this.flash.style.opacity = flashing ? '0.9' : '0';
+    if (flashing) this.flash.style.transform = `${offset} rotate(${this.flashRotate.toFixed(1)}deg) scale(${this.flashScale.toFixed(3)})`;
+    // The kill marker replaces the hit marker while shown.
+    const killing = now - this.killAt < KILL_MARKER_MS;
+    this.hitMarker.style.opacity = !killing && now - this.hitAt < HIT_MARKER_MS ? '1' : '0';
+    this.killMarker.style.opacity = killing ? '1' : '0';
     const shaking = now - this.shakeAt < SHAKE_MS;
     this.hpBar.style.transform = shaking ? `translate(${(Math.random() - 0.5) * 8}px, ${(Math.random() - 0.5) * 6}px)` : '';
     if (now > this.centerUntil) this.center.hidden = true;

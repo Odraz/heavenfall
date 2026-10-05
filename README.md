@@ -48,6 +48,8 @@ These work on the dev server (port 5173), the preview server (port 4173) and the
 | http://localhost:5173/?dev=1&god=1 | God mode: every player is invulnerable. |
 | http://localhost:5173/?dev=1&bot=1 | A bot plays the local player. |
 | http://localhost:5173/?bench=1 | The benchmark: 1 500 enemies for 30 s, then shows FPS and simulation time. |
+| http://localhost:5173/?join=ABC234 | An invite link: Title offers `Join game ABC234`, which opens the Join screen with the ID filled in. |
+| http://localhost:5173/?bot=1&autojoin=1&join=ABC234&class=heretic&name=Bot2 | Bot auto-join, for testing co-op abilities alone: joins open game `ABC234` without the menus and picks `class` if it's free (otherwise the first free class). Host an open game (no password), then open this in up to three tabs. |
 
 In game: mouse to look (click to capture the pointer), WASD to move, Space to jump, left mouse to fire, Q and E for abilities, Esc to pause, F3 for the debug overlay. With `dev=1`, K kills every enemy and G toggles invulnerability.
 
@@ -55,8 +57,8 @@ In game: mouse to look (click to capture the pointer), WASD to move, Space to ju
 
 Up to 4 players, each in their own browser, connect directly to the host's browser (WebRTC through [PeerJS](https://peerjs.com/), with the public PeerJS server only to find each other). Everyone must open the same build of the game, so play on the same deployed URL.
 
-1. The host clicks `Multiplayer` → `Host game`, optionally sets a password, and clicks `Create`. The Lobby shows a 6-character game ID.
-2. Each friend clicks `Multiplayer` → `Join game`, types the game ID and the password, and clicks `Join`.
+1. The host clicks `Multiplayer` → `Host game`, optionally sets a password, and clicks `Create`. The Lobby shows a 6-character game ID; `Copy invite link` copies a link to the game.
+2. Each friend opens the invite link, enters a name, clicks `Join game <ID>`, types the password (if any) and clicks `Join`. Without the link: `Multiplayer` → `Join game`, then type the game ID and the password.
 3. Everyone picks a different class; the host clicks `Start`.
 
 To try it on one computer, open the game in two browser windows. Players whose networks can't connect directly (some office, mobile or VPN networks) go through a relay server ([Metered](https://www.metered.ca/), free plan); its credentials are in [src/net/peerConfig.ts](src/net/peerConfig.ts).

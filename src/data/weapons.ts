@@ -5,6 +5,8 @@ const DEG = Math.PI / 180;
 
 export interface WeaponDef {
   name: string;
+  /** The class card's tooltip (M8 §2.4). */
+  description: string;
   /** Seconds between shots. */
   interval: number;
   /** Hitscan weapons; the Censer Launcher fires a projectile instead. */
@@ -22,14 +24,16 @@ export interface WeaponDef {
 }
 
 export const WEAPONS: Record<ClassId, WeaponDef> = {
-  fallen: { name: 'Brimstone Shotgun', interval: 0.9, hitscan: true, pellets: 8, damage: 10, spreadYaw: 8 * DEG, spreadPitch: 4 * DEG, range: 20, maxHits: 1, slow: 0 },
-  heretic: { name: 'Censer Launcher', interval: 1.0, hitscan: false, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 25, maxHits: 1, slow: 0 },
-  binder: { name: 'Chain Gun', interval: 0.1, hitscan: true, pellets: 1, damage: 12, spreadYaw: 2 * DEG, spreadPitch: 2 * DEG, range: 40, maxHits: 1, slow: 1 },
-  betrayer: { name: 'Silver Revolver', interval: 0.35, hitscan: true, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: 3, slow: 0 },
+  fallen: { name: 'Brimstone Shotgun', description: '8 pellets of hellfire. Deadly up close.', interval: 0.9, hitscan: true, pellets: 8, damage: 10, spreadYaw: 8 * DEG, spreadPitch: 4 * DEG, range: 20, maxHits: 1, slow: 0 },
+  heretic: { name: 'Censer Launcher', description: 'Fires a censer that bursts on impact, hitting the enemies around it.', interval: 1.0, hitscan: false, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 25, maxHits: 1, slow: 0 },
+  binder: { name: 'Chain Gun', description: 'Fast and accurate. Slows every enemy it hits.', interval: 0.1, hitscan: true, pellets: 1, damage: 12, spreadYaw: 2 * DEG, spreadPitch: 2 * DEG, range: 40, maxHits: 1, slow: 1 },
+  betrayer: { name: 'Silver Revolver', description: 'Each shot pierces up to 6 enemies.', interval: 0.35, hitscan: true, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: 3, slow: 0 },
 };
 
 export interface AbilityDef {
   name: string;
+  /** The class card's tooltip (M8 §2.4). */
+  description: string;
   /** Seconds. */
   cooldown: number;
   /** Executed by the client (Falling Star, Shadowstep). */
@@ -41,20 +45,20 @@ export interface AbilityDef {
 
 export const ABILITIES: Record<ClassId, { Q: AbilityDef; E: AbilityDef }> = {
   fallen: {
-    Q: { name: 'Blasphemy', cooldown: 12, movement: false, allyRange: 0, icon: 'icon-blasphemy' },
-    E: { name: 'Falling Star', cooldown: 15, movement: true, allyRange: 30, icon: 'icon-falling-star' },
+    Q: { name: 'Blasphemy', description: 'Every enemy within 15 m turns on you for 5 s.', cooldown: 12, movement: false, allyRange: 0, icon: 'icon-blasphemy' },
+    E: { name: 'Falling Star', description: 'Aim at an ally and leap to them, smashing and scattering the enemies where you land.', cooldown: 15, movement: true, allyRange: 30, icon: 'icon-falling-star' },
   },
   heretic: {
-    Q: { name: 'Unholy Communion', cooldown: 4, movement: false, allyRange: 0, icon: 'icon-communion' },
-    E: { name: "Martyr's Shroud", cooldown: 10, movement: false, allyRange: 40, icon: 'icon-shroud' },
+    Q: { name: 'Unholy Communion', description: 'Heals everyone within 15 m, you included.', cooldown: 4, movement: false, allyRange: 0, icon: 'icon-communion' },
+    E: { name: "Martyr's Shroud", description: 'Shields the ally you aim at. With no ally aimed at, shields you.', cooldown: 10, movement: false, allyRange: 40, icon: 'icon-shroud' },
   },
   binder: {
-    Q: { name: 'Chains of Tartarus', cooldown: 10, movement: false, allyRange: 0, icon: 'icon-chains' },
-    E: { name: 'Discord', cooldown: 12, movement: false, allyRange: 0, icon: 'icon-discord' },
+    Q: { name: 'Chains of Tartarus', description: 'Pulls the enemies in front of you into a clump and binds them. Bound enemies take double damage.', cooldown: 10, movement: false, allyRange: 0, icon: 'icon-chains' },
+    E: { name: 'Discord', description: "Silences every enemy around the point you aim at. Stops casters and the Gatekeeper's Judgment.", cooldown: 12, movement: false, allyRange: 0, icon: 'icon-discord' },
   },
   betrayer: {
-    Q: { name: 'Kiss of Betrayal', cooldown: 10, movement: false, allyRange: 0, icon: 'icon-kiss' },
-    E: { name: 'Shadowstep', cooldown: 6, movement: true, allyRange: 0, icon: 'icon-shadowstep' },
+    Q: { name: 'Kiss of Betrayal', description: 'Marks the enemy under your crosshair: it takes triple damage from everyone.', cooldown: 10, movement: false, allyRange: 0, icon: 'icon-kiss' },
+    E: { name: 'Shadowstep', description: "Dash the way you're moving, invulnerable for a moment.", cooldown: 6, movement: true, allyRange: 0, icon: 'icon-shadowstep' },
   },
 };
 
@@ -88,7 +92,6 @@ export const SHADOWSTEP_INVULN = 0.5;
 export const MOVEMENT_GRACE = 0.25;
 /** The speed check is skipped this long after an accepted movement ability (§9.3). */
 export const MOVEMENT_SPEED_CHECK_SKIP = 0.6;
-export const ALLY_TARGET_ANGLE = 10 * DEG;
 
 // Censer projectile (§6.2).
 export const CENSER_SPEED = 20;

@@ -2,6 +2,7 @@
 // Usage: node scripts/screenshot.mjs <url> <out.png> [step ...]
 // Steps: wait:<ms>  hold:<KeyCode>:<ms>  press:<KeyCode>  lock  look:<dx>:<dy>  shot:<out.png>
 //        goto:<x>:<y>  face:<yaw>   (need the F3 overlay open: press:F3 first)  fire:<ms> (hold the mouse button)
+//        burst:<prefix>:<n>  (hold the mouse button and save n PNGs <prefix>-<i>.png in quick succession)
 import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -82,6 +83,10 @@ for (const step of steps) {
   } else if (kind === 'fire') {
     await page.mouse.down();
     await page.waitForTimeout(Number(a));
+    await page.mouse.up();
+  } else if (kind === 'burst') {
+    await page.mouse.down();
+    for (let i = 0; i < Number(b); i++) await save(`${a}-${i}.png`);
     await page.mouse.up();
   } else if (kind === 'goto') await goTo(Number(a), Number(b));
   else if (kind === 'face') await turnTo(Number(a));

@@ -1,6 +1,6 @@
 /** Entry: boots the UI and owns the top-level screen state machine. */
 import './style.css';
-import type { ClassId } from './data/classes';
+import { CLASS_IDS, type ClassId } from './data/classes';
 import { debugState, resetGameDebug, type Screen } from './debug';
 import { getDungeon } from './data/dungeons/index';
 import { parseParams } from './params';
@@ -15,9 +15,11 @@ import type { CtrlMessage, LobbyPlayer } from './net/messages';
 import type { NetStats } from './net/netStats';
 import { joinGame, type PeerTransport } from './net/peerTransport';
 import type { Transport } from './net/transport';
-import { loadingScreen, singleplayerSetupScreen, titleScreen } from './ui/menus';
+import { withoutJoin } from './net/invite';
+import { loadingScreen, singleplayerSetupScreen, titleScreen, validName } from './ui/menus';
 import { hostSetupScreen, joinScreen, lobbyScreen, multiplayerScreen } from './ui/multiplayer';
 import { showResults } from './ui/results';
+import { hideTooltip } from './ui/tooltip';
 
 const params = parseParams(window.location.search);
 const root = document.getElementById('app')!;
@@ -26,11 +28,15 @@ const root = document.getElementById('app')!;
 let screenEl: HTMLElement | null = null;
 
 function show(screen: Screen, el: HTMLElement | null): void {
+  hideTooltip();
   screenEl?.remove();
   screenEl = el;
   if (el) document.body.appendChild(el);
   debugState.screen = screen;
 }
+
+/** The game ID of the invite link the page was opened with, until its Join screen opens (M8 §6.1). */
+let inviteId = params.join;
 
 /** Title (§3). `message` is the message line, cleared by the next button press. */
 function toTitle(message = ''): void {
@@ -39,6 +45,8 @@ function toTitle(message = ''): void {
     'title',
     titleScreen({
       message,
+      joinId: inviteId,
+      onJoinInvite: (name) => toJoin(name, inviteId),
       onSingleplayer: (name) => toSingleplayerSetup(name),
       onMultiplayer: (name) => toMultiplayer(name),
     }),
@@ -151,28 +159,52 @@ function toHostSetup(name: string): void {
   show('hostSetup', view.el);
 }
 
-function toJoin(name: string): void {
+/**
+ * The Join screen. `prefillId` comes from an invite link (M8 §6.1); `auto` is bot auto-join (M8 §6.4),
+ * which joins at once with an empty password and picks a class in the Lobby.
+ */
+function toJoin(name: string, prefillId: string | null = null, auto = false): void {
   let left = false;
   let joining = false;
-  const view = joinScreen({
-    onJoin: (gameId, password) => {
-      if (joining) return;
-      joining = true;
-      view.setStatus('Connecting…', true);
-      joinGame(gameId, name, password, () => left).then(
-        (j) => enterLobby({ transport: j.transport, playerId: j.playerId, host: null, client: j.transport, gameId: null, net: j.transport.stats }, j.lobby),
-        (e: unknown) => {
-          joining = false;
-          if (!left) view.setStatus(e instanceof Error ? e.message : String(e), false);
-        },
-      );
+  const onJoin = (gameId: string, password: string): void => {
+    if (joining) return;
+    joining = true;
+    view.setStatus('Connecting…', true);
+    joinGame(gameId, name, password, () => left).then(
+      (j) => enterLobby({ transport: j.transport, playerId: j.playerId, host: null, client: j.transport, gameId: null, net: j.transport.stats }, j.lobby, auto),
+      (e: unknown) => {
+        joining = false;
+        if (!left) view.setStatus(e instanceof Error ? e.message : String(e), false);
+      },
+    );
+  };
+  const view = joinScreen(
+    {
+      onJoin,
+      onBack: () => {
+        left = true;
+        toMultiplayer(name);
+      },
     },
-    onBack: () => {
-      left = true;
-      toMultiplayer(name);
-    },
-  });
+    prefillId,
+  );
   show('join', view.el);
+  // The link is used up: returning to Title doesn't offer it again.
+  if (prefillId && inviteId) {
+    inviteId = null;
+    history.replaceState(history.state, '', withoutJoin(window.location.href));
+  }
+  if (auto && prefillId) onJoin(prefillId, '');
+}
+
+/**
+ * Bot auto-join's class (M8 §6.4): the `class` parameter if free, otherwise the first free class in
+ * the order fallen, heretic, binder, betrayer; null if every class is taken.
+ */
+function autoClass(players: LobbyPlayer[]): ClassId | null {
+  const taken = new Set(players.map((p) => p.classId));
+  if (params.classParam && !taken.has(params.classParam)) return params.classParam;
+  return CLASS_IDS.find((id) => !taken.has(id)) ?? null;
 }
 
 interface Session {
@@ -191,7 +223,7 @@ interface Session {
  * A multiplayer session from the Lobby on: class picks, then `start` → Loading → `ready` → `go` →
  * In Game → Results (§3). The host and its clients run the same flow; only their transports differ.
  */
-function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlayer[] } | null): void {
+function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlayer[] } | null, auto = false): void {
   let game: Game | null = null;
   let loading = false;
   let go = false;
@@ -218,7 +250,17 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
     onLeave: () => end('', true),
   });
   show('lobby', lobby.el);
-  if (initial) lobby.update(initial);
+  /**
+   * Shows a lobby state. Bot auto-join picks a class while it has none: the host ignores a taken
+   * class, and every accepted pick sends a new lobby state, so a lost race picks again.
+   */
+  const updateLobby = (state: { dungeonId: string; players: LobbyPlayer[] }): void => {
+    lobby.update(state);
+    if (!auto || state.players.find((p) => p.id === s.playerId)?.classId) return;
+    const classId = autoClass(state.players);
+    if (classId) s.transport.sendCtrl({ type: 'pickClass', classId });
+  };
+  if (initial) updateLobby(initial);
 
   const enterGame = (): void => {
     if (!game || ended) return;
@@ -264,7 +306,7 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
     if (ended) return;
     switch (msg.type) {
       case 'lobby':
-        if (!loading) lobby.update(msg);
+        if (!loading) updateLobby(msg);
         break;
       case 'start':
         if (loading) break;
@@ -294,4 +336,6 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
 }
 
 if (params.bench || params.dev) void startSingleplayer('Dev', params.classId, params.mapId, params.seed);
+// Bot auto-join skips the Title and Join screens (M8 §6.4).
+else if (params.autojoin) toJoin(validName(params.name ?? '') ?? 'Bot', params.join, true);
 else toTitle();
