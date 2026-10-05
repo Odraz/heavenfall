@@ -21,7 +21,7 @@ const vertexShader = /* glsl */ `
   attribute vec3 iPos;
   attribute vec4 iSize;
   attribute vec4 iUv;
-  attribute vec3 iTint;
+  attribute vec4 iTint;
   attribute vec4 iGlow;
   uniform vec3 uRight;
   varying vec2 vUv;
@@ -30,16 +30,17 @@ const vertexShader = /* glsl */ `
   varying float vVisible;
   #include <fog_pars_vertex>
   void main() {
+    // iTint.a: the instance's opacity, drawn as a dither like the near fade.
     #ifdef NEAR_FADE
       float fade = clamp((distance(iPos.xz, cameraPosition.xz) - NEAR_FADE_END) / (NEAR_FADE_START - NEAR_FADE_END), 0.0, 1.0);
-      vVisible = mix(NEAR_FADE_MIN, 1.0, fade);
+      vVisible = mix(NEAR_FADE_MIN, 1.0, fade) * iTint.a;
     #else
-      vVisible = 1.0;
+      vVisible = iTint.a;
     #endif
     // iSize: width, height, and the anchor point within the quad (fractions from the bottom left).
     vec3 p = iPos + uRight * ((position.x + 0.5 - iSize.z) * iSize.x) + vec3(0.0, (position.y - iSize.w) * iSize.y, 0.0);
     vUv = mix(iUv.xy, iUv.zw, uv);
-    vTint = iTint;
+    vTint = iTint.rgb;
     vGlow = iGlow;
     vec4 mvPosition = viewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mvPosition;
@@ -104,7 +105,7 @@ export class Billboards {
     this.pos = mk(3);
     this.size = mk(4);
     this.uv = mk(4);
-    this.tint = mk(3);
+    this.tint = mk(4);
     this.glow = mk(4);
     geo.setAttribute('iPos', this.pos);
     geo.setAttribute('iSize', this.size);
@@ -132,9 +133,10 @@ export class Billboards {
    * Adds a billboard. (x, y, z) are simulation coordinates: the feet, or the center if `centered`.
    * `height` is the billboard height in meters; the width follows the sprite's aspect ratio. A frame
    * with an anchor puts that point at the position instead (`centered` still centers it vertically).
-   * The color is multiplied by (tr, tg, tb), then mixed toward `glow` by its amount.
+   * The color is multiplied by (tr, tg, tb), then mixed toward `glow` by its amount. `alpha` below 1
+   * dissolves it in a dither pattern, like the near fade.
    */
-  add(f: SpriteFrame, x: number, y: number, z: number, height: number, centered: boolean, tr = 1, tg = 1, tb = 1, glow: Glow = NO_GLOW): void {
+  add(f: SpriteFrame, x: number, y: number, z: number, height: number, centered: boolean, tr = 1, tg = 1, tb = 1, glow: Glow = NO_GLOW, alpha = 1): void {
     if (this.n >= MAX_BILLBOARDS) return;
     const i = this.n++;
     const p = this.pos.array as Float32Array;
@@ -152,9 +154,10 @@ export class Billboards {
     u[i * 4 + 2] = f.u1;
     u[i * 4 + 3] = f.v1;
     const t = this.tint.array as Float32Array;
-    t[i * 3] = tr;
-    t[i * 3 + 1] = tg;
-    t[i * 3 + 2] = tb;
+    t[i * 4] = tr;
+    t[i * 4 + 1] = tg;
+    t[i * 4 + 2] = tb;
+    t[i * 4 + 3] = alpha;
     const g = this.glow.array as Float32Array;
     g[i * 4] = glow.r;
     g[i * 4 + 1] = glow.g;

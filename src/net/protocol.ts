@@ -76,6 +76,8 @@ export const FLAG_MARKED = 2;
 export const FLAG_ROOTED = 4;
 export const FLAG_SILENCED = 8;
 export const FLAG_SLOWED = 16;
+/** The enemy's target is overridden by Blasphemy (M8 §10). */
+export const FLAG_TAUNTED = 32;
 
 export interface SnapshotHeader {
   tick: number;

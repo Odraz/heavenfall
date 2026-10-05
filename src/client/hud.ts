@@ -1,5 +1,5 @@
 /** The in-game HUD and screen feedback (§10), plain DOM over the canvas. */
-import type { ClassId } from '../data/classes';
+import { CLASSES, GENERAL_HINTS, type ClassId } from '../data/classes';
 import { ABILITIES, WEAPONS } from '../data/weapons';
 import { spriteUrl } from '../render/atlas';
 import { fireFrame, weaponAtlas, type WeaponManifest } from '../render/weaponAtlas';
@@ -11,6 +11,27 @@ const KILL_MARKER_MS = 120;
 /** The hit and kill markers' ticks, in degrees around the crosshair (M8 §3.2). */
 const MARKER_TICKS = [45, 135, 225, 315];
 const SVG_NS = 'http://www.w3.org/2000/svg';
+/** Ready glint (M8 §2.3): the band's sweep and the slot frame's gold glow. */
+const GLINT_SWEEP_MS = 400;
+const GLINT_GLOW_MS = 300;
+/** Set once the player has opened the hints panel, which hides the discovery prompt for good (M8 §2.2). */
+const HINTS_SEEN_KEY = 'heavenfall.hintsSeen';
+
+function hintsSeen(): boolean {
+  try {
+    return localStorage.getItem(HINTS_SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markHintsSeen(): void {
+  try {
+    localStorage.setItem(HINTS_SEEN_KEY, '1');
+  } catch {
+    // Storage may be unavailable; the prompt then shows again next game.
+  }
+}
 const VIGNETTE_MS = 300;
 const SHAKE_MS = 150;
 const JUDGMENT_TEXT_MS = 3000;
@@ -44,7 +65,12 @@ export class Hud {
   private readonly weaponManifest: WeaponManifest;
   private readonly fireIntervalMs: number;
   private weaponFrame = -2;
-  private readonly abilities: Array<{ sweep: HTMLDivElement; text: HTMLDivElement; box: HTMLDivElement }>;
+  private readonly abilities: Array<{ sweep: HTMLDivElement; text: HTMLDivElement; box: HTMLDivElement; glint: HTMLDivElement; cd: number }>;
+  /** The hints panel (M8 §2.2), toggled with H, and the prompt shown until it's first opened. */
+  private readonly hints: HTMLDivElement;
+  private readonly hintsPrompt: HTMLDivElement;
+  /** Called when an ability's cooldown runs out, for its sound (M8 §2.3). */
+  onReady: (slot: 'Q' | 'E') => void = () => {};
   private readonly hitMarker: HTMLDivElement;
   private readonly killMarker: HTMLDivElement;
   private readonly vignettes: Record<'red' | 'green' | 'blue', HTMLDivElement>;
@@ -73,7 +99,7 @@ export class Hud {
   private centerUntil = 0;
   private readonly fades: Fade[] = [];
 
-  constructor(parent: HTMLElement, classId: ClassId) {
+  constructor(parent: HTMLElement, classId: ClassId, multiplayer: boolean) {
     this.root = el('div', 'hud', parent);
     this.vignettes = {
       red: el('div', 'vignette vignette-red', this.root),
@@ -126,10 +152,35 @@ export class Hud {
       const icon = el('img', 'ability-icon', box);
       icon.src = spriteUrl(ABILITIES[classId][key].icon);
       const sweep = el('div', 'ability-sweep', box);
+      // The glint's band, clipped to the icon.
+      const glint = el('div', 'ability-glint-band', el('div', 'ability-glint', box));
       const text = el('div', 'ability-cd', box);
       el('div', 'ability-key', box).textContent = key;
-      return { sweep, text, box };
+      return { sweep, text, box, glint, cd: 0 };
     });
+
+    // Hints: the class's lines, each ability's with its icon, then the general ones in multiplayer.
+    this.hints = el('div', 'hints', this.root);
+    this.hints.hidden = true;
+    for (const h of CLASSES[classId].hints) {
+      const line = el('div', 'hint', this.hints);
+      if (h.key) {
+        const icon = el('img', 'hint-icon', line);
+        icon.src = spriteUrl(ABILITIES[classId][h.key].icon);
+        icon.alt = h.key;
+      } else el('span', 'hint-icon', line);
+      el('span', 'hint-text', line).textContent = h.text;
+    }
+    if (multiplayer) {
+      for (const text of GENERAL_HINTS) {
+        const line = el('div', 'hint hint-general', this.hints);
+        el('span', 'hint-icon', line);
+        el('span', 'hint-text', line).textContent = text;
+      }
+    }
+    this.hintsPrompt = el('div', 'hints-prompt', this.root);
+    this.hintsPrompt.textContent = 'H · Hints';
+    this.hintsPrompt.hidden = hintsSeen();
 
     this.boss = el('div', 'boss', this.root);
     el('div', 'boss-name', this.boss).textContent = 'The Gatekeeper';
@@ -155,6 +206,24 @@ export class Hud {
     this.hpText.textContent = shield > 0 ? `${Math.ceil(hp)} + ${Math.ceil(shield)}` : `${Math.ceil(hp)} / ${maxHp}`;
   }
 
+  /** Toggles the hints panel; the first opening hides the discovery prompt for good (M8 §2.2). */
+  toggleHints(): void {
+    this.hints.hidden = !this.hints.hidden;
+    if (!this.hints.hidden && !this.hintsPrompt.hidden) {
+      this.hintsPrompt.hidden = true;
+      markHintsSeen();
+    }
+  }
+
+  /** Closes the hints panel, as at the result. */
+  closeHints(): void {
+    this.hints.hidden = true;
+  }
+
+  get hintsOpen(): boolean {
+    return !this.hints.hidden;
+  }
+
   /** Displayed cooldowns in seconds and their full lengths. */
   setCooldowns(q: number, qMax: number, e: number, eMax: number): void {
     [
@@ -162,11 +231,25 @@ export class Hud {
       [e, eMax],
     ].forEach(([cd, max], i) => {
       const a = this.abilities[i];
+      // Ready glint (M8 §2.3): when the cooldown runs out, not for an ability that was never on one.
+      if (a.cd > 0 && cd <= 0) this.glint(i);
+      a.cd = cd;
       const frac = cd > 0 ? Math.min(1, cd / max) : 0;
       a.sweep.style.background = frac > 0 ? `conic-gradient(rgba(10, 6, 4, 0.72) ${frac * 360}deg, transparent 0deg)` : 'none';
       a.text.textContent = cd > 0 ? (cd >= 1 ? String(Math.ceil(cd)) : cd.toFixed(1)) : '';
       a.box.classList.toggle('ready', cd <= 0);
     });
+  }
+
+  /** A diagonal band of light sweeps across the icon while the slot frame glows gold and fades. */
+  private glint(i: number): void {
+    const a = this.abilities[i];
+    a.glint.animate([{ transform: 'translateX(-110%)' }, { transform: 'translateX(110%)' }], { duration: GLINT_SWEEP_MS, easing: 'ease-in-out' });
+    a.box.animate([{ filter: 'drop-shadow(0 0 10px rgba(243, 198, 75, 1)) brightness(1.35)' }, { filter: 'drop-shadow(0 0 6px rgba(240, 138, 36, 0.9))' }], {
+      duration: GLINT_GLOW_MS,
+      easing: 'ease-out',
+    });
+    this.onReady(i === 0 ? 'Q' : 'E');
   }
 
   /** Enemies remaining, or null to hide it (shown only while the arena is in combat). */

@@ -460,6 +460,64 @@ body {
   height: calc(100% - 12px);
 }
 
+/* Ready glint (M8 §2.3): a diagonal band of light swept across the icon. */
+.ability-glint {
+  position: absolute;
+  inset: 6px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ability-glint-band {
+  position: absolute;
+  inset: -20%;
+  transform: translateX(-110%);
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 246, 214, 0.95) 50%, transparent 65%);
+}
+
+/* Hints (M8 §2.2): toggled with H, top right under the enemies remaining counter. */
+.hints {
+  position: absolute;
+  right: 24px;
+  top: 64px;
+  max-width: 340px;
+  padding: 2px 4px;
+  border-style: solid;
+  border-width: 18px;
+  border-image: url('../assets/ui/ui-panel.png') 96 fill / 18px round;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.hint-icon {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 3px;
+}
+
+.hint-general {
+  color: rgba(247, 240, 220, 0.75);
+}
+
+.hints-prompt {
+  position: absolute;
+  right: 24px;
+  top: 64px;
+  font-size: 13px;
+  opacity: 0.6;
+  text-shadow: 0 1px 2px #000;
+}
+
 .ability-cd {
   position: absolute;
   z-index: 1;
@@ -820,10 +878,94 @@ body {
   color: var(--brimstone);
 }
 
-.class-desc {
+/* The weapon line and the ability row (M8 §2.1); their names show tooltips on hover. */
+.class-weapon {
   font-size: 14px;
   line-height: 1.35;
-  color: rgba(247, 240, 220, 0.8);
+  color: rgba(247, 240, 220, 0.85);
+}
+
+.class-item {
+  border-bottom: 1px dotted rgba(247, 240, 220, 0.45);
+  cursor: help;
+}
+
+.class-abilities {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.class-ability {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 78px;
+  gap: 2px;
+}
+
+/* The ability icon inside the slot frame (§11.2), 40 px. */
+.class-ability-slot {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  cursor: help;
+}
+
+.class-ability-slot img {
+  position: absolute;
+  inset: 4px;
+  width: 32px;
+  height: 32px;
+}
+
+.class-ability-slot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('../assets/ui/ui-slot-frame.png') center / 100% 100%;
+  pointer-events: none;
+}
+
+.class-ability-key {
+  font: 700 12px/1 Consolas, monospace;
+  color: var(--brimstone);
+}
+
+.class-ability-name {
+  font-size: 12px;
+  line-height: 1.2;
+  color: rgba(247, 240, 220, 0.85);
+}
+
+/* Tooltips (M8 §2.1): a small panel above the hovered item. */
+.tooltip {
+  position: fixed;
+  z-index: 100;
+  max-width: 280px;
+  padding: 2px 4px;
+  border-style: solid;
+  border-width: 18px;
+  border-image: url('../assets/ui/ui-panel.png') 96 fill / 18px round;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.55));
+  pointer-events: none;
+  color: var(--ivory);
+}
+
+.tooltip[hidden] {
+  display: none;
+}
+
+.tooltip-name {
+  margin-bottom: 4px;
+  font: 700 16px/1.2 var(--display-font);
+  color: var(--gold);
+}
+
+.tooltip-text {
+  font-size: 14px;
+  line-height: 1.35;
 }
 
 .dungeon-picker {

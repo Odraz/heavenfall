@@ -7,7 +7,7 @@ import { ABILITIES, WEAPONS } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent } from '../net/messages';
 import type { NetStats } from '../net/netStats';
-import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_MARKED, FLAG_ROOTED, FLAG_SILENCED, PHASE_CLEARED, PHASE_COMBAT, type Snapshot } from '../net/protocol';
+import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_MARKED, FLAG_ROOTED, FLAG_SILENCED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
 import { aimDir, rayCylinder } from '../sim/combat';
@@ -58,6 +58,14 @@ const JUDGMENT_GLOW_R0 = 3;
 const JUDGMENT_GLOW_R1 = 9;
 /** The ally chevron's tip sits this high above the ally's feet, just over the head. */
 const CHEVRON_HEIGHT = 2.15;
+/** Martyr's Shroud's mote flies to its target in this long (M8 §3.1). */
+const MOTE_MS = 250;
+/** The taunt `!` (M8 §3.1): 0.5 m tall, 0.3 m above the head; pops in, holds, then fades. */
+const TAUNT_MARK_HEIGHT = 0.5;
+const TAUNT_MARK_GAP = 0.3;
+const TAUNT_POP_MS = 150;
+const TAUNT_HOLD_MS = 600;
+const TAUNT_FADE_MS = 300;
 
 export interface RosterEntry {
   id: number;
@@ -154,6 +162,8 @@ export class Game {
   private readonly zScratch = new Float32Array(ENEMY_SLOTS);
   /** performance.now() until which each enemy flashes white. */
   private readonly flashUntil = new Float64Array(ENEMY_SLOTS);
+  /** performance.now() when each enemy was seen taunted, or -1 while it isn't (M8 §3.1). */
+  private readonly tauntAt = new Float64Array(ENEMY_SLOTS).fill(-1);
   private readonly botEnemies: BotEnemy[] = [];
   /** Delayed bursts, played when the render time reaches them. */
   private readonly pendingBursts: Array<{ at: number; censer: boolean; x: number; y: number; z: number }> = [];
@@ -204,7 +214,7 @@ export class Game {
     this.scene.scene.add(this.judgmentGlow);
     this.frames = o.atlas.frames;
     this.particles = new Particles([o.atlas.frames.feather, o.atlas.frames.spark, o.atlas.frames.ember]);
-    this.hud = new Hud(o.root, this.classId);
+    this.hud = new Hud(o.root, this.classId, !o.singleplayer);
     this.hud.setHp(this.maxHp, 0, this.maxHp);
     this.hud.setRemaining(null);
     this.hud.setDeath(null);
@@ -251,6 +261,10 @@ export class Game {
     if (this.over || this.params.bench) return;
     if (code === 'Escape') {
       this.openPause();
+      return;
+    }
+    if (code === 'KeyH') {
+      this.hud.toggleHints();
       return;
     }
     // Dev keys work with the bot too: the full solo run test presses K (§13.2).
@@ -423,19 +437,37 @@ export class Game {
     const key = `${cls}:${e.slot}`;
     const user = this.playerPose(e.playerId);
     switch (key) {
-      case 'fallen:Q': // taunt ring
-        this.vfx.ring(now, e.x, e.y, e.z, 0xe0301e, 0.5, 15, 600);
+      case 'fallen:Q': // taunt sphere, growing to Blasphemy's radius (M8 §3.1)
+        this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0xe0301e, 1, 15, 400, 0.3);
         break;
       case 'fallen:E': // landing shockwave, when the leap lands
         this.vfx.ring(now, e.x, e.y, e.z, 0xf08a24, 0.5, 5, 450, 400);
         this.vfx.glow(now, e.x, e.y, e.z + 0.5, 0xf08a24, 1, 2.5, 450, 400);
         break;
-      case 'heretic:Q': // heal ring
+      case 'heretic:Q': {
+        // Heal ring, and a heal column on every player it healed, even at full HP (M8 §3.1).
         this.vfx.ring(now, e.x, e.y, e.z, 0x5ee65e, 0.5, 15, 700);
+        for (const id of e.targets) {
+          const t = this.playerPose(id);
+          if (t) this.particles.healColumn(t.x, t.y, t.z);
+          if (id === this.localId) this.hud.vignette('green', 0.3, now);
+          else this.party?.flash(id, 'green');
+        }
         break;
-      case 'heretic:E': // shield bubble on the target
-        this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0x4aa3e8, 1.3, 1.6, 900, 0.4);
+      }
+      case 'heretic:E': {
+        // A mote flies from the Heretic to the target, then the shield bubble appears; self-cast
+        // skips the mote (M8 §3.1).
+        const target = e.targets[0];
+        const self = target === e.playerId;
+        if (!self && user) {
+          const h = PLAYER_HEIGHT / 2;
+          this.vfx.mote(now, [user.x, user.y, user.z + h], [e.x, e.y, e.z + h], 0xff7a3a, 0.4, MOTE_MS);
+        }
+        this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0x4aa3e8, 1.3, 1.6, 900, 0.4, self ? 0 : MOTE_MS);
+        if (target !== undefined && target !== this.localId) this.party?.flash(target, 'blue');
         break;
+      }
       case 'binder:Q': {
         // Chain lines from the cone in front of the Binder to the destination.
         if (!user) break;
@@ -474,6 +506,7 @@ export class Game {
       kills: Object.entries(e.kills).map(([id, kills]) => ({ name: this.o.roster.find((r) => r.id === Number(id))?.name ?? `Player ${id}`, kills })),
     };
     this.hud.showResult(e.result === 'victory' ? 'Victory' : 'Defeat');
+    this.hud.closeHints();
     this.closePause();
     // At the result, pointer lock is released and input stops.
     this.input.release();
@@ -813,6 +846,7 @@ export class Game {
     for (const b of this.playerBillboards.values()) b.begin();
     const chain = this.frames['chain-ring'];
     const mark = this.frames.mark;
+    const taunt = this.frames.taunt;
     const eye = this.player.body;
     const dt = Math.min(0.1, (now - this.lastAnimAt) / 1000);
     this.lastAnimAt = now;
@@ -863,6 +897,18 @@ export class Game {
       target.add(f, ents.x[i], ents.y[i], z, height, false, grey ? 0.55 : 1, grey ? 0.55 : 1, grey ? 0.6 : 1, glow);
       if (flags & FLAG_ROOTED) bb.add(chain, ents.x[i], ents.y[i], z + 0.25, Math.max(0.45, def.radius * 1.1), true);
       if (flags & FLAG_MARKED) bb.add(mark, ents.x[i], ents.y[i], z + def.height + 0.5, 0.6, true);
+      // Taunted: the `!` pops in, holds and fades, then stays hidden for the rest of the taunt.
+      if (flags & FLAG_TAUNTED) {
+        if (this.tauntAt[slot] < 0) this.tauntAt[slot] = now;
+        const t = now - this.tauntAt[slot];
+        if (t < TAUNT_POP_MS + TAUNT_HOLD_MS + TAUNT_FADE_MS) {
+          // Scale 0 → 1.2 → 1 over the pop, then opacity 1 → 0 over the fade.
+          const pop = t / TAUNT_POP_MS;
+          const scale = pop >= 1 ? 1 : pop < 2 / 3 ? 1.8 * pop : 1.2 - 0.6 * (pop - 2 / 3);
+          const alpha = Math.min(1, 1 - (t - TAUNT_POP_MS - TAUNT_HOLD_MS) / TAUNT_FADE_MS);
+          if (scale > 0.01) bb.add(taunt, ents.x[i], ents.y[i], z + def.height + TAUNT_MARK_GAP, TAUNT_MARK_HEIGHT * scale, false, 1, 1, 1, NO_GLOW, alpha);
+        }
+      } else this.tauntAt[slot] = -1;
     }
     // Corpses: the death animation, then lying still, then sinking into the floor (the
     // Gatekeeper's stays). They are in order of death, so the expired ones lead the list; a

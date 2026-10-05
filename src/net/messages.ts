@@ -2,7 +2,11 @@
 import type { ClassId } from '../data/classes';
 
 export type GameEvent =
-  | { type: 'abilityUsed'; playerId: number; slot: 'Q' | 'E'; x: number; y: number; z: number; targetPlayerId?: number }
+  /**
+   * `targets`: the player IDs the ability affected (M8 §10): every player Communion healed, including
+   * at full HP; the player Martyr's Shroud shielded; the Falling Star ally. Empty for the others.
+   */
+  | { type: 'abilityUsed'; playerId: number; slot: 'Q' | 'E'; x: number; y: number; z: number; targets: number[] }
   | { type: 'teleport'; teleportId: number; x: number; y: number; z: number }
   | { type: 'playerDied'; playerId: number }
   | { type: 'playerRespawned'; playerId: number }

@@ -65,7 +65,7 @@ function entities(ne: number, np: number): SnapshotEntities {
     e.enemyX[i] = (i % 200) + 0.5;
     e.enemyY[i] = 3.125 + (i % 7);
     e.enemyTypeState[i] = (i % 4) | ((i % 5) << 4);
-    e.enemyFlags[i] = i % 32;
+    e.enemyFlags[i] = i % 64;
   }
   for (let i = 0; i < np; i++) {
     e.projSlot[i] = i;
@@ -131,7 +131,7 @@ describe('snapshot protocol', () => {
     expect(s.enemyY[50]).toBe(3.125 + 1);
     expect(s.enemyType[50]).toBe(2);
     expect(s.enemyState[50]).toBe(0);
-    expect(s.enemyFlags[50]).toBe(18);
+    expect(s.enemyFlags[50]).toBe(50);
     expect(s.projKind[5]).toBe(2);
     expect(s.projX[5]).toBe(5 + 5 / 64);
     expect(s.projZ[5]).toBe(15.984375);

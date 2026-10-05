@@ -12,6 +12,9 @@ const RING_RADIUS = 0.71;
 const BEAM_TILE = 3;
 /** Smoke puffs in the Discord burst's ring. */
 const SMOKE_PUFFS = 12;
+/** A mote's trail: this many sprites, each lagging the one before by this fraction of the flight. */
+const MOTE_TRAIL = 4;
+const MOTE_TRAIL_LAG = 0.08;
 
 interface Effect {
   obj: THREE.Object3D;
@@ -122,8 +125,8 @@ export class Vfx {
     this.add({ obj: sprite, material, duration, update }, now, delay);
   }
 
-  /** A translucent sphere at (x, y, z), from radius r0 to r1, fading. */
-  sphere(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number, opacity = 0.45): void {
+  /** A translucent sphere at (x, y, z), from radius r0 to r1, fading from `opacity` to 0. */
+  sphere(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number, opacity = 0.45, delay = 0): void {
     // Both sides, so a bubble around the camera (a shield on yourself) is visible from inside.
     const material = new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(sphereGeo, material);
@@ -132,7 +135,27 @@ export class Vfx {
       mesh.scale.setScalar(r0 + (r1 - r0) * f);
       material.opacity = opacity * (1 - f);
     };
-    this.add({ obj: mesh, material, duration, update }, now, 0);
+    this.add({ obj: mesh, material, duration, update }, now, delay);
+  }
+
+  /**
+   * A mote (M8 §3.1): a glowing sprite `size` meters across with a short trail, flying from `from`
+   * to `to` over `duration`.
+   */
+  mote(now: number, from: [number, number, number], to: [number, number, number], color: number, size: number, duration: number): void {
+    const material = new THREE.SpriteMaterial({ map: this.tex.glow, color, transparent: true, depthWrite: false, fog: false });
+    const group = new THREE.Group();
+    // The head and its trail: each trail sprite lags behind and is smaller.
+    const sprites = Array.from({ length: MOTE_TRAIL + 1 }, () => new THREE.Sprite(material));
+    for (const sp of sprites) group.add(sp);
+    const update = (f: number): void => {
+      sprites.forEach((sp, i) => {
+        const g = Math.max(0, f - i * MOTE_TRAIL_LAG);
+        sp.position.set(from[0] + (to[0] - from[0]) * g, from[2] + (to[2] - from[2]) * g, from[1] + (to[1] - from[1]) * g);
+        sp.scale.setScalar(size * (1 - i / (MOTE_TRAIL + 1)) * (i === 0 ? 1.6 : 1.2));
+      });
+    };
+    this.add({ obj: group, material, duration, update }, now, 0);
   }
 
   /** A ring of smoke puffs facing the camera around (x, y, z), spreading from radius r0 to r1, turning and fading. */

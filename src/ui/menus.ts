@@ -1,5 +1,8 @@
 /** The Title, Singleplayer Setup and Loading screens (§3), and helpers shared with the multiplayer screens. */
 import { CLASS_IDS, CLASSES, type ClassId } from '../data/classes';
+import { ABILITIES, WEAPONS } from '../data/weapons';
+import { spriteUrl } from '../render/atlas';
+import { attachTooltip } from './tooltip';
 import fallenPortrait from '../../assets/ui/portrait-fallen.png';
 import hereticPortrait from '../../assets/ui/portrait-heretic.png';
 import binderPortrait from '../../assets/ui/portrait-binder.png';
@@ -119,7 +122,10 @@ export function titleScreen(a: TitleActions): HTMLElement {
   return screen;
 }
 
-/** A class card (§3): portrait, name, role, HP and a 1-line description. */
+/**
+ * A class card (§3, M8 §2.1): portrait, name, role and HP, the weapon line (and the Fallen's passive),
+ * and the Q and E abilities. Hovering the weapon, the passive or an ability shows its tooltip.
+ */
 export function classCard(id: ClassId, parent: HTMLElement): HTMLButtonElement {
   const c = CLASSES[id];
   const card = el('button', 'class-card', parent);
@@ -131,7 +137,25 @@ export function classCard(id: ClassId, parent: HTMLElement): HTMLButtonElement {
   img.alt = '';
   el('div', 'class-name', card, c.name);
   el('div', 'class-role', card, `${c.role} · ${c.hp} HP`);
-  el('div', 'class-desc', card, c.description);
+  const weaponLine = el('div', 'class-weapon', card);
+  const weapon = WEAPONS[id];
+  attachTooltip(el('span', 'class-item', weaponLine, weapon.name), weapon.name, weapon.description);
+  if (c.passive) {
+    weaponLine.append(' · ');
+    attachTooltip(el('span', 'class-item', weaponLine, c.passive.name), c.passive.name, c.passive.description);
+  }
+  const row = el('div', 'class-abilities', card);
+  for (const key of ['Q', 'E'] as const) {
+    const a = ABILITIES[id][key];
+    const cell = el('div', 'class-ability', row);
+    const slot = el('div', 'class-ability-slot', cell);
+    const icon = el('img', '', slot);
+    icon.src = spriteUrl(a.icon);
+    icon.alt = '';
+    el('div', 'class-ability-key', cell, key);
+    el('div', 'class-ability-name', cell, a.name);
+    attachTooltip(slot, a.name, a.description);
+  }
   return card;
 }
 

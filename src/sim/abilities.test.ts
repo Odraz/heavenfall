@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHERUB, CHORISTER, GATEKEEPER } from '../data/enemies';
+import { decodeSnapshot, FLAG_TAUNTED } from '../net/protocol';
 import { aimAt, enemyAt, makeSim, press, put, room } from './testutil/sims';
 
 const usedEvents = (sim: ReturnType<typeof makeSim>) => sim.events.filter((e) => e.event.type === 'abilityUsed').map((e) => e.event);
@@ -43,6 +44,36 @@ describe('Blasphemy (Fallen Q)', () => {
     expect(sim.eTauntUntil[a]).toBe(0);
   });
 
+  it('sets the taunted flag while its override lasts, and clears it after (M8 §10)', () => {
+    const sim = makeSim(room(60, 10), ['fallen', 'binder']);
+    const [fallen, binder] = sim.players;
+    put(sim, fallen, 20.5, 5.5);
+    put(sim, binder, 40.5, 5.5);
+    const a = enemyAt(sim, CHORISTER, 30.5, 5.5);
+    sim.root(a, 20);
+    const taunted = () => {
+      const snap = decodeSnapshot(sim.encodeFor(0)[0])!;
+      return (snap.enemyFlags[Array.from(snap.enemySlot).indexOf(a)] & FLAG_TAUNTED) !== 0;
+    };
+    sim.step();
+    expect(taunted()).toBe(false);
+    press(fallen, 'Q');
+    sim.step();
+    expect(taunted()).toBe(true);
+    for (let i = 0; i < 148; i++) sim.step();
+    expect(taunted()).toBe(true);
+    for (let i = 0; i < 2; i++) sim.step();
+    expect(taunted()).toBe(false);
+    // The Fallen dying ends it at once.
+    fallen.cdQ = 0;
+    press(fallen, 'Q');
+    sim.step();
+    expect(taunted()).toBe(true);
+    sim.damagePlayer(fallen, 10000);
+    sim.step();
+    expect(taunted()).toBe(false);
+  });
+
   it('is ignored while on cooldown', () => {
     const sim = makeSim(room(30, 10), ['fallen']);
     sim.players[0].cdQ = 1;
@@ -72,7 +103,7 @@ describe('Falling Star (Fallen E)', () => {
     press(fallen, 'E', binder.id);
     sim.step();
     expect(fallen.cdE).toBe(15);
-    expect(usedEvents(sim)).toContainEqual(expect.objectContaining({ slot: 'E', x: 20.5, y: 10.5, targetPlayerId: 1 }));
+    expect(usedEvents(sim)).toContainEqual(expect.objectContaining({ slot: 'E', x: 20.5, y: 10.5, targets: [1] }));
     // Invulnerable during the leap.
     sim.damagePlayer(fallen, 100);
     expect(fallen.hp).toBe(400);
@@ -123,6 +154,20 @@ describe('Unholy Communion (Heretic Q)', () => {
     expect(dead.hp).toBe(0);
     expect(heretic.cdQ).toBe(4);
   });
+
+  it('lists every player it healed in abilityUsed.targets, including those at full HP (M8 §10)', () => {
+    const sim = makeSim(room(40, 10), ['heretic', 'binder', 'betrayer', 'fallen']);
+    const [heretic, full, far, dead] = sim.players;
+    put(sim, heretic, 5.5, 5.5);
+    put(sim, full, 15.5, 5.5);
+    put(sim, far, 25.5, 5.5);
+    put(sim, dead, 6.5, 5.5);
+    sim.damagePlayer(dead, 10000);
+    expect(full.hp).toBe(full.maxHp);
+    press(heretic, 'Q');
+    sim.step();
+    expect(usedEvents(sim)).toContainEqual(expect.objectContaining({ slot: 'Q', targets: [0, 1] }));
+  });
 });
 
 describe("Martyr's Shroud (Heretic E)", () => {
@@ -133,7 +178,7 @@ describe("Martyr's Shroud (Heretic E)", () => {
     sim.step();
     expect(binder.shield).toBe(150);
     expect(heretic.shield).toBe(0);
-    expect(usedEvents(sim)).toContainEqual(expect.objectContaining({ slot: 'E', targetPlayerId: 1 }));
+    expect(usedEvents(sim)).toContainEqual(expect.objectContaining({ slot: 'E', targets: [1] }));
     heretic.cdE = 0;
     press(heretic, 'E');
     sim.step();

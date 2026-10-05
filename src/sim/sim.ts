@@ -59,6 +59,7 @@ import {
   FLAG_ROOTED,
   FLAG_SILENCED,
   FLAG_SLOWED,
+  FLAG_TAUNTED,
   PHASE_CLEARED,
   PHASE_COMBAT,
   PHASE_IDLE,
@@ -1187,10 +1188,8 @@ export class Simulation {
     return { t: rayCylinder(ex, ey, ez, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height), slot: s };
   }
 
-  private abilityEvent(p: SimPlayer, slot: 'Q' | 'E', x: number, y: number, z: number, targetPlayerId?: number): void {
-    const event: GameEvent = { type: 'abilityUsed', playerId: p.id, slot, x, y, z };
-    if (targetPlayerId !== undefined) event.targetPlayerId = targetPlayerId;
-    this.events.push({ to: 'all', event });
+  private abilityEvent(p: SimPlayer, slot: 'Q' | 'E', x: number, y: number, z: number, targets: number[] = []): void {
+    this.events.push({ to: 'all', event: { type: 'abilityUsed', playerId: p.id, slot, x, y, z, targets } });
   }
 
   private useQ(p: SimPlayer): void {
@@ -1213,11 +1212,16 @@ export class Simulation {
       }
       case 'heretic': {
         // Unholy Communion: heals every living player within 15 m, including self.
+        const healed: number[] = [];
         for (const o of this.players) {
           if (!this.livingTargetable(o)) continue;
-          if (distToCylinder(bx, by, bz, o.x, o.y, o.z, PLAYER_RADIUS, PLAYER_HEIGHT) <= COMMUNION_RADIUS) this.heal(o, COMMUNION_HEAL);
+          if (distToCylinder(bx, by, bz, o.x, o.y, o.z, PLAYER_RADIUS, PLAYER_HEIGHT) > COMMUNION_RADIUS) continue;
+          this.heal(o, COMMUNION_HEAL);
+          healed.push(o.id);
         }
-        break;
+        p.cdQ = cd;
+        this.abilityEvent(p, 'Q', p.x, p.y, p.z, healed);
+        return;
       }
       case 'binder': {
         const [dx, dy] = this.chainsDestination(p);
@@ -1255,7 +1259,7 @@ export class Simulation {
         p.invulUntil = Math.max(p.invulUntil, this.tick + ticks(FALLING_STAR_TIME));
         p.cdE = def.cooldown;
         p.speedCheckSkipUntil = this.nowMs + MOVEMENT_SPEED_CHECK_SKIP * 1000;
-        this.abilityEvent(p, 'E', ally.x, ally.y, ally.z, ally.id);
+        this.abilityEvent(p, 'E', ally.x, ally.y, ally.z, [ally.id]);
       } else {
         p.invulUntil = Math.max(p.invulUntil, this.tick + ticks(SHADOWSTEP_INVULN));
         p.cdE = def.cooldown;
@@ -1271,7 +1275,7 @@ export class Simulation {
       const target = ally && ally !== p && this.livingTargetable(ally) ? ally : p;
       this.giveShield(target, SHROUD_AMOUNT, SHROUD_DURATION);
       p.cdE = def.cooldown;
-      this.abilityEvent(p, 'E', target.x, target.y, target.z, target.id);
+      this.abilityEvent(p, 'E', target.x, target.y, target.z, [target.id]);
     } else if (p.classId === 'binder') {
       // Discord: silences every enemy within 8 m of the impact point.
       const hit = this.crosshair(p, DISCORD_RANGE);
@@ -2110,6 +2114,7 @@ export class Simulation {
       if (tick < this.eRootUntil[s] || this.ePullStart[s] >= 0) f |= FLAG_ROOTED;
       if (tick < this.eSilenceUntil[s]) f |= FLAG_SILENCED;
       if (tick < this.eSlowUntil[s]) f |= FLAG_SLOWED;
+      if (tick < this.eTauntUntil[s]) f |= FLAG_TAUNTED;
       this.baseFlags[k] = f;
     }
     e.projectileCount = this.projectiles.length;
