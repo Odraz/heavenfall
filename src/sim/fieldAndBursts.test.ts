@@ -172,7 +172,7 @@ describe('Field of Blood (M9 §3.4)', () => {
     press(betrayer, 'Q');
     sim.step();
     expect([sim.inField(betrayer), sim.inField(binder), sim.inField(heretic)]).toEqual([true, true, false]);
-    // The revolver fires every 0.075 s on average: 0.15 s of timer per 2/30 s per tick.
+    // The revolver fires every 0.1 s: 0.2 s of timer at 2/30 s per tick.
     const shots: Array<[number, number]> = [];
     vi.spyOn(sim, 'fireWeapon').mockImplementation((q) => {
       shots.push([q.index, sim.tick]);
@@ -180,7 +180,7 @@ describe('Field of Blood (M9 §3.4)', () => {
     betrayer.fire = FIRE_LEFT;
     const t0 = sim.tick + 1;
     for (let i = 0; i < 30; i++) sim.step();
-    expect(shots.filter((s) => s[0] === 0).map((s) => s[1] - t0)).toEqual([0, 3, 5, 7, 9, 12, 14, 16, 18, 21, 23, 25, 27]);
+    expect(shots.filter((s) => s[0] === 0).map((s) => s[1] - t0)).toEqual([0, 3, 6, 9, 12, 15, 18, 21, 24, 27]);
     // Cooldowns run at their normal rate.
     expect(betrayer.cdQ).toBeCloseTo(30 - 30 / 30, 6);
     // The field ends after 8 s.
@@ -306,7 +306,7 @@ describe('M9 audit additions (§11.1)', () => {
     expect(sim.fireRate(binder)).toBe(2);
   });
 
-  it('in a field a revolver hit still deals 30 (no Field of Blood step in the pipeline)', () => {
+  it('in a field a revolver hit still deals 40 (no Field of Blood step in the pipeline)', () => {
     const sim = makeSim(room(40, 12), ['betrayer']);
     const p = sim.players[0];
     put(sim, p, 10.5, 6.5, 0);
@@ -316,7 +316,7 @@ describe('M9 audit additions (§11.1)', () => {
     const c = enemyAt(sim, CHORISTER, 20.5, 6.5);
     p.z = -0.8;
     sim.fireWeapon(p, ATTACK_PRIMARY);
-    expect(sim.eHp[c]).toBe(30);
+    expect(sim.eHp[c]).toBe(20);
   });
 
   it('never sets enemy flag bit 1 (Kiss of Betrayal\'s mark is gone)', () => {

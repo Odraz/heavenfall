@@ -89,15 +89,15 @@ describe('the shared fire timer (M9 §2.2)', () => {
     p.fire = FIRE_LEFT;
     sim.step();
     const t0 = sim.tick;
-    // Switch to the Silver Bullet at once: it waits for the revolver's 0.15 s, then fires.
+    // Switch to the Silver Bullet at once: it waits for the revolver's 0.2 s, then fires.
     p.fire = FIRE_LEFT | FIRE_RIGHT | FIRE_RIGHT_LAST;
     for (let i = 0; i < 10; i++) sim.step();
     expect(shots).toEqual([
       [ATTACK_PRIMARY, t0],
-      [ATTACK_SECONDARY, t0 + 5],
+      [ATTACK_SECONDARY, t0 + 6],
     ]);
-    // Waiting while held, the timer went below 0 (the fraction carries over).
-    expect(p.fireTimer).toBeCloseTo(0.15 + 1.5 - 11 / 30, 9);
+    // The timer kept counting while the Silver Bullet waited; nothing was reset.
+    expect(p.fireTimer).toBeCloseTo(0.2 + 1.5 - 11 / 30, 9);
   });
 
   it('released, the timer stops at 0', () => {
@@ -134,7 +134,7 @@ describe('the shared fire timer (M9 §2.2)', () => {
 
 describe('attacks (M9 §2.3)', () => {
   it('have the new intervals', () => {
-    expect(WEAPONS.betrayer).toMatchObject({ interval: 0.15, damage: 30, maxHits: 1, range: 60 });
+    expect(WEAPONS.betrayer).toMatchObject({ interval: 0.2, damage: 40, maxHits: 1, range: 60 });
     expect(SECONDARIES.fallen).toMatchObject({ interval: 1.0, damage: 60, maxHits: 1, range: 50 });
     expect(SECONDARIES.heretic).toMatchObject({ interval: 0.5, damage: 10, range: 40 });
     expect(SECONDARIES.binder).toMatchObject({ interval: 0.8, damage: 25, maxHits: 6, range: 3 });
@@ -163,7 +163,7 @@ describe('attacks (M9 §2.3)', () => {
     for (const [cls, slot, interval] of [
       ['fallen', ATTACK_SECONDARY, 1.0],
       ['betrayer', ATTACK_SECONDARY, 1.5],
-      ['betrayer', ATTACK_PRIMARY, 0.15],
+      ['betrayer', ATTACK_PRIMARY, 0.2],
     ] as const) {
       const sim = makeSim(room(30, 10), [cls, 'binder']);
       const [shooter, dead] = sim.players;

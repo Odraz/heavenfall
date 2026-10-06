@@ -9,8 +9,8 @@ export interface ClassDef {
   hp: number;
   /** Horizontal movement speed in m/s. */
   speed: number;
-  /** A passive shown on the class card's weapon line, with its tooltip (M8 §2.1). */
-  passive?: { name: string; description: string };
+  /** The class's passive trait, shown on the class card under the role and HP, with its tooltip. */
+  passive: { name: string; description: string };
   /**
    * The hints panel's lines (M8 §2.2, §2.4); `key` puts that ability's icon beside the line, or the
    * mouse glyph for an attack (M9 §6.2).
@@ -45,6 +45,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     role: 'Healer',
     hp: 150,
     speed: 8,
+    passive: { name: 'Last Rites', description: 'Revives fallen teammates twice as fast.' },
     hints: [
       { key: 'LMB', text: 'Censers burst among the enemies.' },
       { key: 'RMB', text: 'Hold on a teammate (gold marker) to heal them.' },
@@ -59,6 +60,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     role: 'Support',
     hp: 200,
     speed: 6,
+    passive: { name: 'Fetters', description: 'Every Chain Gun and Scourge hit slows the enemy for 1 s.' },
     hints: [
       { key: 'LMB', text: 'Every bullet slows its target.' },
       { key: 'RMB', text: 'Swing your chain when the swarm reaches you.' },
@@ -72,6 +74,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     role: 'Damage',
     hp: 120,
     speed: 9,
+    passive: { name: 'Into the Night', description: 'The fastest of the damned: outruns every other class.' },
     hints: [
       { key: 'LMB', text: 'Fast shots, one enemy at a time.' },
       { key: 'RMB', text: "Wait until enemies line up: the bullet tears through the line until it's spent." },

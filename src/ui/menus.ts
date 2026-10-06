@@ -126,8 +126,8 @@ export function titleScreen(a: TitleActions): HTMLElement {
 }
 
 /**
- * A class card (§3, M8 §2.1): portrait, name, role and HP, the weapon line (and the Fallen's passive),
- * and the Q and E abilities. Hovering the weapon, the passive or an ability shows its tooltip.
+ * A class card (§3, M8 §2.1): portrait, name, role and HP, the passive, the two weapon lines and the
+ * Q and E abilities. Hovering the passive, a weapon or an ability shows its tooltip.
  */
 export function classCard(id: ClassId, parent: HTMLElement): HTMLButtonElement {
   const c = CLASSES[id];
@@ -140,15 +140,15 @@ export function classCard(id: ClassId, parent: HTMLElement): HTMLButtonElement {
   img.alt = '';
   el('div', 'class-name', card, c.name);
   el('div', 'class-role', card, `${c.role} · ${c.hp} HP`);
+  // The passive, on its own line under the role and HP.
+  const passive = el('div', 'class-passive', card);
+  passive.append('Passive: ');
+  attachTooltip(el('span', 'class-item', passive, c.passive.name), c.passive.name, c.passive.description);
   // Two weapon lines (M9 §6.1): the primary, then the secondary, each after its mouse glyph.
   for (const [button, weapon] of [['left', WEAPONS[id]], ['right', SECONDARIES[id]]] as const) {
     const weaponLine = el('div', 'class-weapon', card);
     weaponLine.append(mouseGlyph(button));
     attachTooltip(el('span', 'class-item', weaponLine, weapon.name), weapon.name, weapon.description);
-    if (c.passive && button === 'left') {
-      weaponLine.append(' · ');
-      attachTooltip(el('span', 'class-item', weaponLine, c.passive.name), c.passive.name, c.passive.description);
-    }
   }
   const row = el('div', 'class-abilities', card);
   for (const key of ['Q', 'E'] as const) {

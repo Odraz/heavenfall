@@ -53,6 +53,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 | Primary | Censer Launcher | As now (damage only). |
 | Secondary | Sacrament | While held, heals the ally target 10 HP every 0.5 s (range 40 m, the same ally target as Martyr's Shroud). That's the rate Communion gives everyone nearby, so the Heretic's healing on one ally at most doubles. With no ally target it does nothing. Never heals the Heretic. |
 | Q | Unholy Communion | As now: heals everyone near the Heretic, the Heretic included. |
+| Passive | Last Rites | Revives fallen teammates twice as fast (the existing rule, now named). |
 | E | Martyr's Shroud | As now. **New:** when damage breaks it, it explodes for 50 dmg to the 8 nearest enemies within 5 m of the shielded player. It doesn't explode when it expires or is replaced. It still explodes if the Heretic has died or left, or if the hit that breaks it kills the shielded player. |
 
 - **Censer or Sacrament:** the censer while the party holds; Sacrament when one teammate is in trouble, even far away. Every second spent healing is a second not killing, which is the Heretic's real decision.
@@ -73,6 +74,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 | Secondary | Scourge | Swings a heavy chain in front of the Binder: 25 dmg to the 6 nearest enemies within 3 m and 120° of the aim, 0.8 s between swings. Like every Binder hit, it slows them for 1 s. |
 | Q | Chains of Tartarus | As now: pull a crowd and bind it. |
 | E | Discord | As now: silence. |
+| Passive | Fetters | Every Chain Gun and Scourge hit slows for 1 s (the existing trait, now named). |
 
 - **Chain Gun or Scourge:** the Chain Gun at range, one enemy at a time; the Scourge when the swarm reaches the Binder. Each swing kills up to 6 Blessed, and the slow lets the Binder back off.
 - **It's how the Binder survives being caught.** At 6 m/s with no escape ability, it can't outrun a swarm. The Scourge clears space around it instead.
@@ -85,10 +87,11 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 
 | Slot | Name | Rule |
 |---|---|---|
-| Primary | Silver Revolver | 30 dmg to the first enemy hit, 0.15 s between shots, no spread, range 60 m. One Blessed or Cherub per shot, a Chorister in two. |
-| Secondary | Silver Bullet | 300 dmg carried through the line, 1.5 s between shots, range 60 m. Each enemy hit, nearest first, takes what's left; the bullet stops when nothing is left. Kills 15 Blessed in a line; bound Blessed cost half as much. It costs 1.5 s of revolver fire (about 10 kills), so it only pays off with more than 10 enemies in the line. |
+| Primary | Silver Revolver | 40 dmg to the first enemy hit, 0.2 s between shots, no spread, range 60 m. One Blessed or Cherub per shot, a Chorister in two. (Slowed from 0.15 s / 30 dmg after review: it felt like a machine gun; its damage per second is unchanged.) |
+| Secondary | Silver Bullet | 300 dmg carried through the line, 1.5 s between shots, range 60 m. Each enemy hit, nearest first, takes what's left; the bullet stops when nothing is left. Kills 15 Blessed in a line; bound Blessed cost half as much. It costs 1.5 s of revolver fire (about 7.5 kills), so it only pays off with 8 or more enemies in the line. |
 | Q | Field of Blood | Tosses the thirty pieces of silver 3 m in front of the Betrayer, where they sink into a pool of blood, with no aiming: the Betrayer is fast, so it walks to where it wants the field. For 8 s, every player within 6 m of it (on its floor or a step from it; jumping doesn't take them out) fires twice as fast, even if the Betrayer dies meanwhile: both attacks, so also Sacrament's healing. Cooldown 30 s. |
 | E | Shadowstep | As now. |
+| Passive | Into the Night | The fastest of the damned, 9 m/s (the existing speed, now named). |
 
 - **Revolver or Silver Bullet:** the revolver for scattered enemies and flyers; Silver Bullet when the enemies line up in a corridor, behind the taunting Fallen or in the Binder's pile. On the boss alone both deal the same damage, but Blessed in front of it soak up the bullet, so the revolver wins there.
 - **Field of Blood looks like a place.** A glowing pool of blood-red liquid with light rising from it, so the party sees where to go. A player standing in it sees a red glow rising at the bottom of the screen, a red glow on the weapon and a buff icon by the HP bar, even when not shooting.

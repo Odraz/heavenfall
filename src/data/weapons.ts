@@ -35,7 +35,7 @@ export const WEAPONS: Record<ClassId, WeaponDef> = {
   fallen: { name: 'Brimstone Shotgun', description: '8 pellets of hellfire. Deadly up close, and blasts back what survives.', kind: 'hitscan', interval: 0.8, pellets: 8, damage: 12, spreadYaw: 8 * DEG, spreadPitch: 4 * DEG, range: 20, maxHits: 1, slow: 0 },
   heretic: { name: 'Censer Launcher', description: 'Fires a censer that bursts on impact, hitting the enemies around it.', kind: 'censer', interval: 1.0, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 25, maxHits: 1, slow: 0 },
   binder: { name: 'Chain Gun', description: 'Fast and accurate. Slows every enemy it hits.', kind: 'hitscan', interval: 1 / 12, pellets: 1, damage: 12, spreadYaw: 2 * DEG, spreadPitch: 2 * DEG, range: 40, maxHits: 1, slow: 1 },
-  betrayer: { name: 'Silver Revolver', description: 'Fast, precise shots, one enemy at a time.', kind: 'hitscan', interval: 0.15, pellets: 1, damage: 30, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: 1, slow: 0 },
+  betrayer: { name: 'Silver Revolver', description: 'Fast, precise shots, one enemy at a time.', kind: 'hitscan', interval: 0.2, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: 1, slow: 0 },
 };
 
 /** Secondary attacks, right mouse (M9 §2.3). */

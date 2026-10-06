@@ -209,7 +209,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     expect(sim.rayEnemies(p.x, p.y, 1.6, Math.cos(p.yaw), Math.sin(p.yaw), 0, 60, 3)).toEqual([]);
   });
 
-  it('the Silver Revolver hits only the first enemy for 30 (M9 §2.3); the Chain Gun stops at the first', () => {
+  it('the Silver Revolver hits only the first enemy for 40 (M9 §2.3); the Chain Gun stops at the first', () => {
     const sim = makeSim(room(30, 5), ['betrayer', 'binder']);
     const [b, c] = sim.players;
     put(sim, b, 1.5, 3.5);
@@ -217,7 +217,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     const line = [5, 8, 11].map((x) => enemyAt(sim, CHORISTER, x + 0.5, 3.5));
     aimAt(sim, b, line[0]);
     sim.fireWeapon(b);
-    expect(line.map((s) => sim.eHp[s])).toEqual([30, 60, 60]);
+    expect(line.map((s) => sim.eHp[s])).toEqual([20, 60, 60]);
     sim.fireWeapon(b);
     expect(line.map((s) => sim.eAlive[s])).toEqual([0, 1, 1]);
     expect(b.kills).toBe(1);
@@ -297,8 +297,8 @@ describe('combat (§5.3, §5.4, §6)', () => {
     expect(sim.pAlive[first]).toBe(0);
   });
 
-  it('a held Chain Gun fires on ticks 0, 3, 5, 8, 10, … (12 per second); a revolver carries fractions over', () => {
-    // The revolver fires every 0.15 s = 4.5 ticks (M9 §2.3).
+  it('a held Chain Gun fires on ticks 0, 3, 5, 8, 10, … (12 per second), carrying fractions over; a revolver every 6 ticks', () => {
+    // The revolver fires every 0.2 s = 6 ticks (M9 §2.3, retuned after review).
     const sim = makeSim(room(30, 5), ['binder', 'betrayer']);
     const [binder, betrayer] = sim.players;
     const shots: Array<[number, number]> = [];
@@ -311,7 +311,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     betrayer.fire = 1;
     for (let i = 0; i < 22; i++) sim.step();
     expect(shots.filter((s) => s[0] === 0).map((s) => s[1] - t0)).toEqual([0, 3, 5, 8, 10, 13, 15, 18, 20]);
-    expect(shots.filter((s) => s[0] === 1).map((s) => s[1] - t0)).toEqual([0, 5, 9, 14, 18]);
+    expect(shots.filter((s) => s[0] === 1).map((s) => s[1] - t0)).toEqual([0, 6, 12, 18]);
     spy.mockRestore();
   });
 

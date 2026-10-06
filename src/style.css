@@ -1050,13 +1050,13 @@ body {
 }
 
 /*
- * A card spans 6 rows of the cards grid (portrait, name, role, the two weapon lines, abilities) and
- * uses them as its own, so each line starts at the same height in every card, whatever wraps.
+ * A card spans 7 rows of the cards grid (portrait, name, role, passive, the two weapon lines,
+ * abilities) and uses them as its own, so each line starts at the same height in every card, whatever wraps.
  */
 .class-card {
   position: relative;
   display: grid;
-  grid-row: span 6;
+  grid-row: span 7;
   grid-template-rows: subgrid;
   justify-items: center;
   align-content: start;
@@ -1097,6 +1097,14 @@ body {
   font-size: 14px;
   line-height: 1.35;
   color: rgba(247, 240, 220, 0.85);
+}
+
+/* The passive, under the role and HP. */
+.class-passive {
+  margin-bottom: 4px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: rgba(247, 240, 220, 0.65);
 }
 
 /* The mouse glyph before each attack's name (M9 §6.1). */
