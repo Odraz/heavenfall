@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { K_DOOR, K_FLOOR, K_OPEN, K_PILLAR, K_VOID } from '../sim/heights';
 import type { GameMap } from '../sim/map';
 import { CORNICE, floorLooks, L_CORNICE, L_MEDALLION, L_PILASTER, L_RISER, L_WALL, segmentLook, TILE, wallPieces } from './looks';
+import { bakeLightmap, faceColor, facesSun, shadowZ as faceShadowZ } from './lightmap';
 import { makeTerrainMaterial } from './terrainMaterial';
 import type { TerrainTextures } from './textures';
 
@@ -18,7 +19,15 @@ class GeometryBuilder {
   readonly layer: number[] = [];
   /** 1 where a cliff has faded into the sky (M10 §3.5). */
   readonly fade: number[] = [];
+  /** The height below which a sun-facing face is in shadow (M10 §5.2); far below for other faces. */
+  readonly shadowZ: number[] = [];
+  /** 1 for floor tops, which take the lightmap. */
+  readonly floorTop: number[] = [];
   readonly index: number[] = [];
+  /** The color, shadow line function and floor flag of the next quads. */
+  rgb: [number, number, number] = [1, 1, 1];
+  shadowAt: ((x: number, y: number) => number) | null = null;
+  isFloor = 0;
 
   /**
    * Adds a quad from 4 corners given in simulation coordinates (x, y, z-up), in order around the quad.
@@ -32,9 +41,11 @@ class GeometryBuilder {
       this.pos.push(x, z, y);
       this.uv.push(uvs[i][0], uvs[i][1]);
       const sh = typeof shade === 'number' ? shade : shade[i];
-      this.color.push(sh, sh, sh);
+      this.color.push(sh * this.rgb[0], sh * this.rgb[1], sh * this.rgb[2]);
       this.layer.push(layer);
       this.fade.push(fade[i]);
+      this.shadowZ.push(this.shadowAt ? this.shadowAt(x, y) : -1e4);
+      this.floorTop.push(this.isFloor);
     }
     // Check winding against the wanted normal (in three.js space).
     const p = (i: number) => new THREE.Vector3(this.pos[(base + i) * 3], this.pos[(base + i) * 3 + 1], this.pos[(base + i) * 3 + 2]);
@@ -72,6 +83,8 @@ class GeometryBuilder {
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.color, 3));
     g.setAttribute('layer', new THREE.Float32BufferAttribute(this.layer, 1));
     g.setAttribute('fade', new THREE.Float32BufferAttribute(this.fade, 1));
+    g.setAttribute('shadowZ', new THREE.Float32BufferAttribute(this.shadowZ, 1));
+    g.setAttribute('floorTop', new THREE.Float32BufferAttribute(this.floorTop, 1));
     g.setIndex(this.index);
     g.computeBoundingSphere();
     return g;
@@ -80,15 +93,17 @@ class GeometryBuilder {
 
 /** The four edge directions: offset to the neighbor, the edge endpoints relative to the cell, and shading. */
 const EDGES = [
-  { dx: 1, dy: 0, e: [1, 0, 1, 1], shade: 0.78 },
-  { dx: -1, dy: 0, e: [0, 1, 0, 0], shade: 0.74 },
-  { dx: 0, dy: 1, e: [1, 1, 0, 1], shade: 0.86 },
-  { dx: 0, dy: -1, e: [0, 0, 1, 0], shade: 0.9 },
+  { dx: 1, dy: 0, e: [1, 0, 1, 1], shade: 1 },
+  { dx: -1, dy: 0, e: [0, 1, 0, 0], shade: 1 },
+  { dx: 0, dy: 1, e: [1, 1, 0, 1], shade: 1 },
+  { dx: 0, dy: -1, e: [0, 0, 1, 0], shade: 1 },
 ] as const;
 
 export interface Terrain {
   /** Tops, sides and walls, with doors open. */
   mesh: THREE.Mesh;
+  /** The baked floor lightmap (M10 §5.2), which the characters sample too (§5.4). */
+  lightmap: THREE.DataTexture;
   /** Closed-door columns per arena, entry and exit door (null where the arena has none). */
   doors: Array<{ entry: THREE.Mesh | null; exit: THREE.Mesh | null }>;
 }
@@ -109,6 +124,13 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   let lowest = Infinity;
   for (let i = 0; i < w * h; i++) if (!map.wall[i]) lowest = Math.min(lowest, map.floor[i]);
   const cliffBottom = lowest - CLIFF_DEPTH;
+  // Baked light (M10 §5.2).
+  const lm = bakeLightmap(map);
+  const lightmap = new THREE.DataTexture(lm.data, lm.w, lm.h, THREE.RGBAFormat, THREE.UnsignedByteType);
+  lightmap.magFilter = THREE.LinearFilter;
+  lightmap.minFilter = THREE.LinearMipmapLinearFilter;
+  lightmap.generateMipmaps = true;
+  lightmap.needsUpdate = true;
   /** A pillar's face: the extent of its pillar cells along the face, to center the pilaster on it. */
   const pillarSpan = (c: number, r: number, alongX: boolean): [number, number] => {
     let a = alongX ? c : r;
@@ -126,6 +148,9 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
       const i = r * w + c;
       const floor = k === K_FLOOR || k === K_DOOR;
       const t = topAt(c, r);
+      g.rgb = [1, 1, 1];
+      g.shadowAt = null;
+      g.isFloor = floor ? 1 : 0;
       if (floor) {
         const m = looks.medallionOf[i];
         let uv: number[][];
@@ -138,7 +163,7 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
           const [u0, v0, u1, v1] = [c, r, c + 1, r + 1].map((x) => x / TILE);
           uv = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
         }
-        g.quad([[c, r, t], [c + 1, r, t], [c + 1, r + 1, t], [c, r + 1, t]], uv, 0.9 + 0.1 * (t / 8.75), [0, 0, 1], m >= 0 ? L_MEDALLION : looks.layer[i]);
+        g.quad([[c, r, t], [c + 1, r, t], [c + 1, r + 1, t], [c, r + 1, t]], uv, 1, [0, 0, 1], m >= 0 ? L_MEDALLION : looks.layer[i]);
       } else {
         // Wall tops are rarely seen.
         const [u0, v0, u1, v1] = [c, r, c + 1, r + 1].map((x) => x / TILE);
@@ -162,6 +187,24 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
         const u1 = (alongX ? x1 : y1) / TILE;
         const face = { foot: nt === -Infinity ? cliffBottom : nt, top: t };
         const nk = kindAt(nc, nr);
+        // Baked: the face's direction shading, and its shadow line if it's turned to the sun, at each
+        // end of the face, 1 cm inside it.
+        g.isFloor = 0;
+        g.rgb = faceColor(edge.dx, edge.dy);
+        if (facesSun(edge.dx, edge.dy)) {
+          const ends = new Map<string, number>();
+          g.shadowAt = (x, y) => {
+            const key = `${x},${y}`;
+            let z = ends.get(key);
+            if (z === undefined) {
+              const tx = alongX ? (x === x0 ? 0.01 : -0.01) * Math.sign(x1 - x0) : 0;
+              const ty = alongX ? 0 : (y === y0 ? 0.01 : -0.01) * Math.sign(y1 - y0);
+              z = faceShadowZ(map, x + tx, y + ty, edge.dx, edge.dy, face.foot, t);
+              ends.set(key, z);
+            }
+            return z;
+          };
+        } else g.shadowAt = null;
         if (floor) {
           g.side(x0, y0, x1, y1, nt, t, u0, u1, nt / TILE, t / TILE, normal, edge.shade, L_RISER, face);
         } else if (nk === K_VOID) {
@@ -200,13 +243,14 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
     }
   }
 
-  const mesh = new THREE.Mesh(g.toGeometry(), makeTerrainMaterial(textures.array, textures.sky));
+  const mesh = new THREE.Mesh(g.toGeometry(), makeTerrainMaterial(textures.array, textures.sky, lightmap, w, h));
 
-  const doorMat = makeTerrainMaterial(textures.door, textures.sky);
+  const doorMat = makeTerrainMaterial(textures.door, textures.sky, lightmap, w, h);
   const doorMesh = (cells: ReadonlyArray<[number, number]>): THREE.Mesh | null => {
     if (cells.length === 0) return null;
     const b = new GeometryBuilder();
     for (const [c, r] of cells) {
+      b.shadowAt = null;
       const f = map.floor[r * w + c];
       // A closed door's column is as tall as its *Door* height (M10 §3.5).
       const top = hz.height[r * w + c];
@@ -216,9 +260,11 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
         const y0 = r + ey0;
         const x1 = c + ex1;
         const y1 = r + ey1;
+        b.rgb = faceColor(edge.dx, edge.dy);
         b.side(x0, y0, x1, y1, f, top, (x0 + y0) / TILE, (x1 + y1) / TILE, f / TILE, top / TILE, [edge.dx, edge.dy, 0], edge.shade, 0, { foot: f, top });
       }
       const [u0, v0, u1, v1] = [c, r, c + 1, r + 1].map((m) => m / TILE);
+      b.rgb = [1, 1, 1];
       b.quad([[c, r, top], [c + 1, r, top], [c + 1, r + 1, top], [c, r + 1, top]], [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], 0.95, [0, 0, 1], 0);
     }
     const m = new THREE.Mesh(b.toGeometry(), doorMat);
@@ -227,5 +273,5 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   };
   const doors = map.arenas.map((arena) => ({ entry: doorMesh(arena.doors), exit: doorMesh(arena.exitDoors ?? []) }));
 
-  return { mesh, doors };
+  return { mesh, lightmap, doors };
 }

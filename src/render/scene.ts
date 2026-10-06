@@ -28,7 +28,9 @@ export class GameScene {
   ) {
     installFogCurve();
     this.sky = makeSky(textures.sky, true);
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    // alpha: the contact shadows keep their darkest value in the framebuffer's alpha (M10 §5.4); the
+    // background clears it to 1 and every opaque surface writes 1.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.scene.background = new THREE.Color(FOG_COLOR);
     this.scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR, FOG_FAR);

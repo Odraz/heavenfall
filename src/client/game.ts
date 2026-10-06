@@ -19,6 +19,8 @@ import { BOSS_CAST_JUDGMENT, PROJ_CENSER } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
+import { ContactShadows, SHADOW_DARKNESS } from '../render/contactShadows';
+import { PLAYER_RADIUS } from '../sim/constants';
 import { Particles } from '../render/particles';
 import { GameScene } from '../render/scene';
 import type { GameTextures } from '../render/textures';
@@ -48,6 +50,8 @@ import { PlayerAnimator } from './playerAnim';
 import { SnapshotBuffer, type InterpolatedEnemies } from './snapshots';
 
 const BENCH_TURN_RATE = 0.3;
+/** Contact shadows are this many times a body's radius (M10 §5.4). */
+const SHADOW_SIZE = 1.4;
 const PROJECTILE_SPRITES = ['proj-censer', 'proj-orb', 'proj-arrow'];
 const PROJECTILE_SIZES = [0.4, 0.6, 0.3];
 const RESULT_OVERLAY_MS = 3000;
@@ -182,6 +186,8 @@ export class Game {
   private readonly fps = new FpsCounter();
   private readonly snaps: SnapshotBuffer;
   private readonly billboards: Billboards;
+  /** Contact shadows under the characters (M10 §5.4). */
+  private readonly shadows: ContactShadows;
   /** Enemies with an atlas and their corpses, one billboard mesh per type. */
   private readonly enemyBillboards = new Map<number, Billboards>();
   private readonly animator = new EnemyAnimator();
@@ -300,6 +306,11 @@ export class Game {
       this.playerBillboards.set(cls, b);
       this.scene.scene.add(b.mesh);
     }
+    // The characters sit in the baked light (M10 §5.4).
+    const lightmap = this.scene.terrain.lightmap;
+    for (const b of [this.billboards, ...this.enemyBillboards.values(), ...this.playerBillboards.values()]) b.setLight(lightmap, this.map.w, this.map.h, this.floorAt);
+    this.shadows = new ContactShadows(o.textures.fx.glow);
+    for (const m of this.shadows.meshes) this.scene.scene.add(m);
     this.vfx = new Vfx(o.textures.fx);
     this.incense = new IncenseClouds(o.textures.fx.smoke);
     this.scene.scene.add(this.incense.group);
@@ -1371,9 +1382,20 @@ export class Game {
 
   private readonly glowScratch: Glow = { r: 1, g: 1, b: 1, a: 0 };
 
+  /** The floor height of the cell at a point (−∞ over walls and outside the grid). */
+  private readonly floorAt = (x: number, y: number): number => {
+    const c = Math.floor(x);
+    const r = Math.floor(y);
+    if (c < 0 || r < 0 || c >= this.map.w || r >= this.map.h || this.map.wall[r * this.map.w + c]) return -Infinity;
+    return this.map.floor[r * this.map.w + c];
+  };
+
   private drawBillboards(now: number, ents: { count: number; slot: Uint16Array; x: Float32Array; y: Float32Array; type: Uint8Array; state: Uint8Array; flags: Uint8Array }, enemyZ: Float32Array): void {
     const bb = this.billboards;
     bb.begin();
+    const shadows = this.shadows;
+    shadows.begin();
+    if (!this.dead) shadows.add(this.player.body.x, this.player.body.y, this.floorAt(this.player.body.x, this.player.body.y), PLAYER_RADIUS * SHADOW_SIZE);
     for (const b of this.enemyBillboards.values()) b.begin();
     for (const b of this.playerBillboards.values()) b.begin();
     const chain = this.frames['chain-ring'];
@@ -1431,6 +1453,9 @@ export class Game {
       else if (ents.state[i] === ST_WINDUP) glow = GLOW_WINDUP;
       const grey = (flags & FLAG_SILENCED) !== 0;
       target.add(f, ents.x[i], ents.y[i], z, height, false, grey ? 0.55 : 1, grey ? 0.55 : 1, grey ? 0.6 : 1, glow);
+      // Its contact shadow on the floor under it; a Cherub's smaller and half as dark, 4 m below it.
+      if (type === CHERUB) shadows.add(x, y, this.floorAt(x, y), def.radius, SHADOW_DARKNESS / 2);
+      else shadows.add(x, y, this.floorAt(x, y), def.radius * SHADOW_SIZE);
       if (flags & FLAG_ROOTED) bb.add(chain, ents.x[i], ents.y[i], z + 0.25, Math.max(0.45, def.radius * 1.1), true);
       // Taunted: the `!` pops in, holds and fades, then stays hidden for the rest of the taunt.
       if (flags & FLAG_TAUNTED) {
@@ -1489,6 +1514,7 @@ export class Game {
       const pick = this.playerAnimator.pick(q.id);
       const pf = set.anims[pick.anim][spriteDirection(q.yaw, eye.x - q.x, eye.y - q.y)][pick.frame];
       pb.add(pf, q.x, q.y, q.z, pf.height, false, 1, 1, 1, q.id === this.allyTargetId ? GLOW_ALLY : NO_GLOW);
+      shadows.add(q.x, q.y, this.floorAt(q.x, q.y), PLAYER_RADIUS * SHADOW_SIZE);
     }
     // Decorations (§8.1): drawn only.
     for (const d of this.map.decorations) {
@@ -1530,6 +1556,7 @@ export class Game {
     this.vfx.setTethers(tethers);
     this.particles.draw(bb);
     bb.end(this.scene.camera);
+    shadows.end();
     for (const b of this.enemyBillboards.values()) b.end(this.scene.camera);
     for (const b of this.playerBillboards.values()) b.end(this.scene.camera);
   }
