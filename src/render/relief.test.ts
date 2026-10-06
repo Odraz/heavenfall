@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DUNGEONS } from '../data/dungeons/index';
-import { K_FLOOR, K_PILLAR, K_VOID, K_WALL } from '../sim/heights';
+import { K_FLOOR, K_OPEN, K_PILLAR, K_VOID, K_WALL } from '../sim/heights';
 import { loadMap } from '../sim/map';
 import { L_WINDOW, segmentLook } from './looks';
 import { computeRelief, CROWN_DEPTH, RECESS, RELIEF } from './relief';
@@ -26,6 +26,11 @@ describe('relief (M10 §5.3)', () => {
       it('every crown is at or above the zone top of every zone next to it, at most 0.35 m in front of its face', () => {
         expect(relief.crowns.length).toBeGreaterThan(id === 'pearly-gates' ? 100 : 10);
         for (const k of relief.crowns) {
+          if (k.door) {
+            // A doorway arch's crown is above its arch, so above HEADROOM over every floor next to it.
+            expect(k.zb).toBeGreaterThan(map.floor[k.r * w + k.c] + 5.3);
+            continue;
+          }
           // The cells it covers: its ends are whole cells, 0.35 m past one (an outer corner), or 0.35 m
           // short of one (an inner corner).
           const cellOf = (a: number, end: boolean) => {
@@ -42,8 +47,10 @@ describe('relief (M10 §5.3)', () => {
           for (let a = cs; a < ce; a++) {
             const c = alongX ? a : k.c;
             const r = alongX ? k.r : a;
-            expect(kind(c, r) === K_WALL || kind(c, r) === K_PILLAR, `crown cell ${c},${r}`).toBe(true);
-            expect(hz.height[r * w + c]).toBe(k.zt);
+            const ck = kind(c, r);
+            expect(ck === K_WALL || ck === K_PILLAR || ck === K_OPEN, `crown cell ${c},${r}`).toBe(true);
+            // An arcade's crown is at its arcade's height (M10 §6.1).
+            expect(ck === K_OPEN ? hz.openTop[r * w + c] : hz.height[r * w + c]).toBe(k.zt);
             // Its underside is at or above every zone top next to it.
             for (const z of zonesNear(c, r)) expect(k.zb).toBeGreaterThanOrEqual(hz.zoneTop[z] - 1e-4);
             // It never stands in front of a face that looks onto void.
@@ -55,6 +62,12 @@ describe('relief (M10 §5.3)', () => {
       it('every pilaster strip stands RELIEF in front of a straight wall, at least 1 m from every convex corner, never on a pillar or before void', () => {
         expect(RELIEF).toBeLessThanOrEqual(0.12);
         for (const s of relief.strips) {
+          if (s.pier) {
+            // The arcades' pier strips: on an open edge, 0.6 m wide, up to the cornice.
+            expect(kind(s.c, s.r)).toBe(K_OPEN);
+            expect(s.a1 - s.a0).toBeCloseTo(0.6);
+            continue;
+          }
           expect(kind(s.c, s.r)).toBe(K_WALL);
           // The straight wall it stands on: the 4 m segment's cells are all walls with floor in front.
           const alongX = s.ny !== 0;

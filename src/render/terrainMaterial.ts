@@ -60,8 +60,22 @@ const FRAGMENT = /* glsl */ `
   varying float vFloor;
   const vec3 SHADOW_TINT = vec3(SHADOW_R, SHADOW_G, SHADOW_B);
   void main() {
+    float alpha = 1.0;
     #ifdef SINGLE
       vec3 c = texture(map, vUv).rgb;
+    #elif defined(CUTOUT)
+      // The arches' painted faces (M10 §6): alpha to coverage. Smaller mip levels average thin shapes
+      // away, so alpha is scaled up with the level sampled (25% per level) and sharpened by its
+      // screen-space rate of change, so the balusters stay whole at distance.
+      vec4 t4 = texture(terrainTex, vec3(vUv, vLayer));
+      vec2 size = vec2(textureSize(terrainTex, 0).xy);
+      vec2 ddx = dFdx(vUv * size);
+      vec2 ddy = dFdy(vUv * size);
+      float lod = max(0.0, 0.5 * log2(max(dot(ddx, ddx), dot(ddy, ddy))));
+      alpha = t4.a * (1.0 + 0.25 * lod);
+      alpha = clamp((alpha - 0.5) / max(fwidth(alpha), 1e-4) + 0.5, 0.0, 1.0);
+      if (alpha < 0.01) discard;
+      vec3 c = t4.rgb;
     #else
       vec3 c = texture(terrainTex, vec3(vUv, vLayer)).rgb;
     #endif
@@ -75,19 +89,22 @@ const FRAGMENT = /* glsl */ `
     }
     vec3 sky = skyFogColor(normalize(vWorld - cameraPosition));
     c = mix(c, sky, max(vFade, heavenFog(vFogDepth)));
-    gl_FragColor = vec4(c, 1.0);
+    gl_FragColor = vec4(c, alpha);
     #include <colorspace_fragment>
   }`;
 
 /** The terrain's material over a texture array, or over one texture (`single`, the doors). */
-export function makeTerrainMaterial(tex: THREE.DataArrayTexture | THREE.Texture, sky: THREE.Texture, lightmap: THREE.Texture, mapW: number, mapH: number): THREE.ShaderMaterial {
+export function makeTerrainMaterial(tex: THREE.DataArrayTexture | THREE.Texture, sky: THREE.Texture, lightmap: THREE.Texture, mapW: number, mapH: number, cutout = false): THREE.ShaderMaterial {
   const single = !(tex as THREE.DataArrayTexture).isDataArrayTexture;
   return new THREE.ShaderMaterial({
+    // The painted faces: double-sided, cut out with alpha to coverage (the renderer has MSAA).
+    ...(cutout ? { side: THREE.DoubleSide, alphaToCoverage: true } : {}),
     vertexColors: true,
     fog: true,
     defines: {
       FOG_SCENERY: '',
       ...(single ? { SINGLE: '' } : {}),
+      ...(cutout ? { CUTOUT: '' } : {}),
       LIGHT_GAIN_V: LIGHT_GAIN.toFixed(4),
       // A shadowed face takes the floor's shadow: the shadow color relative to the lit one.
       SHADOW_R: (SHADE[0] / LIT[0]).toFixed(4),

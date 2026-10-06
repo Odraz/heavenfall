@@ -4,10 +4,11 @@
  * Drawn only; merged into the terrain mesh. Computed from the level data, deterministically.
  */
 import * as THREE from 'three';
-import { K_DOOR, K_FLOOR, K_PILLAR, K_VOID, K_WALL } from '../sim/heights';
+import { K_DOOR, K_FLOOR, K_OPEN, K_PILLAR, K_VOID, K_WALL } from '../sim/heights';
 import type { GameMap } from '../sim/map';
 import { bandTop, CORNICE, CORNICE_CROWN, FRIEZE, FRIEZE_V, L_PILASTER, L_WINDOW, segmentLook, TILE } from './looks';
 import { WINDOW_GLASS } from './window.gen';
+import { computeArches, REVEAL } from './arches';
 
 /** How far a crown projects from its wall face. */
 export const CROWN_DEPTH = 0.35;
@@ -47,6 +48,8 @@ export interface Crown extends Face {
   zt: number;
   capA0: boolean;
   capA1: boolean;
+  /** A doorway arch's crown (M10 §6.2), above the passage rather than on a wall cell. */
+  door?: boolean;
 }
 
 /** A pilaster strip: RELIEF in front of a face, from a0 to a1 along it, from z0 up to z1. */
@@ -61,6 +64,8 @@ export interface Strip extends Face {
   band: number;
   /** The tile's start along the face (the 4 m segment), for u. */
   tile0: number;
+  /** A pier strip at an arcade's joint (M10 §5.3), on an open edge rather than a wall. */
+  pier?: boolean;
 }
 
 /** A window recess: the window segment's face (4 m from a0), its band, and the glass outline. */
@@ -97,14 +102,19 @@ export function computeRelief(map: GameMap): Relief {
     if (k === K_VOID) return -Infinity;
     return k === K_FLOOR || k === K_DOOR ? map.floor[r * w + c] : hz.height[r * w + c];
   };
-  const crowned = (c: number, r: number) => kind(c, r) === K_WALL || kind(c, r) === K_PILLAR;
+  // Walls, pillars and the arcades (open edges, drawn up to their arcade's height, M10 §6.1).
+  const crowned = (c: number, r: number) => kind(c, r) === K_WALL || kind(c, r) === K_PILLAR || kind(c, r) === K_OPEN;
+  /** A crowned cell's top: its height, or an open edge's arcade height. */
+  const crownTop = (c: number, r: number): number => (kind(c, r) === K_OPEN ? hz.openTop[r * w + c] : hz.height[r * w + c]);
+  /** What a crown's face looks onto: as drawn, with an open edge as tall as its arcade. */
+  const besideTop = (c: number, r: number): number => (kind(c, r) === K_OPEN ? hz.openTop[r * w + c] : drawnTop(c, r));
   /** Whether a crown runs on this face: a wall or pillar whose face is exposed down past the crown,
    * and doesn't look onto void (cliffs and the backs of walls get none). */
   const hasCrown = (c: number, r: number, nx: number, ny: number): boolean => {
     if (!crowned(c, r)) return false;
     const nk = kind(c + nx, r + ny);
     if (nk === K_VOID) return false;
-    return drawnTop(c + nx, r + ny) < hz.height[r * w + c] - CORNICE_CROWN - 1e-6;
+    return besideTop(c + nx, r + ny) < crownTop(c, r) - CORNICE_CROWN - 1e-6;
   };
 
   const crowns: Crown[] = [];
@@ -114,7 +124,7 @@ export function computeRelief(map: GameMap): Relief {
     for (let c = 0; c < w; c++) {
       for (const [nx, ny] of DIRS) {
         if (!hasCrown(c, r, nx, ny)) continue;
-        const top = hz.height[r * w + c];
+        const top = crownTop(c, r);
         const zb = top - CORNICE_CROWN;
         const line = faceLine({ c, r, nx, ny });
         // Along the face: t = +1 toward a1, −1 toward a0.
@@ -123,13 +133,13 @@ export function computeRelief(map: GameMap): Relief {
         const end = (sgn: 1 | -1): { ext: number; cap: boolean; outer: boolean } => {
           const bc = c + tx * sgn;
           const br = r + ty * sgn;
-          const bTop = drawnTop(bc, br);
+          const bTop = besideTop(bc, br);
           // The face continues: the next cell has a crown on this side at the same height.
-          if (hasCrown(bc, br, nx, ny) && Math.abs(hz.height[br * w + bc] - top) < 1e-6) return { ext: 0, cap: false, outer: false };
+          if (hasCrown(bc, br, nx, ny) && Math.abs(crownTop(bc, br) - top) < 1e-6) return { ext: 0, cap: false, outer: false };
           // An inner corner: a wall stands across the end, in front of the next cell.
           const across = kind(bc + nx, br + ny);
-          if (across !== K_VOID && across !== K_FLOOR && across !== K_DOOR && drawnTop(bc + nx, br + ny) > zb + 1e-6) {
-            const aTop = drawnTop(bc + nx, br + ny);
+          if (across !== K_VOID && across !== K_FLOOR && across !== K_DOOR && besideTop(bc + nx, br + ny) > zb + 1e-6) {
+            const aTop = besideTop(bc + nx, br + ny);
             if (Math.abs(aTop - top) < 1e-6 && hasCrown(bc + nx, br + ny, -tx * sgn, -ty * sgn)) return { ext: -CROWN_DEPTH, cap: false, outer: false };
             return { ext: 0, cap: aTop < top - 1e-6, outer: false };
           }
@@ -199,8 +209,56 @@ export function computeRelief(map: GameMap): Relief {
       }
     }
   }
+  // The doorway arches' crowns (M10 §6.2): along both faces, across the passage, capped at both ends.
+  for (const d of computeArches(map).doors) {
+    for (const s of [-1, 1]) {
+      const nx = d.nx * s;
+      const ny = d.ny * s;
+      const cell = d.ny !== 0 ? [Math.floor(d.a0), Math.floor(d.plane)] : [Math.floor(d.plane), Math.floor(d.a0)];
+      crowns.push({
+        c: cell[0], r: cell[1], nx, ny, plane: d.plane + (REVEAL / 2) * s,
+        a0: d.a0, a1: d.a1, topA0: d.a0, topA1: d.a1,
+        zb: d.A - CORNICE_CROWN, zt: d.A, capA0: true, capA1: true, door: true,
+      });
+    }
+  }
+
+  // Pier strips on the arcades (M10 §5.3): at every joint between two bays and at both ends of each
+  // run of bays, PIER_STRIP wide, from the floor beside it up to the cornice.
+  const bays = [...hz.bays].sort((p, q) => p.ox - q.ox || p.oy - q.oy || (p.oy !== 0 ? p.cells[0][1] - q.cells[0][1] : p.cells[0][0] - q.cells[0][0]) || (p.oy !== 0 ? p.cells[0][0] - q.cells[0][0] : p.cells[0][1] - q.cells[0][1]));
+  const joints = new Map<string, { bay: (typeof bays)[number]; j: number }>();
+  for (const bay of bays) {
+    const [c, r] = bay.cells[0];
+    const a0 = bay.oy !== 0 ? c : r;
+    for (const j of [a0, a0 + 4]) joints.set(`${bay.ox},${bay.oy},${bay.oy !== 0 ? r : c},${j}`, { bay, j });
+  }
+  for (const { bay, j } of joints.values()) {
+    const [c0, r0] = bay.cells[0];
+    const nx = -bay.ox;
+    const ny = -bay.oy;
+    const alongX = ny !== 0;
+    const plane = faceLine({ c: c0, r: r0, nx, ny }).plane;
+    // The floor beside the joint: the lower of the floors in front of the cells on either side.
+    let floor = Infinity;
+    for (const a of [j - 1, j]) {
+      const fc = alongX ? a : c0 + nx;
+      const fr = alongX ? r0 + ny : a;
+      if (kind(fc, fr) === K_FLOOR || kind(fc, fr) === K_DOOR) floor = Math.min(floor, map.floor[fr * w + fc]);
+    }
+    if (floor === Infinity) floor = bay.base;
+    const top = bay.top;
+    const cell = alongX ? [Math.min(j, c0 + 3), r0] : [c0, Math.min(j, r0 + 3)];
+    strips.push({
+      c: cell[0], r: cell[1], nx, ny, plane,
+      a0: j - PIER_HALF, a1: j + PIER_HALF,
+      z0: floor, z1: top - CORNICE, floor, band: bandTop(floor, top), tile0: j - TILE / 2, pier: true,
+    });
+  }
   return { crowns, strips, windows };
 }
+
+/** Half a pier strip's width (0.6 m, M10 §5.3). */
+const PIER_HALF = 0.3;
 
 /** What the relief's geometry is emitted into (the terrain's builder). */
 export interface ReliefBuilder {

@@ -5,7 +5,7 @@
  */
 import { raycastTerrain } from '../sim/los';
 import type { GameMap } from '../sim/map';
-import { K_DOOR, K_FLOOR } from '../sim/heights';
+import { K_DOOR, K_FLOOR, K_OPEN } from '../sim/heights';
 import { SUN_DIR_X, SUN_DIR_Y, SUN_ELEVATION_DEG } from './sun';
 
 /** Lightmap texels per meter. */
@@ -30,9 +30,27 @@ export const lum = (c: readonly number[]): number => 0.2126 * c[0] + 0.7152 * c[
 /** The darkest floor's luminance relative to the lit floor's. */
 export const DARKEST = (lum(SHADE) * (1 - AO_MAX)) / lum(LIT);
 
-/** The heightfield the sun's rays test: walls, pillars, parapets and closed doors at their heights. */
+let topsCache = new WeakMap<GameMap, Float32Array>();
+
+/**
+ * The heights the sun's rays test: walls, pillars, parapets and closed doors at their heights, and the
+ * arcades' solid segments (open edges in no bay, drawn up to their arcade's height, M10 §6.1).
+ */
+function drawnTops(map: GameMap): Float32Array {
+  let t = topsCache.get(map);
+  if (!t) {
+    const hz = map.heights;
+    t = hz.height.slice();
+    const inBay = new Uint8Array(t.length);
+    for (const b of hz.bays) for (const [c, r] of b.cells) inBay[r * map.w + c] = 1;
+    for (let i = 0; i < t.length; i++) if (hz.kind[i] === K_OPEN && !inBay[i]) t[i] = hz.openTop[i];
+    topsCache.set(map, t);
+  }
+  return t;
+}
+
 function blockers(map: GameMap): GameMap {
-  return { ...map, top: map.heights.height };
+  return { ...map, top: drawnTops(map) };
 }
 
 let maxTopCache = new WeakMap<GameMap, number>();
@@ -41,7 +59,8 @@ function maxTop(map: GameMap): number {
   let m = maxTopCache.get(map);
   if (m === undefined) {
     m = -Infinity;
-    for (const v of map.heights.height) if (v > m) m = v;
+    for (const v of drawnTops(map)) if (v > m) m = v;
+    for (const v of map.heights.openTop) if (v > m) m = v;
     maxTopCache.set(map, m);
   }
   return m;
@@ -178,4 +197,5 @@ export function lightTint(L: number, flying: boolean): { brightness: number; rgb
 /** Resets cached values (tests that edit a map's heights). */
 export function resetLightmapCache(): void {
   maxTopCache = new WeakMap();
+  topsCache = new WeakMap();
 }

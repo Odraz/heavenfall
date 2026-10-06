@@ -2,8 +2,9 @@
 import * as THREE from 'three';
 import { K_DOOR, K_FLOOR, K_OPEN, K_PILLAR, K_VOID } from '../sim/heights';
 import type { GameMap } from '../sim/map';
-import { CORNICE, floorLooks, FRIEZE, L_CORNICE, L_MEDALLION, L_PILASTER, L_RISER, L_WALL, L_WINDOW, segmentLook, TILE, wallPieces } from './looks';
-import { bakeLightmap, faceColor, facesSun, shadowZ as faceShadowZ } from './lightmap';
+import { CORNICE, floorLooks, FRIEZE, L_ARCADE_LOWER, L_ARCADE_UPPER, L_CORNICE, L_MEDALLION, L_PILASTER, L_RISER, L_WALL, L_WINDOW, segmentLook, TILE, wallPieces } from './looks';
+import { bakeLightmap, faceColor, facesSun, shadowZ as faceShadowZ, SUN } from './lightmap';
+import { archesBlock, computeArches, emitArchStone, emitPaintedFaces, LEDGE, type Arches } from './arches';
 import { computeRelief, emitRelief, emitWindows, ReliefIndex } from './relief';
 import { makeTerrainMaterial } from './terrainMaterial';
 import type { TerrainTextures } from './textures';
@@ -126,6 +127,10 @@ export interface Terrain {
   lightmap: THREE.DataTexture;
   /** Where shots meet the relief (M10 §5.3). */
   relief: ReliefIndex;
+  /** The arches' painted faces, one cut-out mesh (M10 §6). */
+  painted: THREE.Mesh;
+  /** The arcades' bays and the doorway arches, for the tracers (M10 §6.1). */
+  arches: Arches;
   /** Closed-door columns per arena, entry and exit door (null where the arena has none). */
   doors: Array<{ entry: THREE.Mesh | null; exit: THREE.Mesh | null }>;
 }
@@ -135,19 +140,26 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   const { w, h } = map;
   const hz = map.heights;
   const looks = floorLooks(map);
+  // The arcades (M10 §6.1): bay cells are drawn as a ledge behind the painted face; open edges in no
+  // bay as solid wall up to their arcade's height.
+  const arches = computeArches(map);
+  const bayBase = new Float32Array(w * h).fill(NaN);
+  for (const b of arches.bays) for (const [c, r] of b.bay.cells) bayBase[r * w + c] = b.base;
   const kindAt = (c: number, r: number) => (c < 0 || r < 0 || c >= w || r >= h ? K_VOID : hz.kind[r * w + c]);
   /** What's drawn at a cell: its floor (doors open), or its wall height; −∞ for void. */
   const topAt = (c: number, r: number): number => {
     const k = kindAt(c, r);
     if (k === K_VOID) return -Infinity;
     const i = r * w + c;
+    if (k === K_OPEN) return Number.isNaN(bayBase[i]) ? hz.openTop[i] : bayBase[i] + LEDGE;
     return k === K_FLOOR || k === K_DOOR ? map.floor[i] : hz.height[i];
   };
   let lowest = Infinity;
   for (let i = 0; i < w * h; i++) if (!map.wall[i]) lowest = Math.min(lowest, map.floor[i]);
   const cliffBottom = lowest - CLIFF_DEPTH;
-  // Baked light (M10 §5.2).
-  const lm = bakeLightmap(map);
+  // Baked light (M10 §5.2): the arches' painted stone and reveals block the sun too (M10 §6).
+  const archShadow = (x: number, y: number, z: number) => archesBlock(arches, x, y, z, SUN.x, SUN.y, SUN.z, 400);
+  const lm = bakeLightmap(map, archShadow);
   const lightmap = new THREE.DataTexture(lm.data, lm.w, lm.h, THREE.RGBAFormat, THREE.UnsignedByteType);
   lightmap.magFilter = THREE.LinearFilter;
   lightmap.minFilter = THREE.LinearMipmapLinearFilter;
@@ -189,7 +201,9 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
       } else {
         // Wall tops are rarely seen.
         const [u0, v0, u1, v1] = [c, r, c + 1, r + 1].map((x) => x / TILE);
-        g.quad([[c, r, t], [c + 1, r, t], [c + 1, r + 1, t], [c, r + 1, t]], [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], 0.95, [0, 0, 1], L_WALL);
+        // The ledge behind an arcade's balustrade is tex-riser.
+        const ledge = k === K_OPEN && !Number.isNaN(bayBase[i]);
+        g.quad([[c, r, t], [c + 1, r, t], [c + 1, r + 1, t], [c, r + 1, t]], [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], 0.95, [0, 0, 1], ledge ? L_RISER : L_WALL);
       }
       // Each vertical face is drawn once, from the higher cell, facing the lower one.
       for (const edge of EDGES) {
@@ -221,7 +235,7 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
             if (z === undefined) {
               const tx = alongX ? (x === x0 ? 0.01 : -0.01) * Math.sign(x1 - x0) : 0;
               const ty = alongX ? 0 : (y === y0 ? 0.01 : -0.01) * Math.sign(y1 - y0);
-              z = faceShadowZ(map, x + tx, y + ty, edge.dx, edge.dy, face.foot, t);
+              z = faceShadowZ(map, x + tx, y + ty, edge.dx, edge.dy, face.foot, t, archShadow);
               ends.set(key, z);
             }
             return z;
@@ -252,9 +266,15 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
             if (band === L_WINDOW && inBand && piece.z0 >= nt + FRIEZE - 1e-6) continue;
             g.side(x0, y0, x1, y1, piece.z0, piece.z1, inBand ? fu0 : u0, inBand ? fu1 : u1, piece.v0, piece.v1, normal, edge.shade * 0.92, piece.layer, face);
           }
-        } else if (k === K_OPEN) {
-          // An open edge's parapet (until stage 6): tex-wall from the floor beside it.
-          g.side(x0, y0, x1, y1, nt, t, u0, u1, (nt - face.foot) / TILE, (t - face.foot) / TILE, normal, edge.shade * 0.92, L_WALL, face);
+        } else if (k === K_OPEN && (nk === K_FLOOR || nk === K_DOOR)) {
+          const base = bayBase[i];
+          if (!Number.isNaN(base)) {
+            // A bay: its painted face stands here (the cut-out mesh); below its base, solid wall.
+            if (nt < base - 1e-6) g.side(x0, y0, x1, y1, nt, base, u0, u1, 0, (base - nt) / TILE, normal, edge.shade * 0.92, L_WALL, face);
+          } else {
+            // A solid arcade segment: plain wall like a cut segment, and the cornice.
+            for (const piece of wallPieces(nt, t, nt, t, L_WALL)) g.side(x0, y0, x1, y1, piece.z0, piece.z1, u0, u1, piece.v0, piece.v1, normal, edge.shade * 0.92, piece.layer, face);
+          }
         } else {
           // A step down to a lower wall or parapet: tex-wall, and the cornice turning onto this end face.
           const cb = Math.max(nt, t - CORNICE);
@@ -268,9 +288,15 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
 
   // Relief (M10 §5.3): crowns, pilaster strips and window recesses, in the same mesh.
   const relief = computeRelief(map);
-  const reliefLight = { faceColor, facesSun, shadowZ: (x: number, y: number, nx: number, ny: number, foot: number, top: number) => faceShadowZ(map, x, y, nx, ny, foot, top) };
+  const reliefLight = { faceColor, facesSun, shadowZ: (x: number, y: number, nx: number, ny: number, foot: number, top: number) => faceShadowZ(map, x, y, nx, ny, foot, top, archShadow) };
   emitRelief(g, relief, reliefLight, { cornice: L_CORNICE, riser: L_RISER, pilaster: L_PILASTER, window: L_WINDOW });
   emitWindows(g, relief, reliefLight, { riser: L_RISER, window: L_WINDOW });
+  // The arches (M10 §6): their stone in the terrain mesh, their painted faces in one cut-out mesh.
+  const archLayers = { lower: L_ARCADE_LOWER, upper: L_ARCADE_UPPER, wall: L_WALL, riser: L_RISER, cornice: L_CORNICE };
+  emitArchStone(g, map, arches, reliefLight, archLayers);
+  const pg = new GeometryBuilder();
+  emitPaintedFaces(pg, arches, reliefLight, archLayers);
+  const painted = new THREE.Mesh(pg.toGeometry(), makeTerrainMaterial(textures.array, textures.sky, lightmap, w, h, true));
 
   const mesh = new THREE.Mesh(g.toGeometry(), makeTerrainMaterial(textures.array, textures.sky, lightmap, w, h));
 
@@ -302,5 +328,5 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   };
   const doors = map.arenas.map((arena) => ({ entry: doorMesh(arena.doors), exit: doorMesh(arena.exitDoors ?? []) }));
 
-  return { mesh, lightmap, relief: new ReliefIndex(relief, w), doors };
+  return { mesh, lightmap, relief: new ReliefIndex(relief, w), painted, arches, doors };
 }

@@ -20,6 +20,7 @@ import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
 import { ContactShadows, SHADOW_DARKNESS } from '../render/contactShadows';
+import { archStoneHit } from '../render/arches';
 import { PLAYER_RADIUS } from '../sim/constants';
 import { Particles } from '../render/particles';
 import { GameScene } from '../render/scene';
@@ -1094,6 +1095,8 @@ export class Game {
       ts.sort((a, b) => a.t - b.t);
       // A shot that meets a wall ends on its drawn surface: a relief's front, or a window's glass (M10 §5.3).
       let end = stop < w.range ? this.scene.terrain.relief.adjust(ex, ey, ez, dx, dy, dz, stop) : stop;
+      // A shot crossing an arch's painted stone flies on in the simulation; its tracer ends there (M10 §6.1).
+      end = Math.min(end, archStoneHit(this.scene.terrain.arches, ex, ey, ez, dx, dy, dz, stop));
       if (ts.length > 0) {
         hit = true;
         if (w.kind === 'silverBullet') {

@@ -48,3 +48,8 @@ M10.3: the terrain is one draw call instead of three (7 → 5 calls); the textur
 | 2026-10-07 | M10.4 (light) | f3532eb | pearly-gates arcade | 7.46 | 1.5% | 59.94 | 58.86 | 1.81 | 8 | 40 544 | 334.0 | Pass (+0.8%) |
 
 M10.4: the contact shadows add 2 draw calls (two passes) and 2 triangles per character (about 6 000 with the swarm); the lightmap 0.9 MB. Against the baseline: +3.1%, +4.3% and +3.5%.
+| 2026-10-07 | M10.5 (relief) | d7ea344 | sandbox | 7.34 | 1.5% | 59.93 | 58.77 | 1.77 | 7 | 15 652 | 333.1 | Pass (−0.1%) |
+| 2026-10-07 | M10.5 (relief) | d7ea344 | pearly-gates | 7.54 | 0.4% | 59.96 | 58.94 | 1.75 | 7 | 47 808 | 334.0 | Pass (+0.8%) |
+| 2026-10-07 | M10.5 (relief) | d7ea344 | pearly-gates arcade | 7.47 | 0.7% | 59.78 | 46.38 | 1.76 | 8 | 47 838 | 334.0 | Pass (+0.1%) |
+
+M10.5: the relief adds about 7 300 triangles to the Pearly Gates' terrain (crowns, pilaster strips, 58 window recesses). Against the baseline: +2.9%, +5.2% and +3.6%.
