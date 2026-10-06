@@ -418,7 +418,7 @@ JPEG is fine for all of them (`.jfif` or `.jpg`, same base name).
 - [x] Stage 1: `sky-day`
 - [x] Stage 3: `tex-floor-plain`, `tex-floor-medallion`, `tex-wall-window`, `tex-wall-pilaster`, `tex-cornice` (Claude fixes the plain floor's grid, adds the frieze to the window wall and closes the cornice seam: [m10.md](m10.md) §5.1)
 - [x] Stage 4: `fx-lightshaft`
-- [ ] Stage 5: `prop-arch-sheet` (the first try came out as a game screenshot; regenerate with the updated prompt below), `prop-column-sheet`, `prop-balustrade-sheet`, `prop-spire-sheet`, `prop-island-sheet`
+- [x] Stage 5: `prop-arch-sheet`, `prop-column-sheet`, `prop-balustrade-sheet`, `prop-spire-sheet`, `prop-island-sheet`
 
 ### Sky (stage 1)
 
