@@ -38,7 +38,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 | Secondary | Brimstone Slug | One hitscan slug: 60 dmg to the first enemy hit, range 50 m, 1.0 s between shots. Kills a Chorister in one hit. |
 | Passives | Brimstone Hide, Sinful | As now. |
 | Q | Blasphemy | As now. |
-| E | Falling Star | As now: the leap, 40 dmg on landing and the knockback. **New:** the landing launches the enemies it knocks back. Each flies in an arc up to about 1 m high, out and back down, over 0.4 s instead of sliding along the ground for 0.2 s; the distance stays 4 m. |
+| E | Falling Star | As now: the leap, 40 dmg on landing and the knockback. **New:** the landing launches the enemies it knocks back. Each flies in an arc up to about 1 m high, out and back down, over 0.4 s instead of sliding along the ground for 0.2 s; the distance stays 4 m. Enemies the landing kills are thrown up too and burst into feathers at the top. |
 
 - **Shotgun or slug:** the shotgun for the crowd at the Fallen's feet; the slug for the Chorister or Cherub out of its reach.
 - **The landing has to look like a hit.** A ring of enemies thrown into the air around the rescued ally is the Fallen's big moment made visible. The shotgun's knockback stays a flat shove, so the landing stands out. The arc is only drawn: in the simulation the enemy moves along the ground as in any knockback, so collision and the network barely change.
@@ -51,7 +51,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 | Slot | Name | Rule |
 |---|---|---|
 | Primary | Censer Launcher | As now (damage only). |
-| Secondary | Sacrament | While held, heals the ally target 15 HP every 0.5 s (range 30 m, ally targeting as in M8 §3.5). With no ally target it does nothing. Never heals the Heretic. |
+| Secondary | Sacrament | While held, heals the ally target 15 HP every 0.5 s (range 40 m, the same ally target as Martyr's Shroud). With no ally target it does nothing. Never heals the Heretic. |
 | Q | Unholy Communion | As now: heals everyone near the Heretic, the Heretic included. |
 | E | Martyr's Shroud | As now. **New:** when damage breaks it, it explodes for 50 dmg to enemies within 5 m of the shielded player. It doesn't explode when it expires or is replaced. |
 
@@ -86,7 +86,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 |---|---|---|
 | Primary | Silver Revolver | 30 dmg to the first enemy hit, 0.15 s between shots, no spread, range 60 m. One Blessed or Cherub per shot, a Chorister in two. |
 | Secondary | Silver Bullet | 240 dmg carried through the line, 1.5 s between shots, range 60 m. Each enemy hit, nearest first, takes what's left; the bullet stops when nothing is left. Kills 12 Blessed in a line; bound Blessed cost half as much. |
-| Q | Field of Blood | Throws the thirty pieces of silver at the impact point (where the crosshair ray stops, up to 30 m). For 8 s, every player within 6 m of it deals ×2 damage. Cooldown 30 s. |
+| Q | Field of Blood | Throws the thirty pieces of silver onto the floor where the player aims (up to 30 m; enemies don't block the throw). For 8 s, every player within 6 m of it deals ×2 damage. Cooldown 30 s. |
 | E | Shadowstep | As now. |
 
 - **Revolver or Silver Bullet:** the revolver for scattered enemies, flyers and the boss; Silver Bullet when the enemies line up in a corridor, behind the taunting Fallen or in the Binder's pile.
@@ -95,14 +95,9 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 - Field of Blood replaces Kiss of Betrayal as the party's boss multiplier, and it works in the swarm too.
 - **Thirty Pieces of Silver** stays reserved as the name for the Betrayer's ultimate (M10).
 
-## Open for the M9 spec
+## Exact rules
 
-- Controls: what happens when both buttons are held; whether the primary and secondary share a fire timer.
-- First-person and third-person art for the secondaries, their icons and tracers, the Sacrament beam, the Field of Blood on the floor, and a visible tell on players standing in it.
-- The shotgun knockback's speed and time (the current knockback is 4 m over 0.2 s).
-- How clients learn which enemies Falling Star launched, so they can draw the arc. One option: the snapshot's `marked` flag bit, free once Kiss is removed, becomes a `launched` bit.
-- Hints and class card texts, sounds, the bot's use of the secondary, and the protocol for the secondary fire.
-- The Gatekeeper's new HP, and a balance table like M8 §8.
+[m9.md](m9.md) turns this rework into exact rules: controls (the last-pressed button wins, one shared fire timer), effects, sounds, texts, the bot, the protocol and the Gatekeeper's new HP.
 
 ## Rejected ideas
 For now, they can still come in play later:

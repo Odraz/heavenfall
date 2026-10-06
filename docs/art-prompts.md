@@ -381,3 +381,106 @@ Around each ability icon.
 ```text
 A square frame for a game ability icon, seen flat and straight on, filling almost the whole frame with a thin margin: a rim of blackened iron with a gold edge of the same thickness on all four sides, small gold ornaments at the corners. The inside of the frame is empty and shows the green background. Perfectly symmetric. Hand-inked style matching the attached images: black ink outlines, cel shading. No text, no perspective. Isolated on a flat pure green (#00FF00) background inside and around the frame. Aspect ratio 1:1.
 ```
+
+---
+
+## Milestone 9
+
+Two new images for the class rework ([m9.md](m9.md) §9). Everything else M9 needs is made by Claude: the Scourge's first-person frames come from the Binder's Blender model, and the effects reuse the existing textures. Save both in `assets/art-src/`.
+
+- [ ] `icon-field-of-blood.png`
+- [ ] `coin.png`
+
+#### Field of Blood icon — `icon-field-of-blood.png` · 1:1
+The Betrayer's new Q: throws the thirty pieces of silver onto the ground, and everyone standing in the field deals double damage. Replaces `icon-kiss.png`. Attach: `concept-1.webp`, `betrayer-front.png`, and `icon-shadowstep.png` so it matches the other icons.
+
+Use the ability icon prompt (B3, *Ability icons*) with this `<SYMBOL>`:
+```text
+A scatter of tarnished silver coins spilling onto cracked earth, a pool of blood-red light spreading beneath them and seeping into the cracks.
+```
+
+#### Coin — `coin.png` · 1:1
+Thirty of these lie scattered in the middle of a Field of Blood, drawn about 0.12 m wide. Attach: `blessed-front.jpg`, `concept-1.webp`
+```text
+A single old tarnished silver coin seen straight on: a worn, slightly irregular round coin with a raised rim, a crude stamped profile of a face in the middle, darkened grooves and one bright glint on the edge. Tiny game sprite in a hand-inked graphic-novel style matching the attached images: bold black outline, flat cel shading, crisp hard edges, a simple shape readable at 16 pixels. Centered, filling most of the frame. Isolated on a flat pure green (#00FF00) background: no soft glow, no text. Aspect ratio 1:1.
+```
+
+---
+
+## Milestone 11
+
+12 images for the level art ([m11.md](m11.md)). The goal is the look of the concept art, at almost no cost per frame, so the prompts ask for flat, evenly lit images: the game adds its own baked light. Attach `concept-1.webp`, `concept-2.webp` and `concept-3.webp` to every prompt unless it says otherwise. Save them as named: the sky, textures and effect in `assets/art-src/`, the prop sheets in `assets/art-src/reference/`. Generate each in a new chat. They're needed in stages, so you can do them stage by stage.
+
+**Optional extras that help** (not required): a close-up photo or painting of a real gold-inlay marble floor; a real arcade with arched windows seen from inside; any artwork of floating spires and towers in clouds. Attach them to the prompts they match.
+
+- [ ] Stage 1: `sky-day.png`
+- [ ] Stage 2: `tex-floor-plain.png`, `tex-floor-medallion.png`, `tex-wall-window.png`, `tex-wall-pilaster.png`, `tex-cornice.png`
+- [ ] Stage 3: `fx-lightshaft.png`
+- [ ] Stage 4: `prop-arch-sheet.png`, `prop-column-sheet.png`, `prop-balustrade-sheet.png`, `prop-spire-sheet.png`, `prop-island-sheet.png`
+
+### Sky (stage 1)
+
+#### Sky — `sky-day.png` · 21:9
+A horizon band that wraps all the way around the player. Claude closes the seam and blends the top and bottom into plain color, so don't worry about the exact edges, but the left and right edges should match as closely as you can get them. Generate at the largest size available.
+```text
+A wide panoramic painted sky of a heavenly realm, seen from a high floating terrace: a bright blue sky with big sunlit cumulus clouds, warm golden haze along the horizon, and in the distance floating spires, slender white towers, domes and broken arches rising out of the clouds at many different distances, some tiny and pale in the haze, some larger and clearer. Soft sunlight from the left, a hint of golden light rays through the clouds. The horizon is at about one third of the image height from the bottom; below it, thick white clouds and haze fade to pale gold. The upper half is clear deep blue with a few light clouds. Hand-painted stylized game skybox matching the sky in the attached images: painterly brush texture, soft edges, no ink outlines, rich saturated color. The left edge continues the right edge. No ground, no people, no birds, no text, no sun disc. Aspect ratio 21:9.
+```
+
+### Surfaces (stage 2)
+
+Same rules as B4 *Terrain textures*: seamless, flat even lighting, no shadows, no vignette, no perspective, no text. Generate at 2048 px if available. Also attach `tex-floor.png` or `tex-wall.png` from `assets/art-src/` (whichever is the same kind), so the new ones match the existing ones.
+
+#### Plain floor — `tex-floor-plain.png` · 1:1
+A calmer variation of the floor.
+```text
+Seamless tileable game texture, viewed straight down, orthographic, filling the whole square: a polished ivory marble floor with soft pale grey-blue and gold veining and faint large-scale color variation, with a single thin gold line running straight across the whole texture from left to right and another from top to bottom, crossing in the center, so it joins neighboring tiles of the other floor texture. No other pattern. Hand-painted stylized texture matching the floor in the attached image: painterly brush texture, low contrast, crisp thin dark ink-like lines only along the gold lines. Even, flat lighting: no shadows, no highlights, no vignette, no perspective. The left edge continues the right edge and the top continues the bottom. No text. Aspect ratio 1:1.
+```
+
+#### Medallion floor — `tex-floor-medallion.png` · 1:1
+A large gold inlay, used on one 4 × 4 m area at arena centers and before doors.
+```text
+Game texture, viewed straight down, orthographic, filling the whole square: a polished ivory marble floor with one large circular medallion inlaid in the center, 85% of the width: concentric rings of gold, a sunburst of 16 thin gold rays, and a simple eight-petal lily in the middle, with fine gold scrollwork and a thin dark ink-like outline on every gold line. Outside the circle, plain ivory marble with faint veining. Hand-painted stylized texture matching the floor in the attached image: painterly brush texture, low-to-medium contrast, no color brighter than pale gold. Even, flat lighting: no shadows, no highlights, no vignette, no perspective. The corners are plain ivory marble that continues into the neighboring tiles. No text. Aspect ratio 1:1.
+```
+
+#### Window wall — `tex-wall-window.png` · 1:1
+The wall rises 16 m, so this repeats upward four times. It's a painted window; the game doesn't make it a real hole.
+```text
+Seamless tileable game texture, viewed straight on, orthographic, filling the whole square: an ivory sandstone wall, with one tall pointed-arch window centered, 45% of the width and 70% of the height, set in a deep carved frame with a gold-leaf molding, the glass a soft sky-blue gradient with a pale cloud and thin gold tracery bars, the inner edge of the frame painted dark to suggest depth. Above and below the window, plain ivory blocks with thin dark joints. The left and right edges show plain blocks that continue into the neighboring tile, and the top and bottom edges match. Hand-painted stylized texture matching the walls in the attached image: painterly brush texture, crisp dark ink-like lines along the carved edges and joints. Even, flat lighting: no cast shadows, no vignette, no perspective. No text. Aspect ratio 1:1.
+```
+
+#### Pilaster wall — `tex-wall-pilaster.png` · 1:1
+Goes between windows.
+```text
+Seamless tileable game texture, viewed straight on, orthographic, filling the whole square: an ivory sandstone wall with one wide fluted pilaster centered, 40% of the width, running the full height of the image: six vertical flutes, a thin gold molding on each side, small gold leaf ornaments at regular intervals. Plain ivory blocks with thin dark joints on both sides. The left and right edges show plain blocks that continue into the neighboring tile, and the top and bottom edges match. Hand-painted stylized texture matching the walls in the attached image: painterly brush texture, crisp dark ink-like lines along the carved edges and joints. Even, flat lighting: no cast shadows, no vignette, no perspective. No text. Aspect ratio 1:1.
+```
+
+#### Cornice — `tex-cornice.png` · 21:9
+A horizontal band for the top of every wall. It only repeats left to right. Claude crops it.
+```text
+Seamless horizontally tileable game texture, viewed straight on, orthographic, filling the whole image: a grand classical cornice band in ivory stone and gold, from top to bottom: a thin gold strip, a row of small evenly spaced dentils, a wide band with a repeating carved leaf-and-lily pattern with gold-leaf trim, then a projecting molding with a thin gold line at the bottom. Hand-painted stylized texture matching the stonework in the attached images: painterly brush texture, crisp dark ink-like lines along the carved edges. Even, flat lighting: no cast shadows, no vignette, no perspective. The left edge continues the right edge. No text. Aspect ratio 21:9.
+```
+
+### Atmosphere (stage 3)
+
+#### Light shaft — `fx-lightshaft.png` · 3:4
+Drawn additively, so black becomes transparent. Tinted warm gold by the game. No attachments.
+```text
+A single tall shaft of sunlight, a soft-edged vertical beam of light, widest at the top and narrowing slightly toward the bottom, centered, 40% of the image width, brightest in the middle with a gentle falloff to both sides, a few faint darker streaks along its length, and a fade to nothing at the top and bottom edges. Pure white and light grey only, no color. On a pure black (#000000) background. Flat, seen straight on, no perspective. No text. Aspect ratio 3:4.
+```
+
+### Architecture (stage 4)
+
+Reference sheets that Claude models in Blender, like the Part A turnarounds: each shows one prop from the front, the side and the top, at the same scale, so it can be built accurately. They're never shown in the game. Attach `concept-1.webp` and `concept-2.webp` (and any optional architecture extras). Save in `assets/art-src/reference/`. Check that the three views match each other.
+
+All five use this template, with the `<PROP>` text of each:
+```text
+A model sheet of <PROP> for a 3D artist. Three orthographic views of the same object, side by side on a plain light grey background: front view on the left, side view in the middle, top view on the right, at exactly the same scale, aligned, with no perspective. Hand-painted stylized game-art look matching the architecture in the attached images: ivory stone with gold leaf trim, clean readable shapes, thick dark ink-like outlines, flat even lighting with no cast shadows, simple shapes rather than tiny detail. Every view is complete and uncropped. No text, no letters, no numbers, no measurements. Aspect ratio 16:9.
+```
+
+| File | `<PROP>` |
+|---|---|
+| `prop-arch-sheet.png` | a single grand pointed arch about 6 m wide, springing from two short square piers, with a carved gold-trimmed molding on the face, a keystone with a small lily, and a plain flat back |
+| `prop-column-sheet.png` | a single tall classical column about 8 m high: a square plinth, a fluted shaft with gold bands at the bottom and top, and an ornate capital with acanthus leaves and small gold volutes |
+| `prop-balustrade-sheet.png` | a 2 m section of a stone balustrade about 1.1 m high: a pier at each end with a small ornament on top, a row of five fat baluster posts between them, and a thin gold-trimmed top rail |
+| `prop-spire-sheet.png` | a cluster of three slender white towers of different heights (the tallest about 40 m) with pointed gold-capped roofs, one with a small dome, joined at the base by a low terrace with a few arched openings |
+| `prop-island-sheet.png` | a small floating island of rock, about 30 m wide, its underside a tapering cone of rough stone with a few hanging roots and waterfalls dripping off the edge, with a flat grassy top carrying one small white pavilion with a gold dome and two columns |
