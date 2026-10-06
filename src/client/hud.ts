@@ -10,6 +10,9 @@ const RECOIL_MS = 120;
 const RECOIL_PCT = 8;
 /** The Scourge's first-person swing (M9 §5.1). */
 const SWING_MS = 300;
+/** The Field of Blood's rising glow pulses over 1.2 s and flares for 0.3 s on entering (M9 §5.1). */
+const FIELD_PULSE_MS = 1200;
+const FIELD_FLARE_MS = 300;
 const FLASH_MS = 60;
 const HIT_MARKER_MS = 80;
 const KILL_MARKER_MS = 120;
@@ -84,6 +87,11 @@ export class Hud {
   private swingFrame = -2;
   /** A steady green vignette while a Sacrament beam heals the player (M9 §5.1). */
   private readonly beamVignette: HTMLDivElement;
+  /** Standing in a Field of Blood (M9 §5.1): the rising glow, the weapon's red glow, the red crosshair. */
+  private readonly fieldGlow: HTMLDivElement;
+  private readonly crosshair: HTMLDivElement;
+  private inField = false;
+  private fieldEnteredAt = -Infinity;
   private readonly abilities: Array<{ sweep: HTMLDivElement; text: HTMLDivElement; box: HTMLDivElement; glint: HTMLDivElement; cd: number }>;
   /** The hints panel (M8 §2.2), toggled with H, and the prompt shown until it's first opened. */
   private readonly hints: HTMLDivElement;
@@ -146,7 +154,8 @@ export class Hud {
       blue: el('div', 'vignette vignette-blue', this.root),
     };
     this.beamVignette = el('div', 'vignette vignette-green', this.root);
-    el('div', 'crosshair', this.root);
+    this.fieldGlow = el('div', 'field-glow', this.root);
+    this.crosshair = el('div', 'crosshair', this.root);
     this.hitMarker = this.marker('marker-hit');
     this.killMarker = this.marker('marker-kill');
     this.chevron = el('div', 'ally-chevron', this.root);
@@ -437,6 +446,20 @@ export class Hud {
     return [window.innerWidth / 2 + (mx - m.centerX) * k + this.bobX * vhPx, 50 * vhPx + my * k + (r * this.recoilPct + this.bobY) * vhPx];
   }
 
+  /**
+   * Standing in a Field of Blood (M9 §5.1): a blood-red glow rising at the bottom edge, pulsing slowly
+   * and flaring on entering; the weapon glows blood red; the crosshair turns blood red.
+   */
+  setInField(on: boolean, now: number): void {
+    if (on === this.inField) return;
+    this.inField = on;
+    if (on) this.fieldEnteredAt = now;
+    this.crosshair.classList.toggle('blood', on);
+    const glow = on ? 'drop-shadow(0 0 14px rgba(200, 24, 24, 0.85))' : '';
+    this.weaponBox.style.filter = glow;
+    if (this.swingBox) this.swingBox.style.filter = glow;
+  }
+
   /** The steady green vignette while a Sacrament beam is on the player (M9 §5.1). */
   setBeamed(on: boolean): void {
     this.beamVignette.style.opacity = on ? '0.15' : '0';
@@ -588,6 +611,11 @@ export class Hud {
     this.weaponBox.style.transform = offset;
     this.setWeaponFrame(fireFrame(now - this.shotAt, this.fireIntervalMs));
     this.updateSwing(now, offset);
+    // The field's glow: 0.25–0.35 over 1.2 s, flaring to 0.5 for 0.3 s on entering.
+    if (this.inField) {
+      const pulse = 0.3 + 0.05 * Math.sin((now / FIELD_PULSE_MS) * Math.PI * 2);
+      this.fieldGlow.style.opacity = (now - this.fieldEnteredAt < FIELD_FLARE_MS ? 0.5 : pulse).toFixed(3);
+    } else this.fieldGlow.style.opacity = '0';
     const flashing = this.flashOn && now - this.shotAt < FLASH_MS;
     this.flash.style.opacity = flashing ? '0.9' : '0';
     if (flashing) this.flash.style.transform = `${offset} rotate(${this.flashRotate.toFixed(1)}deg) scale(${this.flashScale.toFixed(3)})`;

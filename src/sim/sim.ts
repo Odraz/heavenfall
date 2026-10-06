@@ -29,7 +29,6 @@ import {
   CHAINS_PULL_TIME,
   CHAINS_RANGE,
   CHAINS_ROOT,
-  CHAINS_STEP,
   COMMUNION_HEAL,
   COMMUNION_RADIUS,
   DISCORD_RADIUS,
@@ -38,10 +37,14 @@ import {
   FALLING_STAR_DAMAGE,
   FALLING_STAR_RADIUS,
   FALLING_STAR_TIME,
-  KISS_DURATION,
-  KISS_RANGE,
+  FALLING_STAR_KNOCKBACK_TIME,
   KNOCKBACK_DIST,
   KNOCKBACK_TIME,
+  SHOTGUN_KNOCKBACK_DIST,
+  SHOTGUN_KNOCKBACK_RANGE,
+  SHROUD_BURST_DAMAGE,
+  SHROUD_BURST_MAX,
+  SHROUD_BURST_RADIUS,
   MOVEMENT_GRACE,
   MOVEMENT_SPEED_CHECK_SKIP,
   SHADOWSTEP_INVULN,
@@ -62,7 +65,6 @@ import {
   ALLY_NONE,
   encodeSnapshot,
   FLAG_HURT,
-  FLAG_MARKED,
   FLAG_ROOTED,
   FLAG_SILENCED,
   FLAG_SLOWED,
@@ -78,7 +80,6 @@ import {
 } from '../net/protocol';
 import {
   ENEMY_SLOTS,
-  EPS,
   MAX_LIVING_ENEMIES,
   PLAYER_EYE,
   PLAYER_HEIGHT,
@@ -86,16 +87,16 @@ import {
   PLAYER_SLOTS,
   PROJECTILE_SLOTS,
   SLOT_REUSE_TICKS,
-  STEP_UP,
   TICK_DT,
   TICK_HZ,
   TICK_MS,
   WALL_TOP,
 } from './constants';
 import { aimDir, rayCylinder, silverBulletHits } from './combat';
+import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } from './field';
 import { FlowField, UNREACHABLE } from './flowfield';
 import { lineOfSight, raycastTerrain } from './los';
-import { insideRect, isSolid, loadMap, setArenaDoors, type GameMap } from './map';
+import { insideRect, loadMap, setArenaDoors, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
 import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
@@ -170,6 +171,8 @@ export interface SimPlayer {
   fire: number;
   /** One fire timer for both attacks (M9 §2.2). */
   fireTimer: number;
+  /** Who cast the current shield; it bursts for them when damage breaks it (M9 §3.3). */
+  shieldCaster: SimPlayer | null;
   qPresses: number;
   ePresses: number;
   allyTargetId: number;
@@ -293,7 +296,8 @@ const VOLLEY_ORB = { speed: 12, damage: 15, radius: 0.3 };
 const JUDGMENT_FIRST = 20;
 const JUDGMENT_INTERVAL = 25;
 const JUDGMENT_CAST = 3;
-const JUDGMENT_INTERRUPT = 2000;
+/** M9 §4 (was 2 000): Field of Blood replaced Kiss as the boss multiplier, and party damage on it fell. */
+const JUDGMENT_INTERRUPT = 1300;
 const SUMMON_FIRST = 30;
 const SUMMON_INTERVAL = 30;
 const SUMMON = { blessed: 150, cherubs: 10 };
@@ -380,9 +384,11 @@ export class Simulation {
   readonly eCastCd = new Float64Array(ENEMY_SLOTS);
   /** Seconds until the next melee hit while in range; -1 when out of range. */
   readonly eMeleeNext = new Float64Array(ENEMY_SLOTS).fill(-1);
-  /** The one marked enemy (Kiss of Betrayal), or -1. */
-  markSlot = -1;
-  markUntil = 0;
+  /** The one Field of Blood (M9 §3.4): its center and floor, active while tick < fieldUntil. */
+  fieldX = 0;
+  fieldY = 0;
+  fieldZ = 0;
+  fieldUntil = 0;
 
   // The Gatekeeper (§7.4). Timers are ticks.
   /** The living Gatekeeper's slot, or -1. */
@@ -609,6 +615,7 @@ export class Simulation {
       pitch: 0,
       fire: 0,
       fireTimer: 0,
+      shieldCaster: null,
       qPresses: 0,
       ePresses: 0,
       allyTargetId: ALLY_NONE,
@@ -1056,7 +1063,6 @@ export class Simulation {
       const wave = this.eWave[slot];
       if (wave >= 0) st.waveAlive[wave]--;
     }
-    if (this.markSlot === slot) this.markSlot = -1;
     if (slot === this.bossSlot) {
       this.bossSlot = -1;
       this.bossCast = BOSS_CAST_NONE;
@@ -1086,17 +1092,14 @@ export class Simulation {
 
   /** A hit on an enemy. `source` is the player index that gets the kill credit, or -1. */
   damageEnemy(slot: number, amount: number, source: number): void {
-    if (!this.eAlive[slot]) return;
-    // 1. Kiss of Betrayal.
-    if (slot === this.markSlot && this.tick < this.markUntil) amount *= 3;
-    if (amount <= 0) return;
-    // Judgment is interrupted by the boss taking 2 000 damage during it, counted after step 1.
+    if (!this.eAlive[slot] || amount <= 0) return;
+    // 1. Bound (M9 §3.6): a rooted enemy, during the pull too, takes double damage.
+    if (this.isRooted(slot)) amount *= BOUND_FACTOR;
+    // Judgment is interrupted by the boss taking 1 300 damage during it, counted after step 1.
     if (slot === this.bossSlot && this.bossCast === BOSS_CAST_JUDGMENT) {
       this.judgmentDamage += amount;
       if (this.judgmentDamage >= JUDGMENT_INTERRUPT * partyMultiplier(this.bossParty) - 1e-9) this.interruptJudgment();
     }
-    // 2. Bound (M8 §8): a rooted enemy, during the pull too, takes double damage.
-    if (this.isRooted(slot)) amount *= BOUND_FACTOR;
     this.eHp[slot] -= amount;
     this.eHurtTick[slot] = this.tick;
     // 5. Death and kill credit.
@@ -1116,15 +1119,42 @@ export class Simulation {
     if (this.isInvulnerable(p)) amount = 0;
     if (amount <= 0) return;
     p.lastDamageTick = this.tick;
-    // 4. Shield.
+    // 4. Shield; one taken to 0 bursts (M9 §3.3).
+    let burst = false;
     if (p.shield > 0) {
       const absorbed = Math.min(p.shield, amount);
       p.shield -= absorbed;
       amount -= absorbed;
+      burst = p.shield <= 0;
     }
+    const [x, y, z] = [p.x, p.y, p.z];
     p.hp -= amount;
     // 5. Death.
     if (p.hp <= 0) this.killPlayer(p);
+    // Even if the hit killed the player: the burst is where they stood.
+    if (burst) this.shroudBurst(p, x, y, z);
+  }
+
+  /**
+   * Martyr's Shroud bursts (M9 §3.3): 50 damage to the 8 nearest enemies within 5 m of the shielded
+   * player's body center, credited to the caster, or to no one if the caster has left.
+   */
+  private shroudBurst(p: SimPlayer, x: number, y: number, z: number): void {
+    const caster = p.shieldCaster;
+    p.shieldCaster = null;
+    const source = caster && caster.connected ? caster.index : -1;
+    const cz = z + PLAYER_HEIGHT / 2;
+    const hit: Array<{ s: number; d: number }> = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      const def = ENEMIES[this.eType[s]];
+      const d = distToCylinder(x, y, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height);
+      if (d <= SHROUD_BURST_RADIUS) hit.push({ s, d });
+    }
+    // Stable sort: equal distances keep active-list order, so the result is deterministic.
+    hit.sort((a, b) => a.d - b.d);
+    for (let i = 0; i < hit.length && i < SHROUD_BURST_MAX; i++) this.damageEnemy(hit[i].s, SHROUD_BURST_DAMAGE, source);
+    this.events.push({ to: 'all', event: { type: 'shroudBurst', playerId: p.id, x, y, z } });
   }
 
   private killPlayer(p: SimPlayer): void {
@@ -1152,11 +1182,12 @@ export class Simulation {
     p.hp = Math.min(p.maxHp, p.hp + amount);
   }
 
-  /** Gives a living player a shield; a new shield replaces the old one. */
-  giveShield(p: SimPlayer, amount: number, seconds: number): void {
+  /** Gives a living player a shield; a new shield replaces the old one. The host remembers who cast it (M9 §3.3). */
+  giveShield(p: SimPlayer, amount: number, seconds: number, caster: SimPlayer | null = null): void {
     if (p.dead || !p.connected) return;
     p.shield = amount;
     p.shieldUntil = this.tick + ticks(seconds);
+    p.shieldCaster = caster;
   }
 
   // ------------------------------------------------------------------ status effects (§5.6)
@@ -1188,22 +1219,31 @@ export class Simulation {
     this.eCastT[slot] = 0;
   }
 
-  /** Mark: only one exists; a new mark replaces the old one. */
-  mark(slot: number, seconds: number): void {
-    this.markSlot = slot;
-    this.markUntil = this.tick + ticks(seconds);
-  }
-
-  /** Knockback: pushed horizontally by `dist` over 0.2 s, with normal collision and no steering. */
-  knockback(slot: number, dirX: number, dirY: number, dist: number): void {
+  /**
+   * Knockback: pushed horizontally by `dist` over `seconds` (0.2 s, or Falling Star's 0.4 s), with
+   * normal collision and no steering. A new knockback replaces one in progress.
+   */
+  knockback(slot: number, dirX: number, dirY: number, dist: number, seconds = KNOCKBACK_TIME): void {
     if (this.immune(slot)) return;
     const len = Math.hypot(dirX, dirY);
     if (len < 1e-9) return;
-    const v = dist / KNOCKBACK_TIME;
+    const v = dist / seconds;
     this.eKbVx[slot] = (dirX / len) * v;
     this.eKbVy[slot] = (dirY / len) * v;
     this.eKbFrom[slot] = this.tick;
-    this.eKbUntil[slot] = this.tick + ticks(KNOCKBACK_TIME);
+    this.eKbUntil[slot] = this.tick + ticks(seconds);
+  }
+
+  /** Knocks an enemy away from (cx, cy); one exactly there goes along a fixed angle from its slot. */
+  private knockAway(slot: number, cx: number, cy: number, dist: number, seconds: number): void {
+    let dx = this.eX[slot] - cx;
+    let dy = this.eY[slot] - cy;
+    if (Math.hypot(dx, dy) < 1e-6) {
+      const a = (slot % 16) * (Math.PI / 8);
+      dx = Math.cos(a);
+      dy = Math.sin(a);
+    }
+    this.knockback(slot, dx, dy, dist, seconds);
   }
 
   /** Chains: moves linearly to (x, y) over 0.3 s ignoring collision, then roots for 1.5 s. */
@@ -1268,8 +1308,13 @@ export class Simulation {
   }
 
   /** How fast a player's fire timer counts down: 2 in a Field of Blood, otherwise 1 (M9 §3.4). */
-  fireRate(_p: SimPlayer): number {
-    return 1;
+  fireRate(p: SimPlayer): number {
+    return this.inField(p) ? FIELD_FIRE_RATE : 1;
+  }
+
+  /** A living player in the Field of Blood, by its latest accepted position (M9 §3.4). */
+  inField(p: SimPlayer): boolean {
+    return this.tick < this.fieldUntil && !p.dead && inField(this.map, this.fieldX, this.fieldY, this.fieldZ, p.x, p.y);
   }
 
   /**
@@ -1314,6 +1359,7 @@ export class Simulation {
     }
     // Souls this trigger pull hit: all pellets together count one hit per soul (M8 §4.2).
     const souls = new Set<SimPlayer>();
+    const knock = p.classId === 'fallen' && slot === ATTACK_PRIMARY ? new Set<number>() : null;
     for (let i = 0; i < w.pellets; i++) {
       const yaw = w.spreadYaw > 0 ? p.yaw + (this.random() * 2 - 1) * w.spreadYaw : p.yaw;
       const pitch = w.spreadPitch > 0 ? p.pitch + (this.random() * 2 - 1) * w.spreadPitch : p.pitch;
@@ -1326,9 +1372,20 @@ export class Simulation {
       for (const s of hits) {
         this.damageEnemy(s, w.damage, p.index);
         if (w.slow > 0 && this.eAlive[s]) this.slow(s, w.slow);
+        knock?.add(s);
       }
     }
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, p.classId === 'heretic'));
+    // The shotgun knocks back each survivor within 6 m once per shot, except rooted ones (M9 §3.1).
+    if (knock) {
+      const cz = p.z + PLAYER_HEIGHT / 2;
+      for (const s of knock) {
+        if (!this.eAlive[s] || this.isRooted(s)) continue;
+        const def = ENEMIES[this.eType[s]];
+        if (distToCylinder(p.x, p.y, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > SHOTGUN_KNOCKBACK_RANGE) continue;
+        this.knockAway(s, p.x, p.y, SHOTGUN_KNOCKBACK_DIST, KNOCKBACK_TIME);
+      }
+    }
   }
 
   /** Distance along a ray to where it enters an enemy's cylinder. */
@@ -1533,12 +1590,12 @@ export class Simulation {
         return;
       }
       case 'betrayer': {
-        // Kiss of Betrayal: no target, no cooldown.
-        const hit = this.crosshair(p, KISS_RANGE);
-        if (hit.slot < 0) return;
-        this.mark(hit.slot, KISS_DURATION);
+        // Field of Blood (M9 §3.4): 3 m ahead along the yaw; it always has a place. A new field
+        // replaces the old one, and it lasts its 8 s whatever happens to the Betrayer.
+        [this.fieldX, this.fieldY, this.fieldZ] = fieldCenter(this.map, p.x, p.y, p.yaw);
+        this.fieldUntil = this.tick + ticks(FIELD_TIME);
         p.cdQ = cd;
-        this.abilityEvent(p, 'Q', this.eX[hit.slot], this.eY[hit.slot], this.eZ[hit.slot]);
+        this.abilityEvent(p, 'Q', this.fieldX, this.fieldY, this.fieldZ);
         return;
       }
     }
@@ -1572,7 +1629,7 @@ export class Simulation {
       // Martyr's Shroud: on the ally target sent with the press, or on self.
       const ally = allyId === ALLY_NONE ? undefined : this.playerById(allyId);
       const target = ally && ally !== p && this.livingTargetable(ally) ? ally : p;
-      this.giveShield(target, SHROUD_AMOUNT, SHROUD_DURATION);
+      this.giveShield(target, SHROUD_AMOUNT, SHROUD_DURATION, p);
       p.cdE = def.cooldown;
       this.abilityEvent(p, 'E', target.x, target.y, target.z, [target.id]);
     } else if (p.classId === 'binder') {
@@ -1592,7 +1649,11 @@ export class Simulation {
     }
   }
 
-  /** Falling Star landing: 30 damage within 5 m and a 4 m knockback away from the landing point. */
+  /**
+   * Falling Star landing (M9 §3.2): 10 damage within 5 m, then the survivors are knocked back 4 m over
+   * 0.4 s away from the landing point, except rooted ones (their piles hold). `starLanded` lists the
+   * enemies launched.
+   */
   private fallingStarLanding(p: SimPlayer): void {
     const cx = p.x;
     const cy = p.y;
@@ -1603,18 +1664,14 @@ export class Simulation {
       const def = ENEMIES[this.eType[s]];
       if (distToCylinder(cx, cy, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= FALLING_STAR_RADIUS) hit.push(s);
     }
+    const launched: number[] = [];
     for (const s of hit) {
       this.damageEnemy(s, FALLING_STAR_DAMAGE, p.index);
-      if (!this.eAlive[s]) continue;
-      let dx = this.eX[s] - cx;
-      let dy = this.eY[s] - cy;
-      if (Math.hypot(dx, dy) < 1e-6) {
-        const a = (s % 16) * (Math.PI / 8);
-        dx = Math.cos(a);
-        dy = Math.sin(a);
-      }
-      this.knockback(s, dx, dy, KNOCKBACK_DIST);
+      if (!this.eAlive[s] || this.isRooted(s) || this.immune(s)) continue;
+      this.knockAway(s, cx, cy, KNOCKBACK_DIST, FALLING_STAR_KNOCKBACK_TIME);
+      launched.push(s);
     }
+    this.events.push({ to: 'all', event: { type: 'starLanded', playerId: p.id, x: p.x, y: p.y, z: p.z, launched } });
   }
 
   /**
@@ -1622,24 +1679,7 @@ export class Simulation {
    * 5 m; a step into a wall, a closed door or a floor more than 0.5 m above the previous one is blocked.
    */
   chainsDestination(p: SimPlayer): [number, number] {
-    const cx = Math.cos(p.yaw);
-    const cy = Math.sin(p.yaw);
-    let x = p.x;
-    let y = p.y;
-    let prevFloor = this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)];
-    const steps = Math.round(CHAINS_MAX / CHAINS_STEP);
-    for (let i = 1; i <= steps; i++) {
-      const nx = p.x + cx * CHAINS_STEP * i;
-      const ny = p.y + cy * CHAINS_STEP * i;
-      const c = Math.floor(nx);
-      const r = Math.floor(ny);
-      if (isSolid(this.map, c, r)) break;
-      const f = this.map.floor[r * this.map.w + c];
-      if (f > prevFloor + STEP_UP + EPS) break;
-      x = nx;
-      y = ny;
-      prevFloor = f;
-    }
+    const [x, y] = walkDestination(this.map, p.x, p.y, p.yaw, CHAINS_MAX);
     return [x, y];
   }
 
@@ -2433,7 +2473,6 @@ export class Simulation {
       e.enemyY[k] = this.eY[s];
       e.enemyTypeState[k] = (this.eType[s] & 0x0f) | (this.eState[s] << 4);
       let f = 0;
-      if (s === this.markSlot && tick < this.markUntil) f |= FLAG_MARKED;
       if (this.isRooted(s)) f |= FLAG_ROOTED;
       if (tick < this.eSilenceUntil[s]) f |= FLAG_SILENCED;
       if (tick < this.eSlowUntil[s]) f |= FLAG_SLOWED;

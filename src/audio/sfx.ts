@@ -291,12 +291,31 @@ export const SFX = {
       part({ wave: 'triangle', freq: 415.3, attack: 0.005, decay: 0.2, sustain: 0.3, hold: 0.1, release: 0.5, volume: 0.15, vibratoRate: 7, vibratoDepth: 0.5 }),
     ],
   },
-  /** Kiss: a sharp sting. */
-  kiss: {
+  /** Field of Blood (M9 §5.2): a jingle of coins, then a low liquid swell. */
+  fieldOfBlood: {
     priority: PRIO_ABILITY,
     parts: [
-      part({ wave: 'saw', freq: 1400, freqEnd: 2200, decay: 0.05, sustain: 0.4, hold: 0.05, release: 0.12, volume: 0.25, lowpass: 5000 }),
-      part({ wave: 'square', freq: 700, freqEnd: 1100, decay: 0.05, sustain: 0.3, hold: 0.05, release: 0.1, volume: 0.12, duty: 0.3 }),
+      part({ wave: 'square', freq: 2637, attack: 0.002, decay: 0.03, sustain: 0.3, hold: 0.18, release: 0.08, volume: 0.12, duty: 0.2, vibratoRate: 26, vibratoDepth: 5 }),
+      part({ wave: 'sine', freq: 3520, delay: 0.04, decay: 0.03, sustain: 0.3, hold: 0.14, release: 0.1, volume: 0.1, vibratoRate: 19, vibratoDepth: 4 }),
+      part({ wave: 'saw', freq: 55, freqEnd: 82, delay: 0.25, attack: 0.25, decay: 0.3, sustain: 0.6, hold: 0.3, release: 0.5, volume: 0.35, lowpass: 300, lowpassEnd: 700, vibratoRate: 4, vibratoDepth: 0.4 }),
+    ],
+  },
+  /** The Shroud's burst (M9 §5.2): a muffled ember blast. */
+  shroudBurst: {
+    priority: PRIO_ABILITY,
+    parts: [
+      part({ wave: 'noise', freq: 4000, attack: 0.002, decay: 0.12, sustain: 0.35, release: 0.3, volume: 0.7, lowpass: 2200, lowpassEnd: 250 }),
+      part({ wave: 'sine', freq: 90, freqEnd: 35, decay: 0.12, sustain: 0.4, release: 0.25, volume: 0.55 }),
+      part({ wave: 'triangle', freq: 880, freqEnd: 330, decay: 0.08, sustain: 0.2, release: 0.15, volume: 0.12 }),
+    ],
+  },
+  /** Field entered (M9 §5.2): a deep heartbeat thump, for the local player. */
+  fieldEntered: {
+    priority: PRIO_ABILITY,
+    parts: [
+      part({ wave: 'sine', freq: 70, freqEnd: 40, attack: 0.005, decay: 0.09, sustain: 0.3, release: 0.12, volume: 0.7 }),
+      part({ wave: 'sine', freq: 62, freqEnd: 36, delay: 0.2, attack: 0.005, decay: 0.08, sustain: 0.25, release: 0.12, volume: 0.5 }),
+      part({ wave: 'noise', freq: 600, attack: 0.005, decay: 0.05, sustain: 0.2, release: 0.06, volume: 0.2, lowpass: 300 }),
     ],
   },
   /** Shadowstep: a whoosh. */

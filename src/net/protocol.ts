@@ -76,9 +76,8 @@ export const PHASE_CLEARED = 2;
 export const PHASE_COUNTDOWN = 3;
 
 /** Enemy `flags` bits. */
+/** Bit 1 was Kiss of Betrayal's mark; it's unused since M9 (§3.5). */
 export const FLAG_HURT = 1;
-/** Bit 1 (Kiss of Betrayal's mark) is unused since M9. */
-export const FLAG_MARKED = 2;
 export const FLAG_ROOTED = 4;
 export const FLAG_SILENCED = 8;
 export const FLAG_SLOWED = 16;

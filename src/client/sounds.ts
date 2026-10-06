@@ -23,7 +23,7 @@ const ABILITY_SFX: Record<string, SfxName> = {
   'heretic:E': 'shroud',
   'binder:Q': 'chains',
   'binder:E': 'discord',
-  'betrayer:Q': 'kiss',
+  'betrayer:Q': 'fieldOfBlood',
   'betrayer:E': 'shadowstep',
 };
 /** Falling Star lands this long after the press. */
@@ -68,6 +68,11 @@ export class GameSounds {
 
   censerBurst(at: SoundPos): void {
     sfx('censerBurst', at);
+  }
+
+  /** The local player stepped into a Field of Blood (M9 §5.2). */
+  fieldEntered(): void {
+    sfx('fieldEntered');
   }
 
   abilityReady(): void {
@@ -159,6 +164,9 @@ export class GameSounds {
         } else if (ABILITY_SFX[key]) sfx(ABILITY_SFX[key], key === 'betrayer:Q' || key === 'binder:Q' || key === 'binder:E' ? at : (pose(e.playerId) ?? at));
         break;
       }
+      case 'shroudBurst':
+        sfx('shroudBurst', { x: e.x, y: e.y });
+        break;
       case 'silverBullet':
         if (e.playerId !== this.localId) sfx('silverBullet', { x: e.x, y: e.y }, 1, this.renderDelay, PRIO_OTHERS);
         break;

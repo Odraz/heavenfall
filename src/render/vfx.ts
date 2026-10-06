@@ -307,7 +307,7 @@ export class Vfx {
     this.add({ obj: group, material, duration, update }, now, 0);
   }
 
-  /** Beams of light between pairs of points (tracers, the mark beam), `width` meters wide, fading. */
+  /** Beams of light between pairs of points (tracers), `width` meters wide, fading. */
   beam(now: number, points: Array<[number, number, number]>, color: number, width: number, duration: number): void {
     this.addRibbon(new Ribbon(points, width, this.material(this.tex.beam, color), BEAM_TILE), now, duration);
   }

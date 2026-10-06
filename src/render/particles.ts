@@ -15,6 +15,11 @@ const HEAL_COLUMN_TOP = 2.2;
 const HEAL_COLUMN_TIME = 0.8;
 /** An ember drifting up from a soul, or bursting up from a revive (M8 §3.1, §4.1). */
 const P_RISE = 4;
+/** A red-tinted ember rising from a Field of Blood (M9 §5.1). */
+const P_BLOOD = 5;
+const BLOOD_GLOW: Glow = { r: 1, g: 0.16, b: 0.1, a: 0.75 };
+/** Rising embers reach this height above the pool. */
+const BLOOD_RISE = 3;
 
 export class Particles {
   private readonly kind = new Uint8Array(MAX_PARTICLES);
@@ -91,6 +96,17 @@ export class Particles {
     this.spawn(P_HEAL, x, y, z, vx, vy, vz, life, 0.16);
   }
 
+  /** One red ember rising from a Field of Blood at (x, y, z) to 3 m (M9 §5.1). */
+  bloodEmber(x: number, y: number, z: number): void {
+    const life = 1.2 + Math.random() * 0.6;
+    this.spawn(P_BLOOD, x, y, z, 0, 0, BLOOD_RISE / life, life, 0.18);
+  }
+
+  /** The Shroud's burst (M9 §5.1): 24 embers bursting outward from (x, y, z). */
+  shroudBurst(x: number, y: number, z: number): void {
+    this.emberBurst(x, y, z);
+  }
+
   /** One ember rising slowly from a soul (M8 §4.1). */
   soulEmber(x: number, y: number, z: number): void {
     const a = Math.random() * Math.PI * 2;
@@ -143,6 +159,7 @@ export class Particles {
       const f = 1 - Math.max(0, (this.age[i] / this.life[i] - 0.6) / 0.4);
       const k = this.kind[i];
       if (k === P_HEAL) b.add(this.frames[P_EMBER], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, HEAL_GLOW);
+      else if (k === P_BLOOD) b.add(this.frames[P_EMBER], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, BLOOD_GLOW);
       else if (k === P_RISE) b.add(this.frames[P_EMBER], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, NO_GLOW);
       else b.add(this.frames[k], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, NO_GLOW);
     }

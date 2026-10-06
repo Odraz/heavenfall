@@ -7,7 +7,7 @@ import { ABILITIES, ATTACK_NONE, ATTACK_SECONDARY, attackDef, BLASPHEMY_RADIUS, 
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
-import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_MARKED, FLAG_ROOTED, FLAG_SILENCED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
+import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
 import { aimDir, estimateSilverBullet, rayCylinder } from '../sim/combat';
@@ -23,6 +23,8 @@ import { Particles } from '../render/particles';
 import { GameScene } from '../render/scene';
 import type { GameTextures } from '../render/textures';
 import { Vfx } from '../render/vfx';
+import { BloodPool } from '../render/bloodPool';
+import { FIELD_FIRE_RATE, inField } from '../sim/field';
 import { DebugOverlay } from '../ui/debugOverlay';
 import { PauseOverlay } from '../ui/pause';
 import type { ResultsData } from '../ui/results';
@@ -76,11 +78,24 @@ const BEAM_EMBERS_PER_S = 10;
 const BEAM_EMBER_SPEED = 4;
 /** The own beam starts at the first-person muzzle, this far in front of the camera. */
 const OWN_BEAM_DEPTH = 0.6;
+/** Own tracers turn blood red in a Field of Blood (M9 §5.1). */
+const TRACER_COLOR = 0xffc04a;
+const BLOOD_TRACER = 0xc81818;
+/** Field of Blood's toss (M9 §5.1): 30 coins, 0.12 m, landing within 1.2 m of the center in an arc 1 m high over 0.3 s. */
+const COINS = 30;
+const COIN_SIZE = 0.12;
+const COIN_SPREAD = 1.2;
+const COIN_ARC = 1;
+const COIN_MS = 300;
+/** Red embers rise from the pool, 12 per second. */
+const POOL_EMBERS_PER_S = 12;
+/** Falling Star's launched enemies fly an arc 1 m high over 0.4 s (M9 §3.2). */
+const LAUNCH_HEIGHT = 1;
+const LAUNCH_MS = 400;
 /** At most this many corpses lie around; the oldest vanish first. */
 const MAX_CORPSES = 1000;
 
 const GLOW_WINDUP: Glow = { r: 1, g: 0.78, b: 0.2, a: 0.5 };
-const GLOW_MARKED: Glow = { r: 1, g: 0.12, b: 0.08, a: 0.45 };
 const GLOW_ALLY: Glow = { r: 1, g: 0.8, b: 0.2, a: 0.55 };
 /** Judgment: the glow sphere around the Gatekeeper grows from this radius to the next over the cast. */
 const JUDGMENT_GLOW_R0 = 3;
@@ -192,6 +207,12 @@ export class Game {
   private fireTimer = 0;
   /** Each player's primary and secondary attacks, unwrapped from the snapshots' counters (M9 §10). */
   private readonly shotCounts = new Map<number, { raw: number; raw2: number; n: number; n2: number }>();
+  /** The Field of Blood on screen (M9 §5.1), its coins in flight, and whether the local player stands in it. */
+  private pool: BloodPool | null = null;
+  private readonly coins: Array<{ from: [number, number, number]; to: [number, number, number]; start: number }> = [];
+  private inFieldNow = false;
+  /** When each enemy slot's Falling Star launch arc starts (M9 §3.2). */
+  private readonly launchAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
   /** Others' attack effects waiting for the render delay (M9 §5.1). */
   private readonly pendingFx: Array<{ at: number; run: (now: number) => void }> = [];
   private fireAcc = 0;
@@ -539,6 +560,15 @@ export class Game {
       case 'bossCast':
         this.hud.judgmentEvent(e.phase, now);
         break;
+      case 'starLanded':
+        // Launched enemies fly their arc after the render delay, like other effects (M9 §3.2).
+        for (const s of e.launched) this.launchAt[s] = now + this.snaps.delayTicks * TICK_MS;
+        break;
+      case 'shroudBurst':
+        // A blue ring expanding from 1 m to 5 m over 0.3 s, and 24 embers bursting outward (M9 §5.1).
+        this.vfx.ring(now, e.x, e.y, e.z, 0x4aa3e8, 1, 5, 300);
+        this.particles.shroudBurst(e.x, e.y, e.z + PLAYER_HEIGHT / 2);
+        break;
       case 'silverBullet':
         // Others' Silver Bullets after the render delay; the own one was drawn at once (M9 §5.1).
         if (e.playerId !== this.localId) {
@@ -575,9 +605,9 @@ export class Game {
   }
 
   /** The Silver Bullet's tracer (M9 §5.1): ember, with a silver-white core drawn over it. */
-  private silverTracer(now: number, from: readonly [number, number, number], to: readonly [number, number, number]): void {
+  private silverTracer(now: number, from: readonly [number, number, number], to: readonly [number, number, number], ember = SILVER_EMBER): void {
     const pts: Array<[number, number, number]> = [[from[0], from[1], from[2]], [to[0], to[1], to[2]]];
-    this.vfx.beam(now, pts, SILVER_EMBER, SILVER_WIDTH, SILVER_MS);
+    this.vfx.beam(now, pts, ember, SILVER_WIDTH, SILVER_MS);
     this.vfx.beam(now, pts, SILVER_CORE, SILVER_CORE_WIDTH, SILVER_MS);
   }
 
@@ -633,17 +663,55 @@ export class Game {
       case 'binder:E': // grey burst
         this.vfx.smoke(now, e.x, e.y, e.z, 0x8a8f97, 0.5, 8, 700);
         break;
-      case 'betrayer:Q': {
-        // Mark beam: from the Betrayer to the marked enemy, and a column of light on it.
-        const pts: Array<[number, number, number]> = [[e.x, e.y, e.z], [e.x, e.y, e.z + 8]];
-        if (user) pts.push([user.x, user.y, user.z + PLAYER_EYE - 0.2], [e.x, e.y, e.z + 1]);
-        this.vfx.beam(now, pts, 0xe0301e, 0.4, 600);
+      case 'betrayer:Q':
+        this.startField(e, user, now);
         break;
-      }
       case 'betrayer:E': // afterimage trail
         for (let i = 0; i < 3; i++) this.afterimages.push({ start: now + i * 60, x: e.x, y: e.y, z: e.z, facing: user?.yaw ?? 0 });
         break;
     }
+  }
+
+  /**
+   * Field of Blood (M9 §5.1): the pool and its glare at the event's center, replacing any old one, and
+   * 30 coins tossed from 0.5 m in front of the Betrayer's body center.
+   */
+  private startField(e: Extract<GameEvent, { type: 'abilityUsed' }>, user: { x: number; y: number; z: number; yaw: number } | undefined, now: number): void {
+    this.pool?.dispose();
+    this.pool = new BloodPool(this.map, e.x, e.y, e.z, now);
+    this.scene.scene.add(this.pool.group);
+    const from: [number, number, number] = user
+      ? [user.x + Math.cos(user.yaw) * OTHERS_MUZZLE, user.y + Math.sin(user.yaw) * OTHERS_MUZZLE, user.z + PLAYER_HEIGHT / 2]
+      : [e.x, e.y, e.z + PLAYER_HEIGHT / 2];
+    for (let i = 0; i < COINS; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = COIN_SPREAD * Math.sqrt(Math.random());
+      this.coins.push({ from, to: [e.x + Math.cos(a) * r, e.y + Math.sin(a) * r, e.z + 0.05], start: now });
+    }
+  }
+
+  /**
+   * The pool's life, its embers and the local player standing in it (M9 §5.1): computed from the own
+   * predicted position, so the feedback and the local fire timer change the moment they step in or out.
+   */
+  private updateField(now: number, dt: number): void {
+    const pool = this.pool;
+    if (pool && !pool.update(now)) {
+      pool.dispose();
+      this.pool = null;
+    }
+    const p = this.pool;
+    if (p && p.cells.length && Math.random() < POOL_EMBERS_PER_S * dt) {
+      const [c, r] = p.cells[Math.floor(Math.random() * p.cells.length)];
+      const x = c + Math.random();
+      const y = r + Math.random();
+      if (Math.hypot(x - p.x, y - p.y) <= 5.6 * p.scale(now)) this.particles.bloodEmber(x, y, this.map.floor[r * this.map.w + c] + 0.05);
+    }
+    const b = this.player.body;
+    const inside = !!p && !this.dead && inField(this.map, p.x, p.y, p.z, b.x, b.y);
+    if (inside && !this.inFieldNow) this.sounds.fieldEntered();
+    this.inFieldNow = inside;
+    this.hud.setInField(inside, now);
   }
 
   private onGameOver(e: Extract<GameEvent, { type: 'gameOver' }>, now: number): void {
@@ -821,7 +889,7 @@ export class Game {
 
   /** How fast the local fire timer counts down: 2 in a Field of Blood (M9 §2.2, §3.4). */
   private localFireRate(): number {
-    return 1;
+    return this.inFieldNow ? FIELD_FIRE_RATE : 1;
   }
 
   /**
@@ -996,8 +1064,8 @@ export class Game {
       }
       pts.push([mx, my, mz], [ex + dx * end, ey + dy * end, ez + dz * end]);
     }
-    if (w.kind === 'silverBullet') this.silverTracer(now, pts[0], pts[1]);
-    else this.vfx.beam(now, pts, 0xffc04a, secondary ? SLUG_TRACER_WIDTH : TRACER_WIDTH, TRACER_MS);
+    if (w.kind === 'silverBullet') this.silverTracer(now, pts[0], pts[1], this.inFieldNow ? BLOOD_TRACER : SILVER_EMBER);
+    else this.vfx.beam(now, pts, this.inFieldNow ? BLOOD_TRACER : TRACER_COLOR, secondary ? SLUG_TRACER_WIDTH : TRACER_WIDTH, TRACER_MS);
     if (hit) {
       this.hud.hit(now);
       this.sounds.hit();
@@ -1207,6 +1275,7 @@ export class Game {
       this.pendingFx.splice(i, 1);
       fx.run(now);
     }
+    this.updateField(now, Math.min(dt, MAX_FRAME_DT));
     this.particles.update(dt);
     this.vfx.update(now, this.scene.camera.position);
 
@@ -1247,7 +1316,6 @@ export class Game {
     for (const b of this.enemyBillboards.values()) b.begin();
     for (const b of this.playerBillboards.values()) b.begin();
     const chain = this.frames['chain-ring'];
-    const mark = this.frames.mark;
     const taunt = this.frames.taunt;
     const eye = this.player.body;
     const dt = Math.min(0.1, (now - this.lastAnimAt) / 1000);
@@ -1270,7 +1338,9 @@ export class Game {
       const target = this.enemyBillboards.get(type)!;
       const def = ENEMIES[type];
       const flags = ents.flags[i];
-      const z = enemyZ[i];
+      // Launched by a Falling Star: the billboard flies an arc, peaking 1 m up halfway (M9 §3.2).
+      const lu = (now - this.launchAt[slot]) / LAUNCH_MS;
+      const z = enemyZ[i] + (lu >= 0 && lu < 1 ? 4 * LAUNCH_HEIGHT * lu * (1 - lu) : 0);
       // Status (§10): hurt flash, wind-up gold glow, marked red glow, silenced grey tint.
       let glow = NO_GLOW;
       let judgment: Glow | null = null;
@@ -1297,11 +1367,9 @@ export class Game {
         glow = this.flashGlow;
       } else if (judgment) glow = judgment;
       else if (ents.state[i] === ST_WINDUP) glow = GLOW_WINDUP;
-      else if (flags & FLAG_MARKED) glow = GLOW_MARKED;
       const grey = (flags & FLAG_SILENCED) !== 0;
       target.add(f, ents.x[i], ents.y[i], z, height, false, grey ? 0.55 : 1, grey ? 0.55 : 1, grey ? 0.6 : 1, glow);
       if (flags & FLAG_ROOTED) bb.add(chain, ents.x[i], ents.y[i], z + 0.25, Math.max(0.45, def.radius * 1.1), true);
-      if (flags & FLAG_MARKED) bb.add(mark, ents.x[i], ents.y[i], z + def.height + 0.5, 0.6, true);
       // Taunted: the `!` pops in, holds and fades, then stays hidden for the rest of the taunt.
       if (flags & FLAG_TAUNTED) {
         if (this.tauntAt[slot] < 0) this.tauntAt[slot] = now;
@@ -1383,6 +1451,20 @@ export class Game {
       const af = betrayer.anims.idle[spriteDirection(a.facing, eye.x - a.x, eye.y - a.y)][0];
       ab.add(af, a.x, a.y, a.z, af.height * (1 - 0.3 * t), false, 1, 1, 1, g);
     }
+    // Field of Blood's coins in flight; each vanishes into the pool with a silver glint (M9 §5.1).
+    for (let i = this.coins.length - 1; i >= 0; i--) {
+      const c = this.coins[i];
+      const u = (now - c.start) / COIN_MS;
+      if (u >= 1) {
+        this.vfx.glow(now, c.to[0], c.to[1], c.to[2] + 0.05, 0xe8eef8, 0.06, 0.2, 150);
+        this.coins.splice(i, 1);
+        continue;
+      }
+      const x = c.from[0] + (c.to[0] - c.from[0]) * u;
+      const y = c.from[1] + (c.to[1] - c.from[1]) * u;
+      const cz = c.from[2] + (c.to[2] - c.from[2]) * u + 4 * COIN_ARC * u * (1 - u);
+      bb.add(this.frames.coin, x, y, cz, COIN_SIZE, true);
+    }
     this.vfx.setTethers(tethers);
     this.particles.draw(bb);
     bb.end(this.scene.camera);
@@ -1449,6 +1531,7 @@ export class Game {
     this.pause.dispose();
     this.party?.dispose();
     this.sounds.dispose();
+    this.pool?.dispose();
     this.hum?.stop();
     this.hud.dispose();
     this.bench?.dispose();

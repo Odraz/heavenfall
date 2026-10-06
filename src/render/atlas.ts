@@ -11,7 +11,7 @@ const sources = new Map(Object.entries(pngs).map(([path, url]) => [path.replace(
 const BILLBOARD_SPRITES = new Set([
   'proj-censer', 'proj-orb', 'proj-arrow',
   'feather', 'spark', 'ember',
-  'mark', 'chain-ring', 'taunt',
+  'coin', 'chain-ring', 'taunt',
   ...DECOR_IDS.map(decorSprite),
 ]);
 

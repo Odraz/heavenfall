@@ -110,7 +110,7 @@ export const ABILITIES: Record<ClassId, { Q: AbilityDef; E: AbilityDef }> = {
     E: { name: 'Discord', description: "Silences every enemy around the point you aim at. Stops casters and the Gatekeeper's Judgment.", cooldown: 12, movement: false, allyRange: 0, icon: 'icon-discord' },
   },
   betrayer: {
-    Q: { name: 'Kiss of Betrayal', description: 'Marks the enemy under your crosshair: it takes triple damage from everyone.', cooldown: 10, movement: false, allyRange: 0, icon: 'icon-kiss' },
+    Q: { name: 'Field of Blood', description: 'Toss the thirty pieces just in front of you. Everyone standing in the field fires twice as fast.', cooldown: 30, movement: false, allyRange: 0, icon: 'icon-field-of-blood' },
     E: { name: 'Shadowstep', description: "Dash the way you're moving, invulnerable for a moment.", cooldown: 6, movement: true, allyRange: 0, icon: 'icon-shadowstep' },
   },
 };
@@ -119,14 +119,24 @@ export const ABILITIES: Record<ClassId, { Q: AbilityDef; E: AbilityDef }> = {
 export const BLASPHEMY_RADIUS = 12;
 export const BLASPHEMY_DURATION = 5;
 export const FALLING_STAR_TIME = 0.4;
-export const FALLING_STAR_DAMAGE = 40;
+/** The landing's damage is small on purpose: the knockback is the point (M9 §3.2). */
+export const FALLING_STAR_DAMAGE = 10;
 export const FALLING_STAR_RADIUS = 5;
 export const KNOCKBACK_DIST = 4;
+/** Falling Star's knockback takes 0.4 s (M9 §3.2); others take 0.2 s (MVP §5.6). */
+export const FALLING_STAR_KNOCKBACK_TIME = 0.4;
 export const KNOCKBACK_TIME = 0.2;
+/** The shotgun knocks back survivors within 6 m of the Fallen by 2 m, once per shot (M9 §3.1). */
+export const SHOTGUN_KNOCKBACK_DIST = 2;
+export const SHOTGUN_KNOCKBACK_RANGE = 6;
 export const COMMUNION_RADIUS = 15;
 export const COMMUNION_HEAL = 80;
 export const SHROUD_AMOUNT = 150;
 export const SHROUD_DURATION = 8;
+/** A shield broken by damage bursts for 50 to the 8 nearest enemies within 5 m (M9 §3.3). */
+export const SHROUD_BURST_DAMAGE = 50;
+export const SHROUD_BURST_RADIUS = 5;
+export const SHROUD_BURST_MAX = 8;
 export const CHAINS_RANGE = 20;
 export const CHAINS_ANGLE = 30 * DEG;
 export const CHAINS_STEP = 0.25;
@@ -136,8 +146,6 @@ export const CHAINS_ROOT = 1.5;
 export const DISCORD_RANGE = 40;
 export const DISCORD_RADIUS = 8;
 export const DISCORD_SILENCE = 4;
-export const KISS_RANGE = 50;
-export const KISS_DURATION = 6;
 export const SHADOWSTEP_SPEED = 40;
 export const SHADOWSTEP_TIME = 0.2;
 export const SHADOWSTEP_INVULN = 0.5;

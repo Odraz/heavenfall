@@ -244,7 +244,7 @@ describe('the Silver Bullet (M9 §2.4)', () => {
     aimLevel(sim, sim.players[0], 1.5, 4.5);
     sim.fireWeapon(sim.players[0], ATTACK_SECONDARY);
     expect(blessed.every((s) => !sim.eAlive[s])).toBe(true);
-    expect(sim.eHp[boss]).toBe(45000 - 200);
+    expect(sim.eHp[boss]).toBe(29000 - 200);
     expect(sim.eHp[behind]).toBe(20);
   });
 

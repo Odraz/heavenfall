@@ -120,6 +120,24 @@ body {
   height: 2px;
 }
 
+/* Standing in a Field of Blood (M9 §5.1): the crosshair turns blood red. */
+.crosshair.blood::before,
+.crosshair.blood::after {
+  background: #c81818;
+}
+
+/* The Field of Blood's glow rising at the bottom of the screen; the HUD sets its opacity. */
+.field-glow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22%;
+  background: linear-gradient(to top, rgb(176, 24, 24), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
 .bench-overlay {
   position: absolute;
   top: 50%;

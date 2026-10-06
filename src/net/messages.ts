@@ -14,6 +14,10 @@ export type GameEvent =
   | { type: 'playerRevived'; playerId: number }
   /** A Silver Bullet (M9 §2.4): from the eye to where the ray stopped. */
   | { type: 'silverBullet'; playerId: number; x: number; y: number; z: number; ex: number; ey: number; ez: number }
+  /** Falling Star landed (M9 §3.2): the enemy slots it knocked back, which fly an arc on every client. */
+  | { type: 'starLanded'; playerId: number; x: number; y: number; z: number; launched: number[] }
+  /** Martyr's Shroud burst (M9 §3.3), where the shielded player stood. */
+  | { type: 'shroudBurst'; playerId: number; x: number; y: number; z: number }
   | { type: 'arenaStarted'; arenaIndex: number }
   | { type: 'arenaCleared'; arenaIndex: number }
   | { type: 'bossCast'; phase: 'start' | 'interrupted' | 'completed' }

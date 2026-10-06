@@ -64,7 +64,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     speed: 9,
     hints: [
       { text: 'Shoot along a line of enemies: each shot pierces up to 6.' },
-      { key: 'Q', text: 'Q: mark the toughest enemy. Everyone deals triple damage to it.' },
+      { key: 'Q', text: 'Q: go where the party fights and toss the silver. Everyone in it fires twice as fast.' },
       { key: 'E', text: 'E: dash out of trouble.' },
     ],
   },

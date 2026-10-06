@@ -4,17 +4,18 @@ import { WEAPONS } from '../data/weapons';
 import { PROJ_ORB } from './sim';
 import { aimAt, enemyAt, makeSim, put, room } from './testutil/sims';
 
-describe('damage pipeline (§5.5)', () => {
-  it('1: Kiss of Betrayal triples damage, and the killer gets the credit', () => {
+describe('damage pipeline (M9 §3.6)', () => {
+  it('1: Bound doubles damage on a rooted enemy, and the killer gets the credit; Kiss is gone', () => {
     const sim = makeSim(room(20, 10), ['betrayer', 'binder']);
     const a = enemyAt(sim, CHORISTER, 10.5, 5.5);
     sim.damageEnemy(a, 10, 1);
     expect(sim.eHp[a]).toBe(50);
-    sim.mark(a, 6);
-    sim.damageEnemy(a, 10, 1);
+    sim.root(a, 6);
+    sim.damageEnemy(a, 15, 1);
     expect(sim.eHp[a]).toBe(20);
-    sim.damageEnemy(a, 7, 1); // 21 ≥ 20
+    sim.damageEnemy(a, 10, 1); // 20 ≥ 20
     expect(sim.eAlive[a]).toBe(0);
+    expect('mark' in sim || 'markSlot' in sim).toBe(false);
     expect(sim.players[1].kills).toBe(1);
     expect(sim.players[0].kills).toBe(0);
   });
@@ -164,7 +165,7 @@ describe('status effects (§5.6)', () => {
     expect(sim.pKind[sim.projectiles[0]]).toBe(PROJ_ORB);
   });
 
-  it('the Gatekeeper is immune to slow, root, pull and knockback, but can be silenced and marked', () => {
+  it('the Gatekeeper is immune to slow, root, pull and knockback, but can be silenced', () => {
     const sim = makeSim(room(30, 20), ['binder']);
     const g = enemyAt(sim, GATEKEEPER, 15.5, 10.5);
     sim.slow(g, 5);
@@ -178,9 +179,7 @@ describe('status effects (§5.6)', () => {
     expect(sim.eKbUntil[g]).toBe(0);
     expect([sim.eX[g], sim.eY[g]]).toEqual([15.5, 10.5]);
     sim.silence(g, 4);
-    sim.mark(g, 6);
     expect(sim.eSilenceUntil[g]).toBeGreaterThan(sim.tick);
-    expect(sim.markSlot).toBe(g);
   });
 
   it('knockback pushes over 0.2 s with collision, and ground enemies can fall off ledges', () => {
@@ -440,7 +439,7 @@ describe('defeat (§5.7)', () => {
 });
 
 describe('balance (M8 §8)', () => {
-  it('Bound doubles damage on rooted enemies, and multiplies with Kiss (×6)', () => {
+  it('Bound doubles damage on rooted enemies', () => {
     const sim = makeSim(room(30, 5), ['binder']);
     const a = enemyAt(sim, CHORISTER, 10.5, 3.5);
     sim.damageEnemy(a, 5, -1);
@@ -448,9 +447,6 @@ describe('balance (M8 §8)', () => {
     sim.root(a, 5);
     sim.damageEnemy(a, 5, -1);
     expect(sim.eHp[a]).toBe(45);
-    sim.mark(a, 5);
-    sim.damageEnemy(a, 5, -1);
-    expect(sim.eHp[a]).toBe(15);
   });
 
   it('Bound includes the 0.3 s pull', () => {
@@ -466,7 +462,7 @@ describe('balance (M8 §8)', () => {
     const g = enemyAt(sim, GATEKEEPER, 15.5, 3.5);
     sim.root(g, 5);
     sim.damageEnemy(g, 100, -1);
-    expect(sim.eHp[g]).toBe(45000 - 100);
+    expect(sim.eHp[g]).toBe(29000 - 100);
   });
 
   it('the shotgun fires 8 pellets of 12 every 0.8 s', () => {

@@ -80,7 +80,8 @@ describe('the Gatekeeper (§7.4)', () => {
     expect(b).toBeGreaterThanOrEqual(0);
     expect(sim.eType[b]).toBe(GATEKEEPER);
     expect([sim.eX[b], sim.eY[b], sim.eZ[b]]).toEqual([25.5, 10.5, 3]);
-    expect(sim.eHp[b]).toBe(45000 * 0.6);
+    // 29 000 HP at 4 players (M9 §4), scaled for 2.
+    expect(sim.eHp[b]).toBe(29000 * 0.6);
     // It isn't counted among the living enemies or the enemies remaining.
     expect(sim.living).toBe(0);
     expect(sim.enemiesRemaining()).toBe(0);
@@ -208,7 +209,7 @@ describe('the Gatekeeper (§7.4)', () => {
     expect(sim.judgmentDue).toBe(sim.tick + 750);
   });
 
-  it('is interrupted by taking 2 000 damage (scaled) during the cast, counted after the mark', () => {
+  it('is interrupted by taking 1 300 damage (scaled) during the cast (M9 §4)', () => {
     const sim = makeSim(['binder']);
     const t0 = startFight(sim, [VISIBLE]);
     sim.players[0].god = true;
@@ -216,9 +217,8 @@ describe('the Gatekeeper (§7.4)', () => {
     sim.volleyDue = Infinity;
     runTo(sim, t0 + 10);
     const b = sim.bossSlot;
-    // One player: the threshold is 2 000 × 0.4 = 800. Marked, 266 × 3 = 798 isn't enough; 2 more is.
-    sim.mark(b, 6);
-    sim.damageEnemy(b, 266, 0);
+    // One player: the threshold is 1 300 × 0.4 = 520; 519 isn't enough, 1 more is.
+    sim.damageEnemy(b, 519, 0);
     expect(sim.bossCast).toBe(BOSS_CAST_JUDGMENT);
     sim.events.length = 0;
     sim.damageEnemy(b, 1, 0);
@@ -292,8 +292,8 @@ describe('the Gatekeeper (§7.4)', () => {
     sim.volleyDue = Infinity;
     runTo(sim, t0 + 10 + 45);
     snap = decodeSnapshot(sim.encodeFor(0)[0])!;
-    expect(snap.bossHp).toBe(18000);
-    expect(snap.bossMaxHp).toBe(18000);
+    expect(snap.bossHp).toBe(11600);
+    expect(snap.bossMaxHp).toBe(11600);
     expect(snap.bossCast).toBe(BOSS_CAST_JUDGMENT);
     expect(snap.bossCastProgress).toBe(128);
   });

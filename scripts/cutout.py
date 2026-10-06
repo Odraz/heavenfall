@@ -40,7 +40,8 @@ SPRITES = {
     'feather': 192,
     'spark': 192,
     'ember': 192,
-    'mark': 192,
+    # A world sprite 0.12 m across (M9 §5.1, the Field of Blood's toss).
+    'coin': 128,
     'chain-ring': 128,
     # Decorations: about 170 px per meter of their height in src/data/decor.ts, at least 192.
     'decor-candelabrum': 320,
@@ -66,13 +67,17 @@ ICONS = {
     'icon-shroud': 128,
     'icon-chains': 128,
     'icon-discord': 128,
-    'icon-kiss': 128,
+    'icon-field-of-blood': 128,
     'icon-shadowstep': 128,
     'class-fallen': 128,
     'class-heretic': 128,
     'class-binder': 128,
     'class-betrayer': 128,
 }
+
+# Icons painted inside a dark frame with a glow around it (light-frame trimming can't find it):
+# this fraction of the image is cut off each side first.
+ICON_INSET = {'icon-field-of-blood': 0.125}
 
 # Terrain textures (§11.1): output size in pixels, each covering 4 × 4 m.
 TEXTURES = {
@@ -259,6 +264,9 @@ def space_letters(color: np.ndarray, alpha: np.ndarray, letters: int, gap: float
 
 def icon(name: str, size: int) -> None:
     img = Image.open(SRC / f'{name}.png').convert('RGB')
+    if name in ICON_INSET:
+        k = round(ICON_INSET[name] * img.width), round(ICON_INSET[name] * img.height)
+        img = img.crop((k[0], k[1], img.width - k[0], img.height - k[1]))
 
     # Trim rows and columns of a light frame (some images come with a white border),
     # plus 1% more, so the frame's soft inner edge goes too.
