@@ -409,28 +409,29 @@ A single old tarnished silver coin seen straight on: a worn, slightly irregular 
 
 ## Milestone 10
 
-9 images for the level art ([m10.md](m10.md)), plus 5 prop sheets made early for a later milestone. The goal is the look of the concept art, `concept-1` above all, at almost no cost per frame, so the prompts ask for flat, evenly lit images: the game adds its own baked light. Attach `concept-1.webp`, `concept-2.webp` and `concept-3.webp` to every prompt unless it says otherwise. Save them as named: the sky, textures and effects in `assets/art-src/`, the prop sheets in `assets/art-src/reference/`. Generate each in a new chat. They're needed in stages, so you can do them stage by stage.
+10 images for the level art ([m10.md](m10.md)), plus 5 prop sheets made early for a later milestone. The goal is the look of the concept art, `concept-1` above all, at almost no cost per frame, so the prompts ask for flat, evenly lit images: the game adds its own baked light. Attach `concept-1.webp`, `concept-2.webp` and `concept-3.webp` to every prompt unless it says otherwise. Save them as named: the sky, textures and effects in `assets/art-src/`, the prop sheets in `assets/art-src/reference/`. Generate each in a new chat. They're needed in stages, so you can do them stage by stage.
 
 **Optional extras that help** (not required): a close-up photo or painting of a real gold-inlay marble floor; a real arcade with arched windows seen from inside; any artwork of floating spires and towers in clouds. Attach them to the prompts they match.
 
 JPEG is fine for all of them (`.jfif` or `.jpg`, same base name).
 
 - [x] Stage 1: `sky-day`
-- [x] Stage 3: `tex-floor-plain`, `tex-floor-medallion`, `tex-wall-window`, `tex-wall-pilaster`, `tex-cornice` (Claude fixes the plain floor's grid, adds the frieze to the window wall and crops the cornice to whole repeats of its pattern: [m10.md](m10.md) §5.1)
-- [x] Stage 4: `tex-arcade` (Claude keys out the green, extends it to 1:2 and splits it into two layers: [m10.md](m10.md) §6)
-- [x] Stage 5: `fx-lightshaft`
-- [x] Stage 5: `fx-clouds` (Claude cleans the green rim off the soft edges: [m10.md](m10.md) §7.2)
+- [x] Stages 3 and 5: `tex-floor-plain`, `tex-floor-medallion`, `tex-wall-window`, `tex-wall-pilaster`, `tex-cornice` (Claude fixes the plain floor's grid, adds the frieze to the window wall and crops the cornice to whole repeats of its pattern: [m10.md](m10.md) §5.1)
+- [x] Stages 2 and 6: `tex-arcade` (Claude keys out the green, extends it to 1:2 and splits it into two layers: [m10.md](m10.md) §6)
+- [x] Stage 7: `fx-lightshaft`
+- [x] Stage 7: `fx-clouds` (Claude cleans the green rim off the soft edges: [m10.md](m10.md) §7.2)
+- [ ] Stage 7: `fx-spires` (Claude cleans it like the clouds: [m10.md](m10.md) §7.3)
 - [x] Later milestone (sprites from 3D models, not used in M10): `prop-arch-sheet`, `prop-column-sheet`, `prop-balustrade-sheet`, `prop-spire-sheet`, `prop-island-sheet`
 
 ### Sky (stage 1)
 
 #### Sky — `sky-day.png` · 21:9
-A horizon band that wraps all the way around the player. Claude closes the seam and blends the top and bottom into plain color, so don't worry about the exact edges, but the left and right edges should match as closely as you can get them. Generate at the largest size available.
+A horizon band around the player: the game shows it over half the circle and its mirror image over the other half, so its edges need not match, and blends the top and bottom into plain color. Generate at the largest size available.
 ```text
 A wide panoramic painted sky of a heavenly realm, seen from a high floating terrace: a bright blue sky with big sunlit cumulus clouds, warm golden haze along the horizon, and in the distance floating spires, slender white towers, domes and broken arches rising out of the clouds at many different distances, some tiny and pale in the haze, some larger and clearer. Soft sunlight from the left, a hint of golden light rays through the clouds. The horizon is at about one third of the image height from the bottom; below it, thick white clouds and haze fade to pale gold. The upper half is clear deep blue with a few light clouds. Hand-painted stylized game skybox matching the sky in the attached images: painterly brush texture, soft edges, no ink outlines, rich saturated color. The left edge continues the right edge. No ground, no people, no birds, no text, no sun disc. Aspect ratio 21:9.
 ```
 
-### Surfaces (stage 3)
+### Surfaces (stages 3 and 5)
 
 Same rules as B4 *Terrain textures*: seamless, flat even lighting, no shadows, no vignette, no perspective, no text. Generate at 2048 px if available. Also attach `tex-floor.png` or `tex-wall.png` from `assets/art-src/` (whichever is the same kind), so the new ones match the existing ones.
 
@@ -447,7 +448,7 @@ Game texture, viewed straight down, orthographic, filling the whole square: a po
 ```
 
 #### Window wall — `tex-wall-window.png` · 1:1
-The wall rises 16 m, so this repeats upward four times. It's a painted window; the game doesn't make it a real hole.
+The game stretches it vertically from the floor toward the cornice (about 1.7×), keeping the frieze at the bottom. It's a painted window; the game sets its glass back into the wall, but doesn't make it a real hole.
 ```text
 Seamless tileable game texture, viewed straight on, orthographic, filling the whole square: an ivory sandstone wall, with one tall pointed-arch window centered, 45% of the width and 70% of the height, set in a deep carved frame with a gold-leaf molding, the glass a soft sky-blue gradient with a pale cloud and thin gold tracery bars, the inner edge of the frame painted dark to suggest depth. Above and below the window, plain ivory blocks with thin dark joints. The left and right edges show plain blocks that continue into the neighboring tile, and the top and bottom edges match. Hand-painted stylized texture matching the walls in the attached image: painterly brush texture, crisp dark ink-like lines along the carved edges and joints. Even, flat lighting: no cast shadows, no vignette, no perspective. No text. Aspect ratio 1:1.
 ```
@@ -464,7 +465,7 @@ A horizontal band for the top of every wall. It only repeats left to right. Clau
 Seamless horizontally tileable game texture, viewed straight on, orthographic, filling the whole image: a grand classical cornice band in ivory stone and gold, from top to bottom: a thin gold strip, a row of small evenly spaced dentils, a wide band with a repeating carved leaf-and-lily pattern with gold-leaf trim, then a projecting molding with a thin gold line at the bottom. Hand-painted stylized texture matching the stonework in the attached images: painterly brush texture, crisp dark ink-like lines along the carved edges. Even, flat lighting: no cast shadows, no vignette, no perspective. The left edge continues the right edge. No text. Aspect ratio 21:9.
 ```
 
-### Arches (stage 4)
+### Arches (stages 2 and 6)
 
 #### Arcade bay — `tex-arcade.png` · 9:16
 One bay of the arcade that runs along every open edge of the level, like the arches on the left of `concept-1`. Bays stand side by side, so each side edge shows half a pier. The game cuts out the green, so you see the sky through the arch. It's 4 m wide and 8 m tall in the game; Claude extends it to 1:2. Attach `tex-wall.png` too, so the stone matches.
@@ -474,7 +475,7 @@ Game texture, viewed straight on, orthographic, filling the whole image: one bay
 
 **Check before saving:** the opening is one clean green area (no sky painted into it), the arch is centered and symmetric, and the left and right edges are cut through the piers.
 
-### Atmosphere (stage 5)
+### Atmosphere (stage 7)
 
 #### Light shaft — `fx-lightshaft.png` · 3:4
 The game turns brightness into opacity, so black becomes transparent. Tinted warm gold by the game. No attachments.
@@ -487,6 +488,14 @@ Four clouds the game scatters around and below the level, so the arches look out
 ```text
 Four separate painted cumulus clouds arranged in a 2 × 2 grid, one in each quarter of the image, each fully inside its quarter with a clear margin of background around it, none touching another or the image edge. Different shapes: one tall billowing cloud, one wide flat cloud bank, one small round puff, one long wispy streak. Soft fluffy edges, sunlit warm white and pale gold tops, soft blue-grey and lavender undersides. Hand-painted stylized look matching the clouds of the attached sky: painterly brush texture, soft edges, no ink outlines. Isolated on a flat pure green (#00FF00) background: no sky, no ground, no text. Aspect ratio 1:1.
 ```
+
+#### Distant spires — `fx-spires.png` · 1:1
+Four far-off structures the game stands in the cloud sea 60–120 m beyond the level, so the sky has depth that shifts as you move, as in `concept-1` and `concept-2`. Seen from far away through haze, so simple shapes and soft detail. Attach `sky-day` from `assets/art-src/` too, so they match the spires painted in it.
+```text
+Four separate distant fantasy structures of a heavenly city arranged in a 2 × 2 grid, one in each quarter of the image, each fully inside its quarter with a clear margin of background around it, none touching another or the image edge: a cluster of three slender white towers of different heights with pointed gold-capped roofs; a single tall round tower topped by a gold dome; a small floating island of rock, its underside a tapering cone, carrying a white pavilion with a gold dome; a tall broken pointed arch on two slender piers. Each is tall and upright, standing straight, seen from straight in front at eye level, with no perspective. The bottom fifth of each fades into soft white cloud, so it seems to rise out of a sea of clouds. Pale ivory stone with gold accents, softly lit from the front, slightly brighter at the top, a little hazy as if seen from far away. Hand-painted stylized look matching the spires of the attached sky: painterly brush texture, soft edges, only faint thin outlines. Isolated on a flat pure green (#00FF00) background: no sky, no ground, no people, no text. Aspect ratio 1:1.
+```
+
+**Check before saving:** four separate, upright structures, none cut by its quarter's edge, no green inside them except between the island's pavilion columns, and clouds only at their feet.
 
 ### Architecture (a later milestone)
 
