@@ -38,3 +38,13 @@ M10.1: the sky texture adds 19.3 MB (2 701 × 1 344, mipmapped) and no draw call
 | 2026-10-06 | M10.2 (open edges) | f42aa18 | pearly-gates arcade | 7.22 | 0.4% | 59.82 | 48.5 | 1.82 | 8 | 30 494 | 293.7 | Pass (+1.7%) |
 
 M10.2: in both the M10.1 and M10.2 gates the capped Pearly Gates run (always the 4th run of the sequence) measured about 7.7–7.9 ms of simulation on average where the runs before and after measured under 4; rerun alone on an idle desktop it measured 3.97 and 3.96 ms (59.93 FPS, recorded above). Something on the machine runs at that point; the simulation itself is unchanged. The capped runs' simulation time is about twice the uncapped runs' (about 4 against 2 ms): with the frame rate capped the CPU runs at lower clocks.
+| 2026-10-07 | M10.3 (surfaces) | b280b43 | sandbox | 7.37 | 1.1% | 59.4 | 31.7 | 1.93 | 5 | 8 986 | 332.9 | Pass (+2.5%) |
+| 2026-10-07 | M10.3 (surfaces) | b280b43 | pearly-gates | 7.47 | 0.5% | 59.28 | 29.18 | 1.83 | 5 | 34 510 | 332.9 | Pass (+2.8%) |
+| 2026-10-07 | M10.3 (surfaces) | b280b43 | pearly-gates arcade | 7.40 | 0.3% | 59.89 | 53.11 | 1.82 | 6 | 34 540 | 332.9 | Pass (+2.5%) |
+
+M10.3: the terrain is one draw call instead of three (7 → 5 calls); the texture array adds 39.2 MB (10 layers of 1 024², mipmapped), less the three old terrain textures. Against the baseline: +3.4%, +4.2% and +2.6%.
+| 2026-10-07 | M10.4 (light) | f3532eb | sandbox | 7.35 (5 runs) | 5.2% | 59.96 | 58.57 | 1.76 | 7 | 14 990 | 333.1 | Pass (−0.3%) |
+| 2026-10-07 | M10.4 (light) | f3532eb | pearly-gates | 7.48 | 0.8% | 59.95 | 58.92 | 1.75 | 7 | 40 514 | 334.0 | Pass (+0.1%) |
+| 2026-10-07 | M10.4 (light) | f3532eb | pearly-gates arcade | 7.46 | 1.5% | 59.94 | 58.86 | 1.81 | 8 | 40 544 | 334.0 | Pass (+0.8%) |
+
+M10.4: the contact shadows add 2 draw calls (two passes) and 2 triangles per character (about 6 000 with the swarm); the lightmap 0.9 MB. Against the baseline: +3.1%, +4.3% and +3.5%.

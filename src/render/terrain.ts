@@ -2,8 +2,9 @@
 import * as THREE from 'three';
 import { K_DOOR, K_FLOOR, K_OPEN, K_PILLAR, K_VOID } from '../sim/heights';
 import type { GameMap } from '../sim/map';
-import { CORNICE, floorLooks, L_CORNICE, L_MEDALLION, L_PILASTER, L_RISER, L_WALL, segmentLook, TILE, wallPieces } from './looks';
+import { CORNICE, floorLooks, FRIEZE, L_CORNICE, L_MEDALLION, L_PILASTER, L_RISER, L_WALL, L_WINDOW, segmentLook, TILE, wallPieces } from './looks';
 import { bakeLightmap, faceColor, facesSun, shadowZ as faceShadowZ } from './lightmap';
+import { computeRelief, emitRelief, emitWindows, ReliefIndex } from './relief';
 import { makeTerrainMaterial } from './terrainMaterial';
 import type { TerrainTextures } from './textures';
 
@@ -55,6 +56,25 @@ class GeometryBuilder {
     else this.index.push(base, base + 2, base + 1, base, base + 3, base + 2);
   }
 
+  /** Adds a triangle (simulation coordinates), facing `normal`, with the current color. */
+  tri(corners: number[][], uvs: number[][], normal: [number, number, number], layer: number): void {
+    const base = this.pos.length / 3;
+    for (let i = 0; i < 3; i++) {
+      const [x, y, z] = corners[i];
+      this.pos.push(x, z, y);
+      this.uv.push(uvs[i][0], uvs[i][1]);
+      this.color.push(this.rgb[0], this.rgb[1], this.rgb[2]);
+      this.layer.push(layer);
+      this.fade.push(0);
+      this.shadowZ.push(this.shadowAt ? this.shadowAt(x, y) : -1e4);
+      this.floorTop.push(this.isFloor);
+    }
+    const p = (i: number) => new THREE.Vector3(this.pos[(base + i) * 3], this.pos[(base + i) * 3 + 1], this.pos[(base + i) * 3 + 2]);
+    const n = new THREE.Vector3().subVectors(p(1), p(0)).cross(new THREE.Vector3().subVectors(p(2), p(0)));
+    if (n.dot(new THREE.Vector3(normal[0], normal[2], normal[1])) >= 0) this.index.push(base, base + 1, base + 2);
+    else this.index.push(base, base + 2, base + 1);
+  }
+
   /**
    * Vertical quad on the edge from (x0, y0) to (x1, y1), from z0 to z1, facing `normal`, with u from
    * u0 to u1 and v from v0 to v1. Shaded darker toward the foot of the whole face (zFoot to zTop).
@@ -104,6 +124,8 @@ export interface Terrain {
   mesh: THREE.Mesh;
   /** The baked floor lightmap (M10 §5.2), which the characters sample too (§5.4). */
   lightmap: THREE.DataTexture;
+  /** Where shots meet the relief (M10 §5.3). */
+  relief: ReliefIndex;
   /** Closed-door columns per arena, entry and exit door (null where the arena has none). */
   doors: Array<{ entry: THREE.Mesh | null; exit: THREE.Mesh | null }>;
 }
@@ -227,6 +249,7 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
           }
           for (const piece of wallPieces(nt, t, nt, t, band, k === K_PILLAR ? L_PILASTER : L_WALL)) {
             const inBand = piece.layer === band;
+            if (band === L_WINDOW && inBand && piece.z0 >= nt + FRIEZE - 1e-6) continue;
             g.side(x0, y0, x1, y1, piece.z0, piece.z1, inBand ? fu0 : u0, inBand ? fu1 : u1, piece.v0, piece.v1, normal, edge.shade * 0.92, piece.layer, face);
           }
         } else if (k === K_OPEN) {
@@ -242,6 +265,12 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
       }
     }
   }
+
+  // Relief (M10 §5.3): crowns, pilaster strips and window recesses, in the same mesh.
+  const relief = computeRelief(map);
+  const reliefLight = { faceColor, facesSun, shadowZ: (x: number, y: number, nx: number, ny: number, foot: number, top: number) => faceShadowZ(map, x, y, nx, ny, foot, top) };
+  emitRelief(g, relief, reliefLight, { cornice: L_CORNICE, riser: L_RISER, pilaster: L_PILASTER, window: L_WINDOW });
+  emitWindows(g, relief, reliefLight, { riser: L_RISER, window: L_WINDOW });
 
   const mesh = new THREE.Mesh(g.toGeometry(), makeTerrainMaterial(textures.array, textures.sky, lightmap, w, h));
 
@@ -273,5 +302,5 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   };
   const doors = map.arenas.map((arena) => ({ entry: doorMesh(arena.doors), exit: doorMesh(arena.exitDoors ?? []) }));
 
-  return { mesh, lightmap, doors };
+  return { mesh, lightmap, relief: new ReliefIndex(relief, w), doors };
 }

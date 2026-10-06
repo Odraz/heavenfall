@@ -1092,7 +1092,8 @@ export class Game {
         if (t <= stop) ts.push({ t, i });
       }
       ts.sort((a, b) => a.t - b.t);
-      let end = stop;
+      // A shot that meets a wall ends on its drawn surface: a relief's front, or a window's glass (M10 §5.3).
+      let end = stop < w.range ? this.scene.terrain.relief.adjust(ex, ey, ez, dx, dy, dz, stop) : stop;
       if (ts.length > 0) {
         hit = true;
         if (w.kind === 'silverBullet') {
