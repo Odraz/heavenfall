@@ -90,6 +90,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 | E | Shadowstep | As now. |
 
 - **Revolver or Silver Bullet:** the revolver for scattered enemies, flyers and the boss; Silver Bullet when the enemies line up in a corridor, behind the taunting Fallen or in the Binder's pile.
+- **Field of Blood looks like a place.** A glowing pool of blood-red liquid with light rising from it, so the party sees where to go. A player standing in it sees a red glow rising at the bottom of the screen, a red glow on the weapon and a buff icon by the HP bar, even when not shooting.
 - **Field of Blood is a rally call.** It's wasted on a scattered party. Its best use is the whole party standing in it in front of a Binder's pile (×2 bound, ×2 field, so ×4), or near cover on the boss, so the party can still hide from Judgment.
 - **The theme:** Judas's thirty pieces bought the Field of Blood. The Betrayer doesn't lead the damned; it pays them.
 - Field of Blood replaces Kiss of Betrayal as the party's boss multiplier, and it works in the swarm too.
