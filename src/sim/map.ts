@@ -1,7 +1,8 @@
 import { isDecorId, type DecorId } from '../data/decor';
 import type { ArenaDef, DungeonDef } from '../data/dungeons/types';
 import { PHASE_CLEARED, PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
-import { HEIGHT_STEP, MAX_MAP_SIZE, WALL_TOP } from './constants';
+import { HEIGHT_STEP, MAX_MAP_SIZE } from './constants';
+import { computeHeights, K_VOID, type Heights } from './heights';
 
 /** A map that failed to load, naming the row and column of the problem (§8.1). */
 export class MapError extends Error {
@@ -28,8 +29,13 @@ export interface GameMap {
   doorArena: Int16Array;
   /** 1 for walls and closed doors. Changes as doors open and close. */
   solid: Uint8Array;
-  /** Floor height, or WALL_TOP for solid cells. Used by ray tests. Changes with doors. */
+  /**
+   * Used by ray tests (M10 §3.4): the floor height of floor cells and open doors, a wall cell's height
+   * (open edges: the parapet; void: −∞), a closed door's *Door* height. Changes with doors.
+   */
   top: Float32Array;
+  /** Zones, wall kinds and heights, open edges and bays (M10 §3). */
+  heights: Heights;
   /** Player spawn cells (`S`) in reading order. */
   spawns: Array<[number, number]>;
   /** Enemy spawn cells (`x`) inside each arena's rect, per arena, in reading order. */
@@ -138,10 +144,11 @@ export function loadMap(def: DungeonDef): GameMap {
   );
 
   const solid = new Uint8Array(wall);
+  const walls = computeHeights({ w, h, floor, wall, doorArena, boss, arenas: def.arenas });
   const top = new Float32Array(n);
-  for (let i = 0; i < n; i++) top[i] = wall[i] ? WALL_TOP : floor[i];
+  for (let i = 0; i < n; i++) top[i] = wall[i] ? walls.height[i] : floor[i];
 
-  return { id: def.id, name: def.name, w, h, floor, wall, doorArena, solid, top, spawns, arenaSpawnPoints, boss, decorations, arenas: def.arenas };
+  return { id: def.id, name: def.name, w, h, floor, wall, doorArena, solid, top, heights: walls, spawns, arenaSpawnPoints, boss, decorations, arenas: def.arenas };
 }
 
 /** Opens or closes the doors of one arena. */
@@ -156,7 +163,7 @@ function setCells(map: GameMap, cells: ReadonlyArray<[number, number]>, closed: 
   for (const [c, r] of cells) {
     const i = r * map.w + c;
     map.solid[i] = closed ? 1 : 0;
-    map.top[i] = closed ? WALL_TOP : map.floor[i];
+    map.top[i] = closed ? map.heights.height[i] : map.floor[i];
   }
 }
 
@@ -177,6 +184,14 @@ export function arenaPhaseOf(ai: number, arenaIndex: number, arenaPhase: number)
 export function isSolid(map: GameMap, c: number, r: number): boolean {
   if (c < 0 || r < 0 || c >= map.w || r >= map.h) return true;
   return map.solid[r * map.w + c] === 1;
+}
+
+/** Whether the point is over a void cell or outside the grid (M10 §3.2): only sky there. */
+export function overVoid(map: GameMap, x: number, y: number): boolean {
+  const c = Math.floor(x);
+  const r = Math.floor(y);
+  if (c < 0 || r < 0 || c >= map.w || r >= map.h) return true;
+  return map.heights.kind[r * map.w + c] === K_VOID;
 }
 
 /** Whether the position is inside the arena's rect (§8.2). */

@@ -28,3 +28,8 @@ M9.2: the run measured 0.97 FPS with a 1%-low of 1 FPS and normal simulation tim
 | 2026-10-06 | M10 baseline | 44b37d7 | sandbox | 7.13 | 1.7% | 59.5 | 34.75 | 2.02 | 7 | 7 432 | 274.4 | — |
 | 2026-10-06 | M10 baseline | 44b37d7 | pearly-gates | 7.17 | 0.7% | 59.42 | 31.72 | 1.95 | 7 | 25 100 | 274.4 | — |
 | 2026-10-06 | M10 baseline | 44b37d7 | pearly-gates arcade | 7.21 | 0.8% | 59.71 | 42.82 | 1.87 | 8 | 25 124 | 274.4 | — |
+| 2026-10-06 | M10.1 (gate and sky) | 2aa4544 | sandbox | 6.84 (5 runs) | 76% (one run disturbed by a type check, 12.06 ms) | 59.61 | 38.16 | 1.81 | 7 | 7 432 | 293.7 | Pass |
+| 2026-10-06 | M10.1 (gate and sky) | 2aa4544 | pearly-gates | 7.00 | 0.1% | 59.94 | 58.79 | 1.86 | 7 | 25 100 | 293.7 | Pass |
+| 2026-10-06 | M10.1 (gate and sky) | 2aa4544 | pearly-gates arcade | 7.10 | 0.8% | 59.94 | 58.94 | 1.85 | 8 | 25 124 | 293.7 | Pass |
+
+M10.1: the sky texture adds 19.3 MB (2 701 × 1 344, mipmapped) and no draw call (the dome replaces the gradient dome). The capped Pearly Gates run first measured 7.67 ms of simulation on average (20 ms max), a sign of other work on the machine; its rerun (above) measured 4.0 ms. Drawing the sky first instead of last (§2.2): 6.95 ms against 7.10 ms on the arcade view (median of 3 each), so it's drawn first from stage 2.

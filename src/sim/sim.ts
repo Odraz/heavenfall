@@ -98,7 +98,7 @@ import { aimDir, rayCylinder, silverBulletHits } from './combat';
 import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } from './field';
 import { FlowField, UNREACHABLE } from './flowfield';
 import { lineOfSight, raycastTerrain } from './los';
-import { insideRect, loadMap, setArenaDoors, type GameMap } from './map';
+import { insideRect, loadMap, overVoid, setArenaDoors, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
 import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, reviveSlowdown, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
@@ -290,7 +290,7 @@ const CASTERS: Record<number, CasterDef> = {
 };
 
 // The Gatekeeper (§7.4).
-const BOSS_EYE = 5;
+export const BOSS_EYE = 5;
 const VOLLEY_FIRST = 2;
 const VOLLEY_INTERVAL = 4;
 const VOLLEY_WINDUP = 0.5;
@@ -1829,7 +1829,8 @@ export class Simulation {
     this.pZ[slot] = nz;
     this.pTraveled[slot] += len;
     if (this.pTraveled[slot] >= this.pMaxDist[slot] - 1e-9) {
-      if (owner >= 0) this.explodeCenser(slot, nx, ny, nz, -1);
+      // Beyond an open edge a censer vanishes without breaking (M10 §3.4): its cloud would hurt nothing.
+      if (owner >= 0 && !overVoid(this.map, nx, ny)) this.explodeCenser(slot, nx, ny, nz, -1);
       else this.removeProjectile(slot);
       return;
     }

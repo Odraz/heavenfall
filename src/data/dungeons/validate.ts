@@ -1,7 +1,7 @@
 /** Level validation rules (§8.1), checked by unit tests for every shipped map. */
 import { DECOR } from '../decor';
 import { ENEMIES, GATEKEEPER } from '../enemies';
-import { EPS } from '../../sim/constants';
+import { EPS, WALL_TOP } from '../../sim/constants';
 import { insideRect, type GameMap } from '../../sim/map';
 import { circleOverlapsCell } from '../../sim/movement';
 
@@ -132,6 +132,11 @@ export function validateLevel(map: GameMap, markers: string[]): string[] {
         }
       }
     }
+  }
+
+  // Computed wall heights stay under the cap (M10 §3.2).
+  for (let i = 0; i < w * h; i++) {
+    if (map.heights.height[i] > WALL_TOP + EPS) errors.push(`wall ${cellName(i % w, Math.floor(i / w))} is ${map.heights.height[i]} m high, above ${WALL_TOP} m`);
   }
 
   // Large decorations stand on pedestals nobody can reach, so nobody walks through them.

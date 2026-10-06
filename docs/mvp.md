@@ -275,10 +275,10 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 ## 5. World and rules
 
 ### 5.1 Heightfield
-- **Grid:** the map is a 2D grid of **1 m cells**, at most 256 × 256. Everything outside the grid counts as wall.
+- **Grid:** the map is a 2D grid of **1 m cells**, at most 256 × 256. Everything outside the grid counts as wall for movement, and as open sky for lines of sight (M10 §3.4).
 - **Cells:** each cell is either a **wall** or a **floor** with its own height. Floor heights go from 0 to 8.75 m in **0.25 m steps**.
 - **No overlap:** there are no overlapping floors, bridges or ceilings. Above everything is open sky.
-- **Walls** are solid columns rising to a global top of 16 m. A **closed door** behaves exactly like a wall.
+- **Walls** are solid columns, each with **its own height** (M10 §3.2), computed when the map is loaded from its zones: every wall is at least 0.5 m above the zone tops next to it (the highest floor of the zone + 5.3 m headroom) and at least 8 m above the floor beside it, evened out to one height per straight run. **Open edges**, where the level meets the sky, are 1.4 m parapets; wall cells with no floor among their 8 neighbors are **void** (no height). Heights are capped at 16 m (`WALL_TOP`), which is also where projectiles are removed. A **closed door** behaves like a wall, as tall as the walls its zones need. Movement doesn't use heights: every wall, open edge and closed door blocks completely.
 - **Stairs** are runs of floor cells whose heights rise by at most 0.5 m per cell. **Terraces** are raised floor areas. Their edges are **ledges**, and anyone can drop off a ledge from any height.
 - **Level design rule:** every floor area a player can reach must also be reachable by ground enemies via stairs. There are no jump-only perches.
 
@@ -308,7 +308,7 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 - **Crosshair ray:** a 3D ray from the player's eye along the aim direction. It stops at the first enemy cylinder it hits, or at a wall or terrain (any point where the ray is below the floor height of the cell it's passing through).
 - **Crosshair target:** the enemy hit by the crosshair ray, if any.
 - **Ally target:** the living ally (not self) with the smallest angle between the aim direction and the direction from the eye to the ally's body center. The angle must be **10° or less**, the ally must be within the ability's range, and there must be line of sight. **Enemies don't block ally targeting.** Only E abilities use ally targets (Falling Star, Martyr's Shroud). The client computes the ally target for its own E ability every frame, highlights it (§10) and sends it in every input (`allyTargetId`, §9.3; always "none" for the Binder and the Betrayer); the host uses the value sent with the press.
-- **Line of sight:** a 3D segment between two points, blocked by walls, closed doors and terrain only.
+- **Line of sight:** a 3D segment between two points, blocked by walls (at their heights, §5.1), closed doors and terrain only. Void cells and the outside of the grid don't block, so lines over an open edge's parapet pass into the sky. With all doors closed no line joins two zones (M10 §3.1), so every result inside a zone is as it was with 16 m walls.
   - From a player: from the player's eye to the target's body center.
   - From an enemy to a player: from the enemy's eye to the player's body center.
   - Line of sight is required only where this spec says so: ally targets, Chains of Tartarus (§6.3), the Gatekeeper's targeting, Chorister, Cherub and Volley attacks (§7), Judgment (§7.4) and the bot (§2.5). Ground and flying enemies otherwise target by flow-field distance (§7.2), and Blessed melee needs no line of sight. Other area effects (Blasphemy, Unholy Communion, Discord, explosions, landings) don't need it.
@@ -381,7 +381,7 @@ HP **150** · speed **8 m/s**
 
 | Slot | Name | Spec |
 |---|---|---|
-| Primary | Censer Launcher | Projectile, 20 m/s, radius 0.2 m. Explodes on the first enemy, on a wall or terrain, or after flying 25 m: 40 dmg to enemies within 3 m of the explosion point. 1.0 s between shots. |
+| Primary | Censer Launcher | Projectile, 20 m/s, radius 0.2 m. Explodes on the first enemy, on a wall or terrain, or after flying 25 m: 40 dmg to enemies within 3 m of the explosion point. 1.0 s between shots. (Since M9 it breaks into an incense cloud instead.) A censer whose 25 m end over a **void** cell beyond an open edge vanishes without breaking: no damage, no cloud (M10 §3.4). |
 | Q | Unholy Communion | Heals every living player within 15 m, including self, for 80 HP. Cooldown 4 s. |
 | E | Martyr's Shroud | Shield on the ally target (range 40 m), or on self if there's no ally target or the sent ally is no longer alive. It absorbs 150 dmg and lasts 8 s. Cooldown 10 s. |
 
@@ -517,6 +517,7 @@ The grids may be written by hand or produced by small builder helpers in `src/da
 - Every cell on the grid's border is a wall, so the edge of the world is always drawn.
 - **Arenas are sealed:** with all doors closed, no floor cell inside an arena's `rect` has a floor cell outside the `rect` among its 8 neighbors.
 - A map has a `B` cell exactly when it has a boss arena (`boss: true`). Only the last arena can be a boss arena, and the `B` cell is inside its `rect`. Every cell overlapped by the Gatekeeper's body placed on `B` is a floor cell at the `B` cell's height.
+- No computed wall height (M10 §3.2) exceeds 16 m (`WALL_TOP`).
 - No **large** decoration (§11.2) sits on a player-reachable cell, so nobody walks through one. Large decorations stand on **pedestals**: floor cells raised more than 1 m above the floor around them.
 
 ### 8.2 Arenas

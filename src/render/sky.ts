@@ -76,8 +76,8 @@ export function skyUniforms(band: THREE.Texture): Record<string, THREE.IUniform>
 }
 
 /**
- * The sky dome: drawn at the far plane (it never hides anything), after the opaque scenery so the
- * pixels the terrain covers are skipped by the depth test (M10 §2.2).
+ * The sky dome: drawn at the far plane (it never hides anything), first or after the opaque scenery
+ * (whose pixels the depth test then skips). M10 §2.2: drawing it first measured faster.
  */
 export function makeSky(band: THREE.Texture, drawFirst: boolean): THREE.Mesh {
   const geo = new THREE.SphereGeometry(10, 32, 16);

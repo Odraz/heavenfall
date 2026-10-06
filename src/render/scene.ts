@@ -27,7 +27,7 @@ export class GameScene {
     textures: TerrainTextures,
   ) {
     installFogCurve();
-    this.sky = makeSky(textures.sky, false);
+    this.sky = makeSky(textures.sky, true);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.scene.background = new THREE.Color(FOG_COLOR);

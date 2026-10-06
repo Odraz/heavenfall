@@ -2,7 +2,7 @@
 import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
-import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, ST_WINDUP } from '../data/enemies';
+import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
 import { ABILITIES, ATTACK_NONE, ATTACK_SECONDARY, attackDef, BLASPHEMY_RADIUS, chooseAttack, SCOURGE_HALF_ARC, SECONDARIES, type AttackSlot } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
@@ -13,7 +13,7 @@ import type { Params } from '../params';
 import { aimDir, estimateSilverBullet, rayCylinder } from '../sim/combat';
 import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, TICK_DT, TICK_MS } from '../sim/constants';
 import { raycastTerrain } from '../sim/los';
-import { arenaPhaseOf, doorsClosed, setArenaDoors, type GameMap } from '../sim/map';
+import { arenaPhaseOf, doorsClosed, overVoid, setArenaDoors, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
 import { BOSS_CAST_JUDGMENT, PROJ_CENSER } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
@@ -92,8 +92,7 @@ const COIN_MS = 300;
 const POOL_EMBERS_PER_S = 12;
 /** Gold embers rising from each incense cloud per second (M9 §5.1). */
 const INCENSE_EMBERS_PER_S = 4;
-/** Falling Star's launched enemies fly an arc 1 m high over 0.4 s (M9 §3.2). */
-const LAUNCH_HEIGHT = 1;
+/** Falling Star's launched enemies fly an arc LAUNCH_HEIGHT high over 0.4 s (M9 §3.2). */
 const LAUNCH_MS = 400;
 /** At most this many corpses lie around; the oldest vanish first. */
 const MAX_CORPSES = 1000;
@@ -842,6 +841,8 @@ export class Game {
       const alive = new Set(s.projSlot.subarray(0, s.projectileCount));
       for (let i = 0; i < prev.projectileCount; i++) {
         if (prev.projKind[i] !== PROJ_CENSER || alive.has(prev.projSlot[i])) continue;
+        // A censer that vanished over the void didn't break (M10 §3.4).
+        if (overVoid(this.map, prev.projX[i], prev.projY[i])) continue;
         this.pendingBursts.push({ at: now + delay, censer: true, type: -1, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i] });
       }
     }
@@ -1398,8 +1399,9 @@ export class Game {
       const target = this.enemyBillboards.get(type)!;
       const def = ENEMIES[type];
       const flags = ents.flags[i];
-      // Launched by a Falling Star: the billboard flies an arc, peaking 1 m up halfway (M9 §3.2).
-      const lu = (now - this.launchAt[slot]) / LAUNCH_MS;
+      // Launched by a Falling Star: the billboard flies an arc, peaking 1 m up halfway (M9 §3.2). A
+      // flying Cherub is knocked back level, so nothing rises above the headroom (M10 §3.1).
+      const lu = def.flying ? 1 : (now - this.launchAt[slot]) / LAUNCH_MS;
       const z = enemyZ[i] + (lu >= 0 && lu < 1 ? 4 * LAUNCH_HEIGHT * lu * (1 - lu) : 0);
       // Status (§10): hurt flash, wind-up gold glow, silenced grey tint.
       let glow = NO_GLOW;
