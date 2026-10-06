@@ -1,10 +1,15 @@
 /** Keyboard and mouse input for the local player (§4). */
+import { FIRE_LEFT, FIRE_RIGHT, FIRE_RIGHT_LAST } from '../data/weapons';
 
 export const MOUSE_SENSITIVITY = 0.0022;
 
 export class Input {
   private readonly keys = new Set<string>();
-  fireHeld = false;
+  /** The mouse buttons held: left for the primary, right for the secondary (M9 §2.1). */
+  leftHeld = false;
+  rightHeld = false;
+  /** The right button was pressed after the left. */
+  private rightLast = false;
   /** Accumulated mouse movement since the last read, in pixels. */
   private mouseDx = 0;
   private mouseDy = 0;
@@ -27,6 +32,12 @@ export class Input {
     canvas.addEventListener('mousedown', this.mousedown);
     window.addEventListener('mouseup', this.mouseup);
     document.addEventListener('mousemove', this.mousemove);
+    canvas.addEventListener('contextmenu', this.contextmenu);
+  }
+
+  /** The held buttons as the input's `fire` bits (M9 §10). */
+  fireBits(): number {
+    return (this.leftHeld ? FIRE_LEFT : 0) | (this.rightHeld ? FIRE_RIGHT : 0) | (this.rightLast ? FIRE_RIGHT_LAST : 0);
   }
 
   get pointerLocked(): boolean {
@@ -43,10 +54,12 @@ export class Input {
     }
   }
 
-  /** Releases held input (movement keys, fire). */
+  /** Releases held input (movement keys, both mouse buttons). */
   readonly release = (): void => {
     this.keys.clear();
-    this.fireHeld = false;
+    this.leftHeld = false;
+    this.rightHeld = false;
+    this.rightLast = false;
     this.jumpQueued = false;
   };
 
@@ -76,6 +89,7 @@ export class Input {
     this.canvas.removeEventListener('mousedown', this.mousedown);
     window.removeEventListener('mouseup', this.mouseup);
     document.removeEventListener('mousemove', this.mousemove);
+    this.canvas.removeEventListener('contextmenu', this.contextmenu);
   }
 
   private readonly keydown = (e: KeyboardEvent): void => {
@@ -113,11 +127,23 @@ export class Input {
       this.requestPointerLock();
       return;
     }
-    if (e.button === 0) this.fireHeld = true;
+    if (e.button === 0) {
+      this.leftHeld = true;
+      this.rightLast = false;
+    } else if (e.button === 2) {
+      this.rightHeld = true;
+      this.rightLast = true;
+    }
   };
 
   private readonly mouseup = (e: MouseEvent): void => {
-    if (e.button === 0) this.fireHeld = false;
+    if (e.button === 0) this.leftHeld = false;
+    else if (e.button === 2) this.rightHeld = false;
+  };
+
+  /** The right button fires the secondary, so the canvas never opens the browser's menu (M9 §2.1). */
+  private readonly contextmenu = (e: MouseEvent): void => {
+    e.preventDefault();
   };
 
   private readonly mousemove = (e: MouseEvent): void => {

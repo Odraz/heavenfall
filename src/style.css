@@ -364,6 +364,17 @@ body {
   box-shadow: 0 0 12px rgba(243, 198, 75, 0.6);
 }
 
+/* A Sacrament beam heals this player (M9 §5.1): green replaces the gold ally border while it's on. */
+.party-frame.beamed {
+  border-color: #5ee65e;
+  background: rgba(30, 110, 40, 0.5);
+  box-shadow: 0 0 12px rgba(94, 230, 94, 0.6);
+}
+
+.party-frame.ally.beamed .party-name {
+  color: inherit;
+}
+
 .party-frame.dead .party-icon,
 .party-frame.dead .party-head {
   filter: grayscale(1) brightness(0.7);

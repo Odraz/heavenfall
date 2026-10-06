@@ -3,6 +3,8 @@
 // Steps: wait:<ms>  hold:<KeyCode>:<ms>  press:<KeyCode>  lock  look:<dx>:<dy>  shot:<out.png>
 //        goto:<x>:<y>  face:<yaw>   (need the F3 overlay open: press:F3 first)  fire:<ms> (hold the mouse button)
 //        burst:<prefix>:<n>  (hold the mouse button and save n PNGs <prefix>-<i>.png in quick succession)
+//        rfire:<ms>  rburst:<prefix>:<n>  (the same with the right button: the secondary attack, M9)
+//        rshot:<ms>:<out.png>  (press the right button, save a PNG <ms> later, release)
 import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -84,10 +86,20 @@ for (const step of steps) {
     await page.mouse.down();
     await page.waitForTimeout(Number(a));
     await page.mouse.up();
-  } else if (kind === 'burst') {
-    await page.mouse.down();
+  } else if (kind === 'rfire') {
+    await page.mouse.down({ button: 'right' });
+    await page.waitForTimeout(Number(a));
+    await page.mouse.up({ button: 'right' });
+  } else if (kind === 'burst' || kind === 'rburst') {
+    const button = kind === 'rburst' ? 'right' : 'left';
+    await page.mouse.down({ button });
     for (let i = 0; i < Number(b); i++) await save(`${a}-${i}.png`);
-    await page.mouse.up();
+    await page.mouse.up({ button });
+  } else if (kind === 'rshot') {
+    await page.mouse.down({ button: 'right' });
+    await page.waitForTimeout(Number(a));
+    await save(b);
+    await page.mouse.up({ button: 'right' });
   } else if (kind === 'goto') await goTo(Number(a), Number(b));
   else if (kind === 'face') await turnTo(Number(a));
   else if (kind === 'shot') await save(a);

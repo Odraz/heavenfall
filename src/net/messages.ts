@@ -12,6 +12,8 @@ export type GameEvent =
   | { type: 'playerRespawned'; playerId: number }
   /** Revived by the party at the soul's ground point (M8 §4.2). */
   | { type: 'playerRevived'; playerId: number }
+  /** A Silver Bullet (M9 §2.4): from the eye to where the ray stopped. */
+  | { type: 'silverBullet'; playerId: number; x: number; y: number; z: number; ex: number; ey: number; ez: number }
   | { type: 'arenaStarted'; arenaIndex: number }
   | { type: 'arenaCleared'; arenaIndex: number }
   | { type: 'bossCast'; phase: 'start' | 'interrupted' | 'completed' }

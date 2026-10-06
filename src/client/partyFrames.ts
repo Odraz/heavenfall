@@ -85,6 +85,11 @@ export class PartyFrames {
     f?.root.animate([{ backgroundColor: FLASH_COLORS[color], boxShadow: `0 0 16px ${FLASH_COLORS[color]}` }, {}], { duration: FLASH_MS, easing: 'ease-out' });
   }
 
+  /** Frames whose player a Sacrament beam heals get a green border, over the gold one (M9 §5.1). */
+  setBeamed(ids: ReadonlySet<number>): void {
+    for (const [fid, f] of this.frames) f.root.classList.toggle('beamed', ids.has(fid));
+  }
+
   /** Tints the ally target's frame gold (255 = none). */
   setAllyTarget(id: number): void {
     for (const [fid, f] of this.frames) f.root.classList.toggle('ally', fid === id);

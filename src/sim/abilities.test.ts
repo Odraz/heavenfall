@@ -352,7 +352,7 @@ describe('Shadowstep (Betrayer E)', () => {
     press(p, 'E');
     sim.step();
     const now = sim.nowMs;
-    const input = { seq: 1, x: 10.5, y: 5.5, z: 0, yaw: 0, pitch: 0, fireHeld: false, qPresses: 0, ePresses: 1, allyTargetId: 255, lastTeleportId: 0 };
+    const input = { seq: 1, x: 10.5, y: 5.5, z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 1, allyTargetId: 255, lastTeleportId: 0 };
     p.lastAcceptMs = now;
     sim.applyInput(0, input, now + 100);
     expect(p.x).toBe(10.5);
@@ -364,7 +364,7 @@ describe('ability presses from inputs', () => {
     const sim = makeSim(room(30, 10), ['heretic', 'binder']);
     const p = sim.players[0];
     p.hp = 10;
-    const base = { x: p.x, y: p.y, z: p.z, yaw: 0, pitch: 0, fireHeld: false, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 };
+    const base = { x: p.x, y: p.y, z: p.z, yaw: 0, pitch: 0, fire: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 };
     sim.applyInput(0, { ...base, seq: 1, qPresses: 3 }, 0);
     sim.step();
     expect(p.hp).toBe(90);

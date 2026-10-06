@@ -40,6 +40,8 @@ export interface InterpolatedPlayer {
   z: number;
   yaw: number;
   dead: boolean;
+  /** The ally this player heals with Sacrament, 255 for none (M9 §2.5). */
+  beam: number;
 }
 
 export class SnapshotBuffer {
@@ -206,6 +208,7 @@ export class SnapshotBuffer {
         z: q ? p.z + (q.z - p.z) * f : p.z,
         yaw: p.yaw,
         dead: q && f >= 0.5 ? q.dead : p.dead,
+        beam: q && f >= 0.5 ? q.beam : p.beam,
       });
     }
     return out;

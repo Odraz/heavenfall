@@ -12,7 +12,8 @@ export interface InputMsg {
   z: number;
   yaw: number;
   pitch: number;
-  fireHeld: boolean;
+  /** The mouse buttons (M9 §10): FIRE_LEFT, FIRE_RIGHT and FIRE_RIGHT_LAST bits. */
+  fire: number;
   /** Running press counters, wrapping at 256. */
   qPresses: number;
   ePresses: number;
@@ -30,7 +31,7 @@ export function encodeInput(m: InputMsg): ArrayBuffer {
   v.setFloat32(12, m.z, true);
   v.setFloat32(16, m.yaw, true);
   v.setFloat32(20, m.pitch, true);
-  v.setUint8(24, m.fireHeld ? 1 : 0);
+  v.setUint8(24, m.fire & 0x07);
   v.setUint8(25, m.qPresses & 0xff);
   v.setUint8(26, m.ePresses & 0xff);
   v.setUint8(27, m.allyTargetId & 0xff);
@@ -48,7 +49,7 @@ export function decodeInput(buf: ArrayBuffer): InputMsg | null {
     z: v.getFloat32(12, true),
     yaw: v.getFloat32(16, true),
     pitch: v.getFloat32(20, true),
-    fireHeld: v.getUint8(24) !== 0,
+    fire: v.getUint8(24) & 0x07,
     qPresses: v.getUint8(25),
     ePresses: v.getUint8(26),
     allyTargetId: v.getUint8(27),
@@ -60,8 +61,8 @@ export function decodeInput(buf: ArrayBuffer): InputMsg | null {
 
 /** The MVP's 25 bytes plus `countdown` (M8 §10). */
 export const HEADER_BYTES = 27;
-/** The MVP's 28 bytes plus `revive` and `shots` (M8 §10). */
-export const PLAYER_BYTES = 30;
+/** The MVP's 28 bytes plus `revive` and `shots` (M8 §10), `shots2` and `beam` (M9 §10). */
+export const PLAYER_BYTES = 32;
 export const ENEMY_BYTES = 8;
 export const PROJECTILE_BYTES = 9;
 export const MAX_SNAPSHOT_BYTES = 16000;
@@ -76,6 +77,7 @@ export const PHASE_COUNTDOWN = 3;
 
 /** Enemy `flags` bits. */
 export const FLAG_HURT = 1;
+/** Bit 1 (Kiss of Betrayal's mark) is unused since M9. */
 export const FLAG_MARKED = 2;
 export const FLAG_ROOTED = 4;
 export const FLAG_SILENCED = 8;
@@ -111,8 +113,12 @@ export interface SnapshotPlayer {
   kills: number;
   /** Revive progress × 255, 0 while alive (M8 §4.2). */
   revive: number;
-  /** A wrapping counter of shots fired, for others' shot sounds (M8 §9.1). */
+  /** A wrapping counter of primary attacks fired, for others' shot sounds (M8 §9.1). */
   shots: number;
+  /** A wrapping counter of secondary attacks fired (M9 §10). */
+  shots2: number;
+  /** The ally being healed by Sacrament, 255 for none (M9 §2.5). */
+  beam: number;
 }
 
 /** Dense entity arrays for encoding; only the first `enemyCount` / `projectileCount` entries are used. */
@@ -199,6 +205,8 @@ export function encodeSnapshot(
       v.setUint16(o + 26, Math.min(0xffff, p.kills), true);
       v.setUint8(o + 28, Math.max(0, Math.min(255, Math.round(p.revive))));
       v.setUint8(o + 29, p.shots & 0xff);
+      v.setUint8(o + 30, p.shots2 & 0xff);
+      v.setUint8(o + 31, p.beam & 0xff);
       o += PLAYER_BYTES;
     }
     for (let i = e0; i < e0 + ne; i++) {
@@ -291,6 +299,8 @@ export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
       kills: v.getUint16(o + 26, true),
       revive: v.getUint8(o + 28),
       shots: v.getUint8(o + 29),
+      shots2: v.getUint8(o + 30),
+      beam: v.getUint8(o + 31),
     });
     o += PLAYER_BYTES;
   }

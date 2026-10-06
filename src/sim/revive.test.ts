@@ -59,7 +59,8 @@ describe('souls and reviving (M8 §4)', () => {
     shooter.pitch = 0;
     sim.fireWeapon(shooter);
     expect(dead.revive).toBeCloseTo(WEAPONS.betrayer.interval / 3, 9);
-    expect(sim.eHp[behind]).toBe(0);
+    // The revolver's 30 damage (M9 §2.3) reaches the Chorister behind the soul.
+    expect(sim.eHp[behind]).toBe(30);
   });
 
   it("all of a shotgun's pellets count one hit", () => {
@@ -156,7 +157,7 @@ describe('souls and reviving (M8 §4)', () => {
     const sim = makeSim(room(20, 5), ['binder', 'heretic']);
     const [binder, heretic] = sim.players;
     sim.damagePlayer(binder, 10000);
-    sim.applyInput(0, { seq: 1, x: binder.x, y: binder.y, z: 0, yaw: 0, pitch: 0, fireHeld: true, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 }, 0);
+    sim.applyInput(0, { seq: 1, x: binder.x, y: binder.y, z: 0, yaw: 0, pitch: 0, fire: 1, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 }, 0);
     sim.step();
     expect(binder.shots).toBe(0);
     binder.revive = 0.5;

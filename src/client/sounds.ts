@@ -15,6 +15,8 @@ import { BOSS_CAST_VOLLEY, PROJ_ARROW, PROJ_ORB } from '../sim/sim';
 import type { SfxName } from '../audio/sfx';
 
 const WEAPON_SFX: Record<ClassId, SfxName> = { fallen: 'shotgun', heretic: 'censerLaunch', binder: 'chaingun', betrayer: 'revolver' };
+/** Secondary attacks (M9 §5.2); others' Silver Bullets sound from their event instead. */
+const SECONDARY_SFX: Record<ClassId, SfxName> = { fallen: 'slug', heretic: 'sacrament', binder: 'scourge', betrayer: 'silverBullet' };
 const ABILITY_SFX: Record<string, SfxName> = {
   'fallen:Q': 'blasphemy',
   'heretic:Q': 'communion',
@@ -32,6 +34,9 @@ const NO_STATE = 255;
 
 export class GameSounds {
   private readonly lastShots = new Map<number, number>();
+  private readonly lastShots2 = new Map<number, number>();
+  /** Others' events play after the render delay, like their effects (seconds). */
+  renderDelay = 0;
   private readonly enemyState = new Uint8Array(ENEMY_SLOTS).fill(NO_STATE);
   private tickSecond = 0;
 
@@ -43,9 +48,9 @@ export class GameSounds {
     audio()?.music.keepStings(true);
   }
 
-  /** The local player's own shot. */
-  ownShot(classId: ClassId): void {
-    sfx(WEAPON_SFX[classId]);
+  /** The local player's own attack; Sacrament's chime plays at the healed ally. */
+  ownShot(classId: ClassId, secondary: boolean, at: SoundPos | null = null): void {
+    sfx(secondary ? SECONDARY_SFX[classId] : WEAPON_SFX[classId], at);
   }
 
   hit(): void {
@@ -69,8 +74,11 @@ export class GameSounds {
     sfx('abilityReady');
   }
 
-  /** A complete snapshot: others' shots, enemy casts, new projectiles, the Gatekeeper, own HP changes, music. */
-  snapshot(s: Snapshot, prev: Snapshot | null): void {
+  /**
+   * A complete snapshot: others' shots, enemy casts, new projectiles, the Gatekeeper, own HP changes,
+   * music. While `beamed` (a Sacrament beam is on the local player), HP rising doesn't chime (M9 §5.1).
+   */
+  snapshot(s: Snapshot, prev: Snapshot | null, beamed = false): void {
     // The countdown's last 5 s: a tick with each number (M8 §5).
     const second = s.arenaPhase === PHASE_COUNTDOWN ? Math.ceil(s.countdown / 10 - 1e-6) : 0;
     if (second >= 1 && second <= 5 && second !== this.tickSecond) sfx('countdownTick');
@@ -85,6 +93,17 @@ export class GameSounds {
       const cls = this.classOf(p.id);
       if (!cls) continue;
       for (let i = 0; i < n; i++) sfx(WEAPON_SFX[cls], p, 1, (i * gap) / n, PRIO_OTHERS);
+    }
+    // Others' secondaries (M9 §5.2): Sacrament chimes at the healed ally; Silver Bullets sound from their event.
+    for (const p of s.players) {
+      const last = this.lastShots2.get(p.id);
+      this.lastShots2.set(p.id, p.shots2);
+      if (p.id === this.localId || last === undefined || p.dead) continue;
+      const n = (p.shots2 - last) & 0xff;
+      const cls = this.classOf(p.id);
+      if (!cls || cls === 'betrayer') continue;
+      const at = cls === 'heretic' ? (s.players.find((q) => q.id === p.beam) ?? p) : p;
+      for (let i = 0; i < n; i++) sfx(SECONDARY_SFX[cls], at, 1, (i * gap) / n, PRIO_OTHERS);
     }
     // Enemy wind-ups.
     for (let i = 0; i < s.enemyCount; i++) {
@@ -119,7 +138,7 @@ export class GameSounds {
       if (me.hp + me.shield < was.hp + was.shield) {
         sfx('hurt');
         if (this.blessedStriking(s, me)) sfx('meleeHit');
-      } else if (me.hp > was.hp) sfx('healed');
+      } else if (me.hp > was.hp && !beamed) sfx('healed');
       if (me.shield > 0 && me.shield > was.shield) sfx('shieldUp');
       else if (was.shield > 0 && me.shield === 0) sfx('shieldBroken');
     }
@@ -140,6 +159,9 @@ export class GameSounds {
         } else if (ABILITY_SFX[key]) sfx(ABILITY_SFX[key], key === 'betrayer:Q' || key === 'binder:Q' || key === 'binder:E' ? at : (pose(e.playerId) ?? at));
         break;
       }
+      case 'silverBullet':
+        if (e.playerId !== this.localId) sfx('silverBullet', { x: e.x, y: e.y }, 1, this.renderDelay, PRIO_OTHERS);
+        break;
       case 'playerDied':
         sfx('death', e.playerId === this.localId ? null : (pose(e.playerId) ?? null));
         break;

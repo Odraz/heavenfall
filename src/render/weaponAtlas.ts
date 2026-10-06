@@ -24,6 +24,12 @@ export interface WeaponManifest {
   /** [x, y from top, muzzle x from left, muzzle y from top] in pixels. */
   idle: number[][];
   fire: number[][];
+  /**
+   * The Binder's Scourge swing (M9 §5.1): frames cropped on their own, so they have their own width
+   * and center column (in frame pixels, like frameW); stored at 1/`scale` resolution, each at
+   * [x, y from top] in atlas pixels.
+   */
+  swing?: { scale: number; frameW: number; centerX: number; frames: number[][] };
 }
 
 export interface WeaponAtlas {

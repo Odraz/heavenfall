@@ -47,8 +47,15 @@ import {
   SHADOWSTEP_INVULN,
   SHROUD_AMOUNT,
   SHROUD_DURATION,
+  SCOURGE_HALF_ARC,
   SLOW_FACTOR,
+  ATTACK_NONE,
+  ATTACK_PRIMARY,
+  attackDef,
+  chooseAttack,
+  SECONDARIES,
   WEAPONS,
+  type AttackSlot,
 } from '../data/weapons';
 import type { GameEvent } from '../net/messages';
 import {
@@ -85,7 +92,7 @@ import {
   TICK_MS,
   WALL_TOP,
 } from './constants';
-import { aimDir, rayCylinder } from './combat';
+import { aimDir, rayCylinder, silverBulletHits } from './combat';
 import { FlowField, UNREACHABLE } from './flowfield';
 import { lineOfSight, raycastTerrain } from './los';
 import { insideRect, isSolid, loadMap, setArenaDoors, type GameMap } from './map';
@@ -159,7 +166,9 @@ export interface SimPlayer {
   z: number;
   yaw: number;
   pitch: number;
-  fireHeld: boolean;
+  /** The held mouse buttons, as sent in the input's `fire` bits (M9 §10). */
+  fire: number;
+  /** One fire timer for both attacks (M9 §2.2). */
   fireTimer: number;
   qPresses: number;
   ePresses: number;
@@ -172,8 +181,13 @@ export interface SimPlayer {
   /** Tick of a pending Falling Star landing, or -1. */
   landingTick: number;
   kills: number;
-  /** Shots fired, for others' shot sounds (M8 §9.1). */
+  /** Primary attacks fired, for others' shot sounds (M8 §9.1); wrapped only in snapshots. */
   shots: number;
+  /** Secondary attacks fired (M9 §10). */
+  shots2: number;
+  /** The ally Sacrament last healed, sent as the `beam` while tick < beamUntil (M9 §2.5). */
+  beamId: number;
+  beamUntil: number;
   /** Revive progress of the player's soul, 0–1, while dead (M8 §4.2). */
   revive: number;
   /** Tick the soul started rising (the death); its ground point is the dead player's feet. */
@@ -297,6 +311,8 @@ const REGEN_DELAY_TICKS = 8 * TICK_HZ;
 const REGEN_FRACTION = 0.015;
 /** Bound enemies take this much damage (M8 §8). */
 const BOUND_FACTOR = 2;
+/** Sacrament's `beam` stays on this long after its last firing (M9 §2.5). */
+const BEAM_HOLD_TICKS = Math.round(0.6 * TICK_HZ);
 
 const ticks = (seconds: number) => Math.round(seconds * TICK_HZ);
 
@@ -548,7 +564,7 @@ export class Simulation {
     p.y = y;
     p.z = z;
     p.lastAcceptMs = nowMs;
-    p.fireHeld = m.fireHeld;
+    p.fire = m.fire;
     p.allyTargetId = m.allyTargetId;
     // Any increase of a press counter is one press (§9.3).
     if (qPressed) p.pendingQ = true;
@@ -591,7 +607,7 @@ export class Simulation {
       z,
       yaw: 0,
       pitch: 0,
-      fireHeld: false,
+      fire: 0,
       fireTimer: 0,
       qPresses: 0,
       ePresses: 0,
@@ -602,6 +618,9 @@ export class Simulation {
       landingTick: -1,
       kills: 0,
       shots: 0,
+      shots2: 0,
+      beamId: ALLY_NONE,
+      beamUntil: 0,
       revive: 0,
       soulTick: 0,
       cdQ: 0,
@@ -1117,7 +1136,8 @@ export class Simulation {
     if (g !== -Infinity) p.z = g;
     p.soulTick = this.tick;
     p.revive = 0;
-    p.fireHeld = false;
+    p.fire = 0;
+    p.beamUntil = 0;
     p.pendingQ = false;
     p.pendingE = false;
     p.landingTick = -1;
@@ -1231,28 +1251,66 @@ export class Simulation {
     }
   }
 
-  /** Fire timer (§6): fire when held and the timer is 0 or less, then count down. */
+  /**
+   * The shared fire timer (M9 §2.2): the held attack (§2.1) fires when the timer is 0 or less and
+   * adds its own interval; the timer counts down twice as fast in a Field of Blood.
+   */
   private updateWeapon(p: SimPlayer): void {
-    const w = WEAPONS[p.classId];
-    if (p.fireHeld && p.fireTimer <= 1e-6) {
-      this.fireWeapon(p);
-      p.shots++;
-      p.fireTimer += w.interval;
+    const slot = chooseAttack(p.classId, p.fire, this.sacramentTarget(p) !== undefined);
+    if (slot !== ATTACK_NONE && p.fireTimer <= 1e-6) {
+      this.fireWeapon(p, slot);
+      if (slot === ATTACK_PRIMARY) p.shots++;
+      else p.shots2++;
+      p.fireTimer += attackDef(p.classId, slot).interval;
     }
-    p.fireTimer -= TICK_DT;
-    if (!p.fireHeld && p.fireTimer < 0) p.fireTimer = 0;
+    p.fireTimer -= TICK_DT * this.fireRate(p);
+    if (slot === ATTACK_NONE && p.fireTimer < 0) p.fireTimer = 0;
   }
 
-  /** Fires one shot of the player's primary weapon from the eye, along the latest reported aim. */
-  fireWeapon(p: SimPlayer): void {
-    const w = WEAPONS[p.classId];
+  /** How fast a player's fire timer counts down: 2 in a Field of Blood, otherwise 1 (M9 §3.4). */
+  fireRate(_p: SimPlayer): number {
+    return 1;
+  }
+
+  /**
+   * Sacrament's ally (M9 §2.5): the latest input's ally target, if it's another living player within
+   * 40 m of the eye. Line of sight isn't rechecked.
+   */
+  sacramentTarget(p: SimPlayer): SimPlayer | undefined {
+    if (p.classId !== 'heretic' || p.allyTargetId === ALLY_NONE) return undefined;
+    const ally = this.playerById(p.allyTargetId);
+    if (!ally || ally === p || !this.livingTargetable(ally)) return undefined;
+    const d = distToCylinder(p.x, p.y, p.z + PLAYER_EYE, ally.x, ally.y, ally.z, PLAYER_RADIUS, PLAYER_HEIGHT);
+    return d <= SECONDARIES.heretic.range ? ally : undefined;
+  }
+
+  /** Fires one of the player's attacks from the eye, along the latest reported aim. */
+  fireWeapon(p: SimPlayer, slot: AttackSlot = ATTACK_PRIMARY): void {
+    const w = attackDef(p.classId, slot);
     const ex = p.x;
     const ey = p.y;
     const ez = p.z + PLAYER_EYE;
-    if (!w.hitscan) {
-      const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
-      this.spawnProjectile(PROJ_CENSER, ex, ey, ez, dx, dy, dz, CENSER_SPEED, CENSER_RADIUS, w.damage, w.range, p.index);
-      return;
+    switch (w.kind) {
+      case 'censer': {
+        const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
+        this.spawnProjectile(PROJ_CENSER, ex, ey, ez, dx, dy, dz, CENSER_SPEED, CENSER_RADIUS, w.damage, w.range, p.index);
+        return;
+      }
+      case 'sacrament': {
+        // Heals even at full HP, so the beam stays steady; it never heals the Heretic.
+        const ally = this.sacramentTarget(p);
+        if (!ally) return;
+        this.heal(ally, w.damage);
+        p.beamId = ally.id;
+        p.beamUntil = this.tick + BEAM_HOLD_TICKS;
+        return;
+      }
+      case 'scourge':
+        this.scourge(p);
+        return;
+      case 'silverBullet':
+        this.silverBullet(p);
+        return;
     }
     // Souls this trigger pull hit: all pellets together count one hit per soul (M8 §4.2).
     const souls = new Set<SimPlayer>();
@@ -1263,21 +1321,86 @@ export class Simulation {
       const hits = this.rayEnemies(ex, ey, ez, dx, dy, dz, w.range, w.maxHits);
       // Where the ray stops: the terrain or its range, or the last enemy it can pierce.
       let stop = raycastTerrain(this.map, ex, ey, ez, dx, dy, dz, w.range);
-      if (hits.length >= w.maxHits) {
-        const last = hits[hits.length - 1];
-        const def = ENEMIES[this.eType[last]];
-        stop = rayCylinder(ex, ey, ez, dx, dy, dz, this.eX[last], this.eY[last], this.eZ[last], def.radius, def.height);
-      }
-      for (const o of this.players) {
-        if (o === p || !this.hasSoul(o) || souls.has(o)) continue;
-        if (rayCylinder(ex, ey, ez, dx, dy, dz, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= stop) souls.add(o);
-      }
-      for (const slot of hits) {
-        this.damageEnemy(slot, w.damage, p.index);
-        if (w.slow > 0 && this.eAlive[slot]) this.slow(slot, w.slow);
+      if (hits.length >= w.maxHits) stop = this.rayT(hits[hits.length - 1], ex, ey, ez, dx, dy, dz);
+      this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
+      for (const s of hits) {
+        this.damageEnemy(s, w.damage, p.index);
+        if (w.slow > 0 && this.eAlive[s]) this.slow(s, w.slow);
       }
     }
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, p.classId === 'heretic'));
+  }
+
+  /** Distance along a ray to where it enters an enemy's cylinder. */
+  private rayT(slot: number, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number): number {
+    const def = ENEMIES[this.eType[slot]];
+    return rayCylinder(ox, oy, oz, dx, dy, dz, this.eX[slot], this.eY[slot], this.eZ[slot], def.radius, def.height);
+  }
+
+  /** Adds to `out` the souls (not the shooter's) that a ray passes through before `stop` (M8 §4.2). */
+  private soulsOnRay(p: SimPlayer, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, stop: number, out: Set<SimPlayer>): void {
+    for (const o of this.players) {
+      if (o === p || !this.hasSoul(o) || out.has(o)) continue;
+      if (rayCylinder(ox, oy, oz, dx, dy, dz, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= stop) out.add(o);
+    }
+  }
+
+  /**
+   * The Scourge (M9 §2.6): 25 damage to the 6 nearest living enemies within 3 m of the body center
+   * and within 60° of the horizontal aim, slowing the survivors for 1 s. No line of sight is needed.
+   */
+  scourge(p: SimPlayer): void {
+    const w = SECONDARIES.binder;
+    const cx = p.x;
+    const cy = p.y;
+    const cz = p.z + PLAYER_HEIGHT / 2;
+    const ax = Math.cos(p.yaw);
+    const ay = Math.sin(p.yaw);
+    const cosMax = Math.cos(SCOURGE_HALF_ARC);
+    const hit: Array<{ s: number; d: number }> = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      const def = ENEMIES[this.eType[s]];
+      const d = distToCylinder(cx, cy, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height);
+      if (d > w.range) continue;
+      const hx = this.eX[s] - cx;
+      const hy = this.eY[s] - cy;
+      const len = Math.hypot(hx, hy);
+      // An enemy on the Binder's own axis has no direction; it counts as in the arc.
+      if (len > 1e-9 && (hx * ax + hy * ay) / len < cosMax - 1e-9) continue;
+      hit.push({ s, d });
+    }
+    // Stable sort: equal distances keep active-list order, so the result is deterministic.
+    hit.sort((a, b) => a.d - b.d);
+    for (let i = 0; i < hit.length && i < w.maxHits; i++) {
+      const s = hit[i].s;
+      this.damageEnemy(s, w.damage, p.index);
+      if (this.eAlive[s]) this.slow(s, w.slow);
+    }
+  }
+
+  /**
+   * The Silver Bullet (M9 §2.4): 300 damage carried through the line, nearest first. A rooted enemy
+   * costs half its HP, since the Bound step doubles its hit; the Gatekeeper takes whatever is left.
+   * Sends `silverBullet` with where the ray stopped.
+   */
+  silverBullet(p: SimPlayer): void {
+    const w = SECONDARIES.betrayer;
+    const ex = p.x;
+    const ey = p.y;
+    const ez = p.z + PLAYER_EYE;
+    const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
+    let stop = raycastTerrain(this.map, ex, ey, ez, dx, dy, dz, w.range);
+    const dealt = silverBulletHits(
+      this.rayEnemies(ex, ey, ez, dx, dy, dz, w.range, Infinity).map((s) => ({ s, hp: this.eHp[s], rooted: this.isRooted(s), boss: this.eType[s] === GATEKEEPER })),
+      w.damage,
+    );
+    if (dealt.stopped) stop = this.rayT(dealt.hits[dealt.hits.length - 1].s, ex, ey, ez, dx, dy, dz);
+    const souls = new Set<SimPlayer>();
+    this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
+    for (const h of dealt.hits) this.damageEnemy(h.s, h.amount, p.index);
+    for (const o of souls) this.addRevive(o, reviveHit(w.interval, false));
+    this.events.push({ to: 'all', event: { type: 'silverBullet', playerId: p.id, x: ex, y: ey, z: ez, ex: ex + dx * stop, ey: ey + dy * stop, ez: ez + dz * stop } });
   }
 
   // ------------------------------------------------------------------ souls (M8 §4)
@@ -2364,6 +2487,8 @@ export class Simulation {
         kills: p.kills,
         revive: p.dead ? p.revive * 255 : 0,
         shots: p.shots & 0xff,
+        shots2: p.shots2 & 0xff,
+        beam: this.tick < p.beamUntil ? p.beamId : ALLY_NONE,
       });
     }
     return encodeSnapshot(header, players, e);

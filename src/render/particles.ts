@@ -86,6 +86,11 @@ export class Particles {
     }
   }
 
+  /** A green-tinted ember drifting along Sacrament's beam at (vx, vy, vz) for `life` seconds (M9 §5.1). */
+  beamEmber(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number): void {
+    this.spawn(P_HEAL, x, y, z, vx, vy, vz, life, 0.16);
+  }
+
   /** One ember rising slowly from a soul (M8 §4.1). */
   soulEmber(x: number, y: number, z: number): void {
     const a = Math.random() * Math.PI * 2;

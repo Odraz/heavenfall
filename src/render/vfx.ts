@@ -12,6 +12,16 @@ const RING_RADIUS = 0.71;
 const BEAM_TILE = 3;
 /** Smoke puffs in the Discord burst's ring. */
 const SMOKE_PUFFS = 12;
+/** Sacrament's beam (M9 §5.1): the existing heal green, 0.15 m wide. */
+export const HEAL_GREEN = 0x5ee65e;
+const LIVE_BEAM_WIDTH = 0.15;
+/** The Scourge's arc (M9 §5.1). */
+const SCOURGE_ARC_RADIUS = 3;
+const SCOURGE_ARC_HALF = Math.PI / 3;
+const SCOURGE_ARC_HEIGHT = 1.2;
+const SCOURGE_ARC_SEGMENTS = 16;
+const SCOURGE_SWEEP_MS = 120;
+const SCOURGE_FADE_MS = 150;
 /** A mote's trail: this many sprites, each lagging the one before by this fraction of the flight. */
 const MOTE_TRAIL = 4;
 const MOTE_TRAIL_LAG = 0.08;
@@ -49,28 +59,47 @@ class Ribbon {
   private readonly side = new THREE.Vector3();
   private readonly toCam = new THREE.Vector3();
 
+  private readonly uv: THREE.BufferAttribute;
+
   constructor(
     points: Array<[number, number, number]>,
     private readonly width: number,
     material: THREE.Material,
-    tileLength: number,
+    private readonly tileLength: number,
   ) {
     this.ends = points.map(([x, y, z]) => new THREE.Vector3(x, z, y));
     const n = this.ends.length / 2;
-    const uv = new Float32Array(n * 8);
     const index: number[] = [];
-    for (let i = 0; i < n; i++) {
-      const u = this.ends[i * 2].distanceTo(this.ends[i * 2 + 1]) / tileLength;
-      uv.set([0, 0, u, 0, u, 1, 0, 1], i * 8);
-      index.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3);
-    }
+    for (let i = 0; i < n; i++) index.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3);
     const geo = new THREE.BufferGeometry();
     this.pos = new THREE.BufferAttribute(new Float32Array(n * 12), 3);
+    this.uv = new THREE.BufferAttribute(new Float32Array(n * 8), 2);
     geo.setAttribute('position', this.pos);
-    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setAttribute('uv', this.uv);
     geo.setIndex(index);
+    this.setUv();
     this.mesh = new THREE.Mesh(geo, material);
     this.mesh.frustumCulled = false;
+  }
+
+  private setUv(): void {
+    const uv = this.uv.array as Float32Array;
+    for (let i = 0; i < this.ends.length / 2; i++) {
+      const u = this.ends[i * 2].distanceTo(this.ends[i * 2 + 1]) / this.tileLength;
+      uv.set([0, 0, u, 0, u, 1, 0, 1], i * 8);
+    }
+    this.uv.needsUpdate = true;
+  }
+
+  /** Moves the segments' ends (the same number of points as at construction). */
+  setPoints(points: ReadonlyArray<readonly [number, number, number]>): void {
+    points.forEach(([x, y, z], i) => this.ends[i].set(x, z, y));
+    this.setUv();
+  }
+
+  /** Draws only the first `n` segments. */
+  showSegments(n: number): void {
+    this.mesh.geometry.setDrawRange(0, n * 6);
   }
 
   /** Turns each strip around its own line toward the camera. */
@@ -99,10 +128,60 @@ export class Vfx {
   private readonly tetherMaterial: THREE.MeshBasicMaterial;
   /** Vertical beams turn to the camera every frame. */
   private readonly columns = new Set<THREE.Mesh>();
+  /** Sacrament's beams (M9 §5.1), reused frame to frame. */
+  private readonly liveBeams: Ribbon[] = [];
+  private readonly liveBeamMaterial: THREE.MeshBasicMaterial;
 
   constructor(private readonly tex: EffectTextures) {
     this.tetherMaterial = this.material(tex.beam, 0xff7a3a);
     this.tetherMaterial.opacity = 0.55;
+    this.liveBeamMaterial = this.material(tex.beam, HEAL_GREEN);
+  }
+
+  /**
+   * Sacrament's beams (M9 §5.1): green, 0.15 m wide, from each healer to its ally, while healing.
+   * Each entry is [from, to]; beams not listed are hidden.
+   */
+  setLiveBeams(list: ReadonlyArray<readonly [readonly [number, number, number], readonly [number, number, number]]>, camera: THREE.Vector3): void {
+    while (this.liveBeams.length < list.length) {
+      const r = new Ribbon([[0, 0, 0], [0, 0, 1]], LIVE_BEAM_WIDTH, this.liveBeamMaterial, BEAM_TILE);
+      this.liveBeams.push(r);
+      this.group.add(r.mesh);
+    }
+    this.liveBeams.forEach((r, i) => {
+      const b = list[i];
+      r.mesh.visible = !!b;
+      if (!b) return;
+      r.setPoints(b);
+      r.face(camera);
+    });
+  }
+
+  /**
+   * The Scourge's chain arc (M9 §5.1): the chain texture along a 120° arc of 3 m radius at 1.2 m above
+   * the feet (x, y, z), centered on `yaw`, swept from left to right over 0.12 s, then fading over 0.15 s.
+   */
+  scourgeArc(now: number, x: number, y: number, z: number, yaw: number): void {
+    const pts: Array<[number, number, number]> = [];
+    const h = z + SCOURGE_ARC_HEIGHT;
+    // Left is yaw − 90° (wasdDirection), so the sweep runs from yaw − 60° to yaw + 60°.
+    for (let i = 0; i < SCOURGE_ARC_SEGMENTS; i++) {
+      for (const k of [i, i + 1]) {
+        const a = yaw - SCOURGE_ARC_HALF + (2 * SCOURGE_ARC_HALF * k) / SCOURGE_ARC_SEGMENTS;
+        pts.push([x + Math.cos(a) * SCOURGE_ARC_RADIUS, y + Math.sin(a) * SCOURGE_ARC_RADIUS, h]);
+      }
+    }
+    const img = this.tex.chain.image as { width: number; height: number };
+    const width = 0.3;
+    const ribbon = new Ribbon(pts, width, this.material(this.tex.chain, 0xffffff), (width * img.width) / img.height);
+    const material = ribbon.mesh.material as THREE.MeshBasicMaterial;
+    const total = SCOURGE_SWEEP_MS + SCOURGE_FADE_MS;
+    const update = (f: number): void => {
+      const t = f * total;
+      ribbon.showSegments(Math.max(1, Math.ceil(Math.min(1, t / SCOURGE_SWEEP_MS) * SCOURGE_ARC_SEGMENTS)));
+      material.opacity = t < SCOURGE_SWEEP_MS ? 1 : 1 - (t - SCOURGE_SWEEP_MS) / SCOURGE_FADE_MS;
+    };
+    this.add({ obj: ribbon.mesh, material, duration: total, update, ribbon }, now, 0);
   }
 
   /** A vertical beam mesh, `width` wide, from z up by `height` (three.js placement is set here). */

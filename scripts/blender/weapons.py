@@ -9,7 +9,12 @@ Run with Blender 5.2 (headless):
 
 Commands:
   preview <classId> <out.png>   the 5 frames side by side, the muzzle points marked
+  swing <out.png>               the Binder's Scourge swing frames side by side
   sprites <classId|all>         writes assets/sprites/weapon-<classId>/atlas.png and atlas.json
+
+The Binder's atlas also holds the Scourge's swing (M9 §5.1): the left hand lets go of the Chain Gun
+and swings a chain ending in a hooked iron weight across the view, from left to right, over 0.3 s.
+The swing frames are cropped on their own, since the chain reaches across the whole view.
 
 Each frame is the bottom half of the view from the eye, so the HUD draws it over the bottom half
 of the screen. The camera sits at the origin looking along +Y, +Z up.
@@ -249,6 +254,96 @@ def pose(cls, rig, base_loc, base_rot, frame):
         p['cylinder'].rotation_euler = (0, math.radians([0, 0, 20, 45, 60][frame]), 0)
 
 
+# ---------------------------------------------------------------- the Scourge swing (M9 §5.1)
+
+SWING_FRAMES = 4
+# The Chain Gun's left arm, hidden while the left hand swings the chain.
+LEFT_ARM = ('Lforearm', 'Lfist', 'Lwristchain')
+
+
+def smoothstep(t):
+    return t * t * (3 - 2 * t)
+
+
+def build_swing(f):
+    """
+    Swing frame `f` (0 to SWING_FRAMES - 1), in camera space (the eye at the origin looking along +Y):
+    the left forearm reaching up from off-screen, the gloved fist, and a chain trailing behind the
+    fist that whips around it, ending in a hooked iron weight like the Chains of Tartarus icon.
+    Returns the new objects.
+    """
+    t = (f + 0.5) / SWING_FRAMES
+    s = smoothstep(t)
+    lift = math.sin(math.pi * t)
+    hand = Vector((-0.55 + 0.95 * s, 0.80 + 0.08 * lift, -0.27 + 0.10 * lift))
+    elbow = Vector((-0.50 + 0.35 * s, 0.25, -0.62))
+    objs = []
+    objs.append(tube('Sforearm', elbow, hand, 0.066, 0.046, 'glove', seg=14, outline=0.006))
+    objs.append(sphere('Sfist', hand, (0.058, 0.07, 0.062), 'glove', seg=14, outline=0.006))
+    # The chain trails behind the fist, then swings around it: its direction turns from pointing back
+    # to the left (behind the motion) to pointing ahead to the right, bending toward where it was.
+    length = 0.62
+    a_end = math.radians(165 - 150 * smoothstep(min(1.0, t * 1.15)))
+    bend = math.radians(55) * (1 - t)
+    pts = []
+    for k in range(13):
+        u = k / 12
+        a = a_end + bend * u
+        r = length * u
+        # Horizontal, with a slight droop toward the end.
+        pts.append(hand + Vector((math.cos(a) * r, math.sin(a) * r * 0.8 + 0.02, -0.06 * u * u)))
+    objs.append(chain('Schain', pts, 'chain', link=0.07, thick=0.015, outline=0.003))
+    # The weight: an iron bulb with a red-hot band, and a hook curling out of it.
+    end = pts[-1]
+    out = (pts[-1] - pts[-2]).normalized()
+    w = end + out * 0.065
+    objs.append(sphere('Sweight', w, (0.065, 0.065, 0.065), 'iron', seg=16, outline=0.004))
+    objs.append(torus('Sweightband', w, 0.066, 0.013, 'hot', rot=out.to_track_quat('Z', 'Y').to_euler(), seg=16, outline=0.002))
+    hook = [w + out * 0.04, w + out * 0.10, w + out * 0.13 + Vector((0, 0, 0.03)), w + out * 0.11 + Vector((0, 0, 0.07)), w + out * 0.07 + Vector((0, 0, 0.075))]
+    for i, (p0, p1) in enumerate(zip(hook, hook[1:])):
+        objs.append(tube(f'Shook{i}', p0, p1, 0.013 - 0.002 * i, 0.011 - 0.002 * i, 'iron', seg=8, outline=0.003))
+    # Chain wound round the wrist, as on the Chain Gun hand.
+    d = (hand - elbow).normalized()
+    u = d.cross(Vector((0, 0, 1))).normalized()
+    v = d.cross(u)
+    coil = [hand - d * (0.18 - 0.10 * i / 24) + (u * math.cos(wv) + v * math.sin(wv)) * 0.062 for i, wv in ((i, 2 * math.pi * 2 * i / 24) for i in range(25))]
+    objs.append(chain('Swristchain', coil, 'chain', link=0.035, thick=0.008, outline=0.002))
+    return objs
+
+
+SWING_SCALE = 2
+
+
+def half(img):
+    """Halves an image (rows from the bottom), averaging with premultiplied alpha."""
+    import numpy as np
+    h, w, _ = img.shape
+    img = img[: h - h % 2, : w - w % 2]
+    a = img[..., 3:4]
+    pre = np.concatenate([img[..., :3] * a, a], axis=2).reshape(h // 2, 2, w // 2, 2, 4).mean(axis=(1, 3))
+    a = pre[..., 3:4]
+    rgb = np.where(a > 1e-4, pre[..., :3] / np.maximum(a, 1e-4), np.array(PAL['ink'], dtype=np.float32))
+    return np.concatenate([rgb, a], axis=2)
+
+
+def render_swing(tmp):
+    """The Scourge swing frames, each the bottom half of the view, with the Chain Gun idle and its left arm hidden."""
+    scene, cam, rig, grip, rot = setup('binder')
+    pose('binder', rig, grip, rot, 0)
+    for o in bpy.data.objects:
+        if o.name.startswith(LEFT_ARM):
+            o.hide_render = True
+    out = []
+    for f in range(SWING_FRAMES):
+        objs = build_swing(f)
+        arr = render_to_array(scene, tmp)
+        out.append((ink_frame(arr, SS, INK_PX_PER_M)[:FRAME_H], 0.0, 0.0))
+        for o in objs:
+            bpy.data.objects.remove(o, do_unlink=True)
+    os.remove(tmp)
+    return out
+
+
 # ---------------------------------------------------------------- rendering
 
 def setup(cls):
@@ -351,6 +446,20 @@ def cmd_preview(cls, out):
     save_array(sheet, out)
 
 
+def cmd_swing(out):
+    import numpy as np
+    frames, _ = crop_columns(render_swing(out + '.tmp.png'))
+    h, w, _ = frames[0][0].shape
+    sheet = np.zeros((h, w * len(frames), 4), dtype=np.float32)
+    sheet[..., :3] = (0.55, 0.62, 0.70)
+    sheet[..., 3] = 1
+    for i, (img, _, _) in enumerate(frames):
+        a = img[..., 3:4]
+        dst = sheet[:, i * w:(i + 1) * w]
+        dst[..., :3] = img[..., :3] * a + dst[..., :3] * (1 - a)
+    save_array(sheet, out)
+
+
 def cmd_sprites(which):
     import json
     import numpy as np
@@ -359,13 +468,21 @@ def cmd_sprites(which):
         os.makedirs(out_dir, exist_ok=True)
         frames, x0 = crop_columns(render_frames(cls, os.path.join(out_dir, 'render.png')))
         h, w, _ = frames[0][0].shape
-        # Frames side by side in rows of 3; the atlas width is the next power of two.
+        swing, sx0 = crop_columns(render_swing(os.path.join(out_dir, 'render.png'))) if cls == 'binder' else ([], 0)
+        # The swing spans the whole view and lasts 0.3 s, so its frames are stored at half resolution.
+        swing = [(half(img), 0, 0) for img, _, _ in swing]
+        sw = swing[0][0].shape[1] if swing else 0
+        sh = swing[0][0].shape[0] if swing else 0
+        # Frames side by side in rows of 3, then the swing frames in rows of their own; the atlas
+        # width is the next power of two.
         cols = 3
         width = 1
-        while width < cols * (w + 2):
+        while width < max(cols * (w + 2), sw + 2):
             width *= 2
         rows = -(-len(frames) // cols)
-        height = -(-(rows * (h + 2)) // 64) * 64
+        scols = max(1, width // (sw + 2)) if swing else 1
+        srows = -(-len(swing) // scols) if swing else 0
+        height = -(-(rows * (h + 2) + srows * (sh + 2)) // 64) * 64
         atlas = np.zeros((height, width, 4), dtype=np.float32)
         atlas[..., :3] = PAL['ink']
         rects = []
@@ -373,6 +490,11 @@ def cmd_sprites(which):
             x, y = (i % cols) * (w + 2), (i // cols) * (h + 2)
             atlas[height - y - h:height - y, x:x + w] = img
             rects.append([x, y, round(float(mx), 1), round(float(my), 1)])
+        srects = []
+        for i, (img, _, _) in enumerate(swing):
+            x, y = (i % scols) * (sw + 2), rows * (h + 2) + (i // scols) * (sh + 2)
+            atlas[height - y - sh:height - y, x:x + sw] = img
+            srects.append([x, y])
         save_array(atlas, os.path.join(out_dir, 'atlas.png'))
         manifest = {
             'width': width, 'height': height, 'frameW': w, 'frameH': h,
@@ -382,6 +504,10 @@ def cmd_sprites(which):
             'idle': [rects[0]],
             'fire': rects[1:],
         }
+        if swing:
+            # frameW and centerX in full-resolution frame pixels, like the other frames; each atlas
+            # pixel of a swing frame covers `scale` of them.
+            manifest['swing'] = {'scale': SWING_SCALE, 'frameW': sw * SWING_SCALE, 'centerX': 2 * FRAME_H - sx0, 'frames': srects}
         with open(os.path.join(out_dir, 'atlas.json'), 'w', encoding='utf8', newline='\n') as f:
             f.write(json.dumps(manifest, indent=2) + '\n')
         print(f'weapon-{cls}: atlas {width}x{height}, frames {w}x{h}')
@@ -394,6 +520,8 @@ def main():
     cmd, args = argv[0], argv[1:]
     if cmd == 'preview':
         cmd_preview(*args)
+    elif cmd == 'swing':
+        cmd_swing(*args)
     elif cmd == 'sprites':
         cmd_sprites(*args)
     else:

@@ -19,6 +19,9 @@ export interface DebugPlayer {
   kills: number;
   /** Revive progress 0–1 while dead (M8 §10). */
   revive: number;
+  /** The host's counts of primary and secondary attacks fired, not wrapped (M9 §10). */
+  primaryShots: number;
+  secondaryShots: number;
 }
 
 export interface DebugState {

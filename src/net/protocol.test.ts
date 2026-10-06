@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { sandbox } from '../data/dungeons/sandbox';
 import { BLESSED } from '../data/enemies';
+import { FIRE_LEFT, FIRE_RIGHT, FIRE_RIGHT_LAST } from '../data/weapons';
 import { Simulation } from '../sim/sim';
 import {
   decodeInput,
@@ -47,6 +48,9 @@ function players(n: number): SnapshotPlayer[] {
     revive: i * 60,
     // Wrapping: 255 + 2 shots read back as 1.
     shots: (250 + i * 3) & 0xff,
+    shots2: (100 + i * 50) & 0xff,
+    // Player 1 is being healed by player 2's Sacrament (M9 §10).
+    beam: i === 2 ? 1 : 255,
   }));
 }
 
@@ -84,7 +88,7 @@ function entities(ne: number, np: number): SnapshotEntities {
 
 describe('input protocol', () => {
   it('round-trips', () => {
-    const m: InputMsg = { seq: 4000000000, x: 12.5, y: 7.25, z: 1.5, yaw: 3.0, pitch: -0.5, fireHeld: true, qPresses: 255, ePresses: 3, allyTargetId: 255, lastTeleportId: 65535 };
+    const m: InputMsg = { seq: 4000000000, x: 12.5, y: 7.25, z: 1.5, yaw: 3.0, pitch: -0.5, fire: 1, qPresses: 255, ePresses: 3, allyTargetId: 255, lastTeleportId: 65535 };
     const buf = encodeInput(m);
     expect(buf.byteLength).toBe(INPUT_BYTES);
     const d = decodeInput(buf)!;
@@ -92,15 +96,20 @@ describe('input protocol', () => {
     expect(d.x).toBe(12.5);
     expect(d.yaw).toBeCloseTo(3.0, 6);
     expect(d.pitch).toBeCloseTo(-0.5, 6);
-    expect(d).toMatchObject({ fireHeld: true, qPresses: 255, ePresses: 3, allyTargetId: 255, lastTeleportId: 65535 });
+    expect(d).toMatchObject({ fire: 1, qPresses: 255, ePresses: 3, allyTargetId: 255, lastTeleportId: 65535 });
     // Counters wrap.
     expect(decodeInput(encodeInput({ ...m, qPresses: 256 }))!.qPresses).toBe(0);
+    // The `fire` bits (M9 §10): left, right, right pressed last.
+    for (const fire of [0, FIRE_LEFT, FIRE_RIGHT, FIRE_LEFT | FIRE_RIGHT, FIRE_LEFT | FIRE_RIGHT | FIRE_RIGHT_LAST]) {
+      expect(decodeInput(encodeInput({ ...m, fire }))!.fire).toBe(fire);
+    }
+    expect(buf.byteLength).toBe(30);
   });
 
   it('ignores stale inputs on the host', () => {
     const sim = new Simulation({ dungeon: sandbox, players: [{ id: 0, name: 'A', classId: 'fallen' }], seed: 1 });
     const p = sim.players[0];
-    const base = { z: 0, yaw: 0, pitch: 0, fireHeld: false, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 };
+    const base = { z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 };
     sim.applyInput(0, { ...base, seq: 5, x: 4.6, y: 4.5 }, 100);
     expect(p.x).toBeCloseTo(4.6);
     sim.applyInput(0, { ...base, seq: 4, x: 4.7, y: 4.5 }, 133);
@@ -115,10 +124,10 @@ describe('input protocol', () => {
     const sim = new Simulation({ dungeon: sandbox, players: [{ id: 0, name: 'A', classId: 'fallen' }], seed: 1 });
     const p = sim.players[0];
     p.lastAcceptMs = 1000;
-    const base = { yaw: 0, pitch: 0, fireHeld: false, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 };
-    // 100 ms at 7 m/s: at most 1.2 × 0.7 + 0.5 = 1.34 m.
+    const base = { yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 };
+    // 100 ms at the Fallen's 6 m/s (M9 §2.7): at most 1.2 × 0.6 + 0.5 = 1.22 m.
     sim.applyInput(0, { ...base, seq: 1, x: p.x + 5, y: p.y, z: -1 }, 1100);
-    expect(p.x).toBeCloseTo(4.5 + 1.34, 5);
+    expect(p.x).toBeCloseTo(4.5 + 1.22, 5);
     expect(p.z).toBe(0);
   });
 });
@@ -127,7 +136,7 @@ describe('snapshot protocol', () => {
   it('round-trips header, players, enemies and projectiles', () => {
     const parts = encodeSnapshot(header, players(4), entities(100, 20));
     expect(parts.length).toBe(1);
-    expect(parts[0].byteLength).toBe(27 + 4 * 30 + 100 * 8 + 20 * 9);
+    expect(parts[0].byteLength).toBe(27 + 4 * 32 + 100 * 8 + 20 * 9);
     const s = decodeSnapshot(parts[0])!;
     expect(s).toMatchObject({ ...header, partIndex: 0, partCount: 1, enemyCount: 100, projectileCount: 20 });
     expect(s.players).toEqual(players(4));
@@ -142,10 +151,10 @@ describe('snapshot protocol', () => {
     expect(s.projZ[5]).toBe(15.984375);
   });
 
-  it('fits the largest snapshot at the current caps in one part (15 755 bytes)', () => {
+  it('fits the largest snapshot at the current caps in one part (15 763 bytes, M9 §10)', () => {
     const parts = encodeSnapshot(header, players(4), entities(1501, 400));
     expect(parts.length).toBe(1);
-    expect(parts[0].byteLength).toBe(15755);
+    expect(parts[0].byteLength).toBe(15763);
   });
 
   it('splits snapshots above 16 000 bytes into parts that each carry the header and all players', () => {

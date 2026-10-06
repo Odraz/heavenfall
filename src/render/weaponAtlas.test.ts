@@ -43,3 +43,16 @@ describe('weapon atlases', () => {
     }
   });
 });
+
+describe('the Scourge swing (M9 §5.1)', () => {
+  it("is in the Binder's atlas only: 4 half-resolution frames inside it", () => {
+    for (const id of CLASS_IDS) expect(!!weaponAtlas(id).manifest.swing).toBe(id === 'binder');
+    const m = weaponAtlas('binder').manifest;
+    const sw = m.swing!;
+    expect(sw.frames).toHaveLength(4);
+    for (const [x, y] of sw.frames) {
+      expect(x + sw.frameW / sw.scale).toBeLessThanOrEqual(m.width);
+      expect(y + m.frameH / sw.scale).toBeLessThanOrEqual(m.height);
+    }
+  });
+});

@@ -6,6 +6,10 @@ import { spriteUrl } from '../render/atlas';
 import { fireFrame, weaponAtlas, type WeaponManifest } from '../render/weaponAtlas';
 
 const RECOIL_MS = 120;
+/** Recoil in % of the screen height (MVP §10; the slug and the Silver Bullet kick harder, M9 §5.1). */
+const RECOIL_PCT = 8;
+/** The Scourge's first-person swing (M9 §5.1). */
+const SWING_MS = 300;
 const FLASH_MS = 60;
 const HIT_MARKER_MS = 80;
 const KILL_MARKER_MS = 120;
@@ -68,8 +72,18 @@ export class Hud {
   private readonly weapon: HTMLDivElement;
   private readonly flash: HTMLImageElement;
   private readonly weaponManifest: WeaponManifest;
-  private readonly fireIntervalMs: number;
+  /** The last shot's fire animation length, recoil and muzzle flash scale (M9 §5.1). */
+  private fireIntervalMs: number;
+  private recoilPct = RECOIL_PCT;
+  private flashOn = true;
   private weaponFrame = -2;
+  /** The Scourge swing frames, drawn instead of the weapon frame while it plays. */
+  private readonly swingBox: HTMLDivElement | null = null;
+  private readonly swingSprite: HTMLDivElement | null = null;
+  private swingAt = -Infinity;
+  private swingFrame = -2;
+  /** A steady green vignette while a Sacrament beam heals the player (M9 §5.1). */
+  private readonly beamVignette: HTMLDivElement;
   private readonly abilities: Array<{ sweep: HTMLDivElement; text: HTMLDivElement; box: HTMLDivElement; glint: HTMLDivElement; cd: number }>;
   /** The hints panel (M8 §2.2), toggled with H, and the prompt shown until it's first opened. */
   private readonly hints: HTMLDivElement;
@@ -131,6 +145,7 @@ export class Hud {
       green: el('div', 'vignette vignette-green', this.root),
       blue: el('div', 'vignette vignette-blue', this.root),
     };
+    this.beamVignette = el('div', 'vignette vignette-green', this.root);
     el('div', 'crosshair', this.root);
     this.hitMarker = this.marker('marker-hit');
     this.killMarker = this.marker('marker-kill');
@@ -193,6 +208,15 @@ export class Hud {
     this.weapon.style.backgroundImage = `url(${wa.url})`;
     this.weapon.style.backgroundSize = `${vh(m.width)} ${vh(m.height)}`;
     this.setWeaponFrame(-1);
+    if (m.swing) {
+      this.swingBox = el('div', 'weapon', this.root);
+      this.swingBox.style.left = `calc(50% - ${vh(m.swing.centerX)})`;
+      this.swingBox.style.width = vh(m.swing.frameW);
+      this.swingBox.hidden = true;
+      this.swingSprite = el('div', 'weapon-sprite', this.swingBox);
+      this.swingSprite.style.backgroundImage = `url(${wa.url})`;
+      this.swingSprite.style.backgroundSize = `${vh(m.width * m.swing.scale)} ${vh(m.height * m.swing.scale)}`;
+    }
 
     const abil = el('div', 'abilities', this.root);
     this.abilities = (['Q', 'E'] as const).map((key) => {
@@ -384,11 +408,38 @@ export class Hud {
     return m;
   }
 
-  /** Each shot's muzzle flash gets a random rotation and scale (M8 §3.3). */
-  shot(now: number): void {
+  /**
+   * A shot: recoil (`recoil` % of the screen height), the fire frames over the shorter of `intervalMs`
+   * and 0.3 s, and a muzzle flash `flashScale` times its size, or none. Each flash gets a random
+   * rotation and scale (M8 §3.3).
+   */
+  shot(now: number, intervalMs: number, recoil = RECOIL_PCT, flashScale = 1, flash = true): void {
     this.shotAt = now;
+    this.fireIntervalMs = intervalMs;
+    this.recoilPct = recoil;
+    this.flashOn = flash;
     this.flashRotate = Math.random() * 360;
-    this.flashScale = 0.8 + Math.random() * 0.4;
+    this.flashScale = flashScale * (0.8 + Math.random() * 0.4);
+  }
+
+  /** The Scourge: the left hand swings a chain across the view over 0.3 s (M9 §5.1). */
+  swing(now: number): void {
+    this.swingAt = now;
+  }
+
+  /** The first-person muzzle point on screen in CSS pixels, with the recoil and bob (for Sacrament's beam). */
+  muzzlePoint(now: number): [number, number] {
+    const m = this.weaponManifest;
+    const [, , mx, my] = this.weaponFrame < 0 ? m.idle[0] : m.fire[this.weaponFrame];
+    const vhPx = window.innerHeight / 100;
+    const k = (50 * vhPx) / m.frameH;
+    const r = Math.max(0, 1 - (now - this.shotAt) / RECOIL_MS);
+    return [window.innerWidth / 2 + (mx - m.centerX) * k + this.bobX * vhPx, 50 * vhPx + my * k + (r * this.recoilPct + this.bobY) * vhPx];
+  }
+
+  /** The steady green vignette while a Sacrament beam is on the player (M9 §5.1). */
+  setBeamed(on: boolean): void {
+    this.beamVignette.style.opacity = on ? '0.15' : '0';
   }
 
   /** The weapon frame's bob offset in % of the screen height (M8 §3.4). */
@@ -498,6 +549,25 @@ export class Hud {
     this.result.hidden = false;
   }
 
+  /** The swing frame for the time since the Scourge, shown in place of the weapon frame while it plays. */
+  private updateSwing(now: number, offset: string): void {
+    const sw = this.weaponManifest.swing;
+    if (!sw || !this.swingBox || !this.swingSprite) return;
+    const t = now - this.swingAt;
+    const f = t >= 0 && t < SWING_MS ? Math.min(sw.frames.length - 1, Math.floor((t / SWING_MS) * sw.frames.length)) : -1;
+    if (f !== this.swingFrame) {
+      this.swingFrame = f;
+      this.swingBox.hidden = f < 0;
+      this.weaponBox.style.visibility = f < 0 ? '' : 'hidden';
+      if (f >= 0) {
+        const m = this.weaponManifest;
+        const vh = (px: number) => `${(px / m.frameH) * 50}vh`;
+        this.swingSprite.style.backgroundPosition = `-${vh(sw.frames[f][0] * sw.scale)} -${vh(sw.frames[f][1] * sw.scale)}`;
+      }
+    }
+    if (f >= 0) this.swingBox.style.transform = offset;
+  }
+
   /** Shows fire frame `f` (0–3), or the idle frame for -1, with the flash at its muzzle. */
   private setWeaponFrame(f: number): void {
     if (f === this.weaponFrame) return;
@@ -512,12 +582,13 @@ export class Hud {
   }
 
   update(now: number): void {
-    // Recoil: 8% of the screen height, recovering over 120 ms; plus the bob.
+    // Recoil: 8% of the screen height (more for heavy shots), recovering over 120 ms; plus the bob.
     const r = Math.max(0, 1 - (now - this.shotAt) / RECOIL_MS);
-    const offset = `translate(${this.bobX.toFixed(3)}vh, ${(r * 8 + this.bobY).toFixed(3)}vh)`;
+    const offset = `translate(${this.bobX.toFixed(3)}vh, ${(r * this.recoilPct + this.bobY).toFixed(3)}vh)`;
     this.weaponBox.style.transform = offset;
     this.setWeaponFrame(fireFrame(now - this.shotAt, this.fireIntervalMs));
-    const flashing = now - this.shotAt < FLASH_MS;
+    this.updateSwing(now, offset);
+    const flashing = this.flashOn && now - this.shotAt < FLASH_MS;
     this.flash.style.opacity = flashing ? '0.9' : '0';
     if (flashing) this.flash.style.transform = `${offset} rotate(${this.flashRotate.toFixed(1)}deg) scale(${this.flashScale.toFixed(3)})`;
     // The kill marker replaces the hit marker while shown.

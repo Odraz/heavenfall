@@ -24,7 +24,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     name: 'The Fallen',
     role: 'Tank',
     hp: 400,
-    speed: 7,
+    speed: 6,
     passive: { name: 'Brimstone Hide', description: 'Takes 40% less damage. Enemies prefer to attack the Fallen.' },
     hints: [
       { text: 'Stand in front: you take less damage and enemies prefer you.' },
@@ -49,7 +49,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     name: 'The Binder',
     role: 'Support',
     hp: 200,
-    speed: 8,
+    speed: 6,
     hints: [
       { key: 'Q', text: 'Q: pull a crowd together, then let the party shred it. Bound enemies take double damage.' },
       { key: 'E', text: "E: silence Choristers, Cherubs and the Gatekeeper's Judgment." },

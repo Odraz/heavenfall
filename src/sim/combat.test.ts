@@ -210,19 +210,18 @@ describe('combat (§5.3, §5.4, §6)', () => {
     expect(sim.rayEnemies(p.x, p.y, 1.6, Math.cos(p.yaw), Math.sin(p.yaw), 0, 60, 3)).toEqual([]);
   });
 
-  it('the Silver Revolver pierces up to 3 enemies; the Chain Gun stops at the first', () => {
+  it('the Silver Revolver hits only the first enemy for 30 (M9 §2.3); the Chain Gun stops at the first', () => {
     const sim = makeSim(room(30, 5), ['betrayer', 'binder']);
     const [b, c] = sim.players;
     put(sim, b, 1.5, 3.5);
     put(sim, c, 1.5, 3.5);
-    const line = [5, 8, 11, 14, 17].map((x) => enemyAt(sim, CHORISTER, x + 0.5, 3.5));
-    for (const s of line) sim.root(s, 10);
+    const line = [5, 8, 11].map((x) => enemyAt(sim, CHORISTER, x + 0.5, 3.5));
     aimAt(sim, b, line[0]);
     sim.fireWeapon(b);
-    // 60 damage kills a Chorister: the first 3 in line die, the 4th and 5th are untouched.
-    expect(line.map((s) => sim.eAlive[s])).toEqual([0, 0, 0, 1, 1]);
-    expect(sim.eHp[line[3]]).toBe(60);
-    expect(b.kills).toBe(3);
+    expect(line.map((s) => sim.eHp[s])).toEqual([30, 60, 60]);
+    sim.fireWeapon(b);
+    expect(line.map((s) => sim.eAlive[s])).toEqual([0, 1, 1]);
+    expect(b.kills).toBe(1);
     // The Chain Gun hits only the nearest one still alive.
     const sim2 = makeSim(room(30, 5), ['binder']);
     put(sim2, sim2.players[0], 1.5, 3.5);
@@ -300,6 +299,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
   });
 
   it('a held Chain Gun fires on ticks 0, 3, 5, 8, 10, … (12 per second); a revolver carries fractions over', () => {
+    // The revolver fires every 0.15 s = 4.5 ticks (M9 §2.3).
     const sim = makeSim(room(30, 5), ['binder', 'betrayer']);
     const [binder, betrayer] = sim.players;
     const shots: Array<[number, number]> = [];
@@ -308,12 +308,11 @@ describe('combat (§5.3, §5.4, §6)', () => {
     });
     sim.step();
     const t0 = sim.tick + 1;
-    binder.fireHeld = true;
-    betrayer.fireHeld = true;
+    binder.fire = 1;
+    betrayer.fire = 1;
     for (let i = 0; i < 22; i++) sim.step();
     expect(shots.filter((s) => s[0] === 0).map((s) => s[1] - t0)).toEqual([0, 3, 5, 8, 10, 13, 15, 18, 20]);
-    // 0.35 s = 10.5 ticks: fires on ticks 0, 11, 21.
-    expect(shots.filter((s) => s[0] === 1).map((s) => s[1] - t0)).toEqual([0, 11, 21]);
+    expect(shots.filter((s) => s[0] === 1).map((s) => s[1] - t0)).toEqual([0, 5, 9, 14, 18]);
     spy.mockRestore();
   });
 
@@ -468,18 +467,6 @@ describe('balance (M8 §8)', () => {
     sim.root(g, 5);
     sim.damageEnemy(g, 100, -1);
     expect(sim.eHp[g]).toBe(45000 - 100);
-  });
-
-  it('a revolver shot pierces up to 6 enemies', () => {
-    const sim = makeSim(room(40, 5), ['betrayer']);
-    const p = sim.players[0];
-    put(sim, p, 2.5, 3.5);
-    const line = [6, 8, 10, 12, 14, 16, 18].map((x) => enemyAt(sim, CHORISTER, x + 0.5, 3.5));
-    p.yaw = 0;
-    p.pitch = 0;
-    sim.fireWeapon(p);
-    expect(line.slice(0, 6).every((s) => sim.eHp[s] === 0 || !sim.eAlive[s])).toBe(true);
-    expect(sim.eHp[line[6]]).toBe(60);
   });
 
   it('the shotgun fires 8 pellets of 12 every 0.8 s', () => {

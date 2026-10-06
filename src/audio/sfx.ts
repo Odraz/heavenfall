@@ -71,6 +71,42 @@ export const SFX = {
     ],
   },
 
+  /** The Brimstone Slug (M9 §5.2): deeper and longer than the shotgun blast. */
+  slug: {
+    priority: PRIO_OWN,
+    parts: [
+      part({ wave: 'noise', freq: 7000, attack: 0.001, decay: 0.12, sustain: 0.4, hold: 0.04, release: 0.35, volume: 0.8, lowpass: 3500, lowpassEnd: 250 }),
+      part({ wave: 'square', freq: 95, freqEnd: 30, decay: 0.1, sustain: 0.5, hold: 0.05, release: 0.3, volume: 0.5, lowpass: 600, bits: 5 }),
+      part({ wave: 'sine', freq: 60, freqEnd: 28, decay: 0.15, sustain: 0.5, release: 0.3, volume: 0.45 }),
+    ],
+  },
+  /** Sacrament (M9 §5.2): a soft, rising chime at the healed ally, twice a second. */
+  sacrament: {
+    priority: PRIO_OWN,
+    parts: [
+      part({ wave: 'sine', freq: 784, freqEnd: 1046.5, attack: 0.01, decay: 0.08, sustain: 0.4, release: 0.15, volume: 0.16 }),
+      part({ wave: 'triangle', freq: 1568, delay: 0.03, attack: 0.01, decay: 0.06, sustain: 0.3, release: 0.12, volume: 0.07, vibratoRate: 9, vibratoDepth: 0.3 }),
+    ],
+  },
+  /** The Scourge (M9 §5.2): a whoosh with a chain clank. */
+  scourge: {
+    priority: PRIO_OWN,
+    parts: [
+      part({ wave: 'noise', freq: 7000, attack: 0.04, decay: 0.1, sustain: 0.3, release: 0.08, volume: 0.45, lowpass: 700, lowpassEnd: 5000 }),
+      part({ wave: 'noise', freq: 9000, delay: 0.1, decay: 0.03, sustain: 0.3, hold: 0.06, release: 0.1, volume: 0.3, lowpass: 7000, vibratoRate: 30, vibratoDepth: 12 }),
+      part({ wave: 'square', freq: 1500, delay: 0.1, decay: 0.03, sustain: 0.2, hold: 0.04, release: 0.08, volume: 0.1, duty: 0.2, vibratoRate: 24, vibratoDepth: 6 }),
+    ],
+  },
+  /** The Silver Bullet (M9 §5.2): a heavy crack with a ringing tail. */
+  silverBullet: {
+    priority: PRIO_OWN,
+    parts: [
+      part({ wave: 'noise', freq: 14000, attack: 0.001, decay: 0.06, sustain: 0.35, hold: 0.03, release: 0.3, volume: 0.85, lowpass: 8000, lowpassEnd: 600 }),
+      part({ wave: 'square', freq: 260, freqEnd: 70, decay: 0.06, sustain: 0.4, release: 0.25, volume: 0.35, bits: 5 }),
+      part({ wave: 'sine', freq: 2093, decay: 0.05, sustain: 0.35, hold: 0.1, release: 0.8, volume: 0.14, vibratoRate: 6, vibratoDepth: 0.1 }),
+    ],
+  },
+
   // ---------------------------------------------------------------- hits
   /** Own hits: a quiet tick. */
   hitTick: { priority: PRIO_HIT, parts: [part({ wave: 'square', freq: 1800, decay: 0.012, sustain: 0, release: 0.01, volume: 0.18, duty: 0.25 })] },

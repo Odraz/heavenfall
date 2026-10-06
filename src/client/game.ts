@@ -3,18 +3,18 @@ import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
 import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, ST_WINDUP } from '../data/enemies';
-import { ABILITIES, BLASPHEMY_RADIUS, WEAPONS } from '../data/weapons';
+import { ABILITIES, ATTACK_NONE, ATTACK_SECONDARY, attackDef, BLASPHEMY_RADIUS, chooseAttack, SCOURGE_HALF_ARC, SECONDARIES, type AttackSlot } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
 import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_MARKED, FLAG_ROOTED, FLAG_SILENCED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
-import { aimDir, rayCylinder } from '../sim/combat';
+import { aimDir, estimateSilverBullet, rayCylinder } from '../sim/combat';
 import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, TICK_DT, TICK_MS } from '../sim/constants';
 import { raycastTerrain } from '../sim/los';
 import { arenaPhaseOf, doorsClosed, setArenaDoors, type GameMap } from '../sim/map';
-import { groundHeight } from '../sim/movement';
+import { distToCylinder, groundHeight } from '../sim/movement';
 import { BOSS_CAST_JUDGMENT, PROJ_CENSER } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
@@ -42,7 +42,7 @@ import { SoulView } from './soulView';
 import { LocalPlayer, MAX_FRAME_DT, wasdDirection } from './localPlayer';
 import { PartyFrames } from './partyFrames';
 import { PlayerAnimator } from './playerAnim';
-import { SnapshotBuffer } from './snapshots';
+import { SnapshotBuffer, type InterpolatedEnemies } from './snapshots';
 
 const BENCH_TURN_RATE = 0.3;
 const PROJECTILE_SPRITES = ['proj-censer', 'proj-orb', 'proj-arrow'];
@@ -56,6 +56,26 @@ const ENEMY_FLASH_MS = 120;
 const ENEMY_FLASH_GAP_MS = 250;
 const ENEMY_FLASH_PEAK = 0.7;
 const TRACER_MS = 70;
+/** Tracers are 0.1 m wide; the slug's 0.15 m (M9 §5.1). */
+const TRACER_WIDTH = 0.1;
+const SLUG_TRACER_WIDTH = 0.15;
+/** Recoil in % of the screen height, and the muzzle flash's size, for the heavy shots (M9 §5.1). */
+const SLUG_RECOIL = 12;
+const SLUG_FLASH = 1.3;
+const SILVER_RECOIL = 14;
+/** The Silver Bullet's tracer: an ember strip with a silver-white core, fading over 0.25 s. */
+const SILVER_EMBER = 0xff7a3a;
+const SILVER_CORE = 0xf2f4ff;
+const SILVER_WIDTH = 0.3;
+const SILVER_CORE_WIDTH = 0.1;
+const SILVER_MS = 250;
+/** Others' beams and Silver Bullets start this far in front of their body center, along their yaw. */
+const OTHERS_MUZZLE = 0.5;
+/** Sacrament's embers: 10 per second per beam, drifting toward the ally at 4 m/s. */
+const BEAM_EMBERS_PER_S = 10;
+const BEAM_EMBER_SPEED = 4;
+/** The own beam starts at the first-person muzzle, this far in front of the camera. */
+const OWN_BEAM_DEPTH = 0.6;
 /** At most this many corpses lie around; the oldest vanish first. */
 const MAX_CORPSES = 1000;
 
@@ -164,9 +184,16 @@ export class Game {
   private dead = false;
   private qPresses = 0;
   private ePresses = 0;
-  private fireHeld = false;
-  /** Cosmetic fire timer, run locally at 30 Hz (§6). */
+  /** The mouse buttons as the input's `fire` bits (M9 §10). */
+  private fire = 0;
+  /** The attack the held buttons pick locally this frame (M9 §2.1). */
+  private attack: AttackSlot = ATTACK_NONE;
+  /** Cosmetic fire timer, shared by both attacks and run locally at 30 Hz (M9 §2.2). */
   private fireTimer = 0;
+  /** Each player's primary and secondary attacks, unwrapped from the snapshots' counters (M9 §10). */
+  private readonly shotCounts = new Map<number, { raw: number; raw2: number; n: number; n2: number }>();
+  /** Others' attack effects waiting for the render delay (M9 §5.1). */
+  private readonly pendingFx: Array<{ at: number; run: (now: number) => void }> = [];
   private fireAcc = 0;
   /** Local timer for movement abilities (§9.3): performance.now() when it's ready again. */
   private localEReadyAt = 0;
@@ -283,7 +310,8 @@ export class Game {
     this.bot = this.params.bot ? new Bot(this.map) : null;
     this.bench = this.params.bench && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString()) : null;
 
-    debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0 }));
+    debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0, primaryShots: 0, secondaryShots: 0 }));
+    this.sounds.renderDelay = (this.snaps.delayTicks * TICK_MS) / 1000;
   }
 
   /** Compiles shaders and uploads textures during Loading, so entering the game doesn't stall. */
@@ -453,7 +481,7 @@ export class Game {
         z: p.body.z,
         yaw: p.yaw,
         pitch: p.pitch,
-        fireHeld: this.fireHeld,
+        fire: this.fire,
         qPresses: this.qPresses,
         ePresses: this.ePresses,
         allyTargetId: this.allyTargetId,
@@ -467,9 +495,9 @@ export class Game {
    * host would keep firing for a player who switched tabs (§4).
    */
   private readonly onVisibility = (): void => {
-    if (!document.hidden || this.over || this.disposed || !this.fireHeld) return;
+    if (!document.hidden || this.over || this.disposed || !this.fire) return;
     this.input.release();
-    this.fireHeld = false;
+    this.fire = 0;
     this.sendInput();
   };
 
@@ -511,6 +539,18 @@ export class Game {
       case 'bossCast':
         this.hud.judgmentEvent(e.phase, now);
         break;
+      case 'silverBullet':
+        // Others' Silver Bullets after the render delay; the own one was drawn at once (M9 §5.1).
+        if (e.playerId !== this.localId) {
+          this.pendingFx.push({
+            at: now + this.snaps.delayTicks * TICK_MS,
+            run: (t) => {
+              const from = this.othersMuzzle(e.playerId) ?? [e.x, e.y, e.z];
+              this.silverTracer(t, from, [e.ex, e.ey, e.ez]);
+            },
+          });
+        }
+        break;
       case 'gameOver':
         this.onGameOver(e, now);
         break;
@@ -525,6 +565,20 @@ export class Game {
   private playerPose(playerId: number): { x: number; y: number; z: number; yaw: number } | undefined {
     if (playerId === this.localId) return { ...this.player.body, yaw: this.player.yaw };
     return this.snaps.playersOut.find((q) => q.id === playerId);
+  }
+
+  /** 0.5 m in front of another player's body center along its yaw, where its beams and bullets start. */
+  private othersMuzzle(playerId: number): [number, number, number] | null {
+    const q = this.snaps.playersOut.find((o) => o.id === playerId);
+    if (!q) return null;
+    return [q.x + Math.cos(q.yaw) * OTHERS_MUZZLE, q.y + Math.sin(q.yaw) * OTHERS_MUZZLE, q.z + PLAYER_HEIGHT / 2];
+  }
+
+  /** The Silver Bullet's tracer (M9 §5.1): ember, with a silver-white core drawn over it. */
+  private silverTracer(now: number, from: readonly [number, number, number], to: readonly [number, number, number]): void {
+    const pts: Array<[number, number, number]> = [[from[0], from[1], from[2]], [to[0], to[1], to[2]]];
+    this.vfx.beam(now, pts, SILVER_EMBER, SILVER_WIDTH, SILVER_MS);
+    this.vfx.beam(now, pts, SILVER_CORE, SILVER_CORE_WIDTH, SILVER_MS);
   }
 
   /** Ability VFX at the event position (§10). */
@@ -626,6 +680,8 @@ export class Game {
     this.souls.update(s.players, now);
     const me = s.players.find((p) => p.id === this.localId);
     const was = prev?.players.find((p) => p.id === this.localId);
+    // Healed by a Sacrament beam: its heals neither flash nor chime (M9 §5.1).
+    const beamed = s.players.some((p) => p.beam === this.localId) || !!prev?.players.some((p) => p.beam === this.localId);
     if (me) {
       // First seen already dead: joined during a fight, as a soul (M8 §6.2).
       if (!this.seenSelf && me.dead) this.joinedAsSoul = true;
@@ -656,7 +712,7 @@ export class Game {
         if (lost > 0 && !me.dead) {
           this.hud.vignette('red', Math.min(0.8, Math.max(0.2, (lost / this.maxHp) * 3)), now);
           this.hud.shakeHp(now);
-        } else if (me.hp > was.hp && !was.dead) this.hud.vignette('green', 0.3, now);
+        } else if (me.hp > was.hp && !was.dead && !beamed) this.hud.vignette('green', 0.3, now);
         if ((me.shield > 0 && me.shield > was.shield) || (was.shield > 0 && me.shield === 0)) this.hud.vignette('blue', 0.5, now);
         if (me.kills > was.kills) {
           this.hud.kill(now);
@@ -694,6 +750,26 @@ export class Game {
         this.pendingBursts.push({ at: now + delay, censer: true, type: -1, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i] });
       }
     }
+    // Others' Scourge swings, after the render delay, spread over the time to the next snapshot (M9 §5.1).
+    if (prev) {
+      const delay = this.snaps.delayTicks * TICK_MS;
+      const gap = (s.tick - prev.tick) * TICK_MS;
+      for (const p of s.players) {
+        if (p.id === this.localId || p.dead || this.classOf(p.id) !== 'binder') continue;
+        const w = prev.players.find((q) => q.id === p.id);
+        const n = w ? (p.shots2 - w.shots2) & 0xff : 0;
+        for (let i = 0; i < n; i++) {
+          this.pendingFx.push({
+            at: now + delay + (i * gap) / n,
+            run: (t) => {
+              const q = this.snaps.playersOut.find((o) => o.id === p.id);
+              if (q) this.vfx.scourgeArc(t, q.x, q.y, q.z, q.yaw);
+            },
+          });
+        }
+      }
+    }
+    this.countShots(s);
     debugState.lastSnapshotTick = s.tick;
     debugState.enemies = s.enemyCount;
     debugState.projectiles = s.projectileCount;
@@ -709,6 +785,8 @@ export class Game {
       dead: p.dead,
       kills: p.kills,
       revive: p.revive / 255,
+      primaryShots: this.shotCounts.get(p.id)?.n ?? 0,
+      secondaryShots: this.shotCounts.get(p.id)?.n2 ?? 0,
     }));
     this.party?.set(
       s.players
@@ -723,7 +801,27 @@ export class Game {
     this.bossCast = s.bossCast;
     this.bossCastProgress = s.bossCastProgress / 255;
     this.bench?.onSnapshot(s);
-    this.sounds.snapshot(s, prev);
+    this.sounds.snapshot(s, prev, beamed);
+  }
+
+  /** Unwraps each player's `shots` and `shots2` counters into totals, for the debug object (M9 §10). */
+  private countShots(s: Snapshot): void {
+    for (const p of s.players) {
+      const c = this.shotCounts.get(p.id);
+      // A player first seen starts from the counters' own values.
+      if (!c) this.shotCounts.set(p.id, { raw: p.shots, raw2: p.shots2, n: p.shots, n2: p.shots2 });
+      else {
+        c.n += (p.shots - c.raw) & 0xff;
+        c.n2 += (p.shots2 - c.raw2) & 0xff;
+        c.raw = p.shots;
+        c.raw2 = p.shots2;
+      }
+    }
+  }
+
+  /** How fast the local fire timer counts down: 2 in a Field of Blood (M9 §2.2, §3.4). */
+  private localFireRate(): number {
+    return 1;
   }
 
   /**
@@ -820,18 +918,43 @@ export class Game {
   }
 
   /**
-   * Cosmetic shot feedback (§10): muzzle flash and recoil; hitscan weapons also draw a tracer per pellet
-   * to where the local ray stops, and show a hit marker when it hits an interpolated enemy.
+   * Cosmetic attack feedback, local and immediate (§10, M9 §5.1): muzzle flash and recoil; hitscan
+   * attacks also draw a tracer per pellet to where the local ray stops, and show a hit marker when it
+   * hits an interpolated enemy. The Silver Bullet draws its estimated tracer, the Scourge its arc and
+   * swing; Sacrament's beam is drawn every frame instead.
    */
-  private cosmeticShot(now: number, ents: { count: number; x: Float32Array; y: Float32Array; type: Uint8Array }, enemyZ: Float32Array): void {
-    this.hud.shot(now);
-    this.sounds.ownShot(this.classId);
-    const w = WEAPONS[this.classId];
-    if (!w.hitscan) return;
+  private cosmeticShot(now: number, slot: AttackSlot, ents: InterpolatedEnemies, enemyZ: Float32Array): void {
+    const w = attackDef(this.classId, slot);
+    const secondary = slot === ATTACK_SECONDARY;
     const p = this.player;
     const ex = p.body.x;
     const ey = p.body.y;
     const ez = p.body.z + PLAYER_EYE;
+    switch (w.kind) {
+      case 'sacrament': {
+        // The chime plays at the healed ally (M9 §5.2).
+        const ally = this.snaps.playersOut.find((q) => q.id === this.allyTargetId);
+        this.sounds.ownShot(this.classId, true, ally ?? null);
+        return;
+      }
+      case 'scourge': {
+        this.hud.swing(now);
+        this.sounds.ownShot(this.classId, true);
+        this.vfx.scourgeArc(now, p.body.x, p.body.y, p.body.z, p.yaw);
+        if (this.scourgeHits(ents, enemyZ)) {
+          this.hud.hit(now);
+          this.sounds.hit();
+        }
+        return;
+      }
+      case 'censer':
+        this.hud.shot(now, w.interval * 1000);
+        this.sounds.ownShot(this.classId, secondary);
+        return;
+    }
+    const heavy = w.kind === 'silverBullet' ? SILVER_RECOIL : secondary ? SLUG_RECOIL : undefined;
+    this.hud.shot(now, w.interval * 1000, heavy, secondary && w.kind === 'hitscan' ? SLUG_FLASH : 1);
+    this.sounds.ownShot(this.classId, secondary);
     // The muzzle: a little forward, right and down from the eye.
     const [fx, fy] = [Math.cos(p.yaw), Math.sin(p.yaw)];
     const mx = ex + fx * 0.6 - fy * 0.15;
@@ -844,17 +967,24 @@ export class Game {
       const pitch = p.pitch + (Math.random() * 2 - 1) * w.spreadPitch;
       const [dx, dy, dz] = aimDir(yaw, pitch);
       const stop = raycastTerrain(this.map, ex, ey, ez, dx, dy, dz, w.range);
-      const ts: number[] = [];
+      const ts: Array<{ t: number; i: number }> = [];
       for (let i = 0; i < ents.count; i++) {
         const def = ENEMIES[ents.type[i]];
         const t = rayCylinder(ex, ey, ez, dx, dy, dz, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height);
-        if (t <= stop) ts.push(t);
+        if (t <= stop) ts.push({ t, i });
       }
-      ts.sort((a, b) => a - b);
+      ts.sort((a, b) => a.t - b.t);
       let end = stop;
       if (ts.length > 0) {
         hit = true;
-        if (ts.length >= w.maxHits) end = ts[w.maxHits - 1];
+        if (w.kind === 'silverBullet') {
+          // An estimate (M9 §5.1): every enemy at its type's full HP, doubled for the rooted flag.
+          const r = estimateSilverBullet(
+            ts.map(({ i }) => ({ type: ents.type[i], rooted: (ents.flags[i] & FLAG_ROOTED) !== 0 })),
+            w.damage,
+          );
+          if (r.stopped) end = ts[r.reached - 1].t;
+        } else if (ts.length >= w.maxHits) end = ts[w.maxHits - 1].t;
       }
       // A shot through a teammate's soul (for the revive hum).
       for (const q of this.snaps.playersOut) {
@@ -866,12 +996,82 @@ export class Game {
       }
       pts.push([mx, my, mz], [ex + dx * end, ey + dy * end, ez + dz * end]);
     }
-    this.vfx.beam(now, pts, 0xffc04a, 0.1, TRACER_MS);
+    if (w.kind === 'silverBullet') this.silverTracer(now, pts[0], pts[1]);
+    else this.vfx.beam(now, pts, 0xffc04a, secondary ? SLUG_TRACER_WIDTH : TRACER_WIDTH, TRACER_MS);
     if (hit) {
       this.hud.hit(now);
       this.sounds.hit();
     }
   }
+
+  /** Whether a local Scourge swing would hit an interpolated enemy: within 3 m and the 120° arc (M9 §2.6). */
+  private scourgeHits(ents: InterpolatedEnemies, enemyZ: Float32Array): boolean {
+    const p = this.player;
+    const w = SECONDARIES.binder;
+    const cz = p.body.z + PLAYER_HEIGHT / 2;
+    const cosMax = Math.cos(SCOURGE_HALF_ARC);
+    for (let i = 0; i < ents.count; i++) {
+      const def = ENEMIES[ents.type[i]];
+      if (distToCylinder(p.body.x, p.body.y, cz, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height) > w.range) continue;
+      const hx = ents.x[i] - p.body.x;
+      const hy = ents.y[i] - p.body.y;
+      const len = Math.hypot(hx, hy);
+      if (len < 1e-9 || (hx * Math.cos(p.yaw) + hy * Math.sin(p.yaw)) / len >= cosMax - 1e-9) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Sacrament's beams (M9 §5.1), every frame: the own one from the first-person muzzle while the
+   * secondary heals the local ally target; others' from their snapshot `beam`, starting 0.5 m in front
+   * of their body center. Embers drift along each toward the ally. Returns the players beamed.
+   */
+  private drawHealBeams(now: number, dt: number): Set<number> {
+    const beams: Array<[[number, number, number], [number, number, number]]> = [];
+    const beamed = new Set<number>();
+    const bodyOf = (id: number): [number, number, number] | null => {
+      if (id === this.localId) return this.dead ? null : [this.player.body.x, this.player.body.y, this.player.body.z + PLAYER_HEIGHT / 2];
+      const q = this.snaps.playersOut.find((o) => o.id === id);
+      return q && !q.dead ? [q.x, q.y, q.z + PLAYER_HEIGHT / 2] : null;
+    };
+    if (this.classId === 'heretic' && this.attack === ATTACK_SECONDARY && !this.dead) {
+      const to = bodyOf(this.allyTargetId);
+      if (to) {
+        const [sx, sy] = this.hud.muzzlePoint(now);
+        beams.push([this.unproject(sx, sy, OWN_BEAM_DEPTH), to]);
+        beamed.add(this.allyTargetId);
+      }
+    }
+    for (const q of this.snaps.playersOut) {
+      if (q.id === this.localId || q.dead || q.beam === ALLY_NONE) continue;
+      const from = this.othersMuzzle(q.id);
+      const to = bodyOf(q.beam);
+      if (!from || !to) continue;
+      beams.push([from, to]);
+      beamed.add(q.beam);
+    }
+    this.vfx.setLiveBeams(beams, this.scene.camera.position);
+    for (const [a, b] of beams) {
+      if (Math.random() >= BEAM_EMBERS_PER_S * dt) continue;
+      const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      if (d < 1e-3) continue;
+      const v = BEAM_EMBER_SPEED / d;
+      this.particles.beamEmber(a[0], a[1], a[2], (b[0] - a[0]) * v, (b[1] - a[1]) * v, (b[2] - a[2]) * v, d / BEAM_EMBER_SPEED);
+    }
+    return beamed;
+  }
+
+  /** The world point (simulation coordinates) `depth` meters in front of the camera under a screen point in CSS pixels. */
+  private unproject(px: number, py: number, depth: number): [number, number, number] {
+    const cam = this.scene.camera;
+    const v = this.projScratch.set((px / window.innerWidth) * 2 - 1, 1 - (py / window.innerHeight) * 2, 0.5).unproject(cam).sub(cam.position).normalize();
+    // `depth` along the view axis, not along the ray.
+    const fwd = cam.getWorldDirection(this.fwdScratch);
+    const s = depth / Math.max(0.1, v.dot(fwd));
+    return [cam.position.x + v.x * s, cam.position.z + v.z * s, cam.position.y + v.y * s];
+  }
+
+  private readonly fwdScratch = new THREE.Vector3();
 
   private readonly frame = (now: number): void => {
     if (this.disposed) return;
@@ -897,7 +1097,7 @@ export class Game {
     let mx = 0;
     let my = 0;
     let wantJump = false;
-    let fire = false;
+    let fire = 0;
     if (this.over || this.paused) {
       // The result overlay or Pause: the game keeps rendering without input.
     } else if (this.bench) {
@@ -929,6 +1129,13 @@ export class Game {
         blockedLastFrame: p.moveResult.blocked,
         entryIndex: this.entryIndex,
         souls: this.snaps.playersOut.filter((q) => q.dead && q.id !== this.localId),
+        classId: this.classId,
+        teammates: this.snaps.playersOut.flatMap((q) => {
+          const cls = this.classOf(q.id);
+          const rec = s?.players.find((r) => r.id === q.id);
+          if (q.id === this.localId || q.dead || !cls || !rec) return [];
+          return [{ x: q.x, y: q.y, z: q.z, hpFrac: rec.hp / CLASSES[cls].hp }];
+        }),
       });
       if (out.yaw !== null) p.yaw = out.yaw;
       if (out.pitch !== null) p.pitch = out.pitch;
@@ -945,30 +1152,32 @@ export class Game {
       const axes = this.input.moveAxes();
       [mx, my] = wasdDirection(p.yaw, axes.forward, axes.right);
       wantJump = this.input.jumpQueued || this.input.isDown('Space');
-      fire = this.input.fireHeld;
+      fire = this.input.fireBits();
     } else {
       // Dead: the camera can only rotate.
       const { dx, dy } = this.input.takeMouse();
       p.look(dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY);
     }
     this.input.jumpQueued = false;
-    this.fireHeld = fire && !this.dead && !this.over;
+    this.fire = this.dead || this.over ? 0 : fire;
     const bx = p.body.x;
     const by = p.body.y;
     if (!this.dead && !this.bench && !this.over) p.update(this.map, dt, mx, my, wantJump);
     this.bob.update(Math.min(dt, MAX_FRAME_DT), Math.hypot(p.body.x - bx, p.body.y - by), p.speed, p.body.grounded && !p.leaping, this.dead);
     this.hud.setBob(this.bob.weaponX, this.bob.weaponY);
 
-    // The cosmetic fire timer, at 30 Hz like the host's.
+    // The cosmetic fire timer, at 30 Hz like the host's, with the same choice of attack (M9 §2.1,
+    // §2.2); Sacrament can fire while there's a local ally target.
+    this.attack = chooseAttack(this.classId, this.fire, this.allyTargetId !== ALLY_NONE);
     this.fireAcc = Math.min(this.fireAcc + dt, 5 * TICK_DT);
     while (this.fireAcc >= TICK_DT) {
       this.fireAcc -= TICK_DT;
-      if (this.fireHeld && this.fireTimer <= 1e-6) {
-        this.cosmeticShot(now, ents, enemyZ);
-        this.fireTimer += WEAPONS[this.classId].interval;
+      if (this.attack !== ATTACK_NONE && this.fireTimer <= 1e-6) {
+        this.cosmeticShot(now, this.attack, ents, enemyZ);
+        this.fireTimer += attackDef(this.classId, this.attack).interval;
       }
-      this.fireTimer -= TICK_DT;
-      if (!this.fireHeld && this.fireTimer < 0) this.fireTimer = 0;
+      this.fireTimer -= TICK_DT * this.localFireRate();
+      if (this.attack === ATTACK_NONE && this.fireTimer < 0) this.fireTimer = 0;
     }
 
     // Input to the host at 30 Hz.
@@ -992,6 +1201,12 @@ export class Game {
       }
       this.pendingBursts.splice(i, 1);
     }
+    for (let i = this.pendingFx.length - 1; i >= 0; i--) {
+      if (now < this.pendingFx[i].at) continue;
+      const fx = this.pendingFx[i];
+      this.pendingFx.splice(i, 1);
+      fx.run(now);
+    }
     this.particles.update(dt);
     this.vfx.update(now, this.scene.camera.position);
 
@@ -1002,6 +1217,9 @@ export class Game {
     if (this.dead) this.scene.setView(b.x, b.y, this.ownGround, p.yaw, p.pitch, PLAYER_EYE + this.souls.rise(this.localId, now));
     else this.scene.setView(b.x, b.y, b.z, p.yaw, p.pitch, PLAYER_EYE - this.bob.eyeDrop);
     this.drawBillboards(now, ents, enemyZ);
+    const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
+    this.hud.setBeamed(beamed.has(this.localId));
+    this.party?.setBeamed(beamed);
     this.scene.render();
     this.placeChevron();
     this.placeSoulMarkers(now);
