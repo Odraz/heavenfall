@@ -53,7 +53,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 | Primary | Censer Launcher | As now (damage only). |
 | Secondary | Sacrament | While held, heals the ally target 10 HP every 0.5 s (range 40 m, the same ally target as Martyr's Shroud). That's the rate Communion gives everyone nearby, so the Heretic's healing on one ally at most doubles. With no ally target it does nothing. Never heals the Heretic. |
 | Q | Unholy Communion | As now: heals everyone near the Heretic, the Heretic included. |
-| E | Martyr's Shroud | As now. **New:** when damage breaks it, it explodes for 50 dmg to the 8 nearest enemies within 5 m of the shielded player. It doesn't explode when it expires or is replaced. It still explodes if the Heretic has died or left. |
+| E | Martyr's Shroud | As now. **New:** when damage breaks it, it explodes for 50 dmg to the 8 nearest enemies within 5 m of the shielded player. It doesn't explode when it expires or is replaced. It still explodes if the Heretic has died or left, or if the hit that breaks it kills the shielded player. |
 
 - **Censer or Sacrament:** the censer while the party holds; Sacrament when one teammate is in trouble, even far away. Every second spent healing is a second not killing, which is the Heretic's real decision.
 - Sacrament is what playtesters expected the Heretic to do ("aim at someone to heal them").
@@ -87,7 +87,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 |---|---|---|
 | Primary | Silver Revolver | 30 dmg to the first enemy hit, 0.15 s between shots, no spread, range 60 m. One Blessed or Cherub per shot, a Chorister in two. |
 | Secondary | Silver Bullet | 300 dmg carried through the line, 1.5 s between shots, range 60 m. Each enemy hit, nearest first, takes what's left; the bullet stops when nothing is left. Kills 15 Blessed in a line; bound Blessed cost half as much. It costs 1.5 s of revolver fire (about 10 kills), so it only pays off with more than 10 enemies in the line. |
-| Q | Field of Blood | Tosses the thirty pieces of silver onto the floor 3 m in front of the Betrayer, with no aiming: the Betrayer is fast, so it walks to where it wants the field. For 8 s, every player within 6 m of it (and within a jump's height of its floor) fires twice as fast, even if the Betrayer dies meanwhile: both attacks, so also Sacrament's healing. Cooldown 30 s. |
+| Q | Field of Blood | Tosses the thirty pieces of silver 3 m in front of the Betrayer, where they sink into a pool of blood, with no aiming: the Betrayer is fast, so it walks to where it wants the field. For 8 s, every player within 6 m of it (on its floor or a step from it; jumping doesn't take them out) fires twice as fast, even if the Betrayer dies meanwhile: both attacks, so also Sacrament's healing. Cooldown 30 s. |
 | E | Shadowstep | As now. |
 
 - **Revolver or Silver Bullet:** the revolver for scattered enemies, flyers and the boss; Silver Bullet when the enemies line up in a corridor, behind the taunting Fallen or in the Binder's pile.
@@ -100,7 +100,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 
 ## Exact rules
 
-[m9.md](m9.md) turns this rework into exact rules: controls (the last-pressed button wins, except that the Heretic's beam always wins; one shared fire timer), effects, sounds, texts, the bot, the protocol and the Gatekeeper's new HP.
+[m9.md](m9.md) turns this rework into exact rules: controls (the last-pressed button wins, except that the Heretic's beam wins whenever an ally is aimed at; one shared fire timer), effects, sounds, texts, the bot, the protocol and the Gatekeeper's new HP.
 
 ## Rejected ideas
 For now, they can still come in play later:
