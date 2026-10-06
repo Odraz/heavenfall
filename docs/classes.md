@@ -38,10 +38,10 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 | Secondary | Brimstone Slug | One hitscan slug: 60 dmg to the first enemy hit, range 50 m, 1.0 s between shots. Kills a Chorister in one hit. |
 | Passives | Brimstone Hide, Sinful | As now. |
 | Q | Blasphemy | As now. |
-| E | Falling Star | As now: the leap, 40 dmg on landing and the knockback. **New:** the landing launches the enemies it knocks back. Each flies in an arc up to about 1 m high, out and back down, over 0.4 s instead of sliding along the ground for 0.2 s; the distance stays 4 m. Enemies the landing kills are thrown up too and burst into feathers at the top. |
+| E | Falling Star | As now: the leap and the knockback. **New:** the landing deals only 10 dmg (was 40) to everything within 5 m, and launches the enemies it knocks back. Each flies in an arc up to about 1 m high, out and back down, over 0.4 s instead of sliding along the ground for 0.2 s; the distance stays 4 m. The knockback is the point; the party's fire finishes the scattered crowd. |
 
 - **Shotgun or slug:** the shotgun for the crowd at the Fallen's feet; the slug for the Chorister or Cherub out of its reach.
-- **The landing has to look like a hit.** A ring of enemies thrown into the air around the rescued ally is the Fallen's big moment made visible. The shotgun's knockback stays a flat shove, so the landing stands out. The arc is only drawn: in the simulation the enemy moves along the ground as in any knockback, so collision and the network barely change.
+- **The landing has to look like a hit.** A ring of enemies flung into the air around the rescued ally is the Fallen's big moment made visible. The shotgun's knockback stays a flat shove, so the landing stands out. The arc is only drawn: in the simulation the enemy moves along the ground as in any knockback, so collision and the network barely change.
 
 ## The Heretic Saint (Healer)
 
@@ -51,12 +51,13 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 | Slot | Name | Rule |
 |---|---|---|
 | Primary | Censer Launcher | As now (damage only). |
-| Secondary | Sacrament | While held, heals the ally target 15 HP every 0.5 s (range 40 m, the same ally target as Martyr's Shroud). With no ally target it does nothing. Never heals the Heretic. |
+| Secondary | Sacrament | While held, heals the ally target 20 HP every 0.5 s (range 40 m, the same ally target as Martyr's Shroud). With no ally target it does nothing. Never heals the Heretic. |
 | Q | Unholy Communion | As now: heals everyone near the Heretic, the Heretic included. |
-| E | Martyr's Shroud | As now. **New:** when damage breaks it, it explodes for 50 dmg to enemies within 5 m of the shielded player. It doesn't explode when it expires or is replaced. |
+| E | Martyr's Shroud | As now. **New:** when damage breaks it, it explodes for 50 dmg to the 8 nearest enemies within 5 m of the shielded player. It doesn't explode when it expires or is replaced. |
 
 - **Censer or Sacrament:** the censer while the party holds; Sacrament when one teammate is in trouble, even far away. Every second spent healing is a second not killing, which is the Heretic's real decision.
 - Sacrament is what playtesters expected the Heretic to do ("aim at someone to heal them").
+- **Sacrament's advantage is range**: it heals one ally anywhere within 40 m, where Communion reaches 15 m. The right button works only while an ally is aimed at; with no ally target, holding both buttons keeps firing censers.
 - **Sacrament draws a beam** from the Censer Launcher's muzzle to the healed ally's body center, for as long as it heals. Everyone sees it. The beam is green like every heal (M8 §1), with green-tinted embers drifting along it toward the ally, so it reads as "healing flows this way". It reuses the *beam* effect texture of the tracers, on a strip that faces the camera. The healed player gets a faint green vignette while the beam is on them, not a flash every tick.
 - **Martyr's Shroud** rewards shielding whoever is about to be swarmed: the swarm breaks the shield and dies to the blast.
 
@@ -79,14 +80,14 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 
 ## The Betrayer (Damage)
 
-- **Verb:** shred. **Big moment:** "I waited until they lined up and one Silver Bullet burst a dozen of them into feathers."
+- **Verb:** shred. **Big moment:** "I waited until they lined up and one Silver Bullet burst fifteen of them into feathers."
 - **Weakness:** 120 HP; needs Blasphemy, Falling Star and the Heretic to survive the swarm it shoots into.
 
 | Slot | Name | Rule |
 |---|---|---|
 | Primary | Silver Revolver | 30 dmg to the first enemy hit, 0.15 s between shots, no spread, range 60 m. One Blessed or Cherub per shot, a Chorister in two. |
-| Secondary | Silver Bullet | 240 dmg carried through the line, 1.5 s between shots, range 60 m. Each enemy hit, nearest first, takes what's left; the bullet stops when nothing is left. Kills 12 Blessed in a line; bound Blessed cost half as much. |
-| Q | Field of Blood | Throws the thirty pieces of silver onto the floor where the player aims (up to 30 m; enemies don't block the throw). For 8 s, every player within 6 m of it deals ×2 damage. Cooldown 30 s. |
+| Secondary | Silver Bullet | 300 dmg carried through the line, 1.5 s between shots, range 60 m. Each enemy hit, nearest first, takes what's left; the bullet stops when nothing is left. Kills 15 Blessed in a line; bound Blessed cost half as much. It costs 1.5 s of revolver fire (about 10 kills), so it only pays off with more than 10 enemies in the line. |
+| Q | Field of Blood | Throws the thirty pieces of silver onto the floor where the player aims (up to 30 m; enemies don't block the throw). For 8 s, every player within 6 m of it (and within a jump's height of its floor) deals ×2 damage, even if the Betrayer dies meanwhile. Cooldown 30 s. |
 | E | Shadowstep | As now. |
 
 - **Revolver or Silver Bullet:** the revolver for scattered enemies, flyers and the boss; Silver Bullet when the enemies line up in a corridor, behind the taunting Fallen or in the Binder's pile.
