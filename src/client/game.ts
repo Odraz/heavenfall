@@ -726,7 +726,7 @@ export class Game {
       if (at) this.particles.bloodEmber(at[0], at[1], at[2]);
     }
     const b = this.player.body;
-    const inside = !!p && !this.dead && inField(this.map, p.x, p.y, p.z, b.x, b.y);
+    const inside = !!p && !this.dead && inField(p.x, p.y, b.x, b.y);
     if (inside && !this.inFieldNow) this.sounds.fieldEntered();
     this.inFieldNow = inside;
     this.hud.setInField(inside, now);
@@ -734,7 +734,7 @@ export class Game {
     // Teammates in it, from their interpolated positions, get the badge on their party frames.
     if (this.party) {
       const ids = new Set<number>();
-      if (p) for (const q of this.snaps.playersOut) if (q.id !== this.localId && !q.dead && inField(this.map, p.x, p.y, p.z, q.x, q.y)) ids.add(q.id);
+      if (p) for (const q of this.snaps.playersOut) if (q.id !== this.localId && !q.dead && inField(p.x, p.y, q.x, q.y)) ids.add(q.id);
       this.party.setInField(ids);
     }
   }

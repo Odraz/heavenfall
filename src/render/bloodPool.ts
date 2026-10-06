@@ -107,7 +107,7 @@ export class BloodPool {
     /** performance.now() when it appeared. */
     readonly start: number,
   ) {
-    this.cells = fieldCells(map, x, y, z);
+    this.cells = fieldCells(map, x, y);
     const pos: number[] = [];
     const index: number[] = [];
     for (const [c, r] of this.cells) {

@@ -50,7 +50,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 
 | Slot | Name | Rule |
 |---|---|---|
-| Primary | Censer Launcher | Breaks on the enemy it hits for 40, with no splash, and leaves a rusty-gold cloud of incense for 4 s: 5 dmg per second to every enemy within 2.5 m. Clouds don't stack, and at most 4 exist, so spamming one spot doesn't help and can't cover the map. (Added after review: the old splash made the healer a grenade launcher.) |
+| Primary | Censer Launcher | Breaks on the enemy it hits for 40, with no splash, and leaves a rusty-gold cloud of incense for 4 s: 5 dmg per second to every enemy within 2.5 m. Clouds don't stack, and at most 6 exist, so spamming one spot doesn't help and can't cover the map. (Added after review: the old splash made the healer a grenade launcher.) |
 | Secondary | Sacrament | While held, heals the ally target 10 HP every 0.5 s (range 40 m, the same ally target as Martyr's Shroud). That's the rate Communion gives everyone nearby, so the Heretic's healing on one ally at most doubles. With no ally target it does nothing. Never heals the Heretic. |
 | Q | Unholy Communion | As now: heals everyone near the Heretic, the Heretic included. |
 | Passive | Last Rites | Revives fallen teammates twice as fast (the existing rule, now named). |
@@ -88,9 +88,9 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 
 | Slot | Name | Rule |
 |---|---|---|
-| Primary | Silver Revolver | 40 dmg to the first enemy hit, 0.2 s between shots, no spread, range 60 m. One Blessed or Cherub per shot, a Chorister in two. (Slowed from 0.15 s / 30 dmg after review: it felt like a machine gun; its damage per second is unchanged.) |
-| Secondary | Silver Bullet | 300 dmg carried through the line, 1.5 s between shots, range 60 m. Each enemy hit, nearest first, takes what's left; the bullet stops when nothing is left. Kills 15 Blessed in a line; bound Blessed cost half as much. It costs 1.5 s of revolver fire (about 7.5 kills), so it only pays off with 8 or more enemies in the line. |
-| Q | Field of Blood | Tosses the thirty pieces of silver 3 m in front of the Betrayer, where they sink into a pool of blood, with no aiming: the Betrayer is fast, so it walks to where it wants the field. For 8 s, every player within 6 m of it (on its floor or a step from it; jumping doesn't take them out) fires twice as fast, even if the Betrayer dies meanwhile: both attacks, so also Sacrament's healing. Cooldown 30 s. |
+| Primary | Silver Revolver | 60 dmg to the first enemy hit, 0.3 s between shots, no spread, range 60 m. One Blessed, Cherub or Chorister per shot. (Slowed after review, from 0.15 s / 30 dmg: it felt like a machine gun; its damage per second is unchanged.) |
+| Secondary | Silver Bullet | 240 dmg carried through the line, 1.2 s between shots (quickened after review), range 60 m. Each enemy hit, nearest first, takes what's left; the bullet stops when nothing is left. Kills 12 Blessed in a line; bound Blessed cost half as much. It costs 1.2 s of revolver fire (about 4 kills), so it pays off with 5 or more enemies in the line. |
+| Q | Field of Blood | Tosses the thirty pieces of silver 3 m in front of the Betrayer, where they sink into a pool of blood, with no aiming: the Betrayer is fast, so it walks to where it wants the field. For 8 s, every player within 6 m of it (on any level; jumping doesn't take them out) fires twice as fast, even if the Betrayer dies meanwhile: both attacks, so also Sacrament's healing. Cooldown 30 s. |
 | E | Shadowstep | As now. |
 | Passive | Into the Night | The fastest of the damned, 9 m/s (the existing speed, now named). |
 

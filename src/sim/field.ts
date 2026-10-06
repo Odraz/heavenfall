@@ -2,14 +2,11 @@
  * Field of Blood (M9 §3.4): where it lands and who stands in it. Shared by the host simulation and
  * the clients, which run the same rule for their feedback and local fire timer (§5.1).
  */
-import { EPS, PLAYER_RADIUS, STEP_UP } from './constants';
+import { EPS, STEP_UP } from './constants';
 import { isSolid, type GameMap } from './map';
-import { groundHeight } from './movement';
 
 /** The field's radius around its center, horizontally. */
 export const FIELD_RADIUS = 6;
-/** A player's ground must be within this of the center's floor, up or down. */
-export const FIELD_BAND = 0.5;
 /** Seconds the field lasts. */
 export const FIELD_TIME = 8;
 /** The field's center lands this far ahead of the Betrayer's feet. */
@@ -53,18 +50,15 @@ export function fieldCenter(map: GameMap, x: number, y: number, yaw: number): [n
 }
 
 /**
- * Whether a player whose feet are at (px, py) stands in the field centered at (fx, fy) on floor fz:
- * within 6 m horizontally, with its ground (the highest floor its circle overlaps, as in the host's
- * floor check) within 0.5 m of the center's floor. How high the player is doesn't matter.
+ * Whether a player whose feet are at (px, py) stands in the field centered at (fx, fy): within 6 m
+ * horizontally, on any level (since the review, the pool covers every level inside its circle).
  */
-export function inField(map: GameMap, fx: number, fy: number, fz: number, px: number, py: number): boolean {
-  if (Math.hypot(px - fx, py - fy) > FIELD_RADIUS + EPS) return false;
-  const g = groundHeight(map, px, py, PLAYER_RADIUS, Infinity, false, true);
-  return g !== -Infinity && Math.abs(g - fz) <= FIELD_BAND + EPS;
+export function inField(fx: number, fy: number, px: number, py: number): boolean {
+  return Math.hypot(px - fx, py - fy) <= FIELD_RADIUS + EPS;
 }
 
-/** The floor cells the pool covers (M9 §5.1): any part within 6 m, floor within 0.5 m of the center's. */
-export function fieldCells(map: GameMap, fx: number, fy: number, fz: number): Array<[number, number]> {
+/** The floor cells the pool covers (M9 §5.1): every floor cell any part of which lies within 6 m, on any level. */
+export function fieldCells(map: GameMap, fx: number, fy: number): Array<[number, number]> {
   const out: Array<[number, number]> = [];
   for (let r = Math.floor(fy - FIELD_RADIUS); r <= Math.floor(fy + FIELD_RADIUS); r++) {
     for (let c = Math.floor(fx - FIELD_RADIUS); c <= Math.floor(fx + FIELD_RADIUS); c++) {
@@ -73,7 +67,6 @@ export function fieldCells(map: GameMap, fx: number, fy: number, fz: number): Ar
       const nx = Math.max(c, Math.min(c + 1, fx));
       const ny = Math.max(r, Math.min(r + 1, fy));
       if (Math.hypot(nx - fx, ny - fy) > FIELD_RADIUS) continue;
-      if (Math.abs(map.floor[r * map.w + c] - fz) > FIELD_BAND + EPS) continue;
       out.push([c, r]);
     }
   }

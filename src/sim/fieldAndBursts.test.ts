@@ -4,7 +4,7 @@ import { BLESSED, CHORISTER, ENEMIES, GATEKEEPER } from '../data/enemies';
 import { ABILITIES, ATTACK_PRIMARY, ATTACK_SECONDARY, FIRE_LEFT, FIRE_RIGHT, FIRE_RIGHT_LAST, type AttackSlot } from '../data/weapons';
 import type { ArenaDef } from '../data/dungeons/types';
 import { decodeSnapshot } from '../net/protocol';
-import { fieldCenter, inField } from './field';
+import { fieldCells, fieldCenter, inField } from './field';
 import { Simulation } from './sim';
 import { dungeonOf } from './testutil/maps';
 import { enemyAt, makeSim, press, put, room } from './testutil/sims';
@@ -172,7 +172,7 @@ describe('Field of Blood (M9 §3.4)', () => {
     press(betrayer, 'Q');
     sim.step();
     expect([sim.inField(betrayer), sim.inField(binder), sim.inField(heretic)]).toEqual([true, true, false]);
-    // The revolver fires every 0.1 s: 0.2 s of timer at 2/30 s per tick.
+    // The revolver fires every 0.15 s on average: 0.3 s of timer at 2/30 s per tick.
     const shots: Array<[number, number]> = [];
     vi.spyOn(sim, 'fireWeapon').mockImplementation((q) => {
       shots.push([q.index, sim.tick]);
@@ -180,7 +180,7 @@ describe('Field of Blood (M9 §3.4)', () => {
     betrayer.fire = FIRE_LEFT;
     const t0 = sim.tick + 1;
     for (let i = 0; i < 30; i++) sim.step();
-    expect(shots.filter((s) => s[0] === 0).map((s) => s[1] - t0)).toEqual([0, 3, 6, 9, 12, 15, 18, 21, 24, 27]);
+    expect(shots.filter((s) => s[0] === 0).map((s) => s[1] - t0)).toEqual([0, 5, 9, 14, 18, 23, 27]);
     // Cooldowns run at their normal rate.
     expect(betrayer.cdQ).toBeCloseTo(30 - 30 / 30, 6);
     // The field ends after 8 s.
@@ -229,24 +229,29 @@ describe('Field of Blood (M9 §3.4)', () => {
     put(sim, betrayer, 5.5, 6.5, 0);
     press(betrayer, 'Q');
     sim.step();
-    const line = Array.from({ length: 16 }, (_, i) => enemyAt(sim, BLESSED, 10.5 + i, 6.5));
+    const line = Array.from({ length: 13 }, (_, i) => enemyAt(sim, BLESSED, 10.5 + i, 6.5));
     betrayer.z = -0.8;
     sim.fireWeapon(betrayer, ATTACK_SECONDARY as AttackSlot);
-    expect(line.filter((s) => !sim.eAlive[s])).toHaveLength(15);
+    expect(line.filter((s) => !sim.eAlive[s])).toHaveLength(12);
   });
 
-  it('counts a player by its ground within ±0.5 m of the center floor: a 0.5 m step yes, the 1 m ledge no, jumping still in', () => {
+  it('counts every player within 6 m horizontally, on any level (the review dropped the ±0.5 m band), and the pool covers every level', () => {
     // Floor digits are heights in 0.25 m steps: 2 = 0.5 m, 4 = 1 m.
     const heights = ['#################', '#000000002222444#', '#000000002222444#', '#000000000004444#', '#################'];
     const sim = makeSim(heights, ['betrayer']);
     const m = sim.map;
     expect(m.floor[1 * m.w + 10]).toBe(0.5);
     expect(m.floor[1 * m.w + 14]).toBe(1);
-    const c: [number, number, number] = [9.0, 2.5, 0];
-    expect(inField(m, ...c, 11.5, 2.5)).toBe(true); // on the 0.5 m step
-    expect(inField(m, ...c, 14.6, 2.5)).toBe(false); // on the 1 m ledge, 5.6 m away
-    expect(inField(m, ...c, 3.5, 2.5)).toBe(true);
-    expect(inField(m, ...c, 2.9, 2.5)).toBe(false); // 6.1 m away
+    const c: [number, number] = [9.0, 2.5];
+    expect(inField(...c, 11.5, 2.5)).toBe(true); // on the 0.5 m step
+    expect(inField(...c, 14.6, 2.5)).toBe(true); // on the 1 m ledge, 5.6 m away
+    expect(inField(...c, 3.5, 2.5)).toBe(true);
+    expect(inField(...c, 2.9, 2.5)).toBe(false); // 6.1 m away
+    // The pool's cells: every floor cell within 6 m, whatever its height.
+    const cells = fieldCells(m, ...c);
+    expect(cells).toContainEqual([14, 2]);
+    expect(cells).toContainEqual([10, 1]);
+    expect(cells).toContainEqual([3, 2]);
     // A jump changes the feet, not the ground under the circle.
     const p = sim.players[0];
     put(sim, p, 5.5, 2.5);
@@ -306,7 +311,7 @@ describe('M9 audit additions (§11.1)', () => {
     expect(sim.fireRate(binder)).toBe(2);
   });
 
-  it('in a field a revolver hit still deals 40 (no Field of Blood step in the pipeline)', () => {
+  it('in a field a revolver hit still deals 60 (no Field of Blood step in the pipeline)', () => {
     const sim = makeSim(room(40, 12), ['betrayer']);
     const p = sim.players[0];
     put(sim, p, 10.5, 6.5, 0);
@@ -314,9 +319,10 @@ describe('M9 audit additions (§11.1)', () => {
     sim.step();
     expect(sim.inField(p)).toBe(true);
     const c = enemyAt(sim, CHORISTER, 20.5, 6.5);
+    sim.eHp[c] = 1000;
     p.z = -0.8;
     sim.fireWeapon(p, ATTACK_PRIMARY);
-    expect(sim.eHp[c]).toBe(20);
+    expect(sim.eHp[c]).toBe(940);
   });
 
   it('never sets enemy flag bit 1 (Kiss of Betrayal\'s mark is gone)', () => {

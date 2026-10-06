@@ -209,7 +209,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     expect(sim.rayEnemies(p.x, p.y, 1.6, Math.cos(p.yaw), Math.sin(p.yaw), 0, 60, 3)).toEqual([]);
   });
 
-  it('the Silver Revolver hits only the first enemy for 40 (M9 §2.3); the Chain Gun stops at the first', () => {
+  it('the Silver Revolver hits only the first enemy for 60 (M9 §2.3); the Chain Gun stops at the first', () => {
     const sim = makeSim(room(30, 5), ['betrayer', 'binder']);
     const [b, c] = sim.players;
     put(sim, b, 1.5, 3.5);
@@ -217,9 +217,9 @@ describe('combat (§5.3, §5.4, §6)', () => {
     const line = [5, 8, 11].map((x) => enemyAt(sim, CHORISTER, x + 0.5, 3.5));
     aimAt(sim, b, line[0]);
     sim.fireWeapon(b);
-    expect(line.map((s) => sim.eHp[s])).toEqual([20, 60, 60]);
-    sim.fireWeapon(b);
+    // 60 kills a Chorister in one shot; the ones behind are untouched.
     expect(line.map((s) => sim.eAlive[s])).toEqual([0, 1, 1]);
+    expect(line.map((s) => sim.eHp[s]).slice(1)).toEqual([60, 60]);
     expect(b.kills).toBe(1);
     // The Chain Gun hits only the nearest one still alive.
     const sim2 = makeSim(room(30, 5), ['binder']);
@@ -297,8 +297,8 @@ describe('combat (§5.3, §5.4, §6)', () => {
     expect(sim.pAlive[first]).toBe(0);
   });
 
-  it('a held Chain Gun fires on ticks 0, 3, 5, 8, 10, … (12 per second), carrying fractions over; a revolver every 6 ticks', () => {
-    // The revolver fires every 0.2 s = 6 ticks (M9 §2.3, retuned after review).
+  it('a held Chain Gun fires on ticks 0, 3, 5, 8, 10, … (12 per second), carrying fractions over; a revolver every 9 ticks', () => {
+    // The revolver fires every 0.3 s = 9 ticks (M9 §2.3, retuned after review).
     const sim = makeSim(room(30, 5), ['binder', 'betrayer']);
     const [binder, betrayer] = sim.players;
     const shots: Array<[number, number]> = [];
@@ -311,7 +311,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     betrayer.fire = 1;
     for (let i = 0; i < 22; i++) sim.step();
     expect(shots.filter((s) => s[0] === 0).map((s) => s[1] - t0)).toEqual([0, 3, 5, 8, 10, 13, 15, 18, 20]);
-    expect(shots.filter((s) => s[0] === 1).map((s) => s[1] - t0)).toEqual([0, 6, 12, 18]);
+    expect(shots.filter((s) => s[0] === 1).map((s) => s[1] - t0)).toEqual([0, 9, 18]);
     spy.mockRestore();
   });
 
@@ -375,7 +375,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     expect(sim.clouds).toHaveLength(0);
   });
 
-  it("clouds don't stack, and at most 4 exist: a fifth replaces the oldest", () => {
+  it("clouds don't stack, and at most 6 exist: a seventh replaces the oldest", () => {
     const sim = makeSim(room(30, 5), ['heretic']);
     const p = sim.players[0];
     put(sim, p, 2.5, 3.5);
@@ -390,11 +390,11 @@ describe('combat (§5.3, §5.4, §6)', () => {
     expect(sim.clouds).toHaveLength(2);
     while (sim.tick % 15 !== 0) sim.step();
     expect(sim.eHp[b]).toBe(57.5);
-    for (let i = 0; i < 3; i++) sim.fireWeapon(p);
+    for (let i = 0; i < 5; i++) sim.fireWeapon(p);
     untilBroken(sim);
-    expect(sim.clouds).toHaveLength(4);
+    expect(sim.clouds).toHaveLength(6);
     expect(sim.clouds.every((c) => c.from === sim.tick)).toBe(false);
-    const newest = sim.clouds[3].from;
+    const newest = sim.clouds[5].from;
     expect(sim.clouds[0].from).toBeLessThan(newest);
   });
 

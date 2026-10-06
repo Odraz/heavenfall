@@ -59,8 +59,8 @@ describe('souls and reviving (M8 §4)', () => {
     shooter.pitch = 0;
     sim.fireWeapon(shooter);
     expect(dead.revive).toBeCloseTo(WEAPONS.betrayer.interval / 3, 9);
-    // The revolver's 40 damage (M9 §2.3) reaches the Chorister behind the soul.
-    expect(sim.eHp[behind]).toBe(20);
+    // The revolver's 60 damage (M9 §2.3) reaches the Chorister behind the soul and kills it.
+    expect(sim.eAlive[behind]).toBe(0);
   });
 
   it("all of a shotgun's pellets count one hit", () => {

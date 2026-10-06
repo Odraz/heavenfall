@@ -1319,7 +1319,7 @@ export class Simulation {
 
   /** A living player in the Field of Blood, by its latest accepted position (M9 §3.4). */
   inField(p: SimPlayer): boolean {
-    return this.tick < this.fieldUntil && !p.dead && inField(this.map, this.fieldX, this.fieldY, this.fieldZ, p.x, p.y);
+    return this.tick < this.fieldUntil && !p.dead && inField(this.fieldX, this.fieldY, p.x, p.y);
   }
 
   /**
@@ -1840,7 +1840,7 @@ export class Simulation {
     if (direct >= 0) this.damageEnemy(direct, damage, owner);
     const shooter = this.slots[owner];
     if (!shooter) return;
-    // At most 4 clouds: a new one replaces the oldest.
+    // At most 6 clouds: a new one replaces the oldest.
     if (this.clouds.length >= CLOUD_MAX) this.clouds.shift();
     this.clouds.push({ x, y, z, owner: shooter, from: this.tick, until: this.tick + ticks(CLOUD_TIME) });
     for (const o of this.players) {

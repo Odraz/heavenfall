@@ -1,7 +1,7 @@
 /**
  * The censer's incense clouds (M9 §2.8, §5.1): where a censer broke, 8 puffs of the smoke effect texture
  * tinted rusty gold drift slowly around the break point for 4 s, below eye height. A puff near the
- * camera fades out, so standing in a cloud never blinds a player. At most 4 clouds, like the host's.
+ * camera fades out, so standing in a cloud never blinds a player. At most 6 clouds, like the host's.
  * Positions are simulation coordinates (z up).
  */
 import * as THREE from 'three';

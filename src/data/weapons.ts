@@ -35,7 +35,7 @@ export const WEAPONS: Record<ClassId, WeaponDef> = {
   fallen: { name: 'Brimstone Shotgun', description: '8 pellets of hellfire. Deadly up close, and blasts back what survives.', kind: 'hitscan', interval: 0.8, pellets: 8, damage: 12, spreadYaw: 8 * DEG, spreadPitch: 4 * DEG, range: 20, maxHits: 1, slow: 0 },
   heretic: { name: 'Censer Launcher', description: 'Fires a censer that breaks on the enemy it hits, leaving a cloud of incense that slowly burns the enemies inside.', kind: 'censer', interval: 1.0, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 25, maxHits: 1, slow: 0 },
   binder: { name: 'Chain Gun', description: 'Fast and accurate. Slows every enemy it hits.', kind: 'hitscan', interval: 1 / 12, pellets: 1, damage: 12, spreadYaw: 2 * DEG, spreadPitch: 2 * DEG, range: 40, maxHits: 1, slow: 1 },
-  betrayer: { name: 'Silver Revolver', description: 'Fast, precise shots, one enemy at a time.', kind: 'hitscan', interval: 0.2, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: 1, slow: 0 },
+  betrayer: { name: 'Silver Revolver', description: 'Fast, precise shots, one enemy at a time.', kind: 'hitscan', interval: 0.3, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: 1, slow: 0 },
 };
 
 /** Secondary attacks, right mouse (M9 §2.3). */
@@ -43,7 +43,7 @@ export const SECONDARIES: Record<ClassId, WeaponDef> = {
   fallen: { name: 'Brimstone Slug', description: "One heavy slug for a single enemy out of the shotgun's reach.", kind: 'hitscan', interval: 1.0, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 50, maxHits: 1, slow: 0 },
   heretic: { name: 'Sacrament', description: 'Hold on the ally you aim at to heal them.', kind: 'sacrament', interval: 0.5, pellets: 1, damage: 10, spreadYaw: 0, spreadPitch: 0, range: 40, maxHits: 1, slow: 0 },
   binder: { name: 'Scourge', description: 'Swing your chain at the enemies in front of you, slowing them.', kind: 'scourge', interval: 0.8, pellets: 1, damage: 25, spreadYaw: 0, spreadPitch: 0, range: 3, maxHits: 6, slow: 1 },
-  betrayer: { name: 'Silver Bullet', description: "A slow shot whose damage carries through every enemy in a line until it's spent.", kind: 'silverBullet', interval: 1.5, pellets: 1, damage: 300, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: Infinity, slow: 0 },
+  betrayer: { name: 'Silver Bullet', description: "A slow shot whose damage carries through every enemy in a line until it's spent.", kind: 'silverBullet', interval: 1.2, pellets: 1, damage: 240, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: Infinity, slow: 0 },
 };
 
 /** Which attack fires (M9 §2.1): none, the primary or the secondary. */
@@ -158,12 +158,12 @@ export const MOVEMENT_SPEED_CHECK_SKIP = 0.6;
 export const CENSER_SPEED = 20;
 export const CENSER_RADIUS = 0.2;
 // The censer breaks on what it hits, 40 dmg to that enemy only, and leaves an incense cloud (M9 §2.8):
-// 2.5 dmg every 0.5 s to every enemy within 2.5 m for 4 s, not stacking, at most 4 clouds. (Its
+// 2.5 dmg every 0.5 s to every enemy within 2.5 m for 4 s, not stacking, at most 6 clouds. (Its
 // splash, last 20 dmg to the 8 nearest within 2.5 m, made the healer a grenade launcher.)
 export const CLOUD_RADIUS = 2.5;
 export const CLOUD_TIME = 4;
 export const CLOUD_DAMAGE = 2.5;
 export const CLOUD_PULSE_TICKS = 15;
-export const CLOUD_MAX = 4;
+export const CLOUD_MAX = 6;
 
 export const SLOW_FACTOR = 0.7;

@@ -68,9 +68,9 @@ const SOUL_AIM_HEIGHT = 1.9;
 const SLUG_BEYOND = 20;
 const HEAL_BELOW = 0.6;
 const HEAL_RANGE = 40;
-/** The Binder swings at 3 or more enemies in reach; the Betrayer fires a Silver Bullet down a line of more than 7. */
+/** The Binder swings at 3 or more enemies in reach; the Betrayer fires a Silver Bullet down a line of more than 4. */
 const SCOURGE_MIN = 3;
-const BULLET_MIN = 7;
+const BULLET_MIN = 4;
 const BULLET_CHECK_MS = 250;
 
 export class Bot {
@@ -219,7 +219,7 @@ export class Bot {
         return false;
       }
       case 'betrayer': {
-        // More than 7 enemies' cylinders along the aim within 60 m, up to the terrain, checked 4 times per second.
+        // More than 4 enemies' cylinders along the aim within 60 m, up to the terrain, checked 4 times per second.
         if (now - this.lastLineCheck >= BULLET_CHECK_MS) {
           this.lastLineCheck = now;
           const [dx, dy, dz] = aimDir(yaw, pitch);
