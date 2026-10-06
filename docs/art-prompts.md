@@ -388,8 +388,8 @@ A square frame for a game ability icon, seen flat and straight on, filling almos
 
 Two new images for the class rework ([m9.md](m9.md) §9). Everything else M9 needs is made by Claude: the Scourge's first-person frames come from the Binder's Blender model, and the effects reuse the existing textures. Save both in `assets/art-src/`.
 
-- [ ] `icon-field-of-blood.png`
-- [ ] `coin.png`
+- [x] `icon-field-of-blood.png`
+- [x] `coin.png`
 
 #### Field of Blood icon — `icon-field-of-blood.png` · 1:1
 The Betrayer's new Q: throws the thirty pieces of silver onto the ground, and everyone standing in the field deals double damage. Replaces `icon-kiss.png`. Attach: `concept-1.webp`, `betrayer-front.png`, and `icon-shadowstep.png` so it matches the other icons.
