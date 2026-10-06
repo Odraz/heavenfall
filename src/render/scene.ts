@@ -3,53 +3,22 @@ import * as THREE from 'three';
 import { PLAYER_EYE } from '../sim/constants';
 import type { GameMap } from '../sim/map';
 import { buildTerrain, type Terrain } from './terrain';
+import { FOG_FAR, FOG_NEAR, installFogCurve } from './fog';
+import { FOG_COLOR, makeSky } from './sky';
 import type { TerrainTextures } from './textures';
+import type { RenderStats } from '../client/bench';
 
-export const FOG_COLOR = 0xcfe2f3;
-const FOG_NEAR = 40;
-const FOG_FAR = 150;
+export { FOG_COLOR };
 
-function makeSky(): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(180, 32, 16);
-  const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    depthWrite: false,
-    fog: false,
-    uniforms: {
-      top: { value: new THREE.Color(0x8fc3ef) },
-      horizon: { value: new THREE.Color(0xf2d58c) },
-      bottom: { value: new THREE.Color(0xf6ead0) },
-    },
-    vertexShader: /* glsl */ `
-      varying vec3 vDir;
-      void main() {
-        vDir = normalize(position);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }`,
-    fragmentShader: /* glsl */ `
-      uniform vec3 top;
-      uniform vec3 horizon;
-      uniform vec3 bottom;
-      varying vec3 vDir;
-      void main() {
-        float y = vDir.y;
-        vec3 c = y > 0.0 ? mix(horizon, top, pow(smoothstep(0.0, 0.6, y), 0.7)) : mix(horizon, bottom, smoothstep(0.0, -0.3, y));
-        gl_FragColor = vec4(c, 1.0);
-        #include <colorspace_fragment>
-      }`,
-  });
-  const sky = new THREE.Mesh(geo, mat);
-  sky.renderOrder = -1;
-  sky.frustumCulled = false;
-  return sky;
-}
+/** The far plane (M10 §4.2): far enough that no cloud card is cut off. */
+const FAR = 400;
 
 export class GameScene {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(75, 1, 0.05, 200);
+  readonly camera = new THREE.PerspectiveCamera(75, 1, 0.05, FAR);
   readonly terrain: Terrain;
-  private readonly sky = makeSky();
+  private readonly sky: THREE.Mesh;
   private readonly lookTarget = new THREE.Vector3();
 
   constructor(
@@ -57,6 +26,8 @@ export class GameScene {
     map: GameMap,
     textures: TerrainTextures,
   ) {
+    installFogCurve();
+    this.sky = makeSky(textures.sky, false);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.scene.background = new THREE.Color(FOG_COLOR);
@@ -106,6 +77,34 @@ export class GameScene {
    */
   async warmUp(): Promise<void> {
     await this.renderer.compileAsync(this.scene, this.camera);
+    for (const t of this.sceneTextures()) {
+      this.renderer.initTexture(t);
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  }
+
+  /** Renderer statistics of the last frame and the estimated GPU memory of the scene's textures (M10 §2.1). */
+  renderStats(): RenderStats {
+    const info = this.renderer.info;
+    let bytes = 0;
+    for (const t of this.sceneTextures()) {
+      const img = t.image as { width?: number; height?: number; depth?: number } | undefined;
+      const w = img?.width ?? 0;
+      const h = img?.height ?? 0;
+      const layers = (t as THREE.DataArrayTexture).isDataArrayTexture ? (img?.depth ?? 1) : 1;
+      // RGBA8, plus a third for the mipmaps.
+      bytes += w * h * layers * 4 * (t.generateMipmaps || t.mipmaps.length > 1 ? 4 / 3 : 1);
+    }
+    return {
+      calls: info.render.calls,
+      triangles: info.render.triangles,
+      textures: info.memory.textures,
+      textureMB: Math.round(bytes / 1e5) / 10,
+    };
+  }
+
+  /** Every texture used by a material in the scene. */
+  private sceneTextures(): Set<THREE.Texture> {
     const textures = new Set<THREE.Texture>();
     const collect = (v: unknown): void => {
       if (v instanceof THREE.Texture) textures.add(v);
@@ -118,10 +117,7 @@ export class GameScene {
         if (uniforms) for (const u of Object.values(uniforms)) collect(u.value);
       }
     });
-    for (const t of textures) {
-      this.renderer.initTexture(t);
-      await new Promise((r) => setTimeout(r, 0));
-    }
+    return textures;
   }
 
   /** The WebGL renderer string, for the benchmark report. */

@@ -141,12 +141,14 @@ All URL parameters also work in the production build, because the end-to-end tes
 - **Menu skip:** `?dev=1&map=<sandbox|pearly-gates>&class=<fallen|heretic|binder|betrayer>[&seed=N]` skips the menus and starts a singleplayer game directly, with the player name `Dev`. A missing or invalid `map` means `sandbox`; a missing or invalid `class` means `fallen`. `seed` is honored only together with `dev=1`.
 - **God mode:** `?god=1` makes every player invulnerable (§5.5 step 3) for the whole game. Only the host's URL matters.
 - **Dev keys** (only with `dev=1`): `G` toggles invulnerability for the local player, `K` kills every living enemy, including the Gatekeeper, without kill credit.
-- **Benchmark:** `?bench=1` starts a singleplayer game on the sandbox. Other parameters are ignored.
-  - The player is an invulnerable Betrayer that doesn't shoot, placed on the arena's entry cell 0. The arena enters combat immediately (its doors close).
+- **Benchmark:** `?bench=1[&map=<id>][&view=arcade][&cam=…]` starts a singleplayer game on the sandbox, or on `map` if it names a map (M10 §2.3). Other parameters are ignored.
+  - The player is an invulnerable Betrayer that doesn't shoot, placed on the first arena's entry cell 0. That arena enters combat immediately (its doors close).
   - Instead of waves, the simulation keeps **exactly 1 500 Blessed** alive, spawning with the normal rules (§8.2) whenever fewer are alive.
-  - The camera rotates in place at 0.3 rad/s with pitch 0.
+  - The camera rotates in place at 0.3 rad/s with pitch 0. With `view=arcade` it doesn't turn: it looks north-east (yaw −45°) at eye level, across the Pearly Gates' Arena 1 north arcade.
   - Measuring starts when 1 500 Blessed are alive for the first time and lasts 30 s. Then it shows on screen the average FPS, the 1%-low FPS (the frame rate of the slowest 1% of frames), and the average and maximum simulation ms per tick.
-  - It also logs one console line: `BENCH {"fps":…,"fpsLow":…,"simMs":…,"simMsMax":…}`.
+  - It also logs one console line: `BENCH {"fps":…,"fpsLow":…,"frameMs":…,"simMs":…,"simMsMax":…,"stats":{"calls":…,"triangles":…,"textures":…,"textureMB":…}}`, with the average frame time and the renderer's draw calls, triangles and textures of the last frame and the estimated GPU memory of the scene's textures.
+  - `npm run bench -- [--uncapped] [--map <id>] [--view arcade] [--runs <n>] [--cooldown <s>]` runs it in headed Chromium; `--uncapped` starts Chromium without the frame-rate limit and vsync (`--disable-frame-rate-limit`, `--disable-gpu-vsync`), `--runs` prints the median and spread of n runs, `--cooldown` waits between runs. `sh scripts/bench-gate.sh` runs M10's performance gate (§2.3 there).
+- **Fixed camera:** `cam=x,y,z,yaw,pitch` (with `dev=1` or `bench=1`) holds the camera at a point in map meters, `z` empty for eye height above the floor there, angles in degrees; for screenshots (`node scripts/views.mjs`).
 - **Bot:** `?bot=1` replaces the local player's input in game. The menus are still used normally (or skipped with `dev=1`). The bot never requests pointer lock, and does nothing while dead. Every render frame it:
   - **Aims and fires:** turns instantly to aim at the body center of the nearest living enemy (distance from its eye, §5.3) that it has line of sight to, checking line of sight at most 4 times per second. It holds fire while such an enemy exists.
   - **Uses abilities:** presses Q and E whenever their displayed cooldowns are ready.

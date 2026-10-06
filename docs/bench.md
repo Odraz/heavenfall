@@ -18,3 +18,13 @@ M8.3: the first run after the audio stage measured 0.99 FPS with normal simulati
 M8.5: two runs measured 24.3 and 28.22 FPS with a 1%-low of 1 FPS (one-second frames) and normal simulation times (3.37 and 4.23 ms). The committed stage 4 code, run right after under the same conditions, measured 0.97 FPS, so the headed benchmark window was being throttled by the desktop (locked or covered), as in the first M8.3 run; the FPS numbers aren't a measurement of the game. Stage 5 adds no per-frame rendering work (the chat is DOM shown only with messages). The FPS rerun needs an active, uncovered desktop.
 
 M9.2: the run measured 0.97 FPS with a 1%-low of 1 FPS and normal simulation times (3.44 ms average, 6.3 ms max), the same signs of a throttled headed window as M8.5. Stage 2 adds per-frame work only while a Field of Blood is down (one pool mesh of about 150 quads, a glare cylinder, 12 embers per second, 30 coins for 0.3 s), none in the benchmark. The FPS rerun needs an active, uncovered desktop. The human reran it on an uncovered desktop after stage 3 (the row above): 59.5 FPS passes the 58 FPS target.
+
+## M10 performance gate
+
+`sh scripts/bench-gate.sh` (M10 §2.3): each run is `npm run bench` uncapped (`--uncapped`: Chromium's frame-rate limit and vsync off; median of 3 runs, 60 s cool-down before each, since the laptop throttles under back-to-back runs) and capped (one run). The flags do uncap the frame rate on this machine (about 140 FPS). A stage passes when every run has capped FPS ≥ 58, simulation ≤ 8 ms, and uncapped frame time ≤ 6% above the previous stage (≤ 10% above the baseline after the last stage). Calls, triangles and texture MB are the renderer's numbers in the last measured frame of the uncapped arcade run (texture MB: estimated GPU memory of the scene's textures, mipmaps included).
+
+| Date | Stage | Commit | Run | Frame ms (uncapped, median) | Spread | FPS (capped) | 1%-low (capped) | Sim ms (avg) | Draw calls | Triangles | Texture MB | Result |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-10-06 | M10 baseline | 44b37d7 | sandbox | 7.13 | 1.7% | 59.5 | 34.75 | 2.02 | 7 | 7 432 | 274.4 | — |
+| 2026-10-06 | M10 baseline | 44b37d7 | pearly-gates | 7.17 | 0.7% | 59.42 | 31.72 | 1.95 | 7 | 25 100 | 274.4 | — |
+| 2026-10-06 | M10 baseline | 44b37d7 | pearly-gates arcade | 7.21 | 0.8% | 59.71 | 42.82 | 1.87 | 8 | 25 124 | 274.4 | — |

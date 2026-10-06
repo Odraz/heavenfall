@@ -9,6 +9,8 @@ import beamUrl from '../../assets/textures/fx-beam.png';
 import chainUrl from '../../assets/textures/fx-chain.png';
 import glowUrl from '../../assets/textures/fx-glow.png';
 import smokeUrl from '../../assets/textures/fx-smoke.png';
+import skyUrl from '../../assets/textures/sky-day.jpg';
+import { prepareSkyTexture } from './sky';
 
 /** Each covers 4 × 4 m and repeats, aligned to world coordinates. */
 export interface TerrainTextures {
@@ -20,6 +22,8 @@ export interface TerrainTextures {
   wall: THREE.Texture;
   /** Closed doors. */
   door: THREE.Texture;
+  /** The sky's horizon band (M10 §4.2). */
+  sky: THREE.Texture;
 }
 
 /** Transparent where the generated image was black; white ones are tinted per effect. */
@@ -48,8 +52,9 @@ async function load(url: string): Promise<THREE.Texture> {
 }
 
 export async function loadGameTextures(): Promise<GameTextures> {
-  const [floor, riser, wall, door, ring, beam, chain, glow, smoke] = await Promise.all(
-    [floorUrl, riserUrl, wallUrl, doorUrl, ringUrl, beamUrl, chainUrl, glowUrl, smokeUrl].map(load),
+  const [floor, riser, wall, door, sky, ring, beam, chain, glow, smoke] = await Promise.all(
+    [floorUrl, riserUrl, wallUrl, doorUrl, skyUrl, ringUrl, beamUrl, chainUrl, glowUrl, smokeUrl].map(load),
   );
-  return { terrain: { floor, riser, wall, door }, fx: { ring, beam, chain, glow, smoke } };
+  prepareSkyTexture(sky);
+  return { terrain: { floor, riser, wall, door, sky }, fx: { ring, beam, chain, glow, smoke } };
 }

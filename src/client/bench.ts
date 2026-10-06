@@ -8,8 +8,20 @@ const DURATION_MS = 30000;
 export interface BenchResult {
   fps: number;
   fpsLow: number;
+  /** Average frame time in ms (M10 §2.3: the sensitive measure when the frame rate is uncapped). */
+  frameMs: number;
   simMs: number;
   simMsMax: number;
+  /** Renderer statistics of the last measured frame (M10 §2.1). */
+  stats: RenderStats;
+}
+
+/** What the renderer drew in one frame, and the GPU memory its textures take (M10 §2.1). */
+export interface RenderStats {
+  calls: number;
+  triangles: number;
+  textures: number;
+  textureMB: number;
 }
 
 export class BenchRunner {
@@ -23,6 +35,7 @@ export class BenchRunner {
     root: HTMLElement,
     host: HostSession,
     private readonly rendererString: () => string,
+    private readonly renderStats: () => RenderStats,
   ) {
     this.el = document.createElement('div');
     this.el.className = 'bench-overlay';
@@ -58,11 +71,14 @@ export class BenchRunner {
     const fpsLow = slowAvg > 0 ? 1000 / slowAvg : 0;
     const simMs = this.tickMs.length ? this.tickMs.reduce((a, b) => a + b, 0) / this.tickMs.length : 0;
     const simMsMax = this.tickMs.length ? Math.max(...this.tickMs) : 0;
-    const r: BenchResult = { fps: round2(fps), fpsLow: round2(fpsLow), simMs: round2(simMs), simMsMax: round2(simMsMax) };
+    const frameMs = this.frameMs.length ? this.frameMs.reduce((a, b) => a + b, 0) / this.frameMs.length : 0;
+    const r: BenchResult = { fps: round2(fps), fpsLow: round2(fpsLow), frameMs: round2(frameMs), simMs: round2(simMs), simMsMax: round2(simMsMax), stats: this.renderStats() };
     this.el.textContent = [
       'Benchmark finished (30 s, 1 500 enemies)',
       `Average FPS: ${r.fps}`,
       `1%-low FPS: ${r.fpsLow}`,
+      `Frame time: ${r.frameMs} ms on average`,
+      `Draw calls ${r.stats.calls}, triangles ${r.stats.triangles}, textures ${r.stats.textures} (${r.stats.textureMB} MB)`,
       `Simulation: ${r.simMs} ms per tick on average, ${r.simMsMax} ms max`,
       `Renderer: ${this.rendererString()}`,
     ].join('\n');

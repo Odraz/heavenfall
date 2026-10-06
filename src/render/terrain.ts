@@ -123,7 +123,12 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   }
   const geometry = merged.toGeometry();
   groups.forEach(([start, count], i) => geometry.addGroup(start, count, i));
-  const material = (map: THREE.Texture) => new THREE.MeshBasicMaterial({ map, vertexColors: true });
+  const material = (map: THREE.Texture) => {
+    const m = new THREE.MeshBasicMaterial({ map, vertexColors: true });
+    // Scenery fogs more than sprites (M10 §4.2).
+    m.defines = { FOG_SCENERY: '' };
+    return m;
+  };
   const mesh = new THREE.Mesh(geometry, [textures.floor, textures.riser, textures.wall].map(material));
 
   const doorMat = material(textures.door);

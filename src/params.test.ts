@@ -25,7 +25,12 @@ describe('URL parameters (§2.5)', () => {
   });
 
   it('ignores other parameters with bench=1', () => {
-    expect(parseParams('?bench=1&dev=1&bot=1&god=1&class=fallen')).toMatchObject({ bench: true, dev: false, bot: false, god: false, classId: 'betrayer' });
+    expect(parseParams('?bench=1&dev=1&bot=1&god=1&class=fallen')).toMatchObject({ bench: true, dev: false, bot: false, god: false, classId: 'betrayer', mapId: 'sandbox', benchView: 'turn' });
+  });
+
+  it('takes the map and the view with bench=1 (M10 §2.3)', () => {
+    expect(parseParams('?bench=1&map=pearly-gates&view=arcade')).toMatchObject({ bench: true, mapId: 'pearly-gates', benchView: 'arcade' });
+    expect(parseParams('?bench=1&map=nowhere')).toMatchObject({ mapId: 'sandbox', benchView: 'turn' });
   });
 });
 

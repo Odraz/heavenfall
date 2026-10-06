@@ -338,7 +338,7 @@ export class Game {
     o.transport.onSnapshot = (buf) => this.snaps.addPart(buf, performance.now());
 
     this.bot = this.params.bot ? new Bot(this.map) : null;
-    this.bench = this.params.bench && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString()) : null;
+    this.bench = this.params.bench && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString(), () => this.scene.renderStats()) : null;
 
     debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0, primaryShots: 0, secondaryShots: 0 }));
     this.sounds.renderDelay = (this.snaps.delayTicks * TICK_MS) / 1000;
@@ -1214,7 +1214,9 @@ export class Game {
     if (this.over || this.paused) {
       // The result overlay or Pause: the game keeps rendering without input.
     } else if (this.bench) {
-      p.yaw += BENCH_TURN_RATE * dt;
+      // The arcade view (M10 §2.3) looks north-east across Arena 1's north arcade, without turning.
+      if (this.params.benchView === 'arcade') p.yaw = -Math.PI / 4;
+      else p.yaw += BENCH_TURN_RATE * dt;
       p.pitch = 0;
     } else if (this.bot) {
       const be = this.botEnemies;
@@ -1338,6 +1340,11 @@ export class Game {
     // the camera rises with the soul: 1.6 m above its base (M8 §4.3).
     if (this.dead) this.scene.setView(b.x, b.y, this.ownGround, p.yaw, p.pitch, PLAYER_EYE + this.souls.rise(this.localId, now));
     else this.scene.setView(b.x, b.y, b.z, p.yaw, p.pitch, PLAYER_EYE - this.bob.eyeDrop);
+    const cam = this.params.cam;
+    if (cam) {
+      const ci = Math.floor(cam.y) * this.map.w + Math.floor(cam.x);
+      this.scene.setView(cam.x, cam.y, cam.z ?? (this.map.floor[ci] ?? 0) + PLAYER_EYE, cam.yaw, cam.pitch, 0);
+    }
     this.drawBillboards(now, ents, enemyZ);
     const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
     this.hud.setBeamed(beamed.has(this.localId));
