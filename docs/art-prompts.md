@@ -416,9 +416,9 @@ A single old tarnished silver coin seen straight on: a worn, slightly irregular 
 JPEG is fine for all of them (`.jfif` or `.jpg`, same base name).
 
 - [x] Stage 1: `sky-day`
-- [x] Stage 2: `tex-floor-plain`, `tex-floor-medallion`, `tex-wall-window`, `tex-wall-pilaster`, `tex-cornice` (Claude fixes the plain floor's grid, adds the frieze to the window wall and closes the cornice seam: [m10.md](m10.md) §4.1)
-- [x] Stage 3: `fx-lightshaft`
-- [ ] Stage 4: `prop-arch-sheet` (the first try came out as a game screenshot; regenerate with the updated prompt below), `prop-column-sheet`, `prop-balustrade-sheet`, `prop-spire-sheet`, `prop-island-sheet`
+- [x] Stage 3: `tex-floor-plain`, `tex-floor-medallion`, `tex-wall-window`, `tex-wall-pilaster`, `tex-cornice` (Claude fixes the plain floor's grid, adds the frieze to the window wall and closes the cornice seam: [m10.md](m10.md) §5.1)
+- [x] Stage 4: `fx-lightshaft`
+- [ ] Stage 5: `prop-arch-sheet` (the first try came out as a game screenshot; regenerate with the updated prompt below), `prop-column-sheet`, `prop-balustrade-sheet`, `prop-spire-sheet`, `prop-island-sheet`
 
 ### Sky (stage 1)
 
@@ -428,7 +428,7 @@ A horizon band that wraps all the way around the player. Claude closes the seam 
 A wide panoramic painted sky of a heavenly realm, seen from a high floating terrace: a bright blue sky with big sunlit cumulus clouds, warm golden haze along the horizon, and in the distance floating spires, slender white towers, domes and broken arches rising out of the clouds at many different distances, some tiny and pale in the haze, some larger and clearer. Soft sunlight from the left, a hint of golden light rays through the clouds. The horizon is at about one third of the image height from the bottom; below it, thick white clouds and haze fade to pale gold. The upper half is clear deep blue with a few light clouds. Hand-painted stylized game skybox matching the sky in the attached images: painterly brush texture, soft edges, no ink outlines, rich saturated color. The left edge continues the right edge. No ground, no people, no birds, no text, no sun disc. Aspect ratio 21:9.
 ```
 
-### Surfaces (stage 2)
+### Surfaces (stage 3)
 
 Same rules as B4 *Terrain textures*: seamless, flat even lighting, no shadows, no vignette, no perspective, no text. Generate at 2048 px if available. Also attach `tex-floor.png` or `tex-wall.png` from `assets/art-src/` (whichever is the same kind), so the new ones match the existing ones.
 
@@ -462,7 +462,7 @@ A horizontal band for the top of every wall. It only repeats left to right. Clau
 Seamless horizontally tileable game texture, viewed straight on, orthographic, filling the whole image: a grand classical cornice band in ivory stone and gold, from top to bottom: a thin gold strip, a row of small evenly spaced dentils, a wide band with a repeating carved leaf-and-lily pattern with gold-leaf trim, then a projecting molding with a thin gold line at the bottom. Hand-painted stylized texture matching the stonework in the attached images: painterly brush texture, crisp dark ink-like lines along the carved edges. Even, flat lighting: no cast shadows, no vignette, no perspective. The left edge continues the right edge. No text. Aspect ratio 21:9.
 ```
 
-### Atmosphere (stage 3)
+### Atmosphere (stage 4)
 
 #### Light shaft — `fx-lightshaft.png` · 3:4
 Drawn additively, so black becomes transparent. Tinted warm gold by the game. No attachments.
@@ -470,7 +470,7 @@ Drawn additively, so black becomes transparent. Tinted warm gold by the game. No
 A single tall shaft of sunlight, a soft-edged vertical beam of light, widest at the top and narrowing slightly toward the bottom, centered, 40% of the image width, brightest in the middle with a gentle falloff to both sides, a few faint darker streaks along its length, and a fade to nothing at the top and bottom edges. Pure white and light grey only, no color. On a pure black (#000000) background. Flat, seen straight on, no perspective. No text. Aspect ratio 3:4.
 ```
 
-### Architecture (stage 4)
+### Architecture (stage 5)
 
 Reference sheets that Claude models in Blender, like the Part A turnarounds: each shows one prop from the front, the side and the top, at the same scale, so it can be built accurately. They're never shown in the game. Save in `assets/art-src/reference/`.
 
