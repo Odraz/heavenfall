@@ -66,4 +66,14 @@ describe('ally targeting (M8 §3.5)', () => {
     const r = pickAllyTarget(m, EX, EY, EZ, 1, 0, 0, [ally(1, 0)], 40, ALLY_NONE);
     expect(r).toEqual({ target: ALLY_NONE, outOfRange: ALLY_NONE });
   });
+
+  it("skips the dead, unless souls count: then by the soul's cylinder (M9 §2.5)", () => {
+    // A soul risen 1 m: its center is 1.9 m up, 1 m above the aim at 20 m (2.9°).
+    const soul = { ...ally(1, 0), z: 1, dead: true };
+    expect(pick([soul]).target).toBe(ALLY_NONE);
+    expect(pickAllyTarget(map, EX, EY, EZ, 1, 0, 0, [soul], 40, ALLY_NONE, true).target).toBe(1);
+    // Within range of the soul's cylinder, not of a player's at its ground point.
+    const near = { ...ally(1, 0, 40.45), z: 1, dead: true };
+    expect(pickAllyTarget(map, EX, EY, EZ, 1, 0, 0, [near], 40, ALLY_NONE, true).target).toBe(1);
+  });
 });

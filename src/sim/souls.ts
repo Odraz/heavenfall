@@ -15,6 +15,14 @@ export const REVIVE_DECAY = 0.1;
 /** Each hit adds the shooter's time between shots ÷ this; the Heretic Saint adds double. */
 export const REVIVE_HIT_DIVISOR = 3;
 export const REVIVE_HERETIC_FACTOR = 2;
+/**
+ * Dying again makes reviving slower: the soul of a player who has died `n` times needs this many times
+ * as long, from every source (progress and decay are both divided by it). Doubles from the second
+ * death and stays at the third's.
+ */
+export function reviveSlowdown(deaths: number): number {
+  return 2 ** Math.min(Math.max(deaths - 1, 0), 2);
+}
 /** Unholy Communion adds this to every soul within its radius. */
 export const REVIVE_COMMUNION = 0.25;
 /** A censer explosion within this distance of a soul counts one hit on it. */

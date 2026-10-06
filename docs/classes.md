@@ -51,7 +51,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 | Slot | Name | Rule |
 |---|---|---|
 | Primary | Censer Launcher | Breaks on the enemy it hits for 40, with no splash, and leaves a rusty-gold cloud of incense for 4 s: 5 dmg per second to every enemy within 2.5 m. Clouds don't stack, and at most 6 exist, so spamming one spot doesn't help and can't cover the map. (Added after review: the old splash made the healer a grenade launcher.) |
-| Secondary | Sacrament | While held, heals the ally target 10 HP every 0.5 s (range 40 m, the same ally target as Martyr's Shroud). That's the rate Communion gives everyone nearby, so the Heretic's healing on one ally at most doubles. With no ally target it does nothing. Never heals the Heretic. |
+| Secondary | Sacrament | While held, heals the ally target 15 HP every 0.5 s (range 40 m, the same ally target as Martyr's Shroud). That's 1.5 times the rate Communion gives everyone nearby. Aimed at a soul, it revives it instead, at the Heretic's double revive rate (about 1.5 s). With no ally target it does nothing. Never heals the Heretic. |
 | Q | Unholy Communion | As now: heals everyone near the Heretic, the Heretic included. |
 | Passive | Last Rites | Revives fallen teammates twice as fast (the existing rule, now named). |
 | E | Martyr's Shroud | As now. **New:** when damage breaks it, it explodes for 50 dmg to the 8 nearest enemies within 5 m of the shielded player. It doesn't explode when it expires or is replaced. It still explodes if the Heretic has died or left, or if the hit that breaks it kills the shielded player. |

@@ -17,6 +17,8 @@ import {
 import { decodeSnapshot } from '../net/protocol';
 import { estimateSilverBullet } from './combat';
 import type { Simulation, SimPlayer } from './sim';
+import { TICK_HZ } from './constants';
+import { REVIVE_DECAY } from './souls';
 import { enemyAt, makeSim, put, room } from './testutil/sims';
 
 /** Records every attack fired: [slot, tick], without resolving it. */
@@ -55,11 +57,11 @@ describe('controls (M9 §2.1)', () => {
   });
 
   it('when the host finds the ally target invalid, a held left button fires censers', () => {
-    const sim = makeSim(room(30, 10), ['heretic', 'fallen']);
+    // The ally is 43 m away: beyond Sacrament's 40 m.
+    const sim = makeSim(room(60, 10), ['heretic', 'fallen']);
     const [h, ally] = sim.players;
     put(sim, h, 2.5, 5.5);
-    put(sim, ally, 8.5, 5.5);
-    sim.damagePlayer(ally, 10000);
+    put(sim, ally, 45.5, 5.5);
     h.fire = FIRE_LEFT | FIRE_RIGHT | FIRE_RIGHT_LAST;
     h.allyTargetId = ally.id;
     const shots = recordShots(sim);
@@ -136,7 +138,7 @@ describe('attacks (M9 §2.3)', () => {
   it('have the new intervals', () => {
     expect(WEAPONS.betrayer).toMatchObject({ interval: 0.3, damage: 60, maxHits: 1, range: 60 });
     expect(SECONDARIES.fallen).toMatchObject({ interval: 1.0, damage: 60, maxHits: 1, range: 50 });
-    expect(SECONDARIES.heretic).toMatchObject({ interval: 0.5, damage: 10, range: 40 });
+    expect(SECONDARIES.heretic).toMatchObject({ interval: 0.5, damage: 15, range: 40 });
     expect(SECONDARIES.binder).toMatchObject({ interval: 0.8, damage: 25, maxHits: 6, range: 3 });
     expect(SECONDARIES.betrayer).toMatchObject({ interval: 1.2, damage: 240, range: 60 });
   });
@@ -159,7 +161,7 @@ describe('attacks (M9 §2.3)', () => {
     expect([sim.eAlive[near], sim.eHp[far]]).toEqual([0, 60]);
   });
 
-  it('every hitscan attack revives with its own interval ÷ 3; the Scourge and Sacrament don’t revive', () => {
+  it('every hitscan attack revives with its own interval ÷ 3; the Scourge doesn’t revive', () => {
     for (const [cls, slot, interval] of [
       ['fallen', ATTACK_SECONDARY, 1.0],
       ['betrayer', ATTACK_SECONDARY, 1.2],
@@ -173,16 +175,13 @@ describe('attacks (M9 §2.3)', () => {
       sim.fireWeapon(shooter, slot);
       expect(dead.revive).toBeCloseTo(interval / 3, 9);
     }
-    // The Scourge's arc covers a soul right in front of the Binder; Sacrament can't target a soul.
-    const sim = makeSim(room(30, 10), ['binder', 'fallen', 'heretic']);
-    const [binder, dead, heretic] = sim.players;
+    // The Scourge's arc covers a soul right in front of the Binder.
+    const sim = makeSim(room(30, 10), ['binder', 'fallen']);
+    const [binder, dead] = sim.players;
     put(sim, binder, 5.5, 5.5);
     put(sim, dead, 6.5, 5.5);
-    put(sim, heretic, 4.5, 5.5);
     sim.damagePlayer(dead, 10000);
     sim.fireWeapon(binder, ATTACK_SECONDARY);
-    heretic.allyTargetId = dead.id;
-    sim.fireWeapon(heretic, ATTACK_SECONDARY);
     expect(dead.revive).toBe(0);
   });
 });
@@ -287,18 +286,34 @@ describe('Sacrament (M9 §2.5)', () => {
 
   const beamOf = (sim: Simulation, id: number) => decodeSnapshot(sim.encodeFor(0)[0])!.players.find((p) => p.id === id)!.beam;
 
-  it('heals the ally 10 every 0.5 s, capped at max HP', () => {
+  it('heals the ally 15 every 0.5 s, capped at max HP', () => {
     const { sim, h, ally } = setup();
     ally.hp = 300;
     for (let i = 0; i < 30; i++) sim.step();
-    expect(ally.hp).toBe(320);
+    expect(ally.hp).toBe(330);
     expect(h.shots2).toBe(2);
     ally.hp = 395;
     for (let i = 0; i < 15; i++) sim.step();
     expect(ally.hp).toBe(400);
   });
 
-  it("needs a living ally within 40 m; with none it doesn't fire or touch the timer, and it never heals the Heretic", () => {
+  it('revives a soul within 40 m like a hit of the Heretic: 1/3 per firing', () => {
+    const { sim, h, ally } = setup();
+    sim.damagePlayer(ally, 10000);
+    sim.step();
+    expect(ally.revive).toBeCloseTo(1 / 3 - REVIVE_DECAY / TICK_HZ, 9);
+    expect(sim.sacramentTarget(h)).toBe(ally);
+    // Three firings, less the decay between them, fall just short; the fourth revives.
+    for (let i = 0; i < 45; i++) sim.step();
+    expect(ally.dead).toBe(false);
+    expect(ally.hp).toBe(200);
+    const far = setup(45.5);
+    far.sim.damagePlayer(far.ally, 10000);
+    for (let i = 0; i < 10; i++) far.sim.step();
+    expect([far.ally.revive, far.h.shots2]).toEqual([0, 0]);
+  });
+
+  it("needs a living ally or a soul within 40 m; with none it doesn't fire or touch the timer, and it never heals the Heretic", () => {
     const far = setup(45.5);
     far.ally.hp = 300;
     for (let i = 0; i < 10; i++) far.sim.step();

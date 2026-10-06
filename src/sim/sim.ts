@@ -101,7 +101,7 @@ import { lineOfSight, raycastTerrain } from './los';
 import { insideRect, loadMap, setArenaDoors, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
-import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
+import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, reviveSlowdown, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
 
 /** Party-size multipliers ×10 (§7.5), indexed by party size. */
 const MULT10 = [0, 4, 6, 8, 10];
@@ -195,6 +195,8 @@ export interface SimPlayer {
   beamUntil: number;
   /** Revive progress of the player's soul, 0–1, while dead (M8 §4.2). */
   revive: number;
+  /** Times the player has died this game; reviving slows from the second (M9 review). */
+  deaths: number;
   /** Tick the soul started rising (the death); its ground point is the dead player's feet. */
   soulTick: number;
   /** Seconds of cooldown remaining. */
@@ -633,6 +635,7 @@ export class Simulation {
       beamId: ALLY_NONE,
       beamUntil: 0,
       revive: 0,
+      deaths: 0,
       soulTick: 0,
       cdQ: 0,
       cdE: 0,
@@ -1164,6 +1167,7 @@ export class Simulation {
 
   private killPlayer(p: SimPlayer): void {
     p.dead = true;
+    p.deaths++;
     p.hp = 0;
     p.shield = 0;
     // The soul (M8 §4.1): its ground point is the feet, dropped to the ground under them.
@@ -1323,14 +1327,18 @@ export class Simulation {
   }
 
   /**
-   * Sacrament's ally (M9 §2.5): the latest input's ally target, if it's another living player within
-   * 40 m of the eye. Line of sight isn't rechecked.
+   * Sacrament's ally (M9 §2.5): the latest input's ally target, if it's another living player, or a
+   * soul, within 40 m of the eye (to the soul's cylinder). Line of sight isn't rechecked.
    */
   sacramentTarget(p: SimPlayer): SimPlayer | undefined {
     if (p.classId !== 'heretic' || p.allyTargetId === ALLY_NONE) return undefined;
     const ally = this.playerById(p.allyTargetId);
-    if (!ally || ally === p || !this.livingTargetable(ally)) return undefined;
-    const d = distToCylinder(p.x, p.y, p.z + PLAYER_EYE, ally.x, ally.y, ally.z, PLAYER_RADIUS, PLAYER_HEIGHT);
+    if (!ally || ally === p) return undefined;
+    const ez = p.z + PLAYER_EYE;
+    let d: number;
+    if (this.hasSoul(ally)) d = distToCylinder(p.x, p.y, ez, ally.x, ally.y, this.soulBase(ally), SOUL_RADIUS, SOUL_HEIGHT);
+    else if (this.livingTargetable(ally)) d = distToCylinder(p.x, p.y, ez, ally.x, ally.y, ally.z, PLAYER_RADIUS, PLAYER_HEIGHT);
+    else return undefined;
     return d <= SECONDARIES.heretic.range ? ally : undefined;
   }
 
@@ -1347,10 +1355,12 @@ export class Simulation {
         return;
       }
       case 'sacrament': {
-        // Heals even at full HP, so the beam stays steady; it never heals the Heretic.
+        // Heals even at full HP, so the beam stays steady; it never heals the Heretic. On a soul it
+        // revives instead, like a hit (M8 §4.2).
         const ally = this.sacramentTarget(p);
         if (!ally) return;
-        this.heal(ally, w.damage);
+        if (ally.dead) this.addRevive(ally, reviveHit(w.interval, true));
+        else this.heal(ally, w.damage);
         p.beamId = ally.id;
         p.beamUntil = this.tick + BEAM_HOLD_TICKS;
         return;
@@ -1477,10 +1487,10 @@ export class Simulation {
     return p.z + soulRise((this.tick - p.soulTick) / TICK_HZ);
   }
 
-  /** Adds revive progress to a soul; at 1 the player is revived. */
+  /** Adds revive progress to a soul, slowed for a player who died before; at 1 the player is revived. */
   addRevive(p: SimPlayer, amount: number): void {
     if (!this.hasSoul(p)) return;
-    p.revive = Math.min(1, p.revive + amount);
+    p.revive = Math.min(1, p.revive + amount / reviveSlowdown(p.deaths));
     if (p.revive >= 1 - 1e-9) this.revivePlayer(p);
   }
 
@@ -1497,10 +1507,10 @@ export class Simulation {
     this.teleport(p, p.x, p.y, p.z);
   }
 
-  /** Revive progress decays every tick. */
+  /** Revive progress decays every tick, slowed like the progress, so every source takes the same times longer. */
   private updateSouls(): void {
     for (const p of this.players) {
-      if (this.hasSoul(p)) p.revive = Math.max(0, p.revive - REVIVE_DECAY * TICK_DT);
+      if (this.hasSoul(p)) p.revive = Math.max(0, p.revive - (REVIVE_DECAY * TICK_DT) / reviveSlowdown(p.deaths));
     }
   }
 

@@ -3,7 +3,7 @@ import { BLESSED, CHORISTER } from '../data/enemies';
 import { WEAPONS } from '../data/weapons';
 import { decodeSnapshot } from '../net/protocol';
 import { enemyAt, makeSim, press, put, room } from './testutil/sims';
-import { REVIVE_DECAY, SOUL_RISE, SOUL_RISE_TIME } from './souls';
+import { REVIVE_DECAY, reviveSlowdown, SOUL_RISE, SOUL_RISE_TIME } from './souls';
 
 const RISE_TICKS = SOUL_RISE_TIME * 30;
 
@@ -15,6 +15,23 @@ function stepRoom(): string[] {
 }
 
 describe('souls and reviving (M8 §4)', () => {
+  it('each death makes reviving slower: 1×, 2×, then 4× for every later death, progress and decay alike', () => {
+    expect([0, 1, 2, 3, 4, 9].map(reviveSlowdown)).toEqual([1, 1, 2, 4, 4, 4]);
+    const sim = makeSim(room(20, 5), ['binder', 'heretic']);
+    const dead = sim.players[1];
+    put(sim, dead, 10.5, 3.5);
+    for (const slowdown of [1, 2, 4, 4]) {
+      sim.damagePlayer(dead, 10000);
+      sim.addRevive(dead, 0.4);
+      expect(dead.revive).toBeCloseTo(0.4 / slowdown, 9);
+      sim.step();
+      expect(dead.revive).toBeCloseTo(0.4 / slowdown - REVIVE_DECAY / 30 / slowdown, 9);
+      sim.addRevive(dead, 1 * slowdown);
+      expect(dead.dead).toBe(false);
+      dead.invulUntil = 0;
+    }
+  });
+
   it('a soul rises to 1.0 m above its ground point over 1.5 s', () => {
     const sim = makeSim(room(20, 5), ['binder', 'heretic']);
     const dead = sim.players[1];

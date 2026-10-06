@@ -41,7 +41,7 @@ export const WEAPONS: Record<ClassId, WeaponDef> = {
 /** Secondary attacks, right mouse (M9 §2.3). */
 export const SECONDARIES: Record<ClassId, WeaponDef> = {
   fallen: { name: 'Brimstone Slug', description: "One heavy slug for a single enemy out of the shotgun's reach.", kind: 'hitscan', interval: 1.0, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 50, maxHits: 1, slow: 0 },
-  heretic: { name: 'Sacrament', description: 'Hold on the ally you aim at to heal them.', kind: 'sacrament', interval: 0.5, pellets: 1, damage: 10, spreadYaw: 0, spreadPitch: 0, range: 40, maxHits: 1, slow: 0 },
+  heretic: { name: 'Sacrament', description: "Hold on the ally you aim at to heal them, or on a fallen ally's soul to revive them.", kind: 'sacrament', interval: 0.5, pellets: 1, damage: 15, spreadYaw: 0, spreadPitch: 0, range: 40, maxHits: 1, slow: 0 },
   binder: { name: 'Scourge', description: 'Swing your chain at the enemies in front of you, slowing them.', kind: 'scourge', interval: 0.8, pellets: 1, damage: 25, spreadYaw: 0, spreadPitch: 0, range: 3, maxHits: 6, slow: 1 },
   betrayer: { name: 'Silver Bullet', description: "A slow shot whose damage carries through every enemy in a line until it's spent.", kind: 'silverBullet', interval: 1.2, pellets: 1, damage: 240, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: Infinity, slow: 0 },
 };

@@ -1,11 +1,13 @@
 /**
  * Ally targeting (M8 §3.5, replacing the 10° rule of MVP §5.3): acquire at 15°, keep at 25°, and
- * switch only to a clearly better candidate. Range and line of sight are as in the MVP.
+ * switch only to a clearly better candidate. Range and line of sight are as in the MVP. The Heretic
+ * Saint can also target souls, for Sacrament (M9 §2.5).
  */
 import { lineOfSight } from '../sim/los';
 import type { GameMap } from '../sim/map';
 import { distToCylinder } from '../sim/movement';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../sim/constants';
+import { SOUL_HEIGHT, SOUL_RADIUS } from '../sim/souls';
 import { ALLY_NONE } from '../net/protocol';
 
 const DEG = Math.PI / 180;
@@ -20,7 +22,7 @@ export interface AllyCandidate {
   id: number;
   x: number;
   y: number;
-  /** Feet height. */
+  /** Feet height; for a dead candidate, the base of its soul. */
   z: number;
   dead: boolean;
 }
@@ -37,7 +39,8 @@ export interface AllyTargetResult {
 
 /**
  * Picks the ally target from the eye (ex, ey, ez) along the unit aim (ax, ay, az). `current` is the
- * previous frame's target. Candidates must not include the local player.
+ * previous frame's target. Candidates must not include the local player. Dead candidates count only
+ * with `souls`, by their soul's cylinder.
  */
 export function pickAllyTarget(
   map: GameMap,
@@ -50,6 +53,7 @@ export function pickAllyTarget(
   candidates: readonly AllyCandidate[],
   range: number,
   current: number,
+  souls = false,
 ): AllyTargetResult {
   let currentAngle = Infinity;
   let best = ALLY_NONE;
@@ -57,8 +61,10 @@ export function pickAllyTarget(
   let grey = ALLY_NONE;
   let greyAngle = Infinity;
   for (const q of candidates) {
-    if (q.dead) continue;
-    const cz = q.z + PLAYER_HEIGHT / 2;
+    if (q.dead && !souls) continue;
+    const radius = q.dead ? SOUL_RADIUS : PLAYER_RADIUS;
+    const height = q.dead ? SOUL_HEIGHT : PLAYER_HEIGHT;
+    const cz = q.z + height / 2;
     const dx = q.x - ex;
     const dy = q.y - ey;
     const dz = cz - ez;
@@ -68,7 +74,7 @@ export function pickAllyTarget(
     const limit = q.id === current ? ALLY_KEEP_ANGLE : ALLY_ACQUIRE_ANGLE;
     if (angle > limit + 1e-9) continue;
     if (!lineOfSight(map, ex, ey, ez, q.x, q.y, cz)) continue;
-    if (distToCylinder(ex, ey, ez, q.x, q.y, q.z, PLAYER_RADIUS, PLAYER_HEIGHT) > range) {
+    if (distToCylinder(ex, ey, ez, q.x, q.y, q.z, radius, height) > range) {
       if (angle <= ALLY_ACQUIRE_ANGLE + 1e-9 && angle < greyAngle) {
         grey = q.id;
         greyAngle = angle;

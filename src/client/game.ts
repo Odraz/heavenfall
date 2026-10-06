@@ -99,7 +99,7 @@ const LAUNCH_MS = 400;
 const MAX_CORPSES = 1000;
 
 const GLOW_WINDUP: Glow = { r: 1, g: 0.78, b: 0.2, a: 0.5 };
-const GLOW_ALLY: Glow = { r: 1, g: 0.8, b: 0.2, a: 0.55 };
+const GLOW_ALLY: Glow = { r: 1, g: 0.8, b: 0.2, a: 0.08 };
 /** Judgment: the glow sphere around the Gatekeeper grows from this radius to the next over the cast. */
 const JUDGMENT_GLOW_R0 = 3;
 const JUDGMENT_GLOW_R1 = 9;
@@ -113,6 +113,8 @@ const SOUL_OPACITY = 0.55;
 const SOUL_EMBERS_PER_S = 4;
 const SOUL_MARKER_RANGE = 60;
 const SOUL_MARKER_HEIGHT = 2.2;
+/** A chevron over a soul sits this many CSS pixels above the soul marker's anchor: over the 42 px marker. */
+const CHEVRON_ABOVE_SOUL_MARKER = 46;
 /** The revive hum plays while a shot hit a soul this recently, or the player's own progress rose. */
 const HUM_HOLD_MS = 300;
 /** The taunt `!` (M8 §3.1): 0.5 m tall, 0.3 m above the head; pops in, holds, then fades. */
@@ -933,9 +935,10 @@ export class Game {
 
   /**
    * Ally target (M8 §3.5): acquired at 15°, kept at 25°, within the E ability's range and in line of
-   * sight; and the out-of-range ally for the grey chevron. Only the Fallen and the Heretic Saint use one.
+   * sight; and the out-of-range ally for the grey chevron. Only the Fallen and the Heretic Saint use one;
+   * the Heretic's can be a soul, for Sacrament (M9 §2.5).
    */
-  private computeAllyTarget(): void {
+  private computeAllyTarget(now: number): void {
     const range = ABILITIES[this.classId].E.allyRange;
     if (range <= 0 || this.dead) {
       this.allyTargetId = ALLY_NONE;
@@ -944,17 +947,27 @@ export class Game {
     }
     const p = this.player;
     const [ax, ay, az] = aimDir(p.yaw, p.pitch);
-    const others = this.snaps.playersOut.filter((q) => q.id !== this.localId);
-    const r = pickAllyTarget(this.map, p.body.x, p.body.y, p.body.z + PLAYER_EYE, ax, ay, az, others, range, this.allyTargetId);
+    const souls = this.classId === 'heretic';
+    const others = this.snaps.playersOut
+      .filter((q) => q.id !== this.localId)
+      .map((q) => (q.dead ? { ...q, z: q.z + this.souls.rise(q.id, now) } : q));
+    const r = pickAllyTarget(this.map, p.body.x, p.body.y, p.body.z + PLAYER_EYE, ax, ay, az, others, range, this.allyTargetId, souls);
     this.allyTargetId = r.target;
     this.allyOutOfRange = r.outOfRange;
   }
 
-  /** The gold chevron over the ally target, or the grey one over an ally out of range (M8 §3.5). */
-  private placeChevron(): void {
+  /**
+   * The gold chevron over the ally target, or the grey one over an ally out of range (M8 §3.5). Over a
+   * soul it sits just above the soul's marker.
+   */
+  private placeChevron(now: number): void {
     const id = this.allyTargetId !== ALLY_NONE ? this.allyTargetId : this.allyOutOfRange;
     const q = id === ALLY_NONE ? undefined : this.snaps.playersOut.find((o) => o.id === id);
-    const at = q ? this.project(q.x, q.y, q.z + CHEVRON_HEIGHT) : null;
+    let at: [number, number] | null = null;
+    if (q?.dead) {
+      at = this.project(q.x, q.y, q.z + this.souls.drawnRise(q.id, now) + SOUL_MARKER_HEIGHT);
+      if (at) at = [at[0], at[1] - CHEVRON_ABOVE_SOUL_MARKER];
+    } else if (q) at = this.project(q.x, q.y, q.z + CHEVRON_HEIGHT);
     if (!at) this.hud.setChevron(null);
     else this.hud.setChevron(id === this.allyTargetId ? 'gold' : 'grey', at[0], at[1]);
   }
@@ -1117,7 +1130,8 @@ export class Game {
   /**
    * Sacrament's beams (M9 §5.1), every frame: the own one from the first-person muzzle while the
    * secondary heals the local ally target; others' from their snapshot `beam`, starting 0.5 m in front
-   * of their body center. Embers drift along each toward the ally. Returns the players beamed.
+   * of their body center. Embers drift along each toward the ally, or the soul being revived. Returns
+   * the players beamed.
    */
   private drawHealBeams(now: number, dt: number): Set<number> {
     const beams: Array<[[number, number, number], [number, number, number]]> = [];
@@ -1125,7 +1139,8 @@ export class Game {
     const bodyOf = (id: number): [number, number, number] | null => {
       if (id === this.localId) return this.dead ? null : [this.player.body.x, this.player.body.y, this.player.body.z + PLAYER_HEIGHT / 2];
       const q = this.snaps.playersOut.find((o) => o.id === id);
-      return q && !q.dead ? [q.x, q.y, q.z + PLAYER_HEIGHT / 2] : null;
+      if (!q) return null;
+      return q.dead ? [q.x, q.y, q.z + this.souls.drawnRise(q.id, now) + SOUL_HEIGHT / 2] : [q.x, q.y, q.z + PLAYER_HEIGHT / 2];
     };
     if (this.classId === 'heretic' && this.attack === ATTACK_SECONDARY && !this.dead) {
       const to = bodyOf(this.allyTargetId);
@@ -1133,6 +1148,11 @@ export class Game {
         const [sx, sy] = this.hud.muzzlePoint(now);
         beams.push([this.unproject(sx, sy, OWN_BEAM_DEPTH), to]);
         beamed.add(this.allyTargetId);
+        // On a soul, the revive hum plays for as long as the beam, as while shots hit it (M8 §9.1).
+        if (this.snaps.playersOut.some((q) => q.id === this.allyTargetId && q.dead)) {
+          this.soulHitAt = now;
+          this.soulHitId = this.allyTargetId;
+        }
       }
     }
     for (const q of this.snaps.playersOut) {
@@ -1184,7 +1204,7 @@ export class Game {
     // Enemies at the render time, and their derived heights.
     const ents = this.snaps.interpolate(simNow);
     const enemyZ = this.enemyHeights(ents, dt);
-    this.computeAllyTarget();
+    this.computeAllyTarget(now);
     this.party?.setAllyTarget(this.allyTargetId);
 
     let mx = 0;
@@ -1323,7 +1343,7 @@ export class Game {
     this.hud.setBeamed(beamed.has(this.localId));
     this.party?.setBeamed(beamed);
     this.scene.render();
-    this.placeChevron();
+    this.placeChevron(now);
     this.placeSoulMarkers(now);
     this.updateReviveHum(now);
 

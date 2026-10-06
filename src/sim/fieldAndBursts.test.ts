@@ -220,7 +220,7 @@ describe('Field of Blood (M9 §3.4)', () => {
     heretic.fire = FIRE_RIGHT | FIRE_RIGHT_LAST;
     for (let i = 0; i < 30; i++) sim.step();
     // Every 0.25 s instead of 0.5 s: 4 heals in 1 s.
-    expect(binder.hp).toBe(140);
+    expect(binder.hp).toBe(160);
   });
 
   it("doesn't change what a Silver Bullet carries", () => {
