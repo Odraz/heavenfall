@@ -407,16 +407,18 @@ A single old tarnished silver coin seen straight on: a worn, slightly irregular 
 
 ---
 
-## Milestone 11
+## Milestone 10
 
-12 images for the level art ([m11.md](m11.md)). The goal is the look of the concept art, at almost no cost per frame, so the prompts ask for flat, evenly lit images: the game adds its own baked light. Attach `concept-1.webp`, `concept-2.webp` and `concept-3.webp` to every prompt unless it says otherwise. Save them as named: the sky, textures and effect in `assets/art-src/`, the prop sheets in `assets/art-src/reference/`. Generate each in a new chat. They're needed in stages, so you can do them stage by stage.
+12 images for the level art ([m10.md](m10.md)). The goal is the look of the concept art, at almost no cost per frame, so the prompts ask for flat, evenly lit images: the game adds its own baked light. Attach `concept-1.webp`, `concept-2.webp` and `concept-3.webp` to every prompt unless it says otherwise. Save them as named: the sky, textures and effect in `assets/art-src/`, the prop sheets in `assets/art-src/reference/`. Generate each in a new chat. They're needed in stages, so you can do them stage by stage.
 
 **Optional extras that help** (not required): a close-up photo or painting of a real gold-inlay marble floor; a real arcade with arched windows seen from inside; any artwork of floating spires and towers in clouds. Attach them to the prompts they match.
 
-- [ ] Stage 1: `sky-day.png`
-- [ ] Stage 2: `tex-floor-plain.png`, `tex-floor-medallion.png`, `tex-wall-window.png`, `tex-wall-pilaster.png`, `tex-cornice.png`
-- [ ] Stage 3: `fx-lightshaft.png`
-- [ ] Stage 4: `prop-arch-sheet.png`, `prop-column-sheet.png`, `prop-balustrade-sheet.png`, `prop-spire-sheet.png`, `prop-island-sheet.png`
+JPEG is fine for all of them (`.jfif` or `.jpg`, same base name).
+
+- [x] Stage 1: `sky-day`
+- [x] Stage 2: `tex-floor-plain`, `tex-floor-medallion`, `tex-wall-window`, `tex-wall-pilaster`, `tex-cornice` (Claude fixes the plain floor's grid, adds the frieze to the window wall and closes the cornice seam: [m10.md](m10.md) §4.1)
+- [x] Stage 3: `fx-lightshaft`
+- [ ] Stage 4: `prop-arch-sheet` (the first try came out as a game screenshot; regenerate with the updated prompt below), `prop-column-sheet`, `prop-balustrade-sheet`, `prop-spire-sheet`, `prop-island-sheet`
 
 ### Sky (stage 1)
 
@@ -470,11 +472,15 @@ A single tall shaft of sunlight, a soft-edged vertical beam of light, widest at 
 
 ### Architecture (stage 4)
 
-Reference sheets that Claude models in Blender, like the Part A turnarounds: each shows one prop from the front, the side and the top, at the same scale, so it can be built accurately. They're never shown in the game. Attach `concept-1.webp` and `concept-2.webp` (and any optional architecture extras). Save in `assets/art-src/reference/`. Check that the three views match each other.
+Reference sheets that Claude models in Blender, like the Part A turnarounds: each shows one prop from the front, the side and the top, at the same scale, so it can be built accurately. They're never shown in the game. Save in `assets/art-src/reference/`.
+
+**Attach only `concept-1.webp`**, for the style. With the swarm concept (`concept-3.webp`) attached, Gemini copies the whole game scene, HUD and all, instead of drawing a sheet. If it still draws a scene, start a new chat with no attachment at all.
+
+**Check before saving:** exactly three views of one object on plain grey, nothing else (no enemies, HUD, floor or sky), and the three views match each other.
 
 All five use this template, with the `<PROP>` text of each:
 ```text
-A model sheet of <PROP> for a 3D artist. Three orthographic views of the same object, side by side on a plain light grey background: front view on the left, side view in the middle, top view on the right, at exactly the same scale, aligned, with no perspective. Hand-painted stylized game-art look matching the architecture in the attached images: ivory stone with gold leaf trim, clean readable shapes, thick dark ink-like outlines, flat even lighting with no cast shadows, simple shapes rather than tiny detail. Every view is complete and uncropped. No text, no letters, no numbers, no measurements. Aspect ratio 16:9.
+This is not a game screenshot and not a scene: no characters, no HUD, no floor, no sky, no landscape. Only one object, drawn three times. A model sheet of <PROP> for a 3D artist. Three orthographic views of the same object, side by side on a plain light grey background: front view on the left, side view in the middle, top view on the right, at exactly the same scale, aligned, with no perspective. Hand-painted stylized game-art look matching the architecture in the attached images: ivory stone with gold leaf trim, clean readable shapes, thick dark ink-like outlines, flat even lighting with no cast shadows, simple shapes rather than tiny detail. Every view is complete and uncropped. No text, no letters, no numbers, no measurements. Aspect ratio 16:9.
 ```
 
 | File | `<PROP>` |
