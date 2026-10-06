@@ -392,7 +392,7 @@ Two new images for the class rework ([m9.md](m9.md) §9). Everything else M9 nee
 - [x] `coin.png`
 
 #### Field of Blood icon — `icon-field-of-blood.png` · 1:1
-The Betrayer's new Q: throws the thirty pieces of silver onto the ground, and everyone standing in the field deals double damage. Replaces `icon-kiss.png`. Attach: `concept-1.webp`, `betrayer-front.png`, and `icon-shadowstep.png` so it matches the other icons.
+The Betrayer's new Q: throws the thirty pieces of silver onto the ground, and everyone standing in the field fires twice as fast. Replaces `icon-kiss.png`. Attach: `concept-1.webp`, `betrayer-front.png`, and `icon-shadowstep.png` so it matches the other icons.
 
 Use the ability icon prompt (B3, *Ability icons*) with this `<SYMBOL>`:
 ```text
