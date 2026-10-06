@@ -24,7 +24,7 @@ M9 is dedicated to the changes below; halos and ultimates move to M10. In short:
 - **The Betrayer:** a new kit built for the swarm. Kiss of Betrayal is removed.
 - **The Gatekeeper's HP is retuned:** Kiss was the party's main boss multiplier, and Field of Blood replaces it.
 
-Swarm kill rates should stay roughly level across classes (about 5–9 Blessed per second), with the Betrayer's Silver Bullet the best in a good lane.
+Swarm kill rates should stay roughly level across classes (about 5–9 Blessed per second), with the Betrayer's Silver Bullet the best in a good lane. The Heretic Saint is the exception on purpose: its censer softens the crowd the party holds (about 1 kill per second plus its clouds), and its strength is keeping everyone alive.
 
 ## The Fallen (Tank)
 
@@ -50,12 +50,13 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 
 | Slot | Name | Rule |
 |---|---|---|
-| Primary | Censer Launcher | As now (damage only). |
+| Primary | Censer Launcher | Breaks on the enemy it hits for 40, with no splash, and leaves a rusty-gold cloud of incense for 4 s: 5 dmg per second to every enemy within 2.5 m. Clouds don't stack, and at most 4 exist, so spamming one spot doesn't help and can't cover the map. (Added after review: the old splash made the healer a grenade launcher.) |
 | Secondary | Sacrament | While held, heals the ally target 10 HP every 0.5 s (range 40 m, the same ally target as Martyr's Shroud). That's the rate Communion gives everyone nearby, so the Heretic's healing on one ally at most doubles. With no ally target it does nothing. Never heals the Heretic. |
 | Q | Unholy Communion | As now: heals everyone near the Heretic, the Heretic included. |
 | Passive | Last Rites | Revives fallen teammates twice as fast (the existing rule, now named). |
 | E | Martyr's Shroud | As now. **New:** when damage breaks it, it explodes for 50 dmg to the 8 nearest enemies within 5 m of the shielded player. It doesn't explode when it expires or is replaced. It still explodes if the Heretic has died or left, or if the hit that breaks it kills the shielded player. |
 
+- **Where the censer goes:** a cloud is worth most on enemies that stay in it: the crowd hugging the taunting Fallen, or the Binder's pile, where bound enemies take double and often die before the pile breaks. A crowd running through it only loses a few HP.
 - **Censer or Sacrament:** the censer while the party holds; Sacrament when one teammate is in trouble, even far away. Every second spent healing is a second not killing, which is the Heretic's real decision.
 - Sacrament is what playtesters expected the Heretic to do ("aim at someone to heal them").
 - **Sacrament's advantage is range**: it heals one ally anywhere within 40 m, where Communion reaches 15 m. While it heals, the left button can't fire censers or stop the beam. The right button works only while an ally is aimed at; with no ally target, holding both buttons fires censers.

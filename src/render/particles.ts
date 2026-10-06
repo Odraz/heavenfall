@@ -15,6 +15,9 @@ const HEAL_COLUMN_TOP = 2.2;
 const HEAL_COLUMN_TIME = 0.8;
 /** An ember drifting up from a soul, or bursting up from a revive (M8 §3.1, §4.1). */
 const P_RISE = 4;
+/** A gold-tinted ember rising from a censer's incense cloud (M9 §5.1). */
+const P_INCENSE = 6;
+const INCENSE_GLOW: Glow = { r: 1, g: 0.72, b: 0.28, a: 0.7 };
 /** A red-tinted ember rising from a Field of Blood (M9 §5.1). */
 const P_BLOOD = 5;
 const BLOOD_GLOW: Glow = { r: 1, g: 0.16, b: 0.1, a: 0.75 };
@@ -68,7 +71,7 @@ export class Particles {
     }
   }
 
-  /** Censer explosion: an ember burst of 2 m radius, lasting 0.4 s (§10, decisions.md). */
+  /** An ember burst of 2 m radius, lasting 0.4 s: the Shroud burst (M9 §5.1; it was the censer explosion before M9 §2.8). */
   emberBurst(x: number, y: number, z: number): void {
     for (let i = 0; i < 24; i++) {
       const a = Math.random() * Math.PI * 2;
@@ -100,6 +103,23 @@ export class Particles {
   bloodEmber(x: number, y: number, z: number): void {
     const life = 1.2 + Math.random() * 0.6;
     this.spawn(P_BLOOD, x, y, z, 0, 0, BLOOD_RISE / life, life, 0.18);
+  }
+
+  /** A censer breaking (M9 §5.1): 8 embers within 0.5 m. */
+  censerBreak(x: number, y: number, z: number): void {
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const e = (Math.random() - 0.2) * 0.9;
+      // Reaches about 0.5 m in its 0.35 s.
+      const s = 1.3 + Math.random() * 0.4;
+      this.spawn(P_EMBER, x, y, z, Math.cos(a) * Math.cos(e) * s, Math.sin(a) * Math.cos(e) * s, Math.sin(e) * s, 0.35, 0.25);
+    }
+  }
+
+  /** One gold ember rising from an incense cloud at (x, y, z) to 2 m. */
+  incenseEmber(x: number, y: number, z: number): void {
+    const life = 1.2 + Math.random() * 0.5;
+    this.spawn(P_INCENSE, x, y, z, 0, 0, 2 / life, life, 0.16);
   }
 
   /** The Shroud's burst (M9 §5.1): 24 embers bursting outward from (x, y, z). */
@@ -159,6 +179,7 @@ export class Particles {
       const f = 1 - Math.max(0, (this.age[i] / this.life[i] - 0.6) / 0.4);
       const k = this.kind[i];
       if (k === P_HEAL) b.add(this.frames[P_EMBER], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, HEAL_GLOW);
+      else if (k === P_INCENSE) b.add(this.frames[P_EMBER], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, INCENSE_GLOW);
       else if (k === P_BLOOD) b.add(this.frames[P_EMBER], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, BLOOD_GLOW);
       else if (k === P_RISE) b.add(this.frames[P_EMBER], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, NO_GLOW);
       else b.add(this.frames[k], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, NO_GLOW);

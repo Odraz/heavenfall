@@ -24,6 +24,7 @@ import { GameScene } from '../render/scene';
 import type { GameTextures } from '../render/textures';
 import { Vfx } from '../render/vfx';
 import { BloodPool, POOL_LIFT } from '../render/bloodPool';
+import { IncenseClouds } from '../render/incense';
 import { FIELD_FIRE_RATE, FIELD_TIME, inField } from '../sim/field';
 import { DebugOverlay } from '../ui/debugOverlay';
 import { PauseOverlay } from '../ui/pause';
@@ -89,6 +90,8 @@ const COIN_ARC = 1;
 const COIN_MS = 300;
 /** Red embers rise from the pool, 12 per second. */
 const POOL_EMBERS_PER_S = 12;
+/** Gold embers rising from each incense cloud per second (M9 §5.1). */
+const INCENSE_EMBERS_PER_S = 4;
 /** Falling Star's launched enemies fly an arc 1 m high over 0.4 s (M9 §3.2). */
 const LAUNCH_HEIGHT = 1;
 const LAUNCH_MS = 400;
@@ -211,6 +214,8 @@ export class Game {
   private pool: BloodPool | null = null;
   private readonly coins: Array<{ from: [number, number, number]; to: [number, number, number]; start: number }> = [];
   private inFieldNow = false;
+  /** The censers' incense clouds (M9 §2.8), drawn where each censer vanished. */
+  private readonly incense: IncenseClouds;
   /** When each enemy slot's Falling Star launch arc starts (M9 §3.2). */
   private readonly launchAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
   /** Others' attack effects waiting for the render delay (M9 §5.1). */
@@ -295,6 +300,8 @@ export class Game {
       this.scene.scene.add(b.mesh);
     }
     this.vfx = new Vfx(o.textures.fx);
+    this.incense = new IncenseClouds(o.textures.fx.smoke);
+    this.scene.scene.add(this.incense.group);
     this.scene.scene.add(this.vfx.group);
     this.judgmentGlow = new THREE.Sprite(
       new THREE.SpriteMaterial({ map: o.textures.fx.glow, color: 0xfff0b0, transparent: true, depthWrite: false, fog: false }),
@@ -691,6 +698,16 @@ export class Game {
       // Each lands on the pool's surface: its cell's floor plus the pool's lift.
       this.coins.push({ from, to: [tx, ty, this.map.floor[Math.floor(ty) * this.map.w + Math.floor(tx)] + POOL_LIFT], start: now });
     }
+  }
+
+  /**
+   * The height an incense cloud's puff floats above at (x, y) (M9 §5.1): the floor under it, unless the
+   * censer broke more than 2 m above that floor (on a Cherub), where the puffs float around the break.
+   */
+  private cloudBase(x: number, y: number, breakZ: number): number {
+    const g = groundHeight(this.map, x, y, 0.1, Infinity, false, true);
+    const floor = g === -Infinity ? breakZ : g;
+    return breakZ - floor > 2 ? breakZ - 0.6 : floor;
   }
 
   /**
@@ -1268,9 +1285,11 @@ export class Game {
       const b = this.pendingBursts[i];
       if (now < b.at) continue;
       if (b.censer) {
-        this.particles.emberBurst(b.x, b.y, b.z);
-        this.vfx.glow(now, b.x, b.y, b.z, 0xf08a24, 0.6, 2, 350);
-        this.sounds.censerBurst(b);
+        // The censer breaks (M9 §5.1): a small burst, and its incense cloud where it broke.
+        this.particles.censerBreak(b.x, b.y, b.z);
+        this.vfx.glow(now, b.x, b.y, b.z, 0xf08a24, 0.15, 0.6, 250);
+        this.sounds.censerBreak(b);
+        this.incense.add(now, b.x, b.y, (x, y) => this.cloudBase(x, y, b.z));
       } else {
         this.particles.featherBurst(b.x, b.y, b.z);
         this.sounds.enemyDeath(b.type, b);
@@ -1284,8 +1303,14 @@ export class Game {
       fx.run(now);
     }
     this.updateField(now, Math.min(dt, MAX_FRAME_DT));
+    // Gold embers rise from the incense clouds, 4 per second each.
+    if (this.incense.count && Math.random() < INCENSE_EMBERS_PER_S * this.incense.count * Math.min(dt, MAX_FRAME_DT)) {
+      const at = this.incense.randomPoint();
+      if (at) this.particles.incenseEmber(at[0], at[1], at[2]);
+    }
     this.particles.update(dt);
     this.vfx.update(now, this.scene.camera.position);
+    this.incense.update(now, this.scene.camera.position);
 
     const b = p.body;
     audio()?.setListener(b.x, b.y, p.yaw);
@@ -1540,6 +1565,7 @@ export class Game {
     this.party?.dispose();
     this.sounds.dispose();
     this.pool?.dispose();
+    this.incense.dispose();
     this.hum?.stop();
     this.hud.dispose();
     this.bench?.dispose();

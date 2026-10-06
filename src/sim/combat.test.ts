@@ -315,52 +315,90 @@ describe('combat (§5.3, §5.4, §6)', () => {
     spy.mockRestore();
   });
 
-  it('the censer explodes on the first enemy: 40 damage to it, 20 to others within 2.5 m (doubled: they are bound)', () => {
+  /** Steps until no projectile is left (the censer broke) and returns that tick. */
+  function untilBroken(sim: ReturnType<typeof makeSim>): number {
+    while (sim.projectiles.length) sim.step();
+    return sim.tick;
+  }
+
+  it('the censer breaks on the first enemy: 40 to it and nothing to the others (M9 §2.8)', () => {
     const sim = makeSim(room(30, 5), ['heretic']);
     const p = sim.players[0];
     put(sim, p, 2.5, 3.5);
     const a = enemyAt(sim, CHORISTER, 10.5, 3.5);
-    // The explosion point is about 0.65 m in front of a's center.
+    // The break point is about 0.65 m in front of a's center; b is 1.5 m from it, far 2.9 m.
     const b = enemyAt(sim, CHORISTER, 12, 3.5);
     const far = enemyAt(sim, CHORISTER, 13.2, 3.5);
-    // Rooted, so they hold still, and bound: they take double damage (M8 §8).
+    // Rooted, so they hold still, and bound: they take double damage.
     for (const s of [a, b, far]) sim.root(s, 10);
     aimAt(sim, p, a);
     sim.fireWeapon(p);
-    for (let i = 0; i < 15; i++) sim.step();
+    const t = untilBroken(sim);
+    expect(t % 15).not.toBe(0);
     expect(sim.eAlive[a]).toBe(0);
-    expect(sim.eHp[b]).toBe(20);
+    expect(sim.eHp[b]).toBe(60);
+    expect(sim.clouds).toHaveLength(1);
+    // The cloud's first pulse: 2.5, doubled while bound; far is outside its 2.5 m.
+    while (sim.tick % 15 !== 0) sim.step();
+    expect(sim.eHp[b]).toBe(55);
     expect(sim.eHp[far]).toBe(60);
   });
 
-  it('the censer splash hits only the 8 enemies nearest the explosion', () => {
-    const sim = makeSim(room(30, 10), ['heretic']);
+  it('a cloud hurts every enemy within 2.5 m for 2.5 every 15th tick, 8 times, then is gone, and sets the hurt flag', () => {
+    const sim = makeSim(room(30, 5), ['heretic']);
     const p = sim.players[0];
-    put(sim, p, 2.5, 5.5);
-    const a = enemyAt(sim, CHORISTER, 10.5, 5.5);
-    // The explosion point is about (9.85, 5.5). Nine Blessed within 2.5 m of it, clear of the flight
-    // path; the ninth is the farthest (2.45 m).
-    const near = [
-      [9.85, 6.2],
-      [9.85, 4.75],
-      [10.6, 6.5],
-      [10.6, 4.4],
-      [9.85, 7.0],
-      [9.85, 3.9],
-      [11.2, 7.1],
-      [11.2, 3.9],
-    ].map(([x, y]) => enemyAt(sim, BLESSED, x, y));
-    const ninth = enemyAt(sim, BLESSED, 9.85, 8.3);
-    for (const s of [a, ...near, ninth]) sim.root(s, 10);
+    put(sim, p, 2.5, 3.5);
+    // Choristers stand still while their target is in range (decisions.md §7.1); unrooted, so not bound.
+    const a = enemyAt(sim, CHORISTER, 10.5, 3.5);
+    const b = enemyAt(sim, CHORISTER, 11.5, 2.4);
     aimAt(sim, p, a);
     sim.fireWeapon(p);
-    for (let i = 0; i < 15; i++) sim.step();
-    // 20 splash, bound: every Blessed it reaches dies; the ninth is untouched.
-    for (const s of near) expect(sim.eAlive[s]).toBe(0);
-    expect(sim.eHp[ninth]).toBe(20);
+    untilBroken(sim);
+    expect(sim.eHp[a]).toBe(20);
+    expect(sim.eHp[b]).toBe(60);
+    let pulses = 0;
+    for (let i = 0; i < 6 * 30; i++) {
+      const before = sim.eHp[b];
+      sim.step();
+      if (sim.eHp[b] < before) {
+        pulses++;
+        expect(sim.tick % 15).toBe(0);
+        expect(before - sim.eHp[b]).toBe(2.5);
+        expect(sim.eHurtTick[b]).toBe(sim.tick);
+      }
+    }
+    expect(pulses).toBe(8);
+    expect(sim.eHp[b]).toBe(40);
+    // a died to the cloud's 8th pulse, credited to the Heretic.
+    expect(sim.eAlive[a]).toBe(0);
+    expect(p.kills).toBe(1);
+    expect(sim.clouds).toHaveLength(0);
   });
 
-  it('the censer explodes after flying 25 m, with splash damage only', () => {
+  it("clouds don't stack, and at most 4 exist: a fifth replaces the oldest", () => {
+    const sim = makeSim(room(30, 5), ['heretic']);
+    const p = sim.players[0];
+    put(sim, p, 2.5, 3.5);
+    const a = enemyAt(sim, CHORISTER, 10.5, 3.5);
+    const b = enemyAt(sim, CHORISTER, 11.5, 2.4);
+    sim.eHp[a] = 10000;
+    aimAt(sim, p, a);
+    // Two censers in the same flight: two clouds over b.
+    sim.fireWeapon(p);
+    sim.fireWeapon(p);
+    untilBroken(sim);
+    expect(sim.clouds).toHaveLength(2);
+    while (sim.tick % 15 !== 0) sim.step();
+    expect(sim.eHp[b]).toBe(57.5);
+    for (let i = 0; i < 3; i++) sim.fireWeapon(p);
+    untilBroken(sim);
+    expect(sim.clouds).toHaveLength(4);
+    expect(sim.clouds.every((c) => c.from === sim.tick)).toBe(false);
+    const newest = sim.clouds[3].from;
+    expect(sim.clouds[0].from).toBeLessThan(newest);
+  });
+
+  it('the censer breaks after flying 25 m, leaving its cloud there', () => {
     const sim = makeSim(room(60, 5), ['heretic']);
     const p = sim.players[0];
     put(sim, p, 2.5, 3.5);
@@ -368,10 +406,13 @@ describe('combat (§5.3, §5.4, §6)', () => {
     sim.root(at25, 10);
     p.pitch = 0;
     sim.fireWeapon(p);
-    for (let i = 0; i < 40; i++) sim.step();
-    expect(sim.projectiles.length).toBe(0);
-    // 20 splash, doubled while bound.
-    expect(sim.eHp[at25]).toBe(20);
+    untilBroken(sim);
+    expect(sim.clouds).toHaveLength(1);
+    expect(sim.clouds[0].x).toBeCloseTo(27.5, 5);
+    expect(sim.eHp[at25]).toBe(60);
+    while (sim.tick % 15 !== 0) sim.step();
+    // A pulse, doubled while bound.
+    expect(sim.eHp[at25]).toBe(55);
   });
 });
 

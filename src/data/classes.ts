@@ -47,7 +47,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     speed: 8,
     passive: { name: 'Last Rites', description: 'Revives fallen teammates twice as fast.' },
     hints: [
-      { key: 'LMB', text: 'Censers burst among the enemies.' },
+      { key: 'LMB', text: 'Censers leave burning incense. Throw them where the crowd is held.' },
       { key: 'RMB', text: 'Hold on a teammate (gold marker) to heal them.' },
       { key: 'Q', text: 'Q heals everyone near you. Stay close to the party.' },
       { key: 'E', text: 'E: shield a teammate (gold marker), or yourself. When enemies break it, it blasts the enemies around them.' },

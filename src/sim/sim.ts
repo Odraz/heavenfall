@@ -19,11 +19,13 @@ import {
   ABILITIES,
   BLASPHEMY_DURATION,
   BLASPHEMY_RADIUS,
-  CENSER_BLAST,
+  CLOUD_DAMAGE,
+  CLOUD_MAX,
+  CLOUD_PULSE_TICKS,
+  CLOUD_RADIUS,
+  CLOUD_TIME,
   CENSER_RADIUS,
   CENSER_SPEED,
-  CENSER_SPLASH_DAMAGE,
-  CENSER_SPLASH_MAX,
   CHAINS_ANGLE,
   CHAINS_MAX,
   CHAINS_PULL_TIME,
@@ -384,6 +386,8 @@ export class Simulation {
   readonly eCastCd = new Float64Array(ENEMY_SLOTS);
   /** Seconds until the next melee hit while in range; -1 when out of range. */
   readonly eMeleeNext = new Float64Array(ENEMY_SLOTS).fill(-1);
+  /** Incense clouds (M9 §2.8), oldest first: where each censer broke, who threw it, and its ticks. */
+  readonly clouds: Array<{ x: number; y: number; z: number; owner: SimPlayer; from: number; until: number }> = [];
   /** The one Field of Blood (M9 §3.4): its center and floor, active while tick < fieldUntil. */
   fieldX = 0;
   fieldY = 0;
@@ -716,6 +720,7 @@ export class Simulation {
     this.separate(0);
     this.separate(1);
     this.updateProjectiles();
+    this.updateClouds();
     this.updateSouls();
     this.checkVictory();
     this.checkArenaClears();
@@ -1822,8 +1827,8 @@ export class Simulation {
   }
 
   /**
-   * Censer explosion: 40 damage to the enemy hit directly (-1 for none), and 10 to the 6 other enemies
-   * nearest the point within 2 m (§6.2, decisions.md).
+   * A censer breaks (M9 §2.8): 40 damage to the enemy it hit (-1 for none), nothing to others, and an
+   * incense cloud where it broke. Souls within 2.5 m count one hit each (M8 §4.2).
    */
   private explodeCenser(slot: number, x: number, y: number, z: number, direct: number): void {
     const owner = this.pOwner[slot];
@@ -1832,27 +1837,43 @@ export class Simulation {
     this.pY[slot] = y;
     this.pZ[slot] = z;
     this.removeProjectile(slot);
-    const hit: Array<{ s: number; d: number }> = [];
-    for (let k = 0; k < this.activeCount; k++) {
-      const s = this.active[k];
-      if (s === direct) continue;
-      const def = ENEMIES[this.eType[s]];
-      const d = distToCylinder(x, y, z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height);
-      if (d <= CENSER_BLAST) hit.push({ s, d });
-    }
-    // Stable sort: equal distances keep active-list order, so the result is deterministic.
-    hit.sort((a, b) => a.d - b.d);
     if (direct >= 0) this.damageEnemy(direct, damage, owner);
-    for (let i = 0; i < hit.length && i < CENSER_SPLASH_MAX; i++) this.damageEnemy(hit[i].s, CENSER_SPLASH_DAMAGE, owner);
-    // Souls within 2.5 m count one hit each (M8 §4.2).
     const shooter = this.slots[owner];
     if (!shooter) return;
+    // At most 4 clouds: a new one replaces the oldest.
+    if (this.clouds.length >= CLOUD_MAX) this.clouds.shift();
+    this.clouds.push({ x, y, z, owner: shooter, from: this.tick, until: this.tick + ticks(CLOUD_TIME) });
     for (const o of this.players) {
       if (o === shooter || !this.hasSoul(o)) continue;
       if (distToCylinder(x, y, z, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= REVIVE_CENSER_RADIUS) {
         this.addRevive(o, reviveHit(WEAPONS[shooter.classId].interval, shooter.classId === 'heretic'));
       }
     }
+  }
+
+  /**
+   * Incense clouds (M9 §2.8): every 15th tick each living enemy within 2.5 m of any cloud takes 2.5
+   * damage once, however many clouds cover it, credited to the newest one's Heretic (no one if it left).
+   * A cloud pulses on the ticks after it appears, up to its 4 s.
+   */
+  private updateClouds(): void {
+    while (this.clouds.length && this.tick > this.clouds[0].until) this.clouds.shift();
+    if (this.clouds.length === 0 || this.tick % CLOUD_PULSE_TICKS !== 0) return;
+    const hits: Array<[number, number]> = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      const def = ENEMIES[this.eType[s]];
+      // Newest first, so the credit goes to the newest cloud covering the enemy.
+      for (let i = this.clouds.length - 1; i >= 0; i--) {
+        const c = this.clouds[i];
+        if (this.tick <= c.from || this.tick > c.until) continue;
+        if (distToCylinder(c.x, c.y, c.z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > CLOUD_RADIUS) continue;
+        hits.push([s, c.owner.connected ? c.owner.index : -1]);
+        break;
+      }
+    }
+    // Applied after the scan: a kill removes the enemy from the active list.
+    for (const [s, source] of hits) this.damageEnemy(s, CLOUD_DAMAGE, source);
   }
 
   // ------------------------------------------------------------------ enemies

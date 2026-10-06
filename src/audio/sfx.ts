@@ -46,11 +46,13 @@ export const SFX = {
     ],
   },
   /** A muffled burst of embers. */
-  censerBurst: {
+  /** The censer breaking (M9 §5.2): a bronze clank and a soft hiss of incense. */
+  censerBreak: {
     priority: PRIO_OTHERS,
     parts: [
-      part({ wave: 'noise', freq: 5000, decay: 0.1, sustain: 0.3, release: 0.25, volume: 0.7, lowpass: 3000, lowpassEnd: 300 }),
-      part({ wave: 'sine', freq: 110, freqEnd: 40, decay: 0.08, sustain: 0.4, release: 0.15, volume: 0.5 }),
+      part({ wave: 'triangle', freq: 1240, freqEnd: 980, attack: 0.001, decay: 0.05, sustain: 0.25, release: 0.18, volume: 0.35, vibratoRate: 31, vibratoDepth: 0.6 }),
+      part({ wave: 'square', freq: 620, freqEnd: 410, decay: 0.03, sustain: 0.2, release: 0.1, volume: 0.15, duty: 0.3, bits: 5 }),
+      part({ wave: 'noise', freq: 9000, delay: 0.04, attack: 0.05, decay: 0.2, sustain: 0.3, hold: 0.25, release: 0.4, volume: 0.22, lowpass: 5000, lowpassEnd: 1800 }),
     ],
   },
   /** Short and light: it plays 12 times per second. */

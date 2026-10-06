@@ -66,8 +66,9 @@ export class GameSounds {
     if (type !== GATEKEEPER) sfx('blessedDeath', at);
   }
 
-  censerBurst(at: SoundPos): void {
-    sfx('censerBurst', at);
+  /** A censer broke (M9 §5.2). */
+  censerBreak(at: SoundPos): void {
+    sfx('censerBreak', at);
   }
 
   /** The local player stepped into a Field of Blood (M9 §5.2). */

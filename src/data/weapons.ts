@@ -33,7 +33,7 @@ export interface WeaponDef {
 /** Primary attacks, left mouse (M9 §2.3). */
 export const WEAPONS: Record<ClassId, WeaponDef> = {
   fallen: { name: 'Brimstone Shotgun', description: '8 pellets of hellfire. Deadly up close, and blasts back what survives.', kind: 'hitscan', interval: 0.8, pellets: 8, damage: 12, spreadYaw: 8 * DEG, spreadPitch: 4 * DEG, range: 20, maxHits: 1, slow: 0 },
-  heretic: { name: 'Censer Launcher', description: 'Fires a censer that bursts on impact, hitting the enemies around it.', kind: 'censer', interval: 1.0, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 25, maxHits: 1, slow: 0 },
+  heretic: { name: 'Censer Launcher', description: 'Fires a censer that breaks on the enemy it hits, leaving a cloud of incense that slowly burns the enemies inside.', kind: 'censer', interval: 1.0, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 25, maxHits: 1, slow: 0 },
   binder: { name: 'Chain Gun', description: 'Fast and accurate. Slows every enemy it hits.', kind: 'hitscan', interval: 1 / 12, pellets: 1, damage: 12, spreadYaw: 2 * DEG, spreadPitch: 2 * DEG, range: 40, maxHits: 1, slow: 1 },
   betrayer: { name: 'Silver Revolver', description: 'Fast, precise shots, one enemy at a time.', kind: 'hitscan', interval: 0.2, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: 1, slow: 0 },
 };
@@ -157,11 +157,13 @@ export const MOVEMENT_SPEED_CHECK_SKIP = 0.6;
 // Censer projectile (§6.2).
 export const CENSER_SPEED = 20;
 export const CENSER_RADIUS = 0.2;
-// §6.2 says 40 dmg to all within 3 m; changed after playtesting to 40 for the enemy hit directly
-// and splash to the nearest others (decisions.md); M8 §8 raised the splash to 20 dmg to the 8
-// nearest within 2.5 m, so it kills Blessed.
-export const CENSER_BLAST = 2.5;
-export const CENSER_SPLASH_DAMAGE = 20;
-export const CENSER_SPLASH_MAX = 8;
+// The censer breaks on what it hits, 40 dmg to that enemy only, and leaves an incense cloud (M9 §2.8):
+// 2.5 dmg every 0.5 s to every enemy within 2.5 m for 4 s, not stacking, at most 4 clouds. (Its
+// splash, last 20 dmg to the 8 nearest within 2.5 m, made the healer a grenade launcher.)
+export const CLOUD_RADIUS = 2.5;
+export const CLOUD_TIME = 4;
+export const CLOUD_DAMAGE = 2.5;
+export const CLOUD_PULSE_TICKS = 15;
+export const CLOUD_MAX = 4;
 
 export const SLOW_FACTOR = 0.7;

@@ -107,6 +107,27 @@ describe('souls and reviving (M8 §4)', () => {
     expect(dead.revive).toBeGreaterThan(0.6);
   });
 
+  it("the censer's incense cloud doesn't revive (M9 §2.8): after the break, progress only decays", () => {
+    const sim = makeSim(room(30, 10), ['binder', 'heretic', 'fallen']);
+    const [, heretic, dead] = sim.players;
+    put(sim, heretic, 2.5, 5.5);
+    put(sim, dead, 10.5, 7.5);
+    sim.damagePlayer(dead, 10000);
+    const a = enemyAt(sim, CHORISTER, 10.5, 5.5);
+    sim.root(a, 10);
+    heretic.yaw = 0;
+    heretic.pitch = 0;
+    sim.fireWeapon(heretic);
+    while (sim.projectiles.length) sim.step();
+    expect(sim.clouds).toHaveLength(1);
+    let last = dead.revive;
+    for (let i = 0; i < 4 * 30; i++) {
+      sim.step();
+      expect(dead.revive).toBeLessThanOrEqual(last);
+      last = dead.revive;
+    }
+  });
+
   it('Unholy Communion adds 0.25 to souls within 15 m and nothing outside', () => {
     const sim = makeSim(room(40, 10), ['heretic', 'binder', 'fallen']);
     const [heretic, near, far] = sim.players;
