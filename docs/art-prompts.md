@@ -409,16 +409,18 @@ A single old tarnished silver coin seen straight on: a worn, slightly irregular 
 
 ## Milestone 10
 
-12 images for the level art ([m10.md](m10.md)). The goal is the look of the concept art, at almost no cost per frame, so the prompts ask for flat, evenly lit images: the game adds its own baked light. Attach `concept-1.webp`, `concept-2.webp` and `concept-3.webp` to every prompt unless it says otherwise. Save them as named: the sky, textures and effect in `assets/art-src/`, the prop sheets in `assets/art-src/reference/`. Generate each in a new chat. They're needed in stages, so you can do them stage by stage.
+9 images for the level art ([m10.md](m10.md)), plus 5 prop sheets made early for a later milestone. The goal is the look of the concept art, `concept-1` above all, at almost no cost per frame, so the prompts ask for flat, evenly lit images: the game adds its own baked light. Attach `concept-1.webp`, `concept-2.webp` and `concept-3.webp` to every prompt unless it says otherwise. Save them as named: the sky, textures and effects in `assets/art-src/`, the prop sheets in `assets/art-src/reference/`. Generate each in a new chat. They're needed in stages, so you can do them stage by stage.
 
 **Optional extras that help** (not required): a close-up photo or painting of a real gold-inlay marble floor; a real arcade with arched windows seen from inside; any artwork of floating spires and towers in clouds. Attach them to the prompts they match.
 
 JPEG is fine for all of them (`.jfif` or `.jpg`, same base name).
 
 - [x] Stage 1: `sky-day`
-- [x] Stage 3: `tex-floor-plain`, `tex-floor-medallion`, `tex-wall-window`, `tex-wall-pilaster`, `tex-cornice` (Claude fixes the plain floor's grid, adds the frieze to the window wall and closes the cornice seam: [m10.md](m10.md) §5.1)
-- [x] Stage 4: `fx-lightshaft`
-- [x] Stage 5: `prop-arch-sheet`, `prop-column-sheet`, `prop-balustrade-sheet`, `prop-spire-sheet`, `prop-island-sheet`
+- [x] Stage 3: `tex-floor-plain`, `tex-floor-medallion`, `tex-wall-window`, `tex-wall-pilaster`, `tex-cornice` (Claude fixes the plain floor's grid, adds the frieze to the window wall and crops the cornice to whole repeats of its pattern: [m10.md](m10.md) §5.1)
+- [x] Stage 4: `tex-arcade` (Claude keys out the green, extends it to 1:2 and splits it into two layers: [m10.md](m10.md) §6)
+- [x] Stage 5: `fx-lightshaft`
+- [x] Stage 5: `fx-clouds` (Claude cleans the green rim off the soft edges: [m10.md](m10.md) §7.2)
+- [x] Later milestone (sprites from 3D models, not used in M10): `prop-arch-sheet`, `prop-column-sheet`, `prop-balustrade-sheet`, `prop-spire-sheet`, `prop-island-sheet`
 
 ### Sky (stage 1)
 
@@ -462,15 +464,33 @@ A horizontal band for the top of every wall. It only repeats left to right. Clau
 Seamless horizontally tileable game texture, viewed straight on, orthographic, filling the whole image: a grand classical cornice band in ivory stone and gold, from top to bottom: a thin gold strip, a row of small evenly spaced dentils, a wide band with a repeating carved leaf-and-lily pattern with gold-leaf trim, then a projecting molding with a thin gold line at the bottom. Hand-painted stylized texture matching the stonework in the attached images: painterly brush texture, crisp dark ink-like lines along the carved edges. Even, flat lighting: no cast shadows, no vignette, no perspective. The left edge continues the right edge. No text. Aspect ratio 21:9.
 ```
 
-### Atmosphere (stage 4)
+### Arches (stage 4)
+
+#### Arcade bay — `tex-arcade.png` · 9:16
+One bay of the arcade that runs along every open edge of the level, like the arches on the left of `concept-1`. Bays stand side by side, so each side edge shows half a pier. The game cuts out the green, so you see the sky through the arch. It's 4 m wide and 8 m tall in the game; Claude extends it to 1:2. Attach `tex-wall.png` too, so the stone matches.
+```text
+Game texture, viewed straight on, orthographic, filling the whole image: one bay of a grand Gothic arcade in ivory stone and gold. At the left and right edges, half of a square stone pier each (each 12% of the image width), cut exactly at the image edge so two images side by side make a whole pier. Between them, one tall pointed-arch opening whose apex is at 75% of the image height from the bottom, framed by a carved molding with gold-leaf trim and a small gold lily keystone. Across the bottom 17% of the opening, a stone balustrade: a plinth, a row of fat ivory balusters with gold accents, and a thin gold-trimmed top rail. Above the arch, solid ivory stone spandrels with fine gold scrollwork, and the top 20% of the image plain ivory stone blocks with thin dark joints. Everything that is open, inside the arch above the balustrade and between the balusters, is flat pure green (#00FF00), with no sky, no clouds and no glass. Hand-painted stylized texture matching the architecture in the attached images: painterly brush texture, crisp dark ink-like lines along the carved edges and joints. Even, flat lighting: no cast shadows, no vignette, no perspective. No text. Aspect ratio 9:16.
+```
+
+**Check before saving:** the opening is one clean green area (no sky painted into it), the arch is centered and symmetric, and the left and right edges are cut through the piers.
+
+### Atmosphere (stage 5)
 
 #### Light shaft — `fx-lightshaft.png` · 3:4
-Drawn additively, so black becomes transparent. Tinted warm gold by the game. No attachments.
+The game turns brightness into opacity, so black becomes transparent. Tinted warm gold by the game. No attachments.
 ```text
 A single tall shaft of sunlight, a soft-edged vertical beam of light, widest at the top and narrowing slightly toward the bottom, centered, 40% of the image width, brightest in the middle with a gentle falloff to both sides, a few faint darker streaks along its length, and a fade to nothing at the top and bottom edges. Pure white and light grey only, no color. On a pure black (#000000) background. Flat, seen straight on, no perspective. No text. Aspect ratio 3:4.
 ```
 
-### Architecture (stage 5)
+#### Clouds — `fx-clouds.png` · 1:1
+Four clouds the game scatters around and below the level, so the arches look out onto clouds as in `concept-1`. Attach `sky-day` from `assets/art-src/` too, so they match its clouds.
+```text
+Four separate painted cumulus clouds arranged in a 2 × 2 grid, one in each quarter of the image, each fully inside its quarter with a clear margin of background around it, none touching another or the image edge. Different shapes: one tall billowing cloud, one wide flat cloud bank, one small round puff, one long wispy streak. Soft fluffy edges, sunlit warm white and pale gold tops, soft blue-grey and lavender undersides. Hand-painted stylized look matching the clouds of the attached sky: painterly brush texture, soft edges, no ink outlines. Isolated on a flat pure green (#00FF00) background: no sky, no ground, no text. Aspect ratio 1:1.
+```
+
+### Architecture (a later milestone)
+
+Not used in M10, which builds its arches from painted textures (above) on simple geometry: reveals, crowns and pilaster strips. Kept as references for the later milestone that renders better sprites from professional 3D models.
 
 Reference sheets that Claude models in Blender, like the Part A turnarounds: each shows one prop from the front, the side and the top, at the same scale, so it can be built accurately. They're never shown in the game. Save in `assets/art-src/reference/`.
 
