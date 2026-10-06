@@ -24,7 +24,7 @@ import { GameScene } from '../render/scene';
 import type { GameTextures } from '../render/textures';
 import { Vfx } from '../render/vfx';
 import { BloodPool } from '../render/bloodPool';
-import { FIELD_FIRE_RATE, inField } from '../sim/field';
+import { FIELD_FIRE_RATE, FIELD_TIME, inField } from '../sim/field';
 import { DebugOverlay } from '../ui/debugOverlay';
 import { PauseOverlay } from '../ui/pause';
 import type { ResultsData } from '../ui/results';
@@ -308,7 +308,7 @@ export class Game {
     this.hud.setHp(this.maxHp, 0, this.maxHp);
     this.hud.setRemaining(null);
     this.hud.setDeath(null);
-    this.party = o.singleplayer ? null : new PartyFrames(this.hud.root);
+    this.party = o.singleplayer ? null : new PartyFrames(this.hud.leftColumn, this.hud.ownFrame);
     this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id));
     this.hud.onReady = () => this.sounds.abilityReady();
     this.overlay = new DebugOverlay(o.root);
@@ -712,6 +712,13 @@ export class Game {
     if (inside && !this.inFieldNow) this.sounds.fieldEntered();
     this.inFieldNow = inside;
     this.hud.setInField(inside, now);
+    this.hud.setFieldBuff(inside && p ? Math.max(0, 1 - p.age(now) / FIELD_TIME) : null);
+    // Teammates in it, from their interpolated positions, get the badge on their party frames.
+    if (this.party) {
+      const ids = new Set<number>();
+      if (p) for (const q of this.snaps.playersOut) if (q.id !== this.localId && !q.dead && inField(this.map, p.x, p.y, p.z, q.x, q.y)) ids.add(q.id);
+      this.party.setInField(ids);
+    }
   }
 
   private onGameOver(e: Extract<GameEvent, { type: 'gameOver' }>, now: number): void {

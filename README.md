@@ -51,7 +51,7 @@ These work on the dev server (port 5173), the preview server (port 4173) and the
 | http://localhost:5173/?join=ABC234 | An invite link: Title offers `Join game ABC234`, which opens the Join screen with the ID filled in. |
 | http://localhost:5173/?bot=1&autojoin=1&join=ABC234&class=heretic&name=Bot2 | Bot auto-join, for testing co-op abilities alone: joins open game `ABC234` without the menus and picks `class` if it's free (otherwise the first free class); in a game already running it also clicks `Enter game`. Host an open game (no password), then open this in up to three tabs. |
 
-In game: mouse to look (click to capture the pointer), WASD to move, Space to jump, left mouse to fire, Q and E for abilities, H for the class hints, Enter to chat (multiplayer; Enter again sends, or closes an empty line), Esc to pause, F3 for the debug overlay. With `dev=1`, K kills every enemy and G toggles invulnerability.
+In game: mouse to look (click to capture the pointer), WASD to move, Space to jump, left mouse for the primary attack and right mouse for the secondary (holding both uses the one pressed last; the Heretic Saint's Sacrament wins whenever a teammate is aimed at), Q and E for abilities, H for the class hints, Enter to chat (multiplayer; Enter again sends, or closes an empty line), Esc to pause, F3 for the debug overlay. With `dev=1`, K kills every enemy and G toggles invulnerability.
 
 ### Multiplayer
 

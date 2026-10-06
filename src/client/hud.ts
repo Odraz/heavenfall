@@ -1,6 +1,7 @@
 /** The in-game HUD and screen feedback (§10), plain DOM over the canvas. */
 import { CLASSES, GENERAL_HINTS, type ClassId } from '../data/classes';
 import { ABILITIES, WEAPONS } from '../data/weapons';
+import { mouseGlyph } from '../ui/mouseGlyph';
 import { CHAT_MAX } from '../net/lobby';
 import { spriteUrl } from '../render/atlas';
 import { fireFrame, weaponAtlas, type WeaponManifest } from '../render/weaponAtlas';
@@ -22,24 +23,12 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 /** Ready glint (M8 §2.3): the band's sweep and the slot frame's gold glow. */
 const GLINT_SWEEP_MS = 400;
 const GLINT_GLOW_MS = 300;
-/** Set once the player has opened the hints panel, which hides the discovery prompt for good (M8 §2.2). */
-const HINTS_SEEN_KEY = 'heavenfall.hintsSeen';
-
-function hintsSeen(): boolean {
-  try {
-    return localStorage.getItem(HINTS_SEEN_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function markHintsSeen(): void {
-  try {
-    localStorage.setItem(HINTS_SEEN_KEY, '1');
-  } catch {
-    // Storage may be unavailable; the prompt then shows again next game.
-  }
-}
+/** The ability slots' cooldown ring (M9 §6.4): 24 px radius, 3 px stroke, centered on the 64 px slot. */
+const RING_R = 24;
+const RING_C = 2 * Math.PI * RING_R;
+/** The Field of Blood buff icon's ring, around its 32 px icon. */
+const BUFF_R = 17;
+const BUFF_C = 2 * Math.PI * BUFF_R;
 const VIGNETTE_MS = 300;
 const SHAKE_MS = 150;
 const JUDGMENT_TEXT_MS = 3000;
@@ -92,10 +81,18 @@ export class Hud {
   private readonly crosshair: HTMLDivElement;
   private inField = false;
   private fieldEnteredAt = -Infinity;
-  private readonly abilities: Array<{ sweep: HTMLDivElement; text: HTMLDivElement; box: HTMLDivElement; glint: HTMLDivElement; cd: number }>;
-  /** The hints panel (M8 §2.2), toggled with H, and the prompt shown until it's first opened. */
+  private readonly abilities: Array<{ arc: SVGCircleElement; text: HTMLDivElement; box: HTMLDivElement; glint: HTMLDivElement; cd: number }>;
+  /** The hints panel (M8 §2.2), toggled with H. */
   private readonly hints: HTMLDivElement;
-  private readonly hintsPrompt: HTMLDivElement;
+  /**
+   * The bottom-left column (M9 §6.4), from the bottom up: the own frame, the party frames, the chat.
+   * The party frames go in before `ownFrame`.
+   */
+  readonly leftColumn: HTMLDivElement;
+  readonly ownFrame: HTMLDivElement;
+  /** The Field of Blood buff icon by the HP bar, with its ring emptying over the field's time (M9 §5.1). */
+  private readonly buff: HTMLDivElement;
+  private readonly buffArc: SVGCircleElement;
   /** Called when an ability's cooldown runs out, for its sound (M8 §2.3). */
   onReady: (slot: 'Q' | 'E') => void = () => {};
   private readonly hitMarker: HTMLDivElement;
@@ -170,8 +167,9 @@ export class Hud {
     }
     this.chevron.appendChild(svg);
 
-    // Chat, above the HP bar (M8 §7).
-    const chat = el('div', 'chat', this.root);
+    // The bottom-left column (M9 §6.4): chat on top, then the party frames, then the own frame.
+    this.leftColumn = el('div', 'hud-left', this.root);
+    const chat = el('div', 'chat', this.leftColumn);
     this.chatMessages = el('div', 'chat-messages', chat);
     this.chatInput = el('input', 'chat-input', chat);
     this.chatInput.maxLength = CHAT_MAX;
@@ -193,11 +191,28 @@ export class Hud {
       if (!this.chatInput.hidden) queueMicrotask(() => this.chatInput.focus());
     });
 
-    const hp = el('div', 'hp', this.root);
+    // The own frame: the class portrait in the slot frame, and the HP text over the HP bar.
+    this.ownFrame = el('div', 'own-frame', this.leftColumn);
+    const portrait = el('div', 'own-portrait', this.ownFrame);
+    const portraitImg = el('img', '', portrait);
+    portraitImg.src = spriteUrl(`class-${classId}`);
+    portraitImg.alt = CLASSES[classId].name;
+    const hp = el('div', 'hp', this.ownFrame);
+    this.hpText = el('div', 'hp-text', hp);
     this.hpBar = el('div', 'hp-bar', hp);
     this.hpFill = el('div', 'hp-fill', this.hpBar);
     this.shieldFill = el('div', 'shield-fill', this.hpBar);
-    this.hpText = el('div', 'hp-text', hp);
+    this.buff = el('div', 'buff-icon', hp);
+    this.buff.hidden = true;
+    const buffImg = el('img', '', this.buff);
+    buffImg.src = spriteUrl('icon-field-of-blood');
+    buffImg.alt = 'Field of Blood';
+    const buffSvg = document.createElementNS(SVG_NS, 'svg');
+    buffSvg.setAttribute('viewBox', '0 0 40 40');
+    this.buffArc = document.createElementNS(SVG_NS, 'circle');
+    for (const [k, v] of Object.entries({ cx: '20', cy: '20', r: String(BUFF_R), transform: 'rotate(-90 20 20)', 'stroke-dasharray': `${BUFF_C} ${BUFF_C}` })) this.buffArc.setAttribute(k, v);
+    buffSvg.appendChild(this.buffArc);
+    this.buff.appendChild(buffSvg);
 
     // The weapon frame covers the bottom half of the screen (600 px = 50vh), placed so its
     // screen-center column lies on the screen's center line (§11.1).
@@ -232,12 +247,26 @@ export class Hud {
       const box = el('div', 'ability', abil);
       const icon = el('img', 'ability-icon', box);
       icon.src = spriteUrl(ABILITIES[classId][key].icon);
-      const sweep = el('div', 'ability-sweep', box);
       // The glint's band, clipped to the icon.
       const glint = el('div', 'ability-glint-band', el('div', 'ability-glint', box));
+      // The cooldown ring (M9 §6.4): a faint track, and a gold arc from 12 o'clock, clockwise, over the
+      // part of the cooldown that has passed.
+      const svg = document.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('class', 'ability-ring');
+      svg.setAttribute('viewBox', '0 0 64 64');
+      const circle = (cls: string): SVGCircleElement => {
+        const c = document.createElementNS(SVG_NS, 'circle');
+        for (const [k, v] of Object.entries({ cx: '32', cy: '32', r: String(RING_R), class: cls })) c.setAttribute(k, v);
+        svg.appendChild(c);
+        return c;
+      };
+      circle('ability-ring-track');
+      const arc = circle('ability-ring-arc');
+      arc.setAttribute('transform', 'rotate(-90 32 32)');
+      box.appendChild(svg);
       const text = el('div', 'ability-cd', box);
       el('div', 'ability-key', box).textContent = key;
-      return { sweep, text, box, glint, cd: 0 };
+      return { arc, text, box, glint, cd: 0 };
     });
 
     // Hints: the class's lines, each ability's with its icon, then the general ones in multiplayer.
@@ -245,7 +274,10 @@ export class Hud {
     this.hints.hidden = true;
     for (const h of CLASSES[classId].hints) {
       const line = el('div', 'hint', this.hints);
-      if (h.key) {
+      if (h.key === 'LMB' || h.key === 'RMB') {
+        // Attack lines show the mouse glyph where ability lines show their icon (M9 §6.2).
+        el('span', 'hint-icon hint-glyph', line).appendChild(mouseGlyph(h.key === 'LMB' ? 'left' : 'right', 18, 24));
+      } else if (h.key) {
         const icon = el('img', 'hint-icon', line);
         icon.src = spriteUrl(ABILITIES[classId][h.key].icon);
         icon.alt = h.key;
@@ -259,9 +291,6 @@ export class Hud {
         el('span', 'hint-text', line).textContent = text;
       }
     }
-    this.hintsPrompt = el('div', 'hints-prompt', this.root);
-    this.hintsPrompt.textContent = 'H · Hints';
-    this.hintsPrompt.hidden = hintsSeen();
 
     this.boss = el('div', 'boss', this.root);
     el('div', 'boss-name', this.boss).textContent = 'The Gatekeeper';
@@ -295,7 +324,16 @@ export class Hud {
     this.hpFill.style.width = `${(Math.max(0, hp) / total) * 100}%`;
     this.shieldFill.style.left = `${(Math.max(0, hp) / total) * 100}%`;
     this.shieldFill.style.width = `${(shield / total) * 100}%`;
-    this.hpText.textContent = shield > 0 ? `${Math.ceil(hp)} + ${Math.ceil(shield)}` : `${Math.ceil(hp)} / ${maxHp}`;
+    this.hpText.textContent = shield > 0 ? `HP ${Math.ceil(hp)} + ${Math.ceil(shield)}` : `HP ${Math.ceil(hp)} / ${maxHp}`;
+  }
+
+  /**
+   * The Field of Blood buff icon (M9 §5.1), shown while the player is in a field: `left` is the
+   * fraction of the field's time remaining, which its red ring shows; null hides it.
+   */
+  setFieldBuff(left: number | null): void {
+    this.buff.hidden = left === null;
+    if (left !== null) this.buffArc.setAttribute('stroke-dasharray', `${(BUFF_C * Math.max(0, Math.min(1, left))).toFixed(2)} ${BUFF_C}`);
   }
 
   get chatOpen(): boolean {
@@ -330,13 +368,9 @@ export class Hud {
     while (this.chatShown.length > CHAT_LINES) this.chatShown.shift()!.el.remove();
   }
 
-  /** Toggles the hints panel; the first opening hides the discovery prompt for good (M8 §2.2). */
+  /** Toggles the hints panel (M8 §2.2). */
   toggleHints(): void {
     this.hints.hidden = !this.hints.hidden;
-    if (!this.hints.hidden && !this.hintsPrompt.hidden) {
-      this.hintsPrompt.hidden = true;
-      markHintsSeen();
-    }
   }
 
   /** Closes the hints panel, as at the result. */
@@ -358,9 +392,19 @@ export class Hud {
       // Ready glint (M8 §2.3): when the cooldown runs out, not for an ability that was never on one.
       if (a.cd > 0 && cd <= 0) this.glint(i);
       a.cd = cd;
-      const frac = cd > 0 ? Math.min(1, cd / max) : 0;
-      a.sweep.style.background = frac > 0 ? `conic-gradient(rgba(10, 6, 4, 0.72) ${frac * 360}deg, transparent 0deg)` : 'none';
-      a.text.textContent = cd > 0 ? (cd >= 1 ? String(Math.ceil(cd)) : cd.toFixed(1)) : '';
+      // The ring covers the part of the cooldown that has passed (M9 §6.4).
+      const passed = cd > 0 ? 1 - Math.min(1, cd / max) : 0;
+      a.arc.setAttribute('stroke-dasharray', `${(passed * RING_C).toFixed(2)} ${RING_C}`);
+      // The seconds with an `s` (M9 §6.4); Cinzel has no lowercase, so the unit is in the body font.
+      const secs = cd > 0 ? (cd >= 1 ? String(Math.ceil(cd)) : cd.toFixed(1)) : '';
+      if (a.text.dataset.secs !== secs) {
+        a.text.dataset.secs = secs;
+        a.text.replaceChildren();
+        if (secs) {
+          a.text.append(secs);
+          el('span', 'ability-cd-unit', a.text).textContent = 's';
+        }
+      }
       a.box.classList.toggle('ready', cd <= 0);
     });
   }

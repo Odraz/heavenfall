@@ -74,6 +74,12 @@ body {
   letter-spacing: 0.05em;
 }
 
+.loading-tip {
+  font-size: 15px;
+  letter-spacing: 0;
+  color: rgba(247, 240, 220, 0.7);
+}
+
 .debug-overlay {
   position: absolute;
   top: 8px;
@@ -248,11 +254,56 @@ body {
   stroke: #9a9590;
 }
 
-.hp {
+/*
+ * The bottom-left column (M9 §6.4), from the bottom up: the own frame, the party frames 12 px above
+ * it, the chat 12 px above those.
+ */
+.hud-left {
   position: absolute;
   left: 24px;
   bottom: 24px;
-  width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* The own frame: the class portrait, and the HP text over the HP bar, bottom-aligned with it. */
+.own-frame {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  height: 72px;
+}
+
+.own-portrait {
+  position: relative;
+  flex: none;
+  width: 72px;
+  height: 72px;
+  filter: drop-shadow(0 0 10px rgba(240, 138, 36, 0.6));
+}
+
+.own-portrait img {
+  position: absolute;
+  inset: 7px;
+  width: 58px;
+  height: 58px;
+}
+
+.own-portrait::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('../assets/ui/ui-slot-frame.png') center / 100% 100%;
+  pointer-events: none;
+}
+
+/* The bar's trough is 260 px; its frame reaches 28 px past each end. */
+.hp {
+  position: relative;
+  width: 316px;
 }
 
 /*
@@ -310,17 +361,45 @@ body {
 }
 
 .hp-text {
-  margin-top: 10px;
   padding-left: 6px;
   font: 600 18px/1 var(--display-font);
   text-shadow: 0 1px 2px #000, 0 0 6px #000;
 }
 
-/* Chat (M8 §7): messages and the chat line, above the HP bar. */
-.chat {
+/*
+ * The Field of Blood buff icon (M9 §5.1): its right edge at the bar's right end, its bottom 4 px
+ * above the bar, positioned absolutely so nothing moves; a red ring around it empties over the field's time.
+ */
+.buff-icon {
   position: absolute;
-  left: 24px;
-  bottom: 96px;
+  right: 28px;
+  bottom: 35px;
+  width: 32px;
+  height: 32px;
+}
+
+.buff-icon img {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+}
+
+.buff-icon svg {
+  position: absolute;
+  inset: -4px;
+  width: 40px;
+  height: 40px;
+  overflow: visible;
+}
+
+.buff-icon circle {
+  fill: none;
+  stroke: #ff3a2a;
+  stroke-width: 3;
+}
+
+/* Chat (M8 §7): messages and the chat line, at the top of the bottom-left column. */
+.chat {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -355,15 +434,16 @@ body {
   outline: none;
 }
 
-/* Party frames (§10), multiplayer only: left, above the own HP bar. */
+/* Party frames (§10), multiplayer only: in the bottom-left column, above the own frame (M9 §6.4). */
 .party {
-  position: absolute;
-  left: 24px;
-  top: 30%;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: 250px;
+  gap: 8px;
+  width: 220px;
+}
+
+.party:empty {
+  display: none;
 }
 
 .party-frame {
@@ -398,11 +478,28 @@ body {
   filter: grayscale(1) brightness(0.7);
 }
 
-.party-icon {
-  width: 40px;
-  height: 40px;
+.party-icon-wrap {
+  position: relative;
   flex: none;
+  width: 36px;
+  height: 36px;
+}
+
+.party-icon {
+  width: 36px;
+  height: 36px;
   border-radius: 4px;
+}
+
+/* In a Field of Blood (M9 §5.1): its icon as a badge on the class icon's bottom-right corner. */
+.party-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  box-shadow: 0 0 4px #000;
 }
 
 .party-info {
@@ -422,7 +519,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -432,7 +529,7 @@ body {
 
 .party-status {
   flex: none;
-  font: 600 14px/1.4 var(--display-font);
+  font: 600 14px/1.3 var(--display-font);
 }
 
 /* Drawn at 0.2 of the bar frame's size, like the Judgment cast bar. */
@@ -442,7 +539,7 @@ body {
   --reach-y: 4px;
   --reach-x: 19px;
   position: relative;
-  height: 10px;
+  height: 8px;
   margin: var(--reach-y) var(--reach-x);
   background: rgba(27, 21, 19, 0.85);
 }
@@ -494,10 +591,11 @@ body {
   mix-blend-mode: screen;
 }
 
+/* The slots sit so their key labels (20 px, 6 px below them) are 24 px from the bottom (M9 §6.4). */
 .abilities {
   position: absolute;
   right: 24px;
-  bottom: 24px;
+  bottom: 50px;
   display: flex;
   gap: 12px;
 }
@@ -506,7 +604,36 @@ body {
   position: relative;
   width: 64px;
   height: 64px;
-  filter: grayscale(0.6) brightness(0.8);
+}
+
+/* Cooling down (M9 §6.4): the icon dimmed, and the ring over it. */
+.ability:not(.ready) .ability-icon {
+  filter: brightness(0.45);
+}
+
+.ability-ring {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 64px;
+  height: 64px;
+  pointer-events: none;
+}
+
+.ability.ready .ability-ring {
+  display: none;
+}
+
+.ability-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 3;
+}
+
+.ability-ring-arc {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 3;
 }
 
 .ability.ready {
@@ -522,8 +649,7 @@ body {
   pointer-events: none;
 }
 
-.ability-icon,
-.ability-sweep {
+.ability-icon {
   position: absolute;
   inset: 6px;
   width: calc(100% - 12px);
@@ -579,13 +705,11 @@ body {
   color: rgba(247, 240, 220, 0.75);
 }
 
-.hints-prompt {
-  position: absolute;
-  right: 24px;
-  top: 64px;
-  font-size: 13px;
-  opacity: 0.6;
-  text-shadow: 0 1px 2px #000;
+/* An attack's line shows the mouse glyph where an ability's shows its icon (M9 §6.2). */
+.hint-glyph {
+  display: flex;
+  justify-content: center;
+  color: var(--ivory);
 }
 
 .ability-cd {
@@ -595,26 +719,39 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font: 700 24px/1 var(--display-font);
+  font: 700 20px/1 var(--display-font);
   text-shadow: 0 1px 3px #000;
 }
 
-.ability-key {
-  position: absolute;
-  z-index: 1;
-  right: 8px;
-  bottom: 7px;
-  font: 700 13px/1 Consolas, monospace;
-  text-shadow: 0 1px 2px #000;
+.ability-cd-unit {
+  font: 700 17px/1 'Segoe UI', system-ui, sans-serif;
 }
 
+/* The key label, below the slot (M9 §6.4). */
+.ability-key {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 6px);
+  box-sizing: border-box;
+  width: 22px;
+  height: 20px;
+  margin-left: -11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(18, 13, 12, 0.85);
+  border: 1px solid rgba(243, 198, 75, 0.5);
+  border-radius: 3px;
+  font: 700 12px/1 Consolas, monospace;
+}
+
+/* Enemies remaining (M9 §6.4): a band flush with the right edge, fading out to the left. */
 .remaining {
   position: absolute;
-  right: 24px;
+  right: 0;
   top: 20px;
-  padding: 6px 12px;
-  background: rgba(27, 21, 19, 0.7);
-  border-radius: 4px;
+  padding: 6px 24px 6px 64px;
+  background: linear-gradient(to left, rgba(18, 13, 12, 0.75) 60%, transparent);
   font: 600 18px/1.2 var(--display-font);
 }
 
@@ -913,13 +1050,13 @@ body {
 }
 
 /*
- * A card spans 5 rows of the cards grid (portrait, name, role, weapon line, abilities) and uses them
- * as its own, so each line starts at the same height in every card, whatever wraps.
+ * A card spans 6 rows of the cards grid (portrait, name, role, the two weapon lines, abilities) and
+ * uses them as its own, so each line starts at the same height in every card, whatever wraps.
  */
 .class-card {
   position: relative;
   display: grid;
-  grid-row: span 5;
+  grid-row: span 6;
   grid-template-rows: subgrid;
   justify-items: center;
   align-content: start;
@@ -955,10 +1092,17 @@ body {
   color: var(--brimstone);
 }
 
-/* The weapon line and the ability row (M8 §2.1); their names show tooltips on hover. */
+/* The weapon lines and the ability row (M8 §2.1, M9 §6.1); their names show tooltips on hover. */
 .class-weapon {
   font-size: 14px;
   line-height: 1.35;
+  color: rgba(247, 240, 220, 0.85);
+}
+
+/* The mouse glyph before each attack's name (M9 §6.1). */
+.class-weapon .mouse-glyph {
+  margin-right: 6px;
+  vertical-align: -2px;
   color: rgba(247, 240, 220, 0.85);
 }
 

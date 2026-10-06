@@ -30,6 +30,8 @@ interface Frame {
   shield: HTMLDivElement;
   revive: HTMLDivElement;
   status: HTMLDivElement;
+  /** The Field of Blood badge on the class icon (M9 §5.1). */
+  badge: HTMLImageElement;
 }
 
 function div(className: string, parent: HTMLElement): HTMLDivElement {
@@ -43,8 +45,16 @@ export class PartyFrames {
   private readonly root: HTMLDivElement;
   private readonly frames = new Map<number, Frame>();
 
-  constructor(parent: HTMLElement) {
-    this.root = div('party', parent);
+  /** The frames go in `parent`, before `before` if given (the HUD's own frame, M9 §6.4). */
+  constructor(parent: HTMLElement, before: Element | null = null) {
+    this.root = document.createElement('div');
+    this.root.className = 'party';
+    parent.insertBefore(this.root, before);
+  }
+
+  /** Teammates standing in a Field of Blood show its icon as a badge on their class icon (M9 §5.1). */
+  setInField(ids: ReadonlySet<number>): void {
+    for (const [fid, f] of this.frames) f.badge.hidden = !ids.has(fid);
   }
 
   /** The other players still connected, in id order; a player who left loses their frame. */
@@ -102,11 +112,19 @@ export class PartyFrames {
     // Keep the frames in id order.
     const next = [...this.frames.entries()].filter(([id]) => id > m.id).sort((a, b) => a[0] - b[0])[0];
     this.root.insertBefore(root, next ? next[1].root : null);
+    // The icon and its badge, positioned absolutely so the name and HP text never move.
+    const iconWrap = div('party-icon-wrap', root);
     const icon = document.createElement('img');
     icon.className = 'party-icon';
     icon.src = spriteUrl(`class-${m.classId}`);
     icon.alt = CLASSES[m.classId].name;
-    root.appendChild(icon);
+    iconWrap.appendChild(icon);
+    const badge = document.createElement('img');
+    badge.className = 'party-badge';
+    badge.src = spriteUrl('icon-field-of-blood');
+    badge.alt = 'Field of Blood';
+    badge.hidden = true;
+    iconWrap.appendChild(badge);
     const info = div('party-info', root);
     const head = div('party-head', info);
     div('party-name', head).textContent = m.name;
@@ -115,7 +133,7 @@ export class PartyFrames {
     const hp = div('party-hp', bar);
     const shield = div('party-shield', bar);
     const revive = div('party-revive', bar);
-    return { root, bar, total: m.hp + m.shield, hp, shield, revive, status };
+    return { root, bar, total: m.hp + m.shield, hp, shield, revive, status, badge };
   }
 
   dispose(): void {

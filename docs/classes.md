@@ -100,7 +100,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 
 ## Exact rules
 
-[m9.md](m9.md) turns this rework into exact rules: controls (the last-pressed button wins, except that the Heretic's beam wins whenever an ally is aimed at; one shared fire timer), effects, sounds, texts, the bot, the protocol and the Gatekeeper's new HP.
+[m9.md](m9.md) turns this rework into exact rules: controls (the last-pressed button wins, except that the Heretic's beam wins whenever an ally is aimed at; one shared fire timer), effects, sounds, texts, the bot, the protocol and the Gatekeeper's new HP. Implemented in M9; the choices made along the way are the `M9` lines of [decisions.md](decisions.md). Two that touch the rules here: in a Field of Blood the crosshair and the own tracers turn blood red too, and Martyr's Shroud's blast uses the censer's ember burst.
 
 ## Rejected ideas
 For now, they can still come in play later:

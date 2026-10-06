@@ -1,6 +1,7 @@
 /** The Title, Singleplayer Setup and Loading screens (§3), and helpers shared with the multiplayer screens. */
 import { CLASS_IDS, CLASSES, type ClassId } from '../data/classes';
-import { ABILITIES, WEAPONS } from '../data/weapons';
+import { ABILITIES, SECONDARIES, WEAPONS } from '../data/weapons';
+import { mouseGlyph } from './mouseGlyph';
 import { spriteUrl } from '../render/atlas';
 import { attachTooltip } from './tooltip';
 import { settingsButton } from './volume';
@@ -139,12 +140,15 @@ export function classCard(id: ClassId, parent: HTMLElement): HTMLButtonElement {
   img.alt = '';
   el('div', 'class-name', card, c.name);
   el('div', 'class-role', card, `${c.role} · ${c.hp} HP`);
-  const weaponLine = el('div', 'class-weapon', card);
-  const weapon = WEAPONS[id];
-  attachTooltip(el('span', 'class-item', weaponLine, weapon.name), weapon.name, weapon.description);
-  if (c.passive) {
-    weaponLine.append(' · ');
-    attachTooltip(el('span', 'class-item', weaponLine, c.passive.name), c.passive.name, c.passive.description);
+  // Two weapon lines (M9 §6.1): the primary, then the secondary, each after its mouse glyph.
+  for (const [button, weapon] of [['left', WEAPONS[id]], ['right', SECONDARIES[id]]] as const) {
+    const weaponLine = el('div', 'class-weapon', card);
+    weaponLine.append(mouseGlyph(button));
+    attachTooltip(el('span', 'class-item', weaponLine, weapon.name), weapon.name, weapon.description);
+    if (c.passive && button === 'left') {
+      weaponLine.append(' · ');
+      attachTooltip(el('span', 'class-item', weaponLine, c.passive.name), c.passive.name, c.passive.description);
+    }
   }
   const row = el('div', 'class-abilities', card);
   for (const key of ['Q', 'E'] as const) {
@@ -209,9 +213,10 @@ export function singleplayerSetupScreen(a: SetupActions): HTMLElement {
   return screen;
 }
 
-/** The Loading screen: progress text only. */
+/** The Loading screen: the progress text, and a tip about the class hints under it (M9 §6.2). */
 export function loadingScreen(): { el: HTMLElement; set: (text: string) => void } {
   const screen = el('div', 'screen loading');
   const text = el('div', 'loading-text', screen);
+  el('div', 'loading-tip', screen, "Press H in game for your class's hints.");
   return { el: screen, set: (t) => (text.textContent = t) };
 }
