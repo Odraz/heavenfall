@@ -8,7 +8,8 @@ import { FIELD_RADIUS, FIELD_TIME, fieldCells } from '../sim/field';
 import type { GameMap } from '../sim/map';
 
 /** The pool sits this far above each cell's floor. */
-const LIFT = 0.03;
+export const POOL_LIFT = 0.03;
+const LIFT = POOL_LIFT;
 /** It spreads over 0.4 s and fades and shrinks over its last 0.5 s. */
 const SPREAD_S = 0.4;
 const FADE_S = 0.5;
@@ -129,7 +130,7 @@ export class BloodPool {
           uScale: { value: 0 },
           uAlpha: { value: 1 },
           // Seeded by the center, so each pool has its own shape.
-          uSeed: { value: ((x * 12.9898 + y * 78.233) % 6.283) + 1 },
+          uSeed: { value: this.seed },
         },
         transparent: true,
         depthWrite: false,
@@ -155,6 +156,33 @@ export class BloodPool {
   /** Seconds since it appeared. */
   age(now: number): number {
     return (now - this.start) / 1000;
+  }
+
+  /** Seeded by the center, so each pool has its own shape (the shader's `uSeed`). */
+  private get seed(): number {
+    return ((this.x * 12.9898 + this.y * 78.233) % 6.283) + 1;
+  }
+
+  /** The puddle's edge radius at full size in the direction `ang`, as the shader draws it (5.6–6 m). */
+  edge(ang: number): number {
+    const s = this.seed;
+    const w = 0.5 + 0.5 * (0.5 * Math.sin(3 * ang + s) + 0.3 * Math.sin(5 * ang + s * 1.7) + 0.2 * Math.sin(8 * ang + s * 2.3));
+    return 5.6 + 0.4 * w;
+  }
+
+  /**
+   * A random point on the pool as drawn now (on its cells, inside its wobbling edge), with its cell's
+   * floor plus the pool's lift; null if a few tries miss (the pool is still small).
+   */
+  randomPoint(now: number, map: GameMap): [number, number, number] | null {
+    const scale = this.scale(now);
+    for (let i = 0; i < 8 && this.cells.length; i++) {
+      const [c, r] = this.cells[Math.floor(Math.random() * this.cells.length)];
+      const px = c + Math.random();
+      const py = r + Math.random();
+      if (Math.hypot(px - this.x, py - this.y) <= this.edge(Math.atan2(py - this.y, px - this.x)) * scale) return [px, py, map.floor[r * map.w + c] + LIFT];
+    }
+    return null;
   }
 
   /** The pool's current size, 0–1: growing over 0.4 s, shrinking over the last 0.5 s. */

@@ -2,8 +2,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BLESSED, CHORISTER, ENEMIES, GATEKEEPER } from '../data/enemies';
 import { ABILITIES, ATTACK_PRIMARY, ATTACK_SECONDARY, FIRE_LEFT, FIRE_RIGHT, FIRE_RIGHT_LAST, type AttackSlot } from '../data/weapons';
+import type { ArenaDef } from '../data/dungeons/types';
+import { decodeSnapshot } from '../net/protocol';
 import { fieldCenter, inField } from './field';
-import type { Simulation } from './sim';
+import { Simulation } from './sim';
+import { dungeonOf } from './testutil/maps';
 import { enemyAt, makeSim, press, put, room } from './testutil/sims';
 
 const eventsOf = (sim: Simulation, type: string) => sim.events.map((e) => e.event).filter((e) => e.type === type);
@@ -259,5 +262,81 @@ describe('Field of Blood (M9 §3.4)', () => {
     const [x2, y2, z2] = fieldCenter(m, 14.5, 3.5, Math.PI);
     expect([x2, z2]).toEqual([11.5, 0]);
     expect(y2).toBeCloseTo(3.5, 9);
+  });
+});
+
+describe('M9 audit additions (§11.1)', () => {
+  it('the shotgun doesn\'t knock back an enemy its pellets killed', () => {
+    const sim = makeSim(room(30, 11), ['fallen']);
+    const p = sim.players[0];
+    put(sim, p, 5.5, 5.5);
+    p.z = -0.8;
+    sim.random = () => 0.5;
+    const b = enemyAt(sim, BLESSED, 8.5, 5.5);
+    sim.fireWeapon(p, ATTACK_PRIMARY);
+    expect(sim.eAlive[b]).toBe(0);
+    expect(sim.eKbUntil[b]).toBe(0);
+  });
+
+  it('Field of Blood lands before a closed door', () => {
+    // A corridor whose exit door at x 6 stays closed while its arena is idle.
+    const heights = ['##########', '#00000000#', '#00000000#', '##########'];
+    const markers = ['..........', '.SS...D...', '.SS...D...', '..........'];
+    const arenas: ArenaDef[] = [
+      { id: 'a', name: 'A', rect: { x0: 1, y0: 1, x1: 5, y1: 2 }, doors: [], exitDoors: [[6, 1], [6, 2]], entryCells: [[1, 1], [1, 2], [2, 1], [2, 2]], waves: [{ blessed: 1, choristers: 0, cherubs: 0 }], boss: false },
+    ];
+    const sim = new Simulation({ dungeon: dungeonOf(heights, { markers, arenas }), players: [{ id: 0, name: 'P', classId: 'betrayer' }], seed: 1 });
+    expect(sim.map.solid[1 * sim.map.w + 6]).toBe(1);
+    expect(fieldCenter(sim.map, 4.5, 1.5, 0)[0]).toBeCloseTo(5.75, 9);
+  });
+
+  it('a player is checked each tick: stepping out of the field slows the fire rate at once', () => {
+    const sim = makeSim(room(40, 12), ['betrayer', 'binder']);
+    const [betrayer, binder] = sim.players;
+    put(sim, betrayer, 10.5, 6.5, 0);
+    press(betrayer, 'Q');
+    sim.step();
+    put(sim, binder, 13.5, 6.5);
+    expect(sim.inField(binder)).toBe(true);
+    expect(sim.fireRate(binder)).toBe(2);
+    put(sim, binder, 13.5 + 6.5, 6.5);
+    expect(sim.inField(binder)).toBe(false);
+    expect(sim.fireRate(binder)).toBe(1);
+    put(sim, binder, 13.5 + 5.5, 6.5);
+    expect(sim.fireRate(binder)).toBe(2);
+  });
+
+  it('in a field a revolver hit still deals 30 (no Field of Blood step in the pipeline)', () => {
+    const sim = makeSim(room(40, 12), ['betrayer']);
+    const p = sim.players[0];
+    put(sim, p, 10.5, 6.5, 0);
+    press(p, 'Q');
+    sim.step();
+    expect(sim.inField(p)).toBe(true);
+    const c = enemyAt(sim, CHORISTER, 20.5, 6.5);
+    p.z = -0.8;
+    sim.fireWeapon(p, ATTACK_PRIMARY);
+    expect(sim.eHp[c]).toBe(30);
+  });
+
+  it('never sets enemy flag bit 1 (Kiss of Betrayal\'s mark is gone)', () => {
+    const sim = makeSim(room(30, 11), ['binder']);
+    const s = [enemyAt(sim, BLESSED, 10.5, 5.5), enemyAt(sim, CHORISTER, 12.5, 5.5), enemyAt(sim, BLESSED, 14.5, 5.5)];
+    sim.root(s[0], 5);
+    sim.slow(s[1], 5);
+    sim.silence(s[2], 5);
+    sim.damageEnemy(s[1], 10, 0);
+    const snap = decodeSnapshot(sim.encodeFor(0)[0])!;
+    expect(snap.enemyCount).toBe(3);
+    for (let i = 0; i < snap.enemyCount; i++) expect(snap.enemyFlags[i] & 2).toBe(0);
+  });
+
+  it('sends silverBullet from the eye to where the ray stopped', () => {
+    const sim = makeSim(room(80, 4), ['betrayer']);
+    const p = sim.players[0];
+    put(sim, p, 1.5, 2.5, 0, 0);
+    sim.fireWeapon(p, ATTACK_SECONDARY);
+    // Nothing in the way: it stops at 60 m.
+    expect(eventsOf(sim, 'silverBullet')).toEqual([{ type: 'silverBullet', playerId: 0, x: 1.5, y: 2.5, z: 1.6, ex: 61.5, ey: 2.5, ez: 1.6 }]);
   });
 });

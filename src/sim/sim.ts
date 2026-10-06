@@ -1166,8 +1166,8 @@ export class Simulation {
     if (g !== -Infinity) p.z = g;
     p.soulTick = this.tick;
     p.revive = 0;
+    // Its `beam` runs out 0.6 s after its last firing, as while alive (M9 §2.5).
     p.fire = 0;
-    p.beamUntil = 0;
     p.pendingQ = false;
     p.pendingE = false;
     p.landingTick = -1;
@@ -2090,7 +2090,7 @@ export class Simulation {
     }
   }
 
-  /** Discord or 2 000 damage interrupts Judgment; the next one is due 25 s later. */
+  /** Discord or 1 300 damage (scaled, M9 §4) interrupts Judgment; the next one is due 25 s later. */
   private interruptJudgment(): void {
     if (this.bossCast !== BOSS_CAST_JUDGMENT) return;
     this.bossCast = BOSS_CAST_NONE;

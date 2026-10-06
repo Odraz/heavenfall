@@ -23,7 +23,7 @@ import { Particles } from '../render/particles';
 import { GameScene } from '../render/scene';
 import type { GameTextures } from '../render/textures';
 import { Vfx } from '../render/vfx';
-import { BloodPool } from '../render/bloodPool';
+import { BloodPool, POOL_LIFT } from '../render/bloodPool';
 import { FIELD_FIRE_RATE, FIELD_TIME, inField } from '../sim/field';
 import { DebugOverlay } from '../ui/debugOverlay';
 import { PauseOverlay } from '../ui/pause';
@@ -686,7 +686,10 @@ export class Game {
     for (let i = 0; i < COINS; i++) {
       const a = Math.random() * Math.PI * 2;
       const r = COIN_SPREAD * Math.sqrt(Math.random());
-      this.coins.push({ from, to: [e.x + Math.cos(a) * r, e.y + Math.sin(a) * r, e.z + 0.05], start: now });
+      const tx = e.x + Math.cos(a) * r;
+      const ty = e.y + Math.sin(a) * r;
+      // Each lands on the pool's surface: its cell's floor plus the pool's lift.
+      this.coins.push({ from, to: [tx, ty, this.map.floor[Math.floor(ty) * this.map.w + Math.floor(tx)] + POOL_LIFT], start: now });
     }
   }
 
@@ -701,11 +704,9 @@ export class Game {
       this.pool = null;
     }
     const p = this.pool;
-    if (p && p.cells.length && Math.random() < POOL_EMBERS_PER_S * dt) {
-      const [c, r] = p.cells[Math.floor(Math.random() * p.cells.length)];
-      const x = c + Math.random();
-      const y = r + Math.random();
-      if (Math.hypot(x - p.x, y - p.y) <= 5.6 * p.scale(now)) this.particles.bloodEmber(x, y, this.map.floor[r * this.map.w + c] + 0.05);
+    if (p && Math.random() < POOL_EMBERS_PER_S * dt) {
+      const at = p.randomPoint(now, this.map);
+      if (at) this.particles.bloodEmber(at[0], at[1], at[2]);
     }
     const b = this.player.body;
     const inside = !!p && !this.dead && inField(this.map, p.x, p.y, p.z, b.x, b.y);
@@ -1348,7 +1349,7 @@ export class Game {
       // Launched by a Falling Star: the billboard flies an arc, peaking 1 m up halfway (M9 §3.2).
       const lu = (now - this.launchAt[slot]) / LAUNCH_MS;
       const z = enemyZ[i] + (lu >= 0 && lu < 1 ? 4 * LAUNCH_HEIGHT * lu * (1 - lu) : 0);
-      // Status (§10): hurt flash, wind-up gold glow, marked red glow, silenced grey tint.
+      // Status (§10): hurt flash, wind-up gold glow, silenced grey tint.
       let glow = NO_GLOW;
       let judgment: Glow | null = null;
       if (type === GATEKEEPER && this.bossCast === BOSS_CAST_JUDGMENT) {
