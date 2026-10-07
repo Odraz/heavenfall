@@ -129,6 +129,8 @@ export interface Terrain {
   relief: ReliefIndex;
   /** The arches' painted faces, one cut-out mesh (M10 §6). */
   painted: THREE.Mesh;
+  /** The same faces again, last in the frame, putting the framebuffer's alpha back to 1. */
+  paintedAlpha: THREE.Mesh;
   /** The arcades' bays and the doorway arches, for the tracers (M10 §6.1). */
   arches: Arches;
   /** Closed-door columns per arena, entry and exit door (null where the arena has none). */
@@ -297,6 +299,26 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   const pg = new GeometryBuilder();
   emitPaintedFaces(pg, arches, reliefLight, archLayers);
   const painted = new THREE.Mesh(pg.toGeometry(), makeTerrainMaterial(textures.array, textures.sky, lightmap, w, h, true));
+  // Alpha to coverage leaves the painted faces' edge alpha below 1 in the framebuffer, where the page
+  // would show through. Last in the frame, the same faces write alpha 1 there again, and nothing else.
+  const paintedAlpha = new THREE.Mesh(
+    painted.geometry,
+    new THREE.ShaderMaterial({
+      vertexShader: 'void main() { vec4 world = modelMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * (viewMatrix * world); }',
+      fragmentShader: 'void main() { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }',
+      side: THREE.DoubleSide,
+      transparent: true,
+      blending: THREE.NoBlending,
+      depthWrite: false,
+      depthFunc: THREE.LessEqualDepth,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }),
+  );
+  paintedAlpha.renderOrder = 1000;
+  paintedAlpha.onBeforeRender = (r) => r.getContext().colorMask(false, false, false, true);
+  paintedAlpha.onAfterRender = (r) => r.getContext().colorMask(true, true, true, true);
 
   const mesh = new THREE.Mesh(g.toGeometry(), makeTerrainMaterial(textures.array, textures.sky, lightmap, w, h));
 
@@ -328,5 +350,5 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   };
   const doors = map.arenas.map((arena) => ({ entry: doorMesh(arena.doors), exit: doorMesh(arena.exitDoors ?? []) }));
 
-  return { mesh, lightmap, relief: new ReliefIndex(relief, w), painted, arches, doors };
+  return { mesh, lightmap, relief: new ReliefIndex(relief, w), painted, paintedAlpha, arches, doors };
 }

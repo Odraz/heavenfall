@@ -37,7 +37,7 @@ export class GameScene {
     this.scene.add(this.sky);
     this.terrain = buildTerrain(map, textures);
     this.scene.add(this.terrain.mesh);
-    this.scene.add(this.terrain.painted);
+    this.scene.add(this.terrain.painted, this.terrain.paintedAlpha);
     for (const d of this.terrain.doors) for (const m of [d.entry, d.exit]) if (m) this.scene.add(m);
     this.resize();
     window.addEventListener('resize', this.resize);
@@ -72,14 +72,6 @@ export class GameScene {
 
   render(): void {
     this.renderer.render(this.scene, this.camera);
-    // Alpha to coverage writes the arches' edge alpha into the framebuffer; the page would show
-    // through there. A clear of the alpha channel alone puts it back to 1 (M10 §6).
-    const gl = this.renderer.getContext();
-    gl.colorMask(false, false, false, true);
-    gl.clearColor(0, 0, 0, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.colorMask(true, true, true, true);
-    this.renderer.state.buffers.color.reset();
   }
 
   /**
