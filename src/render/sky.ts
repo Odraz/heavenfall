@@ -28,7 +28,7 @@ export function prepareSkyTexture(tex: THREE.Texture): void {
   tex.anisotropy = 1;
 }
 
-/** GLSL shared by SKY_GLSL and SKY_FOG_GLSL: the band's coordinates in a direction, and the blends. */
+/** GLSL shared by the sky dome and SKY_FOG_GLSL: the band's coordinates in a direction, and the blends. */
 const SKY_COMMON = /* glsl */ `
   uniform sampler2D skyBand;
   uniform vec3 skyTop;
@@ -51,18 +51,6 @@ const SKY_COMMON = /* glsl */ `
     vec3 above = mix(skyTop, skyZenith, smoothstep(${SKY_BAND_TOP.toFixed(6)}, ${ZENITH_AT.toFixed(6)}, el));
     vec3 below = mix(skyBottom, skyFog, smoothstep(${SKY_BAND_BOTTOM.toFixed(6)}, ${FOG_AT.toFixed(6)}, el));
     return v > 1.0 ? above : v < 0.0 ? below : band;
-  }`;
-
-/** GLSL: `vec3 skyColor(vec3 dir)` for a unit direction in three.js space (the sky dome). */
-export const SKY_GLSL = /* glsl */ `
-  ${SKY_COMMON}
-  uniform float skyLod;
-  vec3 skyColor(vec3 dir) {
-    vec3 k = skyCoords(dir);
-    // One mip level for the whole view, from the angle a pixel covers (setSkyLod): no derivatives,
-    // so the jump of atan2 behind the viewer draws no seam either.
-    vec3 band = textureLod(skyBand, vec2(k.x, clamp(k.y, 0.0, 1.0)), skyLod).rgb;
-    return skyBlend(band, k.y, k.z);
   }`;
 
 /**
@@ -107,7 +95,8 @@ export function skyUniforms(band: THREE.Texture): Record<string, THREE.IUniform>
  * of the view, drawing it first shaded those pixels for nothing.
  */
 export function makeSky(band: THREE.Texture, drawFirst: boolean): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(10, 32, 16);
+  // Fine enough that the band's coordinates, found per vertex, interpolate without visible error.
+  const geo = new THREE.SphereGeometry(10, 64, 32);
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -115,18 +104,24 @@ export function makeSky(band: THREE.Texture, drawFirst: boolean): THREE.Mesh {
     fog: false,
     uniforms: skyUniforms(band),
     vertexShader: /* glsl */ `
-      varying vec3 vDir;
+      ${SKY_COMMON}
+      varying vec3 vSky;
       void main() {
-        vDir = position;
+        // The band's (u, v) and the elevation, per vertex. The painting is mirrored at the sun and
+        // behind the viewer, so its u is |u|: continuous all the way around, with no seam to cross.
+        vSky = skyCoords(normalize(position));
+        vSky.x = abs(vSky.x);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         // On the far plane.
         gl_Position.z = gl_Position.w;
       }`,
     fragmentShader: /* glsl */ `
-      ${SKY_GLSL}
-      varying vec3 vDir;
+      ${SKY_COMMON}
+      uniform float skyLod;
+      varying vec3 vSky;
       void main() {
-        gl_FragColor = vec4(skyColor(normalize(vDir)), 1.0);
+        vec3 band = textureLod(skyBand, vec2(vSky.x, clamp(vSky.y, 0.0, 1.0)), skyLod).rgb;
+        gl_FragColor = vec4(skyBlend(band, vSky.y, vSky.z), 1.0);
         #include <colorspace_fragment>
       }`,
   });
