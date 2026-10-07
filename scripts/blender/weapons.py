@@ -10,6 +10,8 @@ Run with Blender 5.2 (headless):
 Commands:
   preview <classId> <out.png>   the 5 frames side by side, the muzzle points marked
   swing <out.png>               the Binder's Scourge swing frames side by side
+  swing-chain <out.png>         the Scourge's chain alone (M11 §3.6): its frames stacked, and beside it
+                                <out>.json with the hand's place in each (for the painted fist)
   sprites <classId|all>         writes assets/sprites/weapon-<classId>/atlas.png and atlas.json
 
 The Binder's atlas also holds the Scourge's swing (M9 §5.1): the left hand lets go of the Chain Gun
@@ -46,7 +48,8 @@ PAL.update({
     'robe': (0.32, 0.28, 0.26), 'trim': (0.70, 0.20, 0.10), 'bronze': (0.50, 0.34, 0.20),
     'gold': (0.80, 0.62, 0.32), 'coal': (1.0, 0.62, 0.20), 'skin': (0.62, 0.58, 0.55),
     # Binder
-    'chain': (0.66, 0.28, 0.16), 'hot': (1.0, 0.42, 0.15), 'glove': (0.33, 0.31, 0.30),
+    'chain': (0.66, 0.28, 0.16), 'hot': (1.0, 0.42, 0.15),
+    'glove': (0.33, 0.31, 0.30),
     # Betrayer
     'silver': (0.80, 0.81, 0.84), 'leather': (0.25, 0.24, 0.24), 'grip': (0.17, 0.15, 0.15), 'gem': (0.85, 0.10, 0.10),
     'shade': (0.10, 0.09, 0.09),
@@ -256,7 +259,13 @@ def pose(cls, rig, base_loc, base_rot, frame):
 
 # ---------------------------------------------------------------- the Scourge swing (M9 §5.1)
 
-SWING_FRAMES = 4
+SWING_FRAMES = 5
+# The Scourge chain's tip: how far out from the eye it sweeps, and its height (m, below the eye).
+SWING_REACH = 2.0
+SWING_TIP_Z = -0.12
+# How far the hook trails behind the chain's heading at the fist, in degrees around the circle.
+SWING_TRAIL = 35
+HOOK_SCALE = 1.2
 # The Chain Gun's left arm, hidden while the left hand swings the chain.
 LEFT_ARM = ('Lforearm', 'Lfist', 'Lwristchain')
 
@@ -265,43 +274,59 @@ def smoothstep(t):
     return t * t * (3 - 2 * t)
 
 
+def swing_arm(f):
+    """The swinging hand's and elbow's places in swing frame `f`."""
+    t = (f + 0.5) / SWING_FRAMES
+    s = smoothstep(t)
+    lift = math.sin(math.pi * t)
+    return Vector((-0.55 + 0.95 * s, 0.80 + 0.08 * lift, -0.27 + 0.10 * lift)), Vector((-0.50 + 0.35 * s, 0.25, -0.62))
+
+
 def build_swing(f):
     """
     Swing frame `f` (0 to SWING_FRAMES - 1), in camera space (the eye at the origin looking along +Y):
     the left forearm reaching up from off-screen, the gloved fist, and a chain trailing behind the
-    fist that whips around it, ending in a hooked iron weight like the Chains of Tartarus icon.
+    fist that whips around it, ending in an iron eye hook (M11 stage 1 review: longer, a hook in place
+    of the weight).
     Returns the new objects.
     """
     t = (f + 0.5) / SWING_FRAMES
-    s = smoothstep(t)
-    lift = math.sin(math.pi * t)
-    hand = Vector((-0.55 + 0.95 * s, 0.80 + 0.08 * lift, -0.27 + 0.10 * lift))
-    elbow = Vector((-0.50 + 0.35 * s, 0.25, -0.62))
+    hand, elbow = swing_arm(f)
     objs = []
     objs.append(tube('Sforearm', elbow, hand, 0.066, 0.046, 'glove', seg=14, outline=0.006))
     objs.append(sphere('Sfist', hand, (0.058, 0.07, 0.062), 'glove', seg=14, outline=0.006))
-    # The chain trails behind the fist, then swings around it: its direction turns from pointing back
-    # to the left (behind the motion) to pointing ahead to the right, bending toward where it was.
-    length = 0.62
-    a_end = math.radians(165 - 150 * smoothstep(min(1.0, t * 1.15)))
-    bend = math.radians(55) * (1 - t)
-    pts = []
-    for k in range(13):
-        u = k / 12
-        a = a_end + bend * u
-        r = length * u
-        # Horizontal, with a slight droop toward the end.
-        pts.append(hand + Vector((math.cos(a) * r, math.sin(a) * r * 0.8 + 0.02, -0.06 * u * u)))
-    objs.append(chain('Schain', pts, 'chain', link=0.07, thick=0.015, outline=0.003))
-    # The weight: an iron bulb with a red-hot band, and a hook curling out of it.
+    # The chain sweeps across in front of the player (M11 stage 1 review), flung out from the fist and
+    # trailing behind it: it leaves the fist pointing along the swing (heading `alpha` on a level circle
+    # SWING_REACH m around the eye, just below eye level) and bends back, so the hook at its end comes
+    # last, SWING_TRAIL behind.
+    alpha = math.radians(-65 + 160 * smoothstep(t))
+    trail = math.radians(SWING_TRAIL)
+    def on_circle(a):
+        return Vector((SWING_REACH * math.sin(a), SWING_REACH * math.cos(a), SWING_TIP_Z))
+    tip = on_circle(alpha - trail)
+    ctrl = hand + (on_circle(alpha) - hand) * 0.6
+    n = max(8, round((tip - hand).length / 0.07))
+    pts = [hand * (1 - u) ** 2 + ctrl * (2 * u * (1 - u)) + tip * (u * u) for u in (k / n for k in range(n + 1))]
+    # Rendered in the rust color; scripts/cutout_weapons.py maps its tones to red-hot metal.
+    objs.append(chain('Schain', pts, 'chain', link=0.14, thick=0.015, outline=0.004))
+    # The hook: an eye on the last link, a straight shank, and a J-shaped bowl curling down and back to
+    # a point, its tip red-hot like the chain.
     end = pts[-1]
     out = (pts[-1] - pts[-2]).normalized()
-    w = end + out * 0.065
-    objs.append(sphere('Sweight', w, (0.065, 0.065, 0.065), 'iron', seg=16, outline=0.004))
-    objs.append(torus('Sweightband', w, 0.066, 0.013, 'hot', rot=out.to_track_quat('Z', 'Y').to_euler(), seg=16, outline=0.002))
-    hook = [w + out * 0.04, w + out * 0.10, w + out * 0.13 + Vector((0, 0, 0.03)), w + out * 0.11 + Vector((0, 0, 0.07)), w + out * 0.07 + Vector((0, 0, 0.075))]
-    for i, (p0, p1) in enumerate(zip(hook, hook[1:])):
-        objs.append(tube(f'Shook{i}', p0, p1, 0.013 - 0.002 * i, 0.011 - 0.002 * i, 'iron', seg=8, outline=0.003))
+    down = Vector((0, 0, -1))
+    side = out.cross(down).normalized()
+    k = HOOK_SCALE
+    eye = end + out * 0.035 * k
+    objs.append(torus('Shookeye', eye, 0.032 * k, 0.011 * k, 'iron', rot=side.to_track_quat('Z', 'Y').to_euler(), seg=16, outline=0.003))
+    s0 = eye + out * 0.035 * k
+    s1 = s0 + out * 0.13 * k
+    objs.append(tube('Shookshank', s0, s1, 0.016 * k, 0.019 * k, 'iron', seg=10, outline=0.003))
+    c = s1 + down * 0.055 * k
+    bowl = [c + (out * math.sin(math.radians(a)) - down * math.cos(math.radians(a))) * 0.055 * k for a in range(0, 271, 30)]
+    n = len(bowl) - 1
+    for i, (p0, p1) in enumerate(zip(bowl, bowl[1:])):
+        r0, r1 = 0.019 * k * (1 - 0.85 * i / n), 0.019 * k * (1 - 0.85 * (i + 1) / n)
+        objs.append(tube(f'Shook{i}', p0, p1, r0, r1, 'hot' if i >= n - 2 else 'iron', seg=10, outline=0.003))
     # Chain wound round the wrist, as on the Chain Gun hand.
     d = (hand - elbow).normalized()
     u = d.cross(Vector((0, 0, 1))).normalized()
@@ -342,6 +367,57 @@ def render_swing(tmp):
             bpy.data.objects.remove(o, do_unlink=True)
     os.remove(tmp)
     return out
+
+
+SWING_HAND = ('Sforearm', 'Sfist', 'Swristchain')
+
+
+def cmd_swing_chain(out):
+    """The Scourge's chain and hook alone, each frame the whole view (M11 §3.6, as reviewed
+    in stage 1: the painted fist is drawn over it where the hand was). Writes the frames stacked top to
+    bottom, cropped to the columns any of them uses, and a JSON of where the hand is in each frame: its
+    center (x, y from the frame's top), the forearm's direction on screen (degrees, clockwise from +x,
+    elbow to hand) and the fist's radius, in frame pixels."""
+    import json
+    import numpy as np
+    from bpy_extras.object_utils import world_to_camera_view
+    scene, cam, rig, grip, rot = setup('binder')
+
+    def px(p):
+        v = world_to_camera_view(scene, cam, p)
+        return v.x * 4 * FRAME_H, (1 - v.y) * 2 * FRAME_H
+
+    frames, hands = [], []
+    tmp = out + '.tmp.png'
+    for f in range(SWING_FRAMES):
+        objs = build_swing(f)
+        keep = {o.name for o in objs if not o.name.startswith(SWING_HAND)}
+        for o in bpy.data.objects:
+            if o.type == 'MESH':
+                o.hide_render = o.name not in keep
+        bpy.context.view_layer.update()
+        hand, e = swing_arm(f)
+        hx, hy = px(hand)
+        ex, ey = px(e)
+        rx, _ = px(hand + Vector((0.058, 0, 0)))
+        hands.append({'center': [round(hx, 1), round(hy, 1)], 'angle': round(math.degrees(math.atan2(hy - ey, hx - ex)), 1), 'radius': round(abs(rx - hx), 1)})
+        arr = render_to_array(scene, tmp)
+        # The whole view's height: the chain rises above the middle of the screen.
+        frames.append((ink_frame(arr, SS, INK_PX_PER_M), 0.0, 0.0))
+        for o in objs:
+            bpy.data.objects.remove(o, do_unlink=True)
+    os.remove(tmp)
+    frames, x0 = crop_columns(frames)
+    h, w, _ = frames[0][0].shape
+    # Rows count from the bottom: the first frame goes on top.
+    sheet = np.concatenate([img for img, _, _ in reversed(frames)], axis=0)
+    save_array(sheet, out)
+    for hd in hands:
+        hd['center'][0] = round(hd['center'][0] - x0, 1)
+    meta = {'frames': len(frames), 'w': w, 'h': h, 'centerX': 2 * FRAME_H - x0, 'viewH': 2 * FRAME_H, 'hands': hands}
+    with open(os.path.splitext(out)[0] + '.json', 'w', encoding='utf8', newline='\n') as fh:
+        fh.write(json.dumps(meta, indent=2) + '\n')
+    print(f'swing-chain: {len(frames)} frames {w}x{h}, center column {2 * FRAME_H - x0}')
 
 
 # ---------------------------------------------------------------- rendering
@@ -522,6 +598,8 @@ def main():
         cmd_preview(*args)
     elif cmd == 'swing':
         cmd_swing(*args)
+    elif cmd == 'swing-chain':
+        cmd_swing_chain(*args)
     elif cmd == 'sprites':
         cmd_sprites(*args)
     else:

@@ -22,6 +22,8 @@ Reads assets/art-src/<name>.png (or a JPEG with the same base name: .jpg, .jpeg,
 - gate (M10 gate §2): the Heavenly Gate's four images, each 1 280 x 2 276 for the gate array: the
   leaves, the railing and the post top keyed (WebP with alpha), the post shaft made to tile (JPEG);
   the measurements written to src/render/gate.gen.ts.
+- weapons (M11 §2): the painted first-person weapons, keyed, placed in the view and cut into their
+  layers in assets/sprites/weapon-<class>/ with their manifests (scripts/cutout_weapons.py).
 
 Needs Python 3 with Pillow and NumPy.
 Usage: python scripts/cutout.py [name ...]   (no names: every image)
@@ -894,7 +896,7 @@ def gate() -> None:
 
 
 def main() -> None:
-    known = [*SPRITES, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere', 'gate']
+    known = [*SPRITES, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere', 'gate', 'weapons']
     for name in sys.argv[1:] or known:
         if name in SPRITES:
             cutout(name, SPRITES[name])
@@ -916,6 +918,10 @@ def main() -> None:
             atmosphere_sheet()
         elif name == 'gate':
             gate()
+        elif name.split(':')[0] == 'weapons':
+            # `weapons` prepares every class, `weapons:<class>` one.
+            from cutout_weapons import weapons
+            weapons(name.split(':')[1:])
         else:
             sys.exit(f'Unknown image {name}; known: {", ".join(known)}')
 
