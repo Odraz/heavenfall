@@ -67,11 +67,14 @@ const FRAGMENT = /* glsl */ `
       // The arches' painted faces (M10 §6): alpha to coverage. Smaller mip levels average thin shapes
       // away, so alpha is scaled up with the level sampled (25% per level) and sharpened by its
       // screen-space rate of change, so the balusters stay whole at distance.
-      vec4 t4 = texture(terrainTex, vec3(vUv, vLayer));
       vec2 size = vec2(textureSize(terrainTex, 0).xy);
       vec2 ddx = dFdx(vUv * size);
       vec2 ddy = dFdy(vUv * size);
       float lod = max(0.0, 0.5 * log2(max(dot(ddx, ddx), dot(ddy, ddy))));
+      // v stays half a texel (at the level sampled) inside the layer: the arcade's two layers meet at
+      // 4 m, and filtering across the repeat would blend in the layer's opposite edge as a dark line.
+      float halfTexel = 0.5 * exp2(lod) / size.y;
+      vec4 t4 = texture(terrainTex, vec3(vUv.x, clamp(vUv.y, halfTexel, 1.0 - halfTexel), vLayer));
       alpha = t4.a * (1.0 + 0.25 * lod);
       alpha = clamp((alpha - 0.5) / max(fwidth(alpha), 1e-4) + 0.5, 0.0, 1.0);
       if (alpha < 0.01) discard;
