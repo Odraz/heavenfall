@@ -19,7 +19,7 @@ import { BOSS_CAST_JUDGMENT, PROJ_CENSER } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
-import { ContactShadows, SHADOW_DARKNESS } from '../render/contactShadows';
+import { ContactShadows } from '../render/contactShadows';
 import { archStoneHit } from '../render/arches';
 import { PLAYER_RADIUS } from '../sim/constants';
 import { Particles } from '../render/particles';
@@ -1457,9 +1457,9 @@ export class Game {
       else if (ents.state[i] === ST_WINDUP) glow = GLOW_WINDUP;
       const grey = (flags & FLAG_SILENCED) !== 0;
       target.add(f, ents.x[i], ents.y[i], z, height, false, grey ? 0.55 : 1, grey ? 0.55 : 1, grey ? 0.6 : 1, glow);
-      // Its contact shadow on the floor under it; a Cherub's smaller and half as dark, 4 m below it.
-      if (type === CHERUB) shadows.add(x, y, this.floorAt(x, y), def.radius, SHADOW_DARKNESS / 2);
-      else shadows.add(x, y, this.floorAt(x, y), def.radius * SHADOW_SIZE);
+      // Contact shadows only under the players and the Gatekeeper, not the swarm: cut for the
+      // performance gate (M10 §2.3 cut 3, decisions).
+      if (type === GATEKEEPER) shadows.add(x, y, this.floorAt(x, y), def.radius * SHADOW_SIZE);
       if (flags & FLAG_ROOTED) bb.add(chain, ents.x[i], ents.y[i], z + 0.25, Math.max(0.45, def.radius * 1.1), true);
       // Taunted: the `!` pops in, holds and fades, then stays hidden for the rest of the taunt.
       if (flags & FLAG_TAUNTED) {

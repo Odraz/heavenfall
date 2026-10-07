@@ -100,7 +100,9 @@ export class ContactShadows {
       blendSrcAlpha: THREE.OneFactor,
       blendDstAlpha: THREE.ZeroFactor,
     });
-    second.fragmentShader = fragmentShader.replace('gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0 - a);', 'gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);');
+    // The second pass only needs to cover the quad: its blending reads the alpha the first pass wrote
+    // (1 outside the shadows), so no texture or fog.
+    second.fragmentShader = 'void main() { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }';
     this.meshes = [first, second].map((m, k) => {
       const mesh = new THREE.Mesh(geo, m);
       mesh.frustumCulled = false;
