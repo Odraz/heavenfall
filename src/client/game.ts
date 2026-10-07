@@ -34,6 +34,8 @@ import { DebugOverlay } from '../ui/debugOverlay';
 import { PauseOverlay } from '../ui/pause';
 import type { ResultsData } from '../ui/results';
 import { BenchRunner } from './bench';
+import { attackTilt } from './fpWeapon';
+import { LIGHTMAP_TEXELS } from '../render/lightmap';
 import { Bot, type BotEnemy } from './bot';
 import { corpseFrame, EnemyAnimator, spriteDirection, type Corpse } from './enemyAnim';
 import { FpsCounter } from './fps';
@@ -52,6 +54,8 @@ import { PlayerAnimator } from './playerAnim';
 import { SnapshotBuffer, type InterpolatedEnemies } from './snapshots';
 
 const BENCH_TURN_RATE = 0.3;
+/** A move longer than this in one frame is a teleport: the weapon's sway resets (M11 §3.2, as the bob). */
+const SWAY_TELEPORT = 2;
 /** The gate view's camera (M10 gate §4): it looks at the middle of the boss arena's west wall, 10° up. */
 const GATE_VIEW_X = 6;
 const GATE_VIEW_Y = 75;
@@ -221,6 +225,11 @@ export class Game {
   private attack: AttackSlot = ATTACK_NONE;
   /** Cosmetic fire timer, shared by both attacks and run locally at 30 Hz (M9 §2.2). */
   private fireTimer = 0;
+  /** The view's yaw and pitch last frame, for the weapon's sway (M11 §3.2). */
+  private swayYaw = 0;
+  private swayPitch = 0;
+  /** Whether Sacrament's beam leaves the local player's muzzle this frame (M11 §3.9). */
+  private ownBeamOn = false;
   /** When the benchmark's HUD fires next (M11 §5). */
   private benchFireAt = 0;
   /** Each player's primary and secondary attacks, unwrapped from the snapshots' counters (M9 §10). */
@@ -1043,16 +1052,17 @@ export class Game {
     return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
   }
 
-  /** The first-person weapon's shot for an attack: recoil and muzzle flash (the censer has no flash scale). */
+  /** The first-person weapon's shot for an attack: recoil, tilt (M11 §3.2) and muzzle flash. */
   private hudShot(now: number, slot: AttackSlot): void {
     const w = attackDef(this.classId, slot);
+    const { deg, alternate } = attackTilt(this.classId, slot);
     if (w.kind === 'censer') {
-      this.hud.shot(now, w.interval * 1000);
+      this.hud.shot(now, w.interval * 1000, deg, alternate);
       return;
     }
     const secondary = slot === ATTACK_SECONDARY;
     const heavy = w.kind === 'silverBullet' ? SILVER_RECOIL : secondary ? SLUG_RECOIL : undefined;
-    this.hud.shot(now, w.interval * 1000, heavy, secondary && w.kind === 'hitscan' ? SLUG_FLASH : 1);
+    this.hud.shot(now, w.interval * 1000, deg, alternate, heavy, secondary && w.kind === 'hitscan' ? SLUG_FLASH : 1);
   }
 
   /**
@@ -1179,9 +1189,11 @@ export class Game {
       if (!q) return null;
       return q.dead ? [q.x, q.y, q.z + this.souls.drawnRise(q.id, now) + SOUL_HEIGHT / 2] : [q.x, q.y, q.z + PLAYER_HEIGHT / 2];
     };
+    this.ownBeamOn = false;
     if (this.classId === 'heretic' && this.attack === ATTACK_SECONDARY && !this.dead) {
       const to = bodyOf(this.allyTargetId);
       if (to) {
+        this.ownBeamOn = true;
         const [sx, sy] = this.hud.muzzlePoint(now);
         beams.push([this.unproject(sx, sy, OWN_BEAM_DEPTH), to]);
         beamed.add(this.allyTargetId);
@@ -1322,8 +1334,20 @@ export class Game {
     const bx = p.body.x;
     const by = p.body.y;
     if (!this.dead && !this.bench && !this.over) p.update(this.map, dt, mx, my, wantJump);
-    this.bob.update(Math.min(dt, MAX_FRAME_DT), Math.hypot(p.body.x - bx, p.body.y - by), p.speed, p.body.grounded && !p.leaping, this.dead);
+    const moved = Math.hypot(p.body.x - bx, p.body.y - by);
+    this.bob.update(Math.min(dt, MAX_FRAME_DT), moved, p.speed, p.body.grounded && !p.leaping, this.dead);
     this.hud.setBob(this.bob.weaponX, this.bob.weaponY);
+    // The weapon lags behind the view's turning (M11 §3.2), reset on a teleport like the bob.
+    const ft = Math.min(dt, MAX_FRAME_DT);
+    const turn = (a: number, b: number) => ((((a - b) * 180) / Math.PI + 540) % 360) - 180;
+    const yawRate = ft > 0 ? turn(p.yaw, this.swayYaw) / ft : 0;
+    const pitchRate = ft > 0 ? turn(p.pitch, this.swayPitch) / ft : 0;
+    this.hud.sway.update(ft, yawRate, pitchRate, this.dead, moved > SWAY_TELEPORT);
+    this.swayYaw = p.yaw;
+    this.swayPitch = p.pitch;
+    // The weapon dims in shade like the characters (M11 §3.5); under a fixed screenshot camera, in its light.
+    const lc = this.params.cam;
+    this.hud.setLight(lc ? this.lightAt(lc.x, lc.y) : this.lightAt(p.body.x, p.body.y), ft);
 
     // The cosmetic fire timer, at 30 Hz like the host's, with the same choice of attack (M9 §2.1,
     // §2.2); Sacrament can fire while there's a local ally target.
@@ -1391,6 +1415,7 @@ export class Game {
     }
     this.drawBillboards(now, ents, enemyZ);
     const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
+    this.hud.setHealing(this.ownBeamOn, now);
     this.hud.setBeamed(beamed.has(this.localId));
     this.party?.setBeamed(beamed);
     this.scene.render();
@@ -1413,6 +1438,15 @@ export class Game {
   };
 
   private readonly glowScratch: Glow = { r: 1, g: 1, b: 1, a: 0 };
+
+  /** The baked lightmap's L (0–1) at a point (M10 §5.4), nearest texel; 1 off the map. */
+  private lightAt(x: number, y: number): number {
+    const img = this.scene.terrain.lightmap.image as { data: Uint8Array; width: number; height: number };
+    const tx = Math.floor(x * LIGHTMAP_TEXELS);
+    const ty = Math.floor(y * LIGHTMAP_TEXELS);
+    if (tx < 0 || ty < 0 || tx >= img.width || ty >= img.height) return 1;
+    return img.data[(ty * img.width + tx) * 4 + 3] / 255;
+  }
 
   /** The floor height of the cell at a point (−∞ over walls and outside the grid). */
   private readonly floorAt = (x: number, y: number): number => {

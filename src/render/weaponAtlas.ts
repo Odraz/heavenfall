@@ -1,62 +1,88 @@
 /**
- * First-person weapon atlases rendered from 3D models (scripts/blender/weapons.py), one per class
- * (§11.2): an idle frame and 4 fire frames, each the bottom half of the view from the eye, 600 px
- * tall, with its muzzle point. Only the local class's image is ever fetched, when the HUD shows it.
+ * The painted first-person weapons (M11 §2), one set of layers per class, cut from the paintings by
+ * scripts/cutout_weapons.py into assets/sprites/weapon-<class>/ with their manifest (weapon.json).
+ * Only the local class's images are ever fetched, when the HUD shows them.
  */
 import type { ClassId } from '../data/classes';
-import fallenUrl from '../../assets/sprites/weapon-fallen/atlas.png';
-import fallenManifest from '../../assets/sprites/weapon-fallen/atlas.json';
-import hereticUrl from '../../assets/sprites/weapon-heretic/atlas.png';
-import hereticManifest from '../../assets/sprites/weapon-heretic/atlas.json';
-import binderUrl from '../../assets/sprites/weapon-binder/atlas.png';
-import binderManifest from '../../assets/sprites/weapon-binder/atlas.json';
-import betrayerUrl from '../../assets/sprites/weapon-betrayer/atlas.png';
-import betrayerManifest from '../../assets/sprites/weapon-betrayer/atlas.json';
+import type { AltKind } from '../client/fpWeapon';
+import binderSwingUrl from '../../assets/sprites/weapon-binder/atlas.png';
+import binderSwingManifest from '../../assets/sprites/weapon-binder/atlas.json';
+
+/** A box in view pixels from the frame's top left. */
+export interface ViewBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 export interface WeaponManifest {
-  width: number;
-  height: number;
-  frameW: number;
-  /** The frame height: half the screen height. */
-  frameH: number;
-  /** The column of the screen's vertical center line, from the frame's left edge (may be negative). */
-  centerX: number;
-  /** [x, y from top, muzzle x from left, muzzle y from top] in pixels. */
-  idle: number[][];
-  fire: number[][];
+  viewH: 2160;
+  /** The frame's left edge from the view's center column, its top row, its size; in view pixels. */
+  left: number;
+  top: number;
+  w: number;
+  h: number;
+  /** In view pixels: x from the view's center column, y from the view's top row. */
+  muzzle: [number, number];
+  pivot: [number, number];
+  /** The barrel's direction after placement, a unit vector pointing out of the muzzle. */
+  axis: [number, number];
+  glow: boolean;
+  alt?: { kind: AltKind; glow: boolean };
+  /** The hammer layer's box in the frame and its hinge, in view pixels from the frame's top left. */
+  hammer?: ViewBox & { hinge: [number, number]; fall: number };
+  /** The blurred cylinder's box in the frame. */
+  cylinder?: ViewBox;
+  /** The green censer's box in the frame (the Heretic). */
+  heal?: ViewBox;
   /**
-   * The Binder's Scourge swing (M9 §5.1): frames cropped on their own, so they have their own width
-   * and center column (in frame pixels, like frameW); stored at 1/`scale` resolution, each at
-   * [x, y from top] in atlas pixels.
+   * The Scourge (the Binder): the fist's size, its center and its forearm's direction in its image; the
+   * chain's frames (stacked top to bottom in one image) and their box in the view (left from the center
+   * column); and in each frame where the fist goes (x from the center column, y, and the forearm's angle).
    */
-  swing?: { scale: number; frameW: number; centerX: number; frames: number[][] };
+  swing?: {
+    fist: { w: number; h: number; center: [number, number]; angle: number };
+    chain: { frames: number; left: number; top: number; w: number; h: number };
+    hands: Array<[number, number, number]>;
+  };
 }
 
-export interface WeaponAtlas {
-  url: string;
+/** The layer images a class has; the manifest says which. */
+export type WeaponLayer = 'idle' | 'idle-glow' | 'alt' | 'alt-glow' | 'hammer' | 'cylinder' | 'censer-green' | 'censer-green-glow' | 'fist' | 'chain' | 'chain-glow';
+
+export interface WeaponArt {
   manifest: WeaponManifest;
+  url: (layer: WeaponLayer) => string;
 }
 
-const ATLASES: Record<ClassId, WeaponAtlas> = {
-  fallen: { url: fallenUrl, manifest: fallenManifest as WeaponManifest },
-  heretic: { url: hereticUrl, manifest: hereticManifest as WeaponManifest },
-  binder: { url: binderUrl, manifest: binderManifest as WeaponManifest },
-  betrayer: { url: betrayerUrl, manifest: betrayerManifest as WeaponManifest },
-};
+const urls = import.meta.glob('../../assets/sprites/weapon-*/*.webp', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const manifests = import.meta.glob('../../assets/sprites/weapon-*/weapon.json', { import: 'default', eager: true }) as Record<string, WeaponManifest>;
 
-export function weaponAtlas(classId: ClassId): WeaponAtlas {
-  return ATLASES[classId];
+export function weaponArt(classId: ClassId): WeaponArt {
+  const dir = `../../assets/sprites/weapon-${classId}/`;
+  const manifest = manifests[`${dir}weapon.json`];
+  if (!manifest) throw new Error(`No weapon manifest for ${classId}`);
+  return {
+    manifest,
+    url: (layer) => {
+      const u = urls[`${dir}${layer}.webp`];
+      if (!u) throw new Error(`No ${layer} layer for ${classId}'s weapon`);
+      return u;
+    },
+  };
 }
-
-/** The fire animation lasts the shorter of the time between shots and this (§11.1). */
-export const FIRE_ANIM_MAX_MS = 300;
 
 /**
- * The fire frame (0–3) to show `sinceShot` ms after a shot, for a weapon firing every
- * `intervalMs`, or -1 for the idle frame once the 4 frames have played.
+ * The Binder's Scourge swing frames from the M9 Blender atlas (M9 §5.1), until M11 stage 3 replaces
+ * them: each the bottom half of the view, 600 px tall, stored at 1/`scale` resolution.
  */
-export function fireFrame(sinceShot: number, intervalMs: number, frames = 4): number {
-  const duration = Math.min(intervalMs, FIRE_ANIM_MAX_MS);
-  if (!(sinceShot >= 0) || sinceShot >= duration) return -1;
-  return Math.min(frames - 1, Math.floor((sinceShot / duration) * frames));
+export interface SwingAtlas {
+  url: string;
+  width: number;
+  height: number;
+  frameH: number;
+  swing: { scale: number; frameW: number; centerX: number; frames: number[][] };
 }
+
+export const BINDER_SWING: SwingAtlas = { url: binderSwingUrl, ...(binderSwingManifest as Omit<SwingAtlas, 'url'>) };
