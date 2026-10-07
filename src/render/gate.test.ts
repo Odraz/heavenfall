@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DUNGEONS } from '../data/dungeons/index';
 import { loadMap, type GameMap } from '../sim/map';
 import { archesBlock, computeArches } from './arches';
+import { placeCards, type Card } from './atmosphere';
 import { arc, emitGate, G_LEAVES, G_RAILING, gateHit, gateLayout, gateSkip, PLINTH, type GateLayout } from './gate';
 import { bakeLightmap, faceColor, facesSun, shadowZ, SUN } from './lightmap';
 import { computeRelief } from './relief';
@@ -210,6 +211,31 @@ describe('the Heavenly Gate (M10 gate)', () => {
       expect(hash(...['position', 'uv', 'color', 'layer', 'shadowZ'].map((a) => geo.getAttribute(a).array), geo.getIndex()!.array)).toBe(SANDBOX_BEFORE);
       expect(sandbox.gate).toBeNull();
     });
+  });
+});
+
+describe('the clouds behind the gate (M10 gate §3)', () => {
+  const cards = placeCards(map);
+  const isGateBank = (c: Card) => c.kind === 'bank' && c.x === -20 && c.size === 24 && c.period === 90;
+
+  it("are 6 banks with the spec's values, and every other card is as without the gate", () => {
+    const banks = cards.filter(isGateBank).sort((a, b) => a.y - b.y);
+    expect(banks).toEqual(
+      [54, 62, 70, 80, 88, 96].map((y, k) => ({ kind: 'bank', x: -20, y, z: F + 4, size: 24, cell: k % 3, mirror: k % 2 === 1, drift: 3, dx: 0, dy: 1, period: 90, phase: k })),
+    );
+    const key = (c: Card) => JSON.stringify(c);
+    const others = cards.filter((c) => !isGateBank(c)).map(key).sort();
+    const without = placeCards({ ...map, gate: null }).map(key).sort();
+    expect(others).toEqual(without);
+  });
+
+  it('stay west of x = -5 at their full extent and drift, at least 25 m from the arena', () => {
+    for (const c of cards.filter(isGateBank)) {
+      // They drift along y only.
+      expect(c.x + c.size / 2).toBeLessThanOrEqual(-5);
+      // The arena's nearest points are on its west edge, x = 6.
+      expect(6 - c.x).toBeGreaterThanOrEqual(25);
+    }
   });
 });
 

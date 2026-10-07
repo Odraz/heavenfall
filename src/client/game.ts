@@ -299,7 +299,7 @@ export class Game {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'game-canvas';
     o.root.appendChild(this.canvas);
-    this.scene = new GameScene(this.canvas, this.map, o.textures.terrain);
+    this.scene = new GameScene(this.canvas, this.map, o.textures.terrain, o.textures.fx.glow);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
     for (const [type, set] of Object.entries(o.enemyAnims)) {
