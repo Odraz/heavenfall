@@ -735,13 +735,20 @@ The counts give the number of records of each block in that part; blocks follow 
   - each **character atlas** (§11.2) is drawn with its own `InstancedMesh`;
   - every other world sprite (projectiles, particles, the mark icon, the chain ring and decorations) is packed at load time into one 2048² **world atlas**.
 - **First-person weapon:** a screen-space sprite at the bottom-center. From milestone 6 it comes from the local class's weapon atlas: the idle frame, and on each shot the 4 fire frames over the shorter of the time between shots and 0.3 s, on top of the recoil (§10). The muzzle flash is drawn at the frame's muzzle point.
-- **Terrain:** one merged mesh built from the heightfield:
-  - a top quad at each floor cell's height;
-  - vertical side quads wherever a neighbor floor is lower;
-  - wall columns from the lowest adjacent floor up to 16 m;
-  - door cells as separate meshes, shown when closed.
-- **Terrain textures:** until milestone 6, two textures generated in code with canvas: stone tiles for tops, brick for sides and walls. From milestone 6, four image textures (§11.2): *floor* on tops, *riser* on side quads, *wall* on wall columns and *door* on door meshes. Each repeats every 4 m, aligned to world coordinates so the pattern continues across cells.
-- **Sky:** a gradient dome from pale blue to gold. There is no ceiling.
+- **Terrain** (M10): one merged mesh in **one draw call** over a texture array of its looks, built from the heightfield:
+  - a top quad at each floor cell's height, and at each wall cell's height (wall tops);
+  - vertical side quads wherever a cell is higher than its neighbor: risers, wall faces (each wall at its own height, §5.1), and **cliffs** below every open edge and every wall face that looks onto void, down to 30 m below the lowest floor, their foot fading into the sky;
+  - door cells as separate meshes, shown when closed, as tall as their door height;
+  - **relief**: the cornice's crown projecting 0.35 m along the top of every wall, pillar, arcade and doorway arch, pilaster strips standing 0.12 m forward of the walls (never on pillars), window glass set 0.25 m back behind a reveal;
+  - the arches' stone: 0.6 m reveals along the arch openings, sills, the solid parts of the arcades and doorway arches.
+- **Arches** (M10 §6): every open edge is an **arcade** of painted cut-out bays (`tex-arcade`, 4 × 8 m, alpha to coverage) with a balustrade at the 1.4 m parapet; every door has a pointed doorway arch. Their painted faces are one cut-out mesh, one draw call.
+- **Terrain textures** (M10 §5.1): the floors are plain marble with ornate **runners** (a cross through each arena's center, one along the Lobby and each corridor) and gold **medallions** at arena centers and in front of doors; walls show a **decorated band** of alternating tall windows and pilasters from the floor up to the cornice (at most 7.5 m), plain wall where a segment is cut; pillars show the pilaster; every wall that looks onto floor has a **cornice** band. Risers keep *riser*, cliffs and wall tops *wall*; doors keep their own *door* texture.
+- **Baked light** (M10 §5.2): one sun, 35° above the horizon from the north-east. Floors take a **lightmap** (4 texels per meter: shadows of walls, pillars, parapets, closed doors and the arches' stone, ambient occlusion at their feet; warm in the light, cool in shadow, the darkest floor at least 60% of the lit one). Vertical faces are shaded by their direction to the sun, darker toward their foot, and sun-facing faces carry a baked **shadow line**. Nothing is lit or shadowed at runtime.
+- **Characters in the light** (M10 §5.4): every world billboard takes the lightmap at its anchor (never darker than 85%, full light when more than 1 m above the floor), and characters stand on soft **contact shadows** that don't stack.
+- **Sky** (M10 §4.2): the painted `sky-day` band around the player twice (once as painted over 180°, once mirrored), its sun-side edge toward the sun, blending to a zenith blue above and the fog color below. There is no ceiling.
+- **Fog and haze** (M10 §4.2): one curve for every fogged material, from 0 at 10 m to its 40 m value (30% for scenery, 15% for sprites and effects) and on to 100% at 150 m. Scenery fogs into the sky's color in the view direction; sprites and effects into the fog color (the sky's horizon). The far plane is 400 m.
+- **Atmosphere** (M10 §7): light shafts through the sunlit arcades (at most 24, warm, at most 25% opaque, breathing), clouds below and around the level and distant spires on painted cards beyond the open edges, all in two instanced meshes; they fade out close to the camera.
+- **No post-processing**, real-time lights or shadow maps.
 - **Particles:** a pool of at most 4 000. When it's full, a new particle replaces the oldest.
 - **Ability and status VFX** (§10) are built in code from simple geometry (rings, lines, spheres, screen overlays) and the particle sprites. Only the mark icon and the chain ring need their own sprites. From milestone 6, the geometry is textured with the effect textures (§11.2) and drawn with additive blending: *ring* for the taunt ring, heal ring and landing shockwave; *beam* for tracers and the mark beam; *chain* tiled along the chain lines; *glow* for the Judgment glow and the censer explosion; *smoke* for the Discord burst.
 

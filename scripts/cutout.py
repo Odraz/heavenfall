@@ -116,6 +116,8 @@ EFFECTS = {
     'fx-smoke': (512, False, 1),
     'fx-beam': (256, True, 1),
     'fx-chain': (512, True, 2.5),
+    # M10 §7.1: the light shaft through an arch, tinted warm gold in the shader.
+    'fx-lightshaft': (256, False, 1),
 }
 
 # Transparent margin around the cropped subject, in output pixels.
@@ -635,8 +637,51 @@ def arcade(name: str) -> None:
     print(f'{name}: arcade-upper and arcade-lower, 1024x1024 each')
 
 
+def atmosphere_sheet() -> None:
+    """The clouds and the distant spires (M10 §7.2, §7.3): one 2 048 x 1 024 sheet, the clouds' 2 x 2
+    sheet on the left and the spires' on the right. The green is keyed out like the sprites; then the
+    green rim the soft edges leave is removed: every pixel less than 98% opaque, and a 6 px band
+    inside them, takes its color from the nearest opaque pixel further in, and the opacity is remapped
+    to ((a - 0.15) / 0.85)^1.5. Written to assets/textures/fx-atmosphere.png."""
+    halves = []
+    for name in ('fx-clouds', 'fx-spires'):
+        rgb = np.asarray(Image.open(source(name)).convert('RGB').resize((1024, 1024), Image.LANCZOS)).astype(np.float32)
+        color, alpha = key_green(rgb)
+        solid = Image.fromarray(((alpha >= 0.98) * 255).astype(np.uint8)).filter(ImageFilter.MinFilter(13))
+        known = np.asarray(solid) > 0
+        col = np.where(known[..., None], color, 0)
+        # Grow the core's colors outward, one pixel ring per pass, as the average of the known
+        # neighbors, until every pixel with any opacity has one.
+        need = alpha > 0.001
+        for _ in range(200):
+            todo = need & ~known
+            if not todo.any():
+                break
+            acc = np.zeros_like(col)
+            cnt = np.zeros(known.shape, np.float32)
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    k = np.roll(np.roll(known, dy, 0), dx, 1)
+                    c = np.roll(np.roll(col, dy, 0), dx, 1)
+                    acc += c * k[..., None]
+                    cnt += k
+            grow = todo & (cnt > 0)
+            col[grow] = acc[grow] / cnt[grow][..., None]
+            known = known | grow
+        # What spill the soft edges keep: green no higher than the mean of red and blue.
+        col[..., 1] = np.minimum(col[..., 1], (col[..., 0] + col[..., 2]) / 2)
+        a = np.clip((alpha - 0.15) / 0.85, 0, 1) ** 1.5
+        halves.append(np.dstack([col, a * 255]))
+    sheet = np.concatenate(halves, axis=1).round().clip(0, 255).astype(np.uint8)
+    TEX_OUT.mkdir(exist_ok=True)
+    Image.fromarray(sheet, 'RGBA').save(TEX_OUT / 'fx-atmosphere.png', optimize=True)
+    print('fx-atmosphere: 2048x1024')
+
+
 def main() -> None:
-    known = [*SPRITES, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade']
+    known = [*SPRITES, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere']
     for name in sys.argv[1:] or known:
         if name in SPRITES:
             cutout(name, SPRITES[name])
@@ -654,6 +699,8 @@ def main() -> None:
             sky(name, SKIES[name])
         elif name == 'tex-arcade':
             arcade(name)
+        elif name == 'fx-atmosphere':
+            atmosphere_sheet()
         else:
             sys.exit(f'Unknown image {name}; known: {", ".join(known)}')
 

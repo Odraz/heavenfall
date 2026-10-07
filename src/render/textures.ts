@@ -17,6 +17,8 @@ import chainUrl from '../../assets/textures/fx-chain.png';
 import glowUrl from '../../assets/textures/fx-glow.png';
 import smokeUrl from '../../assets/textures/fx-smoke.png';
 import skyUrl from '../../assets/textures/sky-day.jpg';
+import shaftUrl from '../../assets/textures/fx-lightshaft.png';
+import atmosphereUrl from '../../assets/textures/fx-atmosphere.png';
 import { prepareSkyTexture } from './sky';
 import { loadTextureArray } from './textureArray';
 
@@ -30,6 +32,10 @@ export interface TerrainTextures {
   door: THREE.Texture;
   /** The sky's horizon band (M10 §4.2). */
   sky: THREE.Texture;
+  /** The light shaft (M10 §7.1). */
+  shaft: THREE.Texture;
+  /** The clouds' and the spires' paintings, one sheet (M10 §7.2, §7.3). */
+  atmosphere: THREE.Texture;
 }
 
 /** Transparent where the generated image was black; white ones are tinted per effect. */
@@ -59,10 +65,14 @@ async function load(url: string): Promise<THREE.Texture> {
 
 export async function loadGameTextures(): Promise<GameTextures> {
   const layers = [floorUrl, floorPlainUrl, medallionUrl, riserUrl, wallUrl, windowUrl, pilasterUrl, corniceUrl, arcadeLowerUrl, arcadeUpperUrl];
-  const [array, [door, sky, ring, beam, chain, glow, smoke]] = await Promise.all([
+  const [array, [door, sky, shaft, atmosphere, ring, beam, chain, glow, smoke]] = await Promise.all([
     loadTextureArray(layers, 1024),
-    Promise.all([doorUrl, skyUrl, ringUrl, beamUrl, chainUrl, glowUrl, smokeUrl].map(load)),
+    Promise.all([doorUrl, skyUrl, shaftUrl, atmosphereUrl, ringUrl, beamUrl, chainUrl, glowUrl, smokeUrl].map(load)),
   ]);
   prepareSkyTexture(sky);
-  return { terrain: { array, door, sky }, fx: { ring, beam, chain, glow, smoke } };
+  for (const t of [shaft, atmosphere]) {
+    t.wrapS = THREE.ClampToEdgeWrapping;
+    t.wrapT = THREE.ClampToEdgeWrapping;
+  }
+  return { terrain: { array, door, sky, shaft, atmosphere }, fx: { ring, beam, chain, glow, smoke } };
 }

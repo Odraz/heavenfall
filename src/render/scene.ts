@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { PLAYER_EYE } from '../sim/constants';
 import type { GameMap } from '../sim/map';
 import { buildTerrain, type Terrain } from './terrain';
+import { Atmosphere } from './atmosphere';
 import { FOG_FAR, FOG_NEAR, installFogCurve } from './fog';
 import { FOG_COLOR, makeSky } from './sky';
 import type { TerrainTextures } from './textures';
@@ -19,6 +20,8 @@ export class GameScene {
   readonly camera = new THREE.PerspectiveCamera(75, 1, 0.05, FAR);
   readonly terrain: Terrain;
   private readonly sky: THREE.Mesh;
+  /** Light shafts, clouds and spires (M10 §7). */
+  private readonly atmosphere: Atmosphere;
   private readonly lookTarget = new THREE.Vector3();
 
   constructor(
@@ -38,6 +41,8 @@ export class GameScene {
     this.terrain = buildTerrain(map, textures);
     this.scene.add(this.terrain.mesh);
     this.scene.add(this.terrain.painted, this.terrain.paintedAlpha);
+    this.atmosphere = new Atmosphere(map, this.terrain.arches, textures.shaft, textures.atmosphere, textures.sky);
+    this.scene.add(this.atmosphere.cards, this.atmosphere.shafts);
     for (const d of this.terrain.doors) for (const m of [d.entry, d.exit]) if (m) this.scene.add(m);
     this.resize();
     window.addEventListener('resize', this.resize);
@@ -71,6 +76,7 @@ export class GameScene {
   }
 
   render(): void {
+    this.atmosphere.update(performance.now());
     this.renderer.render(this.scene, this.camera);
   }
 
