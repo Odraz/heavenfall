@@ -3,7 +3,7 @@ import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
 import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
-import { ABILITIES, ATTACK_NONE, ATTACK_SECONDARY, attackDef, BLASPHEMY_RADIUS, chooseAttack, SCOURGE_HALF_ARC, SECONDARIES, type AttackSlot } from '../data/weapons';
+import { ABILITIES, ATTACK_NONE, ATTACK_PRIMARY, ATTACK_SECONDARY, attackDef, BLASPHEMY_RADIUS, chooseAttack, SCOURGE_HALF_ARC, SECONDARIES, type AttackSlot } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
@@ -221,6 +221,8 @@ export class Game {
   private attack: AttackSlot = ATTACK_NONE;
   /** Cosmetic fire timer, shared by both attacks and run locally at 30 Hz (M9 §2.2). */
   private fireTimer = 0;
+  /** When the benchmark's HUD fires next (M11 §5). */
+  private benchFireAt = 0;
   /** Each player's primary and secondary attacks, unwrapped from the snapshots' counters (M9 §10). */
   private readonly shotCounts = new Map<number, { raw: number; raw2: number; n: number; n2: number }>();
   /** The Field of Blood on screen (M9 §5.1), its coins in flight, and whether the local player stands in it. */
@@ -1041,6 +1043,18 @@ export class Game {
     return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
   }
 
+  /** The first-person weapon's shot for an attack: recoil and muzzle flash (the censer has no flash scale). */
+  private hudShot(now: number, slot: AttackSlot): void {
+    const w = attackDef(this.classId, slot);
+    if (w.kind === 'censer') {
+      this.hud.shot(now, w.interval * 1000);
+      return;
+    }
+    const secondary = slot === ATTACK_SECONDARY;
+    const heavy = w.kind === 'silverBullet' ? SILVER_RECOIL : secondary ? SLUG_RECOIL : undefined;
+    this.hud.shot(now, w.interval * 1000, heavy, secondary && w.kind === 'hitscan' ? SLUG_FLASH : 1);
+  }
+
   /**
    * Cosmetic attack feedback, local and immediate (§10, M9 §5.1): muzzle flash and recoil; hitscan
    * attacks also draw a tracer per pellet to where the local ray stops, and show a hit marker when it
@@ -1072,12 +1086,11 @@ export class Game {
         return;
       }
       case 'censer':
-        this.hud.shot(now, w.interval * 1000);
+        this.hudShot(now, slot);
         this.sounds.ownShot(this.classId, secondary);
         return;
     }
-    const heavy = w.kind === 'silverBullet' ? SILVER_RECOIL : secondary ? SLUG_RECOIL : undefined;
-    this.hud.shot(now, w.interval * 1000, heavy, secondary && w.kind === 'hitscan' ? SLUG_FLASH : 1);
+    this.hudShot(now, slot);
     this.sounds.ownShot(this.classId, secondary);
     // The muzzle: a little forward, right and down from the eye.
     const [fx, fy] = [Math.cos(p.yaw), Math.sin(p.yaw)];
@@ -1244,6 +1257,11 @@ export class Game {
       else if (this.params.benchView === 'gate') p.yaw = Math.atan2(GATE_VIEW_Y - p.body.y, GATE_VIEW_X - p.body.x);
       else p.yaw += BENCH_TURN_RATE * dt;
       p.pitch = this.params.benchView === 'gate' ? GATE_VIEW_PITCH : 0;
+      // M11 §5: the HUD alone fires the primary attack every interval (no simulation, tracers or sound).
+      if (this.params.benchHudFire && now >= this.benchFireAt) {
+        this.hudShot(now, ATTACK_PRIMARY);
+        this.benchFireAt = Math.max(this.benchFireAt + attackDef(this.classId, ATTACK_PRIMARY).interval * 1000, now - 100);
+      }
     } else if (this.bot) {
       const be = this.botEnemies;
       be.length = ents.count;
