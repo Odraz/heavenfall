@@ -9,6 +9,7 @@ import type { GameMap } from '../sim/map';
 import { bandTop, CORNICE, CORNICE_CROWN, FRIEZE, FRIEZE_V, L_PILASTER, L_WINDOW, segmentLook, TILE } from './looks';
 import { WINDOW_GLASS } from './window.gen';
 import { computeArches, REVEAL } from './arches';
+import { gateSkip } from './gate';
 
 /** How far a crown projects from its wall face. */
 export const CROWN_DEPTH = 0.35;
@@ -92,8 +93,12 @@ function faceLine(f: Face): { plane: number; a0: number; a1: number } {
   return { plane: f.nx > 0 ? f.c + 1 : f.c, a0: f.r, a1: f.r + 1 };
 }
 
-/** Computes every crown, strip and window recess of a map. */
-export function computeRelief(map: GameMap): Relief {
+/**
+ * Computes every crown, strip and window recess of a map. `skip` names cells drawn by something else
+ * (by default the Heavenly Gate's, M10 gate §3): they get no relief, no crown runs on a face looking into one,
+ * and a crown running into one ends there with a cap.
+ */
+export function computeRelief(map: GameMap, skip: (c: number, r: number) => boolean = gateSkip(map) ?? (() => false)): Relief {
   const { w, h } = map;
   const hz = map.heights;
   const kind = (c: number, r: number) => (c < 0 || r < 0 || c >= w || r >= h ? K_VOID : hz.kind[r * w + c]);
@@ -111,7 +116,7 @@ export function computeRelief(map: GameMap): Relief {
   /** Whether a crown runs on this face: a wall or pillar whose face is exposed down past the crown,
    * and doesn't look onto void (cliffs and the backs of walls get none). */
   const hasCrown = (c: number, r: number, nx: number, ny: number): boolean => {
-    if (!crowned(c, r)) return false;
+    if (!crowned(c, r) || skip(c, r) || skip(c + nx, r + ny)) return false;
     const nk = kind(c + nx, r + ny);
     if (nk === K_VOID) return false;
     return besideTop(c + nx, r + ny) < crownTop(c, r) - CORNICE_CROWN - 1e-6;
@@ -134,6 +139,8 @@ export function computeRelief(map: GameMap): Relief {
           const bc = c + tx * sgn;
           const br = r + ty * sgn;
           const bTop = besideTop(bc, br);
+          // The next cell is drawn by something else: the crown ends here, closed.
+          if (skip(bc, br)) return { ext: 0, cap: true, outer: false };
           // The face continues: the next cell has a crown on this side at the same height.
           if (hasCrown(bc, br, nx, ny) && Math.abs(crownTop(bc, br) - top) < 1e-6) return { ext: 0, cap: false, outer: false };
           // An inner corner: a wall stands across the end, in front of the next cell.
@@ -184,7 +191,7 @@ export function computeRelief(map: GameMap): Relief {
   const seen = new Set<string>();
   for (let r = 0; r < h; r++) {
     for (let c = 0; c < w; c++) {
-      if (kind(c, r) !== K_WALL) continue;
+      if (kind(c, r) !== K_WALL || skip(c, r)) continue;
       for (const [nx, ny] of DIRS) {
         const fk = kind(c + nx, r + ny);
         if (fk !== K_FLOOR) continue;

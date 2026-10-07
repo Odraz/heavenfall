@@ -1,7 +1,8 @@
 // M10 screenshots (M10 §11): opens each named view of scripts/views.json in Chromium on the GPU and
 // saves screenshots/m10/<prefix>-<name>.png. Each view is a map, a fixed camera (`cam` parameter) and
-// optional extra URL parameters (`bench=1` for a swarm) and a wait in ms before the shot.
-// Usage: node scripts/views.mjs <prefix> [name ...]   (serves the build in dist/ on port 4174)
+// optional extra URL parameters (`bench=1` for a swarm) and a wait in ms before the shot. A view with a
+// `group` (the Heavenly Gate's: `gate`) is shot only with `--group <group>`, and the others only without.
+// Usage: node scripts/views.mjs <prefix> [--group <group>] [name ...]   (serves the build in dist/ on port 4174)
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
@@ -9,7 +10,10 @@ import { fileURLToPath } from 'node:url';
 
 const PORT = Number(process.env.VIEWS_PORT ?? 4174);
 const ROOT = process.env.VIEWS_ROOT ?? fileURLToPath(new URL('..', import.meta.url));
-const [prefix, ...only] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const gi = args.indexOf('--group');
+const group = gi >= 0 ? args.splice(gi, 2)[1] : undefined;
+const [prefix, ...only] = args;
 if (!prefix) {
   console.error('Usage: node scripts/views.mjs <prefix> [name ...]');
   process.exit(1);
@@ -33,13 +37,13 @@ for (let i = 0; ; i++) {
 const browser = await chromium.launch({ headless: false, args: ['--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--window-position=0,0', '--disable-features=CalculateNativeWinOcclusion', '--disable-renderer-backgrounding'] });
 try {
   for (const v of views) {
-    if (only.length && !only.includes(v.name)) continue;
+    if (v.group !== group || (only.length && !only.includes(v.name))) continue;
     const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
     page.on('console', (m) => {
       if (m.type() === 'error' || m.type() === 'warning') console.log(`[${v.name}] [console.${m.type()}] ${m.text()}`);
     });
     page.on('pageerror', (e) => console.log(`[${v.name}] [pageerror] ${e.message}`));
-    const q = new URLSearchParams({ ...(v.params ?? { dev: '1' }), map: v.map, cam: v.cam });
+    const q = new URLSearchParams({ ...(v.params ?? { dev: '1' }), map: v.map, ...(v.cam ? { cam: v.cam } : {}) });
     await page.goto(`http://localhost:${PORT}/?${q}`);
     await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame', null, { timeout: 60000 });
     await page.waitForTimeout(v.wait ?? 1500);

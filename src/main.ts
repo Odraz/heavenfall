@@ -80,7 +80,7 @@ async function loadGameAssets(dungeonId: string, roster: RosterEntry[], localId:
   progress('Drawing the sprites…');
   const localClass = roster.find((r) => r.id === localId)?.classId;
   const others = multiplayer ? CLASS_IDS.filter((c) => c !== localClass) : roster.filter((r) => r.id !== localId).map((r) => r.classId);
-  const [atlas, textures, enemyAnims, players] = await Promise.all([buildAtlas(), loadGameTextures(), loadEnemyAnims(), loadPlayerAnims(others)]);
+  const [atlas, textures, enemyAnims, players] = await Promise.all([buildAtlas(), loadGameTextures(map.gate !== null), loadEnemyAnims(), loadPlayerAnims(others)]);
   return { map, atlas, textures, enemyAnims, players };
 }
 
@@ -121,7 +121,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   });
   host.local.onCtrl = (msg) => game.handleCtrl(msg);
   await game.prepare();
-  host.start(dungeonId, roster, seed ?? (Math.random() * 2 ** 32) >>> 0, params.god, params.bench, true);
+  host.start(dungeonId, roster, seed ?? (Math.random() * 2 ** 32) >>> 0, params.god, params.benchArena, true);
   show('inGame', null);
   game.start();
 }
@@ -403,7 +403,7 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
 
 // Audio starts on the first user gesture; with dev=1 or bench=1 at load, where it may stay
 // suspended until a gesture (M8 §9.1).
-if (params.bench || params.dev) initAudio();
+if (params.benchArena >= 0 || params.dev) initAudio();
 for (const type of ['pointerdown', 'keydown'] as const) document.addEventListener(type, () => initAudio(), { capture: true });
 // UI sounds: a button under the pointer, and a click.
 let hovered: Element | null = null;
@@ -416,7 +416,7 @@ document.addEventListener('click', (e) => {
   if ((e.target as Element | null)?.closest?.('button:not(:disabled)')) sfx('buttonClick');
 });
 
-if (params.bench || params.dev) void startSingleplayer('Dev', params.classId, params.mapId, params.seed);
+if (params.benchArena >= 0 || params.dev) void startSingleplayer('Dev', params.classId, params.mapId, params.seed);
 // Bot auto-join skips the Title and Join screens (M8 §6.4).
 else if (params.autojoin) toJoin(validName(params.name ?? '') ?? 'Bot', params.join, true);
 else toTitle();

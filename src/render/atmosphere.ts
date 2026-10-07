@@ -18,6 +18,27 @@ const SHAFT_WIDTH = 2;
 const SHAFT_OPACITY = 0.25;
 /** A shaft fades out as the camera comes closer than this. */
 const SHAFT_FADE = 8;
+/**
+ * The cloud banks behind the Heavenly Gate (M10 gate §3): their centers along the center line's
+ * offsets, this far west of the gate's plane, this high above the arena's floor, this wide; they drift
+ * GATE_BANK_DRIFT m along y over GATE_BANK_PERIOD s.
+ */
+const GATE_BANKS = [-21, -13, -5, 5, 13, 21];
+const GATE_BANK_BEHIND = 26;
+const GATE_BANK_Z = 4;
+const GATE_BANK_SIZE = 24;
+const GATE_BANK_DRIFT = 3;
+const GATE_BANK_PERIOD = 90;
+/**
+ * Heaven's light behind the gate (M10 gate §3): a quad this far west of the plane, its extent, tint and
+ * opacity. Off: cut for the performance gate (M10 gate §4, decisions), the first of its cuts.
+ */
+const RADIANCE = false;
+const RADIANCE_BEHIND = 8;
+const RADIANCE_HALF = 20;
+const RADIANCE_Z: [number, number] = [-4, 44];
+const RADIANCE_TINT = new THREE.Color(1.0, 0.88, 0.6);
+const RADIANCE_OPACITY = 0.7;
 /** A card fades out as the camera comes closer than this, and is collapsed beyond the fog's end. */
 const CARD_FADE = 10;
 const CARD_CULL = 150;
@@ -151,6 +172,19 @@ export function placeCards(map: GameMap): Card[] {
   // Spires: feet 20-30 m below the lowest floor, 30-80 m tall (square cards: the painted structure is
   // about 0.4 of the card's width).
   place('spire', 6, [60, 120], [30, 80], (_base, s) => lowest - range(20, 30) + s / 2, false);
+  // Banks of cloud behind the Heavenly Gate (M10 gate §3), after the others and without the seeded
+  // random, so every other card stays where it is.
+  const gate = map.gate;
+  if (gate) {
+    const F = map.floor[gate.yCenter * w + gate.x];
+    GATE_BANKS.forEach((d, k) => {
+      cards.push({
+        kind: 'bank', x: gate.x - GATE_BANK_BEHIND, y: gate.yCenter + d, z: F + GATE_BANK_Z, size: GATE_BANK_SIZE,
+        cell: k % 3, mirror: k % 2 === 1,
+        drift: GATE_BANK_DRIFT, dx: 0, dy: 1, period: GATE_BANK_PERIOD, phase: k,
+      });
+    });
+  }
   const cx = w / 2;
   const cy = h / 2;
   cards.sort((a, b) => Math.hypot(b.x - cx, b.y - cy) - Math.hypot(a.x - cx, a.y - cy));
@@ -230,6 +264,35 @@ const cardVertex = /* glsl */ `
     if (nearest > ${CARD_CULL.toFixed(1)}) gl_Position = vec4(0.0);
   }`;
 
+/** The radiance: the sprites' haze, into the single fog color. */
+const radianceVertex = /* glsl */ `
+  varying vec2 vUv;
+  varying float vFogDepth;
+  void main() {
+    vUv = uv;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vFogDepth = -mv.z;
+    gl_Position = projectionMatrix * mv;
+  }`;
+
+const radianceFragment = /* glsl */ `
+  uniform sampler2D map;
+  uniform vec3 tint;
+  uniform float opacity;
+  uniform vec3 fogColor;
+  uniform float fogNear;
+  uniform float fogFar;
+  ${FOG_GLSL}
+  varying vec2 vUv;
+  varying float vFogDepth;
+  void main() {
+    vec4 t = texture2D(map, vUv);
+    float a = t.a * opacity;
+    if (a < 0.003) discard;
+    gl_FragColor = vec4(mix(t.rgb * tint, fogColor, heavenFog(vFogDepth)), a);
+    #include <colorspace_fragment>
+  }`;
+
 const fragment = /* glsl */ `
   uniform sampler2D map;
   uniform vec3 tint;
@@ -251,13 +314,15 @@ const fragment = /* glsl */ `
     #include <colorspace_fragment>
   }`;
 
-/** The atmosphere's two meshes and their shared time. */
+/** The atmosphere's meshes and their shared time. */
 export class Atmosphere {
   readonly shafts: THREE.Mesh;
   readonly cards: THREE.Mesh;
+  /** Heaven's light behind the gate (M10 gate §3); null on maps without a gate. */
+  readonly radiance: THREE.Mesh | null;
   private readonly time = { value: 0 };
 
-  constructor(map: GameMap, arches: Arches, shaftTex: THREE.Texture, sheet: THREE.Texture, sky: THREE.Texture) {
+  constructor(map: GameMap, arches: Arches, shaftTex: THREE.Texture, sheet: THREE.Texture, sky: THREE.Texture, glow: THREE.Texture) {
     const material = (tex: THREE.Texture, vertexShader: string, tint: number) =>
       new THREE.ShaderMaterial({
         uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...skyUniforms(sky), map: { value: tex }, tint: { value: new THREE.Color(tint) }, time: this.time },
@@ -319,6 +384,30 @@ export class Atmosphere {
     cg.instanceCount = cards.length;
     this.cards = new THREE.Mesh(cg, material(sheet, cardVertex, 0xffffff));
     this.cards.frustumCulled = false;
+    // Transparent, so after the whole opaque scene (the sky included): the clouds first, then the
+    // radiance over them, then the arena's own effects, so the light never washes over an effect.
+    this.cards.renderOrder = -2;
+    this.radiance = null;
+    const gate = map.gate;
+    if (gate && RADIANCE) {
+      // One quad facing the arena, fx-glow tinted warm gold, with normal alpha blending (decisions §11.1).
+      const F = map.floor[gate.yCenter * map.w + gate.x];
+      const geo = new THREE.PlaneGeometry(2 * RADIANCE_HALF, RADIANCE_Z[1] - RADIANCE_Z[0]);
+      geo.rotateY(Math.PI / 2);
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), map: { value: glow }, tint: { value: RADIANCE_TINT }, opacity: { value: RADIANCE_OPACITY } },
+        vertexShader: radianceVertex,
+        fragmentShader: radianceFragment,
+        fog: true,
+        transparent: true,
+        depthWrite: false,
+      });
+      const m = new THREE.Mesh(geo, mat);
+      // three.js: x = x, y = z, z = y.
+      m.position.set(gate.x - RADIANCE_BEHIND, F + (RADIANCE_Z[0] + RADIANCE_Z[1]) / 2, gate.yCenter);
+      m.renderOrder = -1;
+      this.radiance = m;
+    }
   }
 
   /** The shared time uniform: the only per-frame work (M10 §2.1). */

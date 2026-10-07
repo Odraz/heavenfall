@@ -28,6 +28,7 @@ export class GameScene {
     readonly canvas: HTMLCanvasElement,
     map: GameMap,
     textures: TerrainTextures,
+    glow: THREE.Texture,
   ) {
     installFogCurve();
     this.sky = makeSky(textures.sky, false);
@@ -41,8 +42,10 @@ export class GameScene {
     this.terrain = buildTerrain(map, textures);
     this.scene.add(this.terrain.mesh);
     this.scene.add(this.terrain.painted, this.terrain.paintedAlpha);
-    this.atmosphere = new Atmosphere(map, this.terrain.arches, textures.shaft, textures.atmosphere, textures.sky);
+    if (this.terrain.gate) this.scene.add(this.terrain.gate.mesh);
+    this.atmosphere = new Atmosphere(map, this.terrain.arches, textures.shaft, textures.atmosphere, textures.sky, glow);
     this.scene.add(this.atmosphere.cards, this.atmosphere.shafts);
+    if (this.atmosphere.radiance) this.scene.add(this.atmosphere.radiance);
     for (const d of this.terrain.doors) for (const m of [d.entry, d.exit]) if (m) this.scene.add(m);
     this.resize();
     window.addEventListener('resize', this.resize);

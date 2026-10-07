@@ -27,5 +27,13 @@
   {"name": "top-a3-to-boss", "map": "pearly-gates", "cam": "122,70,,180,6"},
   {"name": "top-boss-to-a3", "map": "pearly-gates", "cam": "40,96,,-30,6"},
   {"name": "sandbox-overview", "map": "sandbox", "cam": "20,24,,-30,4"},
-  {"name": "sandbox-start", "map": "sandbox", "cam": "6,9,,-60,4"}
+  {"name": "sandbox-start", "map": "sandbox", "cam": "6,9,,-60,4"},
+  {"name": "entry", "group": "gate", "map": "pearly-gates", "cam": "64.5,86.5,,191,14"},
+  {"name": "mid", "group": "gate", "map": "pearly-gates", "cam": "36,80,,186,22"},
+  {"name": "dais", "group": "gate", "map": "pearly-gates", "cam": "20,75,,180,35"},
+  {"name": "corner", "group": "gate", "map": "pearly-gates", "cam": "8,52,,100,15"},
+  {"name": "a1", "group": "gate", "map": "pearly-gates", "cam": "44,21,,125,10"},
+  {"name": "lobby", "group": "gate", "map": "pearly-gates", "cam": "8.5,21.5,,93,15"},
+  {"name": "a3", "group": "gate", "map": "pearly-gates", "cam": "100,75,,180,10"},
+  {"name": "swarm", "group": "gate", "map": "pearly-gates", "params": {"bench": "1", "view": "gate"}, "wait": 25000}
 ]

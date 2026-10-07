@@ -3,9 +3,10 @@ import * as THREE from 'three';
 import { K_DOOR, K_FLOOR, K_OPEN, K_PILLAR, K_VOID } from '../sim/heights';
 import type { GameMap } from '../sim/map';
 import { CORNICE, floorLooks, FRIEZE, L_ARCADE_LOWER, L_ARCADE_UPPER, L_CORNICE, L_MEDALLION, L_PILASTER, L_RISER, L_WALL, L_WINDOW, segmentLook, TILE, wallPieces } from './looks';
-import { bakeLightmap, faceColor, facesSun, shadowZ as faceShadowZ, SUN } from './lightmap';
+import { bakeLightmap, faceColor, facesSun, inShadow, shadowZ as faceShadowZ, SUN } from './lightmap';
 import { archesBlock, computeArches, emitArchStone, emitPaintedFaces, LEDGE, type Arches } from './arches';
 import { computeRelief, emitRelief, emitWindows, ReliefIndex } from './relief';
+import { emitGate, emitPlinth, gateLayout, gateSkip, type GateLayout } from './gate';
 import { makeTerrainMaterial } from './terrainMaterial';
 import type { TerrainTextures } from './textures';
 
@@ -13,7 +14,7 @@ import type { TerrainTextures } from './textures';
 const CLIFF_DEPTH = 30;
 const CLIFF_FADE = 10;
 
-class GeometryBuilder {
+export class GeometryBuilder {
   readonly pos: number[] = [];
   readonly uv: number[] = [];
   readonly color: number[] = [];
@@ -129,10 +130,12 @@ export interface Terrain {
   relief: ReliefIndex;
   /** The arches' painted faces, one cut-out mesh (M10 §6). */
   painted: THREE.Mesh;
-  /** The same faces again, last in the frame, putting the framebuffer's alpha back to 1. */
+  /** The same faces again, and the Heavenly Gate's, last in the frame, putting the framebuffer's alpha back to 1. */
   paintedAlpha: THREE.Mesh;
   /** The arcades' bays and the doorway arches, for the tracers (M10 §6.1). */
   arches: Arches;
+  /** The Heavenly Gate (M10 gate §3): its cut-out mesh (its alpha pass is the painted faces'), and its layout for the tracers; null on maps without one. */
+  gate: { mesh: THREE.Mesh; layout: GateLayout } | null;
   /** Closed-door columns per arena, entry and exit door (null where the arena has none). */
   doors: Array<{ entry: THREE.Mesh | null; exit: THREE.Mesh | null }>;
 }
@@ -148,6 +151,8 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   const bayBase = new Float32Array(w * h).fill(NaN);
   for (const b of arches.bays) for (const [c, r] of b.bay.cells) bayBase[r * w + c] = b.base;
   const kindAt = (c: number, r: number) => (c < 0 || r < 0 || c >= w || r >= h ? K_VOID : hz.kind[r * w + c]);
+  // The cells the Heavenly Gate draws instead (M10 gate §3): nothing of them, and no face looking into them.
+  const skip = gateSkip(map) ?? (() => false);
   /** What's drawn at a cell: its floor (doors open), or its wall height; −∞ for void. */
   const topAt = (c: number, r: number): number => {
     const k = kindAt(c, r);
@@ -180,7 +185,7 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   for (let r = 0; r < h; r++) {
     for (let c = 0; c < w; c++) {
       const k = kindAt(c, r);
-      if (k === K_VOID) continue;
+      if (k === K_VOID || skip(c, r)) continue;
       const i = r * w + c;
       const floor = k === K_FLOOR || k === K_DOOR;
       const t = topAt(c, r);
@@ -212,7 +217,7 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
         const nc = c + edge.dx;
         const nr = r + edge.dy;
         const nt = topAt(nc, nr);
-        if (nt >= t) continue;
+        if (nt >= t || skip(nc, nr)) continue;
         const [ex0, ey0, ex1, ey1] = edge.e;
         const x0 = c + ex0;
         const y0 = r + ey0;
@@ -289,7 +294,7 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   }
 
   // Relief (M10 §5.3): crowns, pilaster strips and window recesses, in the same mesh.
-  const relief = computeRelief(map);
+  const relief = computeRelief(map, skip);
   const reliefLight = { faceColor, facesSun, shadowZ: (x: number, y: number, nx: number, ny: number, foot: number, top: number) => faceShadowZ(map, x, y, nx, ny, foot, top, archShadow) };
   emitRelief(g, relief, reliefLight, { cornice: L_CORNICE, riser: L_RISER, pilaster: L_PILASTER, window: L_WINDOW });
   emitWindows(g, relief, reliefLight, { riser: L_RISER, window: L_WINDOW });
@@ -299,26 +304,19 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   const pg = new GeometryBuilder();
   emitPaintedFaces(pg, arches, reliefLight, archLayers);
   const painted = new THREE.Mesh(pg.toGeometry(), makeTerrainMaterial(textures.array, textures.sky, lightmap, w, h, true));
-  // Alpha to coverage leaves the painted faces' edge alpha below 1 in the framebuffer, where the page
-  // would show through. Last in the frame, the same faces write alpha 1 there again, and nothing else.
-  const paintedAlpha = new THREE.Mesh(
-    painted.geometry,
-    new THREE.ShaderMaterial({
-      vertexShader: 'void main() { vec4 world = modelMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * (viewMatrix * world); }',
-      fragmentShader: 'void main() { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }',
-      side: THREE.DoubleSide,
-      transparent: true,
-      blending: THREE.NoBlending,
-      depthWrite: false,
-      depthFunc: THREE.LessEqualDepth,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    }),
-  );
-  paintedAlpha.renderOrder = 1000;
-  paintedAlpha.onBeforeRender = (r) => r.getContext().colorMask(false, false, false, true);
-  paintedAlpha.onAfterRender = (r) => r.getContext().colorMask(true, true, true, true);
+
+  // The Heavenly Gate (M10 gate §3): its plinth in the terrain mesh, the rest one cut-out mesh over the
+  // gate array. Its alpha pass is merged into the painted faces' (positions only), one draw call for both.
+  let gate: Terrain['gate'] = null;
+  const layout = gateLayout(map);
+  if (layout) emitPlinth(g, layout, reliefLight, (x, y, z) => inShadow(map, x, y, z, archShadow), L_RISER, L_WALL, cliffBottom, CLIFF_FADE);
+  if (layout && textures.gate) {
+    const gg = new GeometryBuilder();
+    emitGate(gg, layout, reliefLight);
+    const gm = new THREE.Mesh(gg.toGeometry(), makeTerrainMaterial(textures.gate, textures.sky, lightmap, w, h, true));
+    gate = { mesh: gm, layout };
+  }
+  const paintedAlpha = alphaPass(gate ? [painted.geometry, gate.mesh.geometry] : [painted.geometry]);
 
   const mesh = new THREE.Mesh(g.toGeometry(), makeTerrainMaterial(textures.array, textures.sky, lightmap, w, h));
 
@@ -350,5 +348,46 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
   };
   const doors = map.arenas.map((arena) => ({ entry: doorMesh(arena.doors), exit: doorMesh(arena.exitDoors ?? []) }));
 
-  return { mesh, lightmap, relief: new ReliefIndex(relief, w), painted, paintedAlpha, arches, doors };
+  return { mesh, lightmap, relief: new ReliefIndex(relief, w), painted, paintedAlpha, arches, gate, doors };
+}
+
+/**
+ * Alpha to coverage leaves the cut-out meshes' edge alpha below 1 in the framebuffer, where the page
+ * would show through. Last in the frame, the same faces write alpha 1 there again, and nothing else.
+ */
+function alphaPass(geometries: THREE.BufferGeometry[]): THREE.Mesh {
+  let geometry = geometries[0];
+  if (geometries.length > 1) {
+    // Positions only: the pass needs nothing else.
+    const pos: number[] = [];
+    const index: number[] = [];
+    for (const g of geometries) {
+      const base = pos.length / 3;
+      pos.push(...(g.getAttribute('position').array as Float32Array));
+      for (const i of g.getIndex()!.array) index.push(base + i);
+    }
+    geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geometry.setIndex(index);
+    geometry.computeBoundingSphere();
+  }
+  const m = new THREE.Mesh(
+    geometry,
+    new THREE.ShaderMaterial({
+      vertexShader: 'void main() { vec4 world = modelMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * (viewMatrix * world); }',
+      fragmentShader: 'void main() { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }',
+      side: THREE.DoubleSide,
+      transparent: true,
+      blending: THREE.NoBlending,
+      depthWrite: false,
+      depthFunc: THREE.LessEqualDepth,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }),
+  );
+  m.renderOrder = 1000;
+  m.onBeforeRender = (r) => r.getContext().colorMask(false, false, false, true);
+  m.onAfterRender = (r) => r.getContext().colorMask(true, true, true, true);
+  return m;
 }

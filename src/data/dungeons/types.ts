@@ -22,6 +22,18 @@ export interface ArenaDef {
   boss: boolean;
 }
 
+/**
+ * The Heavenly Gate (M10 gate): a wall face drawn as the gate of Heaven, in the plane x = `x`, symmetric
+ * about the row line y = `yCenter`; the cells west of the plane from row `y0` to `y1` − 1 are drawn
+ * by the gate instead of the terrain. Drawn only.
+ */
+export interface GateDef {
+  x: number;
+  yCenter: number;
+  y0: number;
+  y1: number;
+}
+
 export interface DungeonDef {
   id: string;
   name: string;
@@ -32,4 +44,6 @@ export interface DungeonDef {
   arenas: ArenaDef[];
   /** Marker characters of decorations and their IDs (§8.1). */
   decor?: Record<string, DecorId>;
+  /** The Heavenly Gate, if the level has one (M10 gate §3). */
+  gate?: GateDef;
 }

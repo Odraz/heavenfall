@@ -131,8 +131,8 @@ export interface SimOptions {
   seed: number;
   /** Every player is invulnerable (`god=1`). */
   god?: boolean;
-  /** Benchmark mode (§2.5). */
-  bench?: boolean;
+  /** The benchmark's arena (§2.5, M10 gate §4); absent or -1 when not benchmarking. */
+  benchArena?: number;
   /** Singleplayer: enables health regeneration (§5.7). */
   singleplayer?: boolean;
   /** Arena waves are disabled (tests). */
@@ -330,7 +330,8 @@ export class Simulation {
   readonly players: SimPlayer[] = [];
   /** The players by index, which is their ID (M8 §6.2); empty slots are undefined. */
   readonly slots: Array<SimPlayer | undefined> = new Array(PLAYER_SLOTS).fill(undefined);
-  readonly bench: boolean;
+  /** The benchmark's arena, or -1 when not benchmarking. */
+  readonly benchArena: number;
   readonly noWaves: boolean;
   readonly singleplayer: boolean;
   /** Every player is invulnerable (`god=1`). */
@@ -481,7 +482,7 @@ export class Simulation {
 
   constructor(opts: SimOptions) {
     this.map = loadMap(opts.dungeon);
-    this.bench = !!opts.bench;
+    this.benchArena = opts.benchArena ?? -1;
     this.noWaves = !!opts.noWaves;
     this.singleplayer = !!opts.singleplayer;
     this.random = mulberry32(opts.seed);
@@ -503,7 +504,7 @@ export class Simulation {
     this.map.arenas.forEach((_, ai) => setArenaDoors(this.map, ai, PHASE_IDLE));
     this.god = !!opts.god;
     for (const p of opts.players) {
-      const [c, r] = this.bench ? this.map.arenas[0].entryCells[0] : this.map.spawns[p.id];
+      const [c, r] = this.benchArena >= 0 ? this.map.arenas[this.benchArena].entryCells[0] : this.map.spawns[p.id];
       this.insertPlayer(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
     }
     const cells = this.map.w * this.map.h;
@@ -611,7 +612,7 @@ export class Simulation {
       shieldUntil: 0,
       dead: false,
       connected: true,
-      god: this.god || this.bench,
+      god: this.god || this.benchArena >= 0,
       devGod: false,
       invulUntil: 0,
       x,
@@ -744,18 +745,19 @@ export class Simulation {
   /**
    * Arena countdown (M8 §5): a living player entering an idle arena, once every earlier one is
    * cleared, starts a 60 s countdown; it drops to 5 s when every living player is inside (none on a
-   * door cell), never restarts, and seals the arena at 0. The benchmark's arena starts at once.
+   * door cell), never restarts, and seals the arena at 0. The benchmark's arena starts at once,
+   * without waiting for earlier arenas to be cleared.
    */
   private checkArenaStarts(): void {
     this.map.arenas.forEach((a, ai) => {
       const st = this.arenas[ai];
       if (st.phase === PHASE_IDLE) {
         if (!this.players.some((p) => this.livingTargetable(p) && insideRect(a, p.x, p.y))) return;
-        if (this.arenas.slice(0, ai).some((e) => e.phase !== PHASE_CLEARED)) return;
-        if (this.bench) {
+        if (ai === this.benchArena) {
           this.startArena(ai);
           return;
         }
+        if (this.arenas.slice(0, ai).some((e) => e.phase !== PHASE_CLEARED)) return;
         st.phase = PHASE_COUNTDOWN;
         st.sealTick = this.tick + ticks(COUNTDOWN);
       }
@@ -795,7 +797,7 @@ export class Simulation {
         this.teleport(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
       }
     }
-    if (!this.bench && !this.noWaves && a.waves.length > 0) this.startWave(ai, 0);
+    if (this.benchArena < 0 && !this.noWaves && a.waves.length > 0) this.startWave(ai, 0);
     if (a.boss && this.map.boss) this.placeBoss(ai);
   }
 
@@ -831,7 +833,7 @@ export class Simulation {
   private checkArenaClears(): void {
     this.map.arenas.forEach((a, ai) => {
       const st = this.arenas[ai];
-      if (st.phase !== PHASE_COMBAT || a.boss || this.bench) return;
+      if (st.phase !== PHASE_COMBAT || a.boss || this.benchArena >= 0) return;
       const allWavesStarted = this.noWaves || st.wave >= a.waves.length - 1;
       if (!allWavesStarted || st.queue.length > 0 || st.alive > 0) return;
       st.phase = PHASE_CLEARED;
@@ -854,7 +856,7 @@ export class Simulation {
 
   /** Defeat: all connected players are dead at the same time (§5.7). */
   private checkDefeat(): void {
-    if (this.result || this.bench) return;
+    if (this.result || this.benchArena >= 0) return;
     const connected = this.players.filter((p) => p.connected);
     if (connected.length > 0 && connected.every((p) => p.dead)) this.finish('defeat');
   }
@@ -912,10 +914,13 @@ export class Simulation {
 
   private updateArenaSpawning(ai: number): void {
     const st = this.arenas[ai];
-    if (this.bench && ai === 0) {
-      // Benchmark: keep exactly 1 500 Blessed alive instead of waves.
-      const queued = st.queue.reduce((n, q) => n + q.counts[0] - q.spawned[0], 0);
-      const need = MAX_LIVING_ENEMIES - this.living - queued;
+    if (ai === this.benchArena) {
+      // Benchmark: keep exactly 1 500 enemies alive instead of waves, topped up with Blessed. The
+      // Gatekeeper and his summons count (`living` leaves the Gatekeeper out).
+      let queued = 0;
+      for (const q of st.queue) for (let t = 0; t < 3; t++) queued += q.counts[t] - q.spawned[t];
+      const boss = this.bossSlot >= 0 && this.eArena[this.bossSlot] === ai ? 1 : 0;
+      const need = MAX_LIVING_ENEMIES - this.living - boss - queued;
       if (need > 0) st.queue.push({ counts: [need, 0, 0], spawned: [0, 0, 0], wave: -1 });
     }
 
@@ -2474,7 +2479,7 @@ export class Simulation {
     let n = st.alive;
     for (const q of st.queue) for (let t = 0; t < 3; t++) n += q.counts[t] - q.spawned[t];
     const waves = this.map.arenas[arenaIndex].waves;
-    if (!this.noWaves && !this.bench) {
+    if (!this.noWaves && this.benchArena < 0) {
       for (let i = st.wave + 1; i < waves.length; i++) {
         const w = waves[i];
         n += scaleCount(w.blessed, st.partySize) + scaleCount(w.choristers, st.partySize) + scaleCount(w.cherubs, st.partySize);
