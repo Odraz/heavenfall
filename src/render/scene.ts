@@ -27,7 +27,7 @@ export class GameScene {
     textures: TerrainTextures,
   ) {
     installFogCurve();
-    this.sky = makeSky(textures.sky, true);
+    this.sky = makeSky(textures.sky, false);
     // alpha: the contact shadows keep their darkest value in the framebuffer's alpha (M10 §5.4); the
     // background clears it to 1 and every opaque surface writes 1.
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
