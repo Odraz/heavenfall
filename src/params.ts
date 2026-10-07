@@ -20,18 +20,44 @@ export interface Params {
   autojoin: boolean;
   /** The `name` parameter, for bot auto-join; null if absent. */
   name: string | null;
+  /** Benchmark camera (M10 §2.3): `turn` (default) or `arcade`, fixed looking north-east. */
+  benchView: 'turn' | 'arcade';
+  /**
+   * A fixed camera for screenshots (M10 §11), with dev=1 or bench=1: `cam=x,y,z,yaw,pitch`, a point
+   * in map meters (z: height above the map's zero; empty: eye height above the floor there) and angles in degrees.
+   */
+  cam: DevCamera | null;
+}
+
+export interface DevCamera {
+  x: number;
+  y: number;
+  z: number | null;
+  yaw: number;
+  pitch: number;
+}
+
+function parseCam(v: string | null): DevCamera | null {
+  if (!v) return null;
+  const p = v.split(',');
+  if (p.length !== 5) return null;
+  const [x, y, yaw, pitch] = [p[0], p[1], p[3], p[4]].map(Number);
+  const z = p[2] === '' ? null : Number(p[2]);
+  if (![x, y, yaw, pitch].every(Number.isFinite) || (z !== null && !Number.isFinite(z))) return null;
+  return { x, y, z, yaw: (yaw * Math.PI) / 180, pitch: (pitch * Math.PI) / 180 };
 }
 
 export function parseParams(search: string): Params {
   const q = new URLSearchParams(search);
   const bench = q.get('bench') === '1';
+  const mapParam = q.get('map');
+  const mapId = getDungeon(mapParam) ? (mapParam as string) : 'sandbox';
   if (bench) {
-    return { dev: false, bench: true, bot: false, god: false, mapId: 'sandbox', classId: 'betrayer', classParam: null, seed: null, join: null, autojoin: false, name: null };
+    const benchView = q.get('view') === 'arcade' ? 'arcade' : 'turn';
+    return { dev: false, bench: true, bot: false, god: false, mapId, classId: 'betrayer', classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, cam: parseCam(q.get('cam')) };
   }
   // Without dev=1 (or bench=1) the page opens the menus.
   const dev = q.get('dev') === '1';
-  const mapParam = q.get('map');
-  const mapId = getDungeon(mapParam) ? (mapParam as string) : 'sandbox';
   const classParam = q.get('class');
   const classId: ClassId = isClassId(classParam) ? classParam : 'fallen';
   const seedParam = q.get('seed');
@@ -51,5 +77,7 @@ export function parseParams(search: string): Params {
     join,
     autojoin: bot && !dev && join !== null && q.get('autojoin') === '1',
     name: q.get('name'),
+    benchView: 'turn',
+    cam: dev ? parseCam(q.get('cam')) : null,
   };
 }

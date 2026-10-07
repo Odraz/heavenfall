@@ -35,7 +35,8 @@ describe('map loader', () => {
     expect(m.floor[2 * 7 + 3]).toBe(8.75);
     expect(m.spawns).toEqual([[1, 1], [3, 1], [1, 2], [3, 2]]);
     expect(m.boss).toEqual([5, 2]);
-    expect(m.top[0]).toBe(16);
+    // Wall cells are as tall as their computed height (M10 §3.4).
+    expect(m.top[0]).toBe(m.heights.height[0]);
   });
 
   it('parses decorations', () => {

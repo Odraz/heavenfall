@@ -407,26 +407,31 @@ A single old tarnished silver coin seen straight on: a worn, slightly irregular 
 
 ---
 
-## Milestone 11
+## Milestone 10
 
-12 images for the level art ([m11.md](m11.md)). The goal is the look of the concept art, at almost no cost per frame, so the prompts ask for flat, evenly lit images: the game adds its own baked light. Attach `concept-1.webp`, `concept-2.webp` and `concept-3.webp` to every prompt unless it says otherwise. Save them as named: the sky, textures and effect in `assets/art-src/`, the prop sheets in `assets/art-src/reference/`. Generate each in a new chat. They're needed in stages, so you can do them stage by stage.
+10 images for the level art ([m10.md](m10.md)), plus 5 prop sheets made early for a later milestone. The goal is the look of the concept art, `concept-1` above all, at almost no cost per frame, so the prompts ask for flat, evenly lit images: the game adds its own baked light. Attach `concept-1.webp`, `concept-2.webp` and `concept-3.webp` to every prompt unless it says otherwise. Save them as named: the sky, textures and effects in `assets/art-src/`, the prop sheets in `assets/art-src/reference/`. Generate each in a new chat. They're needed in stages, so you can do them stage by stage.
 
 **Optional extras that help** (not required): a close-up photo or painting of a real gold-inlay marble floor; a real arcade with arched windows seen from inside; any artwork of floating spires and towers in clouds. Attach them to the prompts they match.
 
-- [ ] Stage 1: `sky-day.png`
-- [ ] Stage 2: `tex-floor-plain.png`, `tex-floor-medallion.png`, `tex-wall-window.png`, `tex-wall-pilaster.png`, `tex-cornice.png`
-- [ ] Stage 3: `fx-lightshaft.png`
-- [ ] Stage 4: `prop-arch-sheet.png`, `prop-column-sheet.png`, `prop-balustrade-sheet.png`, `prop-spire-sheet.png`, `prop-island-sheet.png`
+JPEG is fine for all of them (`.jfif` or `.jpg`, same base name).
+
+- [x] Stage 1: `sky-day`
+- [x] Stages 3 and 5: `tex-floor-plain`, `tex-floor-medallion`, `tex-wall-window`, `tex-wall-pilaster`, `tex-cornice` (Claude fixes the plain floor's grid, adds the frieze to the window wall and crops the cornice to whole repeats of its pattern: [m10.md](m10.md) §5.1)
+- [x] Stages 2 and 6: `tex-arcade` (Claude keys out the green, extends it to 1:2 and splits it into two layers: [m10.md](m10.md) §6)
+- [x] Stage 7: `fx-lightshaft`
+- [x] Stage 7: `fx-clouds` (Claude cleans the green rim off the soft edges: [m10.md](m10.md) §7.2)
+- [ ] Stage 7: `fx-spires` (Claude cleans it like the clouds: [m10.md](m10.md) §7.3)
+- [x] Later milestone (sprites from 3D models, not used in M10): `prop-arch-sheet`, `prop-column-sheet`, `prop-balustrade-sheet`, `prop-spire-sheet`, `prop-island-sheet`
 
 ### Sky (stage 1)
 
 #### Sky — `sky-day.png` · 21:9
-A horizon band that wraps all the way around the player. Claude closes the seam and blends the top and bottom into plain color, so don't worry about the exact edges, but the left and right edges should match as closely as you can get them. Generate at the largest size available.
+A horizon band around the player: the game shows it over half the circle and its mirror image over the other half, so its edges need not match, and blends the top and bottom into plain color. Generate at the largest size available.
 ```text
 A wide panoramic painted sky of a heavenly realm, seen from a high floating terrace: a bright blue sky with big sunlit cumulus clouds, warm golden haze along the horizon, and in the distance floating spires, slender white towers, domes and broken arches rising out of the clouds at many different distances, some tiny and pale in the haze, some larger and clearer. Soft sunlight from the left, a hint of golden light rays through the clouds. The horizon is at about one third of the image height from the bottom; below it, thick white clouds and haze fade to pale gold. The upper half is clear deep blue with a few light clouds. Hand-painted stylized game skybox matching the sky in the attached images: painterly brush texture, soft edges, no ink outlines, rich saturated color. The left edge continues the right edge. No ground, no people, no birds, no text, no sun disc. Aspect ratio 21:9.
 ```
 
-### Surfaces (stage 2)
+### Surfaces (stages 3 and 5)
 
 Same rules as B4 *Terrain textures*: seamless, flat even lighting, no shadows, no vignette, no perspective, no text. Generate at 2048 px if available. Also attach `tex-floor.png` or `tex-wall.png` from `assets/art-src/` (whichever is the same kind), so the new ones match the existing ones.
 
@@ -443,7 +448,7 @@ Game texture, viewed straight down, orthographic, filling the whole square: a po
 ```
 
 #### Window wall — `tex-wall-window.png` · 1:1
-The wall rises 16 m, so this repeats upward four times. It's a painted window; the game doesn't make it a real hole.
+The game stretches it vertically from the floor toward the cornice (about 1.7×), keeping the frieze at the bottom. It's a painted window; the game sets its glass back into the wall, but doesn't make it a real hole.
 ```text
 Seamless tileable game texture, viewed straight on, orthographic, filling the whole square: an ivory sandstone wall, with one tall pointed-arch window centered, 45% of the width and 70% of the height, set in a deep carved frame with a gold-leaf molding, the glass a soft sky-blue gradient with a pale cloud and thin gold tracery bars, the inner edge of the frame painted dark to suggest depth. Above and below the window, plain ivory blocks with thin dark joints. The left and right edges show plain blocks that continue into the neighboring tile, and the top and bottom edges match. Hand-painted stylized texture matching the walls in the attached image: painterly brush texture, crisp dark ink-like lines along the carved edges and joints. Even, flat lighting: no cast shadows, no vignette, no perspective. No text. Aspect ratio 1:1.
 ```
@@ -460,21 +465,51 @@ A horizontal band for the top of every wall. It only repeats left to right. Clau
 Seamless horizontally tileable game texture, viewed straight on, orthographic, filling the whole image: a grand classical cornice band in ivory stone and gold, from top to bottom: a thin gold strip, a row of small evenly spaced dentils, a wide band with a repeating carved leaf-and-lily pattern with gold-leaf trim, then a projecting molding with a thin gold line at the bottom. Hand-painted stylized texture matching the stonework in the attached images: painterly brush texture, crisp dark ink-like lines along the carved edges. Even, flat lighting: no cast shadows, no vignette, no perspective. The left edge continues the right edge. No text. Aspect ratio 21:9.
 ```
 
-### Atmosphere (stage 3)
+### Arches (stages 2 and 6)
+
+#### Arcade bay — `tex-arcade.png` · 9:16
+One bay of the arcade that runs along every open edge of the level, like the arches on the left of `concept-1`. Bays stand side by side, so each side edge shows half a pier. The game cuts out the green, so you see the sky through the arch. It's 4 m wide and 8 m tall in the game; Claude extends it to 1:2. Attach `tex-wall.png` too, so the stone matches.
+```text
+Game texture, viewed straight on, orthographic, filling the whole image: one bay of a grand Gothic arcade in ivory stone and gold. At the left and right edges, half of a square stone pier each (each 12% of the image width), cut exactly at the image edge so two images side by side make a whole pier. Between them, one tall pointed-arch opening whose apex is at 75% of the image height from the bottom, framed by a carved molding with gold-leaf trim and a small gold lily keystone. Across the bottom 17% of the opening, a stone balustrade: a plinth, a row of fat ivory balusters with gold accents, and a thin gold-trimmed top rail. Above the arch, solid ivory stone spandrels with fine gold scrollwork, and the top 20% of the image plain ivory stone blocks with thin dark joints. Everything that is open, inside the arch above the balustrade and between the balusters, is flat pure green (#00FF00), with no sky, no clouds and no glass. Hand-painted stylized texture matching the architecture in the attached images: painterly brush texture, crisp dark ink-like lines along the carved edges and joints. Even, flat lighting: no cast shadows, no vignette, no perspective. No text. Aspect ratio 9:16.
+```
+
+**Check before saving:** the opening is one clean green area (no sky painted into it), the arch is centered and symmetric, and the left and right edges are cut through the piers.
+
+### Atmosphere (stage 7)
 
 #### Light shaft — `fx-lightshaft.png` · 3:4
-Drawn additively, so black becomes transparent. Tinted warm gold by the game. No attachments.
+The game turns brightness into opacity, so black becomes transparent. Tinted warm gold by the game. No attachments.
 ```text
 A single tall shaft of sunlight, a soft-edged vertical beam of light, widest at the top and narrowing slightly toward the bottom, centered, 40% of the image width, brightest in the middle with a gentle falloff to both sides, a few faint darker streaks along its length, and a fade to nothing at the top and bottom edges. Pure white and light grey only, no color. On a pure black (#000000) background. Flat, seen straight on, no perspective. No text. Aspect ratio 3:4.
 ```
 
-### Architecture (stage 4)
+#### Clouds — `fx-clouds.png` · 1:1
+Four clouds the game scatters around and below the level, so the arches look out onto clouds as in `concept-1`. Attach `sky-day` from `assets/art-src/` too, so they match its clouds.
+```text
+Four separate painted cumulus clouds arranged in a 2 × 2 grid, one in each quarter of the image, each fully inside its quarter with a clear margin of background around it, none touching another or the image edge. Different shapes: one tall billowing cloud, one wide flat cloud bank, one small round puff, one long wispy streak. Soft fluffy edges, sunlit warm white and pale gold tops, soft blue-grey and lavender undersides. Hand-painted stylized look matching the clouds of the attached sky: painterly brush texture, soft edges, no ink outlines. Isolated on a flat pure green (#00FF00) background: no sky, no ground, no text. Aspect ratio 1:1.
+```
 
-Reference sheets that Claude models in Blender, like the Part A turnarounds: each shows one prop from the front, the side and the top, at the same scale, so it can be built accurately. They're never shown in the game. Attach `concept-1.webp` and `concept-2.webp` (and any optional architecture extras). Save in `assets/art-src/reference/`. Check that the three views match each other.
+#### Distant spires — `fx-spires.png` · 1:1
+Four far-off structures the game stands in the cloud sea 60–120 m beyond the level, so the sky has depth that shifts as you move, as in `concept-1` and `concept-2`. Seen from far away through haze, so simple shapes and soft detail. Attach `sky-day` from `assets/art-src/` too, so they match the spires painted in it.
+```text
+Four separate distant fantasy structures of a heavenly city arranged in a 2 × 2 grid, one in each quarter of the image, each fully inside its quarter with a clear margin of background around it, none touching another or the image edge: a cluster of three slender white towers of different heights with pointed gold-capped roofs; a single tall round tower topped by a gold dome; a small floating island of rock, its underside a tapering cone, carrying a white pavilion with a gold dome; a tall broken pointed arch on two slender piers. Each is tall and upright, standing straight, seen from straight in front at eye level, with no perspective. The bottom fifth of each fades into soft white cloud, so it seems to rise out of a sea of clouds. Pale ivory stone with gold accents, softly lit from the front, slightly brighter at the top, a little hazy as if seen from far away. Hand-painted stylized look matching the spires of the attached sky: painterly brush texture, soft edges, only faint thin outlines. Isolated on a flat pure green (#00FF00) background: no sky, no ground, no people, no text. Aspect ratio 1:1.
+```
+
+**Check before saving:** four separate, upright structures, none cut by its quarter's edge, no green inside them except between the island's pavilion columns, and clouds only at their feet.
+
+### Architecture (a later milestone)
+
+Not used in M10, which builds its arches from painted textures (above) on simple geometry: reveals, crowns and pilaster strips. Kept as references for the later milestone that renders better sprites from professional 3D models.
+
+Reference sheets that Claude models in Blender, like the Part A turnarounds: each shows one prop from the front, the side and the top, at the same scale, so it can be built accurately. They're never shown in the game. Save in `assets/art-src/reference/`.
+
+**Attach only `concept-1.webp`**, for the style. With the swarm concept (`concept-3.webp`) attached, Gemini copies the whole game scene, HUD and all, instead of drawing a sheet. If it still draws a scene, start a new chat with no attachment at all.
+
+**Check before saving:** exactly three views of one object on plain grey, nothing else (no enemies, HUD, floor or sky), and the three views match each other.
 
 All five use this template, with the `<PROP>` text of each:
 ```text
-A model sheet of <PROP> for a 3D artist. Three orthographic views of the same object, side by side on a plain light grey background: front view on the left, side view in the middle, top view on the right, at exactly the same scale, aligned, with no perspective. Hand-painted stylized game-art look matching the architecture in the attached images: ivory stone with gold leaf trim, clean readable shapes, thick dark ink-like outlines, flat even lighting with no cast shadows, simple shapes rather than tiny detail. Every view is complete and uncropped. No text, no letters, no numbers, no measurements. Aspect ratio 16:9.
+This is not a game screenshot and not a scene: no characters, no HUD, no floor, no sky, no landscape. Only one object, drawn three times. A model sheet of <PROP> for a 3D artist. Three orthographic views of the same object, side by side on a plain light grey background: front view on the left, side view in the middle, top view on the right, at exactly the same scale, aligned, with no perspective. Hand-painted stylized game-art look matching the architecture in the attached images: ivory stone with gold leaf trim, clean readable shapes, thick dark ink-like outlines, flat even lighting with no cast shadows, simple shapes rather than tiny detail. Every view is complete and uncropped. No text, no letters, no numbers, no measurements. Aspect ratio 16:9.
 ```
 
 | File | `<PROP>` |

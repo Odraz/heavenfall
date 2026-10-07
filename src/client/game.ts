@@ -2,7 +2,7 @@
 import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
-import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, ST_WINDUP } from '../data/enemies';
+import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
 import { ABILITIES, ATTACK_NONE, ATTACK_SECONDARY, attackDef, BLASPHEMY_RADIUS, chooseAttack, SCOURGE_HALF_ARC, SECONDARIES, type AttackSlot } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
@@ -13,12 +13,15 @@ import type { Params } from '../params';
 import { aimDir, estimateSilverBullet, rayCylinder } from '../sim/combat';
 import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, TICK_DT, TICK_MS } from '../sim/constants';
 import { raycastTerrain } from '../sim/los';
-import { arenaPhaseOf, doorsClosed, setArenaDoors, type GameMap } from '../sim/map';
+import { arenaPhaseOf, doorsClosed, overVoid, setArenaDoors, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
 import { BOSS_CAST_JUDGMENT, PROJ_CENSER } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
+import { ContactShadows } from '../render/contactShadows';
+import { archStoneHit } from '../render/arches';
+import { PLAYER_RADIUS } from '../sim/constants';
 import { Particles } from '../render/particles';
 import { GameScene } from '../render/scene';
 import type { GameTextures } from '../render/textures';
@@ -48,6 +51,8 @@ import { PlayerAnimator } from './playerAnim';
 import { SnapshotBuffer, type InterpolatedEnemies } from './snapshots';
 
 const BENCH_TURN_RATE = 0.3;
+/** Contact shadows are this many times a body's radius (M10 §5.4). */
+const SHADOW_SIZE = 1.4;
 const PROJECTILE_SPRITES = ['proj-censer', 'proj-orb', 'proj-arrow'];
 const PROJECTILE_SIZES = [0.4, 0.6, 0.3];
 const RESULT_OVERLAY_MS = 3000;
@@ -92,8 +97,7 @@ const COIN_MS = 300;
 const POOL_EMBERS_PER_S = 12;
 /** Gold embers rising from each incense cloud per second (M9 §5.1). */
 const INCENSE_EMBERS_PER_S = 4;
-/** Falling Star's launched enemies fly an arc 1 m high over 0.4 s (M9 §3.2). */
-const LAUNCH_HEIGHT = 1;
+/** Falling Star's launched enemies fly an arc LAUNCH_HEIGHT high over 0.4 s (M9 §3.2). */
 const LAUNCH_MS = 400;
 /** At most this many corpses lie around; the oldest vanish first. */
 const MAX_CORPSES = 1000;
@@ -183,6 +187,8 @@ export class Game {
   private readonly fps = new FpsCounter();
   private readonly snaps: SnapshotBuffer;
   private readonly billboards: Billboards;
+  /** Contact shadows under the characters (M10 §5.4). */
+  private readonly shadows: ContactShadows;
   /** Enemies with an atlas and their corpses, one billboard mesh per type. */
   private readonly enemyBillboards = new Map<number, Billboards>();
   private readonly animator = new EnemyAnimator();
@@ -301,6 +307,11 @@ export class Game {
       this.playerBillboards.set(cls, b);
       this.scene.scene.add(b.mesh);
     }
+    // The characters sit in the baked light (M10 §5.4).
+    const lightmap = this.scene.terrain.lightmap;
+    for (const b of [this.billboards, ...this.enemyBillboards.values(), ...this.playerBillboards.values()]) b.setLight(lightmap, this.map.w, this.map.h, this.floorAt);
+    this.shadows = new ContactShadows(o.textures.fx.glow);
+    for (const m of this.shadows.meshes) this.scene.scene.add(m);
     this.vfx = new Vfx(o.textures.fx);
     this.incense = new IncenseClouds(o.textures.fx.smoke);
     this.scene.scene.add(this.incense.group);
@@ -338,7 +349,7 @@ export class Game {
     o.transport.onSnapshot = (buf) => this.snaps.addPart(buf, performance.now());
 
     this.bot = this.params.bot ? new Bot(this.map) : null;
-    this.bench = this.params.bench && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString()) : null;
+    this.bench = this.params.bench && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString(), () => this.scene.renderStats()) : null;
 
     debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0, primaryShots: 0, secondaryShots: 0 }));
     this.sounds.renderDelay = (this.snaps.delayTicks * TICK_MS) / 1000;
@@ -842,6 +853,8 @@ export class Game {
       const alive = new Set(s.projSlot.subarray(0, s.projectileCount));
       for (let i = 0; i < prev.projectileCount; i++) {
         if (prev.projKind[i] !== PROJ_CENSER || alive.has(prev.projSlot[i])) continue;
+        // A censer that vanished over the void didn't break (M10 §3.4).
+        if (overVoid(this.map, prev.projX[i], prev.projY[i])) continue;
         this.pendingBursts.push({ at: now + delay, censer: true, type: -1, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i] });
       }
     }
@@ -1080,7 +1093,10 @@ export class Game {
         if (t <= stop) ts.push({ t, i });
       }
       ts.sort((a, b) => a.t - b.t);
-      let end = stop;
+      // A shot that meets a wall ends on its drawn surface: a relief's front, or a window's glass (M10 §5.3).
+      let end = stop < w.range ? this.scene.terrain.relief.adjust(ex, ey, ez, dx, dy, dz, stop) : stop;
+      // A shot crossing an arch's painted stone flies on in the simulation; its tracer ends there (M10 §6.1).
+      end = Math.min(end, archStoneHit(this.scene.terrain.arches, ex, ey, ez, dx, dy, dz, stop));
       if (ts.length > 0) {
         hit = true;
         if (w.kind === 'silverBullet') {
@@ -1214,7 +1230,9 @@ export class Game {
     if (this.over || this.paused) {
       // The result overlay or Pause: the game keeps rendering without input.
     } else if (this.bench) {
-      p.yaw += BENCH_TURN_RATE * dt;
+      // The arcade view (M10 §2.3) looks north-east across Arena 1's north arcade, without turning.
+      if (this.params.benchView === 'arcade') p.yaw = -Math.PI / 4;
+      else p.yaw += BENCH_TURN_RATE * dt;
       p.pitch = 0;
     } else if (this.bot) {
       const be = this.botEnemies;
@@ -1338,6 +1356,11 @@ export class Game {
     // the camera rises with the soul: 1.6 m above its base (M8 §4.3).
     if (this.dead) this.scene.setView(b.x, b.y, this.ownGround, p.yaw, p.pitch, PLAYER_EYE + this.souls.rise(this.localId, now));
     else this.scene.setView(b.x, b.y, b.z, p.yaw, p.pitch, PLAYER_EYE - this.bob.eyeDrop);
+    const cam = this.params.cam;
+    if (cam) {
+      const ci = Math.floor(cam.y) * this.map.w + Math.floor(cam.x);
+      this.scene.setView(cam.x, cam.y, cam.z ?? (this.map.floor[ci] ?? 0) + PLAYER_EYE, cam.yaw, cam.pitch, 0);
+    }
     this.drawBillboards(now, ents, enemyZ);
     const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
     this.hud.setBeamed(beamed.has(this.localId));
@@ -1363,9 +1386,20 @@ export class Game {
 
   private readonly glowScratch: Glow = { r: 1, g: 1, b: 1, a: 0 };
 
+  /** The floor height of the cell at a point (−∞ over walls and outside the grid). */
+  private readonly floorAt = (x: number, y: number): number => {
+    const c = Math.floor(x);
+    const r = Math.floor(y);
+    if (c < 0 || r < 0 || c >= this.map.w || r >= this.map.h || this.map.wall[r * this.map.w + c]) return -Infinity;
+    return this.map.floor[r * this.map.w + c];
+  };
+
   private drawBillboards(now: number, ents: { count: number; slot: Uint16Array; x: Float32Array; y: Float32Array; type: Uint8Array; state: Uint8Array; flags: Uint8Array }, enemyZ: Float32Array): void {
     const bb = this.billboards;
     bb.begin();
+    const shadows = this.shadows;
+    shadows.begin();
+    if (!this.dead) shadows.add(this.player.body.x, this.player.body.y, this.floorAt(this.player.body.x, this.player.body.y), PLAYER_RADIUS * SHADOW_SIZE);
     for (const b of this.enemyBillboards.values()) b.begin();
     for (const b of this.playerBillboards.values()) b.begin();
     const chain = this.frames['chain-ring'];
@@ -1391,8 +1425,9 @@ export class Game {
       const target = this.enemyBillboards.get(type)!;
       const def = ENEMIES[type];
       const flags = ents.flags[i];
-      // Launched by a Falling Star: the billboard flies an arc, peaking 1 m up halfway (M9 §3.2).
-      const lu = (now - this.launchAt[slot]) / LAUNCH_MS;
+      // Launched by a Falling Star: the billboard flies an arc, peaking 1 m up halfway (M9 §3.2). A
+      // flying Cherub is knocked back level, so nothing rises above the headroom (M10 §3.1).
+      const lu = def.flying ? 1 : (now - this.launchAt[slot]) / LAUNCH_MS;
       const z = enemyZ[i] + (lu >= 0 && lu < 1 ? 4 * LAUNCH_HEIGHT * lu * (1 - lu) : 0);
       // Status (§10): hurt flash, wind-up gold glow, silenced grey tint.
       let glow = NO_GLOW;
@@ -1422,6 +1457,9 @@ export class Game {
       else if (ents.state[i] === ST_WINDUP) glow = GLOW_WINDUP;
       const grey = (flags & FLAG_SILENCED) !== 0;
       target.add(f, ents.x[i], ents.y[i], z, height, false, grey ? 0.55 : 1, grey ? 0.55 : 1, grey ? 0.6 : 1, glow);
+      // Contact shadows only under the players and the Gatekeeper, not the swarm: cut for the
+      // performance gate (M10 §2.3 cut 3, decisions).
+      if (type === GATEKEEPER) shadows.add(x, y, this.floorAt(x, y), def.radius * SHADOW_SIZE);
       if (flags & FLAG_ROOTED) bb.add(chain, ents.x[i], ents.y[i], z + 0.25, Math.max(0.45, def.radius * 1.1), true);
       // Taunted: the `!` pops in, holds and fades, then stays hidden for the rest of the taunt.
       if (flags & FLAG_TAUNTED) {
@@ -1480,6 +1518,7 @@ export class Game {
       const pick = this.playerAnimator.pick(q.id);
       const pf = set.anims[pick.anim][spriteDirection(q.yaw, eye.x - q.x, eye.y - q.y)][pick.frame];
       pb.add(pf, q.x, q.y, q.z, pf.height, false, 1, 1, 1, q.id === this.allyTargetId ? GLOW_ALLY : NO_GLOW);
+      shadows.add(q.x, q.y, this.floorAt(q.x, q.y), PLAYER_RADIUS * SHADOW_SIZE);
     }
     // Decorations (§8.1): drawn only.
     for (const d of this.map.decorations) {
@@ -1521,6 +1560,7 @@ export class Game {
     this.vfx.setTethers(tethers);
     this.particles.draw(bb);
     bb.end(this.scene.camera);
+    shadows.end();
     for (const b of this.enemyBillboards.values()) b.end(this.scene.camera);
     for (const b of this.playerBillboards.values()) b.end(this.scene.camera);
   }

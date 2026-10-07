@@ -31,6 +31,9 @@ export const ENEMIES: readonly EnemyDef[] = [
   { hp: 29000, radius: 2.0, height: 6.0, speed: 0, flying: false },
 ];
 
+/** Falling Star's launched walking enemies fly an arc this high (M9 §3.2); drawn only. */
+export const LAUNCH_HEIGHT = 1;
+
 /** Cherubs hover with their feet this far above the ground height. */
 export const CHERUB_HOVER = 4;
 /** Maximum vertical speed of hovering, m/s. */

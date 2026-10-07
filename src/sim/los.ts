@@ -1,16 +1,15 @@
-/** Ray tests against the heightfield (§5.3): walls, closed doors and terrain. */
-import { WALL_TOP } from './constants';
+/** Ray tests against the heightfield (§5.3): walls at their own heights (M10 §3.4), closed doors and terrain. */
 import type { GameMap } from './map';
 
 function topAt(map: GameMap, c: number, r: number): number {
-  if (c < 0 || r < 0 || c >= map.w || r >= map.h) return WALL_TOP;
+  if (c < 0 || r < 0 || c >= map.w || r >= map.h) return -Infinity;
   return map.top[r * map.w + c];
 }
 
 /**
  * Casts a 3D ray from (ox, oy, oz) along the unit direction (dx, dy, dz) for up to maxDist.
- * Returns the distance to the first point that is below the floor height of the cell it's in
- * (walls and closed doors count as 16 m high), or maxDist if there's none.
+ * Returns the distance to the first point that is below the top of the cell it's in (walls at their
+ * heights, void cells and outside the grid at −∞), or maxDist if there's none.
  */
 export function raycastTerrain(
   map: GameMap,
@@ -51,8 +50,8 @@ export function raycastTerrain(
       tMaxY += tDeltaY;
       r += stepR;
     }
-    // Leaving the grid above the walls: nothing more to hit.
-    if ((c < -1 || r < -1 || c > map.w || r > map.h) && oz + dz * t0 >= WALL_TOP && dz >= 0) return maxDist;
+    // A straight line that leaves the grid never comes back into it: nothing more to hit.
+    if (c < 0 || r < 0 || c >= map.w || r >= map.h) return maxDist;
   }
 }
 

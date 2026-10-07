@@ -1,6 +1,7 @@
 """Turns generated 2D art into game sprites (§11.2).
 
-Reads assets/art-src/<name>.png, writes assets/sprites/<name>.png.
+Reads assets/art-src/<name>.png (or a JPEG with the same base name: .jpg, .jpeg, .jfif; M10
+§4.3), writes assets/sprites/<name>.png.
 - SPRITES (flat green background): the green keyed out, the green spill removed from the
   edges, cropped to the subject and resized to the listed height. The atlas draws PNG
   sprites at their own size.
@@ -16,6 +17,8 @@ Reads assets/art-src/<name>.png, writes assets/sprites/<name>.png.
   frames (panel, buttons, slot frame) without a margin, since CSS slices them at their edges.
 - BACKGROUNDS (full-frame paintings): resized to the listed width, written to
   assets/ui/<name>.jpg.
+- SKIES (M10 §4.2): the horizon band, cropped to the listed width from the left (the mirrored
+  sampling makes the right edge meet itself), written to assets/textures/<name>.jpg.
 
 Needs Python 3 with Pillow and NumPy.
 Usage: python scripts/cutout.py [name ...]   (no names: every image)
@@ -85,7 +88,25 @@ TEXTURES = {
     'tex-riser': 1024,
     'tex-wall': 1024,
     'tex-door': 1024,
+    # M10 §5.1: prepared first (PREPARED below), then resized like the others.
+    'tex-floor-plain': 1024,
+    'tex-floor-medallion': 1024,
+    'tex-wall-window': 1024,
+    'tex-wall-pilaster': 1024,
+    'tex-cornice': 1024,
 }
+
+# M10 §5.1 preparation. tex-wall's frieze: its bottom rows, from the gold line above the carved band
+# (2 048 px source: rows 1 786-2 047, 0.51 m of the 4 m tile), copied onto the window wall.
+FRIEZE_FROM = 1786 / 2048
+# The floors' gold lines are 12 px wide in the 2 048 px sources, centered on row and column 1 023.
+FLOOR_LINE = (1012, 1036)
+# The cornice band (rows 1-1 308 of the source: from the top gold line to the dark line under the
+# bottom one), and its pattern's repeat: two palmettes, 1 582 px (by autocorrelation). Two repeats
+# fit the 3 168 px source, cut at the column where the two ends match best.
+CORNICE_ROWS = (1, 1309)
+CORNICE_REPEAT = 1582
+CORNICE_REPEATS = 2
 
 # Effect textures: output width in pixels, whether it's a strip repeated left to right, and
 # an opacity gain (the chain's dim red edges would be see-through at 1).
@@ -95,6 +116,8 @@ EFFECTS = {
     'fx-smoke': (512, False, 1),
     'fx-beam': (256, True, 1),
     'fx-chain': (512, True, 2.5),
+    # M10 §7.1: the light shaft through an arch, tinted warm gold in the shader.
+    'fx-lightshaft': (256, False, 1),
 }
 
 # Transparent margin around the cropped subject, in output pixels.
@@ -124,11 +147,35 @@ BACKGROUNDS = {
     'ui-title-bg': 1920,
 }
 
+# Sky bands (M10 §4.2): the width kept from the left edge. sky-day is cut through the axis of the
+# floating spire at x 2 701, so the mirror line runs down its middle and the dome beside it, which
+# would show twice mirror-imaged, is left out.
+SKIES = {
+    'sky-day': 2701,
+}
+
+# The row where the cloud sea meets the haze, as a fraction of the height from the top (found by eye).
+SKY_HORIZON = 0.65
+
+# The sky's colors and proportions, read by src/render/sky.ts.
+SKY_GEN = ROOT / 'src' / 'render' / 'sky.gen.ts'
+
+# JPEG quality for images without transparency (M10 §4.3).
+JPEG_QUALITY = 88
+
 # Sprites with some green of their own (the lilies' stems). Pixels with less than
 # OWN_GREEN of the background's greenness are kept as they are, not keyed or despilled.
 HAS_GREEN = {'decor-lily-urn'}
 OWN_GREEN = 0.15
 
+
+
+def source(name: str) -> Path:
+    """The source image: PNG, or a JPEG with the same base name (M10 §4.3)."""
+    for ext in ('.png', '.jpg', '.jpeg', '.jfif'):
+        if (SRC / f'{name}{ext}').exists():
+            return SRC / f'{name}{ext}'
+    sys.exit(f'No source image for {name} in {SRC}')
 
 
 def greenness(rgb: np.ndarray) -> np.ndarray:
@@ -137,7 +184,7 @@ def greenness(rgb: np.ndarray) -> np.ndarray:
 
 
 def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN) -> None:
-    rgb = np.asarray(Image.open(SRC / f'{name}.png').convert('RGB')).astype(np.float32)
+    rgb = np.asarray(Image.open(source(name)).convert('RGB')).astype(np.float32)
 
     # The background color, from the corners.
     k = 16
@@ -263,7 +310,7 @@ def space_letters(color: np.ndarray, alpha: np.ndarray, letters: int, gap: float
 
 
 def icon(name: str, size: int) -> None:
-    img = Image.open(SRC / f'{name}.png').convert('RGB')
+    img = Image.open(source(name)).convert('RGB')
     if name in ICON_INSET:
         k = round(ICON_INSET[name] * img.width), round(ICON_INSET[name] * img.height)
         img = img.crop((k[0], k[1], img.width - k[0], img.height - k[1]))
@@ -287,22 +334,125 @@ def icon(name: str, size: int) -> None:
     print(f'{name}: {size}x{size}')
 
 
+def prepare_floor_plain(rgb: np.ndarray) -> np.ndarray:
+    """Shifted by half (its cross moves to the edges, hiding the broken veins), with the same thin
+    gold cross painted through the new center, so it's a 2 x 2 grid like tex-floor; its marble
+    matched to tex-floor's brightness (M10 §5.1)."""
+    rgb = rgb.astype(np.float32)
+    n = rgb.shape[0]
+    shifted = np.roll(rgb, (n // 2, n // 2), axis=(0, 1))
+    a, b = FLOOR_LINE
+    # The line's pixels are gold (red well above blue); their opacity from how gold they are.
+    def paint(strip_src: np.ndarray, strip_dst: np.ndarray) -> np.ndarray:
+        gold = strip_src[..., 0] - strip_src[..., 2]
+        base = np.median(gold)
+        k = np.clip((gold - base - 10) / 50, 0, 1)[..., None]
+        return strip_dst * (1 - k) + strip_src * k
+    out = shifted.copy()
+    out[:, a:b] = paint(rgb[:, a:b], shifted[:, a:b])
+    out[a:b, :] = paint(rgb[a:b, :], out[a:b, :])
+    floor = np.asarray(Image.open(source('tex-floor')).convert('RGB')).astype(np.float32)
+    lum = lambda x: np.median(x.mean(axis=2))
+    out *= lum(floor) / lum(out)
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def prepare_wall_window(rgb: np.ndarray) -> np.ndarray:
+    """tex-wall's frieze copied into the bottom rows (M10 §5.1)."""
+    wall = np.asarray(Image.open(source('tex-wall')).convert('RGB').resize((rgb.shape[1], rgb.shape[0]), Image.LANCZOS))
+    out = rgb.copy()
+    r = round(FRIEZE_FROM * rgb.shape[0])
+    out[r:] = wall[r:]
+    trace_window(out)
+    return out
+
+
+def prepare_cornice(rgb: np.ndarray) -> np.ndarray:
+    """Cropped to the band and to a whole number of repeats, cut where the ends match best."""
+    band = rgb[CORNICE_ROWS[0]:CORNICE_ROWS[1]].astype(np.float32)
+    width = CORNICE_REPEAT * CORNICE_REPEATS
+    # The column after the crop should equal its first: compare them for every possible start.
+    best = min(range(band.shape[1] - width), key=lambda x0: float(((band[:, x0] - band[:, x0 + width]) ** 2).mean()))
+    print(f'tex-cornice: band {band.shape[0]} px tall, {width} px from column {best}')
+    return band[:, best:best + width].astype(np.uint8)
+
+
+def trace_window(prepared: np.ndarray) -> None:
+    """Traces the window's glass (the sky-blue area inside the frame, its tracery bars included) into
+    a symmetric polyline of 23 points in tile coordinates (u 0-1 across, v 0-1 up), written to
+    src/render/window.gen.ts (M10 §5.1, §5.3)."""
+    rgb = prepared.astype(np.int32)
+    h, w, _ = rgb.shape
+    blue = (rgb[..., 2] - rgb[..., 0] > 40) & (rgb[..., 2] > 150)
+    rows = np.nonzero(blue.any(axis=1))[0]
+    top, bottom = rows.min(), rows.max()
+    center = (w - 1) / 2
+    # Half-width per row: the farthest blue pixel from the center on either side, averaged, so
+    # tracery bars inside don't matter.
+    half = np.zeros(h)
+    for r in range(top, bottom + 1):
+        xs = np.nonzero(blue[r])[0]
+        half[r] = ((center - xs.min()) + (xs.max() - center)) / 2 + 0.5 if len(xs) else 0
+    # Tracery bars and the frame's bevels only ever hide glass, so take the upper envelope over 31
+    # rows, then make it widen monotonically from the apex down (a pointed arch only narrows upward).
+    smooth = half.copy()
+    for r in range(top, bottom + 1):
+        smooth[r] = half[max(top, r - 15):min(bottom, r + 15) + 1].max()
+    for r in range(top + 1, bottom + 1):
+        smooth[r] = max(smooth[r], smooth[r - 1])
+    full = np.median(smooth[(top + bottom) // 2:bottom])
+    # Where the sides stop being straight: the lowest row above which the width falls under 99%.
+    spring = bottom
+    while spring > top and smooth[spring] >= 0.99 * full:
+        spring -= 1
+    side = [bottom, spring] + [round(spring - (spring - top) * k / 10) for k in range(1, 10)]
+    left = [(0.5 - (full if r in (bottom, spring) else smooth[r]) / w, 1 - (r + 1) / h if r == bottom else 1 - r / h) for r in side]
+    apex = (0.5, 1 - top / h)
+    right = [(1 - u, v) for u, v in reversed(left)]
+    # Counterclockwise in (u, v): from the bottom right up the right side, over the apex, down the left.
+    pts = list(reversed(left + [apex] + right))
+    seen = []
+    for p in pts:
+        if p not in seen:
+            seen.append(p)
+    lines = ',\n'.join(f'  [{u:.4f}, {v:.4f}]' for u, v in seen)
+    (ROOT / 'src' / 'render' / 'window.gen.ts').write_text(
+        '// Generated by scripts/cutout.py from the prepared tex-wall-window (M10 §5.1). Do not edit.\n'
+        '/** The window\'s glass outline in tile coordinates (u across, v up), counterclockwise. */\n'
+        f'export const WINDOW_GLASS: ReadonlyArray<readonly [number, number]> = [\n{lines},\n];\n',
+        encoding='utf8',
+    )
+    print(f'tex-wall-window: glass outline of {len(seen)} points, half-width {full / w:.4f}, rows {top}-{bottom}, spring {spring}')
+
+
+PREPARED = {
+    'tex-floor-plain': prepare_floor_plain,
+    'tex-wall-window': prepare_wall_window,
+    'tex-cornice': prepare_cornice,
+}
+
+
 def texture(name: str, size: int) -> None:
-    rgb = np.asarray(Image.open(SRC / f'{name}.png').convert('RGB'))
+    rgb = np.asarray(Image.open(source(name)).convert('RGB'))
+    if name in PREPARED:
+        rgb = PREPARED[name](rgb)
     # Pad with the opposite edges, so resampling near an edge sees what the tiling puts there.
-    scale = size / rgb.shape[1]
+    # Non-square images (the cornice band) are squeezed into the square.
     pad = 16
     padded = Image.fromarray(np.pad(rgb, ((pad, pad), (pad, pad), (0, 0)), mode='wrap'))
-    big = round((rgb.shape[1] + 2 * pad) * scale)
-    p = round(pad * scale)
-    out = padded.resize((big, big), Image.LANCZOS).crop((p, p, p + size, p + size))
+    sx = size / rgb.shape[1]
+    sy = size / rgb.shape[0]
+    big = (round((rgb.shape[1] + 2 * pad) * sx), round((rgb.shape[0] + 2 * pad) * sy))
+    px, py = round(pad * sx), round(pad * sy)
+    out = padded.resize(big, Image.LANCZOS).crop((px, py, px + size, py + size))
     TEX_OUT.mkdir(exist_ok=True)
-    out.save(TEX_OUT / f'{name}.png', optimize=True)
+    # No transparency: JPEG (M10 §4.3).
+    out.save(TEX_OUT / f'{name}.jpg', quality=JPEG_QUALITY, optimize=True)
     print(f'{name}: {size}x{size}')
 
 
 def effect(name: str, width: int, strip: bool, gain: float) -> None:
-    rgb = np.asarray(Image.open(SRC / f'{name}.png').convert('RGB')).astype(np.float32)
+    rgb = np.asarray(Image.open(source(name)).convert('RGB')).astype(np.float32)
     if strip:
         # Crop to the rows that aren't black.
         rows = np.nonzero(rgb.max(axis=2).mean(axis=1) > 4)[0]
@@ -343,14 +493,195 @@ def effect(name: str, width: int, strip: bool, gain: float) -> None:
 
 
 def background(name: str, width: int) -> None:
-    img = Image.open(SRC / f'{name}.png').convert('RGB')
+    img = Image.open(source(name)).convert('RGB')
     height = round(width * img.height / img.width)
-    img.resize((width, height), Image.LANCZOS).save(UI_OUT / f'{name}.jpg', quality=88, optimize=True)
+    img.resize((width, height), Image.LANCZOS).save(UI_OUT / f'{name}.jpg', quality=JPEG_QUALITY, optimize=True)
     print(f'{name}: {width}x{height}')
 
 
+def sky(name: str, width: int) -> None:
+    img = Image.open(source(name)).convert('RGB')
+    img = img.crop((0, 0, min(width, img.width), img.height))
+    TEX_OUT.mkdir(exist_ok=True)
+    img.save(TEX_OUT / f'{name}.jpg', quality=JPEG_QUALITY, optimize=True)
+    print(f'{name}: {img.width}x{img.height}')
+
+    # Colors averaged across a row (M10 §4.2): the top row (above the band), the bottom row (below
+    # it) and the horizon row (the fog color); the zenith is the deepest blue in the band's top 5%:
+    # the average of its 10% bluest pixels.
+    rgb = np.asarray(img).astype(np.float64)
+    hex_of = lambda c: '0x' + ''.join(f'{round(v):02x}' for v in c)
+    horizon_row = round(SKY_HORIZON * img.height)
+    top_rows = rgb[:max(1, round(0.05 * img.height))].reshape(-1, 3)
+    blueness = top_rows[:, 2] - top_rows[:, 0]
+    zenith = top_rows[blueness >= np.quantile(blueness, 0.9)].mean(axis=0)
+    SKY_GEN.write_text(
+        '// Generated by scripts/cutout.py from the sky painting (M10 §4.2). Do not edit.\n'
+        f'export const SKY_WIDTH = {img.width};\n'
+        f'export const SKY_HEIGHT = {img.height};\n'
+        '/** The row where the cloud sea meets the haze, in pixels from the top. */\n'
+        f'export const SKY_HORIZON_ROW = {horizon_row};\n'
+        f'export const SKY_TOP_COLOR = {hex_of(rgb[0].mean(axis=0))};\n'
+        f'export const SKY_BOTTOM_COLOR = {hex_of(rgb[-1].mean(axis=0))};\n'
+        f'export const SKY_HORIZON_COLOR = {hex_of(rgb[horizon_row].mean(axis=0))};\n'
+        f'export const SKY_ZENITH_COLOR = {hex_of(zenith)};\n',
+        encoding='utf8',
+    )
+
+
+def key_green(rgb: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Unmixes a flat green background like cutout(): the subject's color and its opacity."""
+    k = 16
+    corners = np.concatenate([c.reshape(-1, 3) for c in (rgb[:k, :k], rgb[:k, -k:], rgb[-k:, :k], rgb[-k:, -k:])])
+    greens = rgb.reshape(-1, 3)[greenness(rgb).reshape(-1) > 100]
+    bg = np.median(greens if len(greens) else corners, axis=0)
+    bg_share = np.clip(greenness(rgb) / greenness(bg), 0, 1)
+    bg_share[bg_share < 0.08] = 0
+    alpha = 1 - bg_share
+    with np.errstate(divide='ignore', invalid='ignore'):
+        color = (rgb - bg_share[..., None] * bg) / alpha[..., None]
+    color = np.nan_to_num(np.clip(color, 0, 255))
+    color[..., 1] = np.minimum(color[..., 1], np.maximum(color[..., 0], color[..., 2]))
+    return color, alpha
+
+
+# The arcade bay (M10 §6): 4 m wide, 8 m tall. The source is 9:16 with plain stone on top; 160 px
+# of its own stone is added on top to bring it to 1:2: the stone courses of rows 20-180 between
+# the half piers (so the seam falls on a mortar line), and the piers' plain shaft (rows 100-260)
+# at the sides, so each pier keeps one capital. Columns 0-76 and 691-767 are the half piers.
+ARCADE_ADD = 160
+ARCADE_COURSES = (20, 180)
+ARCADE_SHAFT = (100, 260)
+ARCADE_PIERS = (77, 691)
+# The bay in meters, and the balustrade's rail as built in the game (PARAPET in src/sim/heights.ts).
+ARCADE_W = 4
+ARCADE_H = 8
+PARAPET = 1.4
+
+
+def trace_arch(alpha: np.ndarray, apex_row: int, rail_row: int) -> None:
+    """Traces the arch opening above the rail (the edge of the transparent area: both sides from the
+    rail up, and the pointed arch) into a symmetric polyline of 31 points in bay meters (x 0-4 across,
+    z 0-8 up), written to src/render/arch.gen.ts (M10 §6)."""
+    h, w = alpha.shape
+    clear = alpha < 0.5
+    center = (w - 1) / 2
+    # Half-width per row: from the center out to the first opaque pixel on each side, averaged.
+    def half(r: int) -> float:
+        row = clear[r]
+        c = int(round(center))
+        left = c
+        while left > 0 and row[left - 1]:
+            left -= 1
+        right = c
+        while right < w - 1 and row[right + 1]:
+            right += 1
+        return ((center - left) + (right - center)) / 2 + 0.5
+    rows = list(range(apex_row, rail_row))
+    widths = {r: half(r) for r in rows}
+    full = np.median([widths[r] for r in rows[len(rows) // 2:]])
+    # The spring line: from the apex down, the first row where the opening reaches 99% of its width.
+    spring = apex_row
+    while spring < rail_row - 1 and widths[spring] < 0.99 * full:
+        spring += 1
+    m_per_px_x = ARCADE_W / w
+    m_per_px_z = ARCADE_H / h
+    z_of = lambda r: (h - r) * m_per_px_z
+    side = [rail_row, spring] + [round(spring - (spring - apex_row) * k / 14) for k in range(1, 14)]
+    left = [(2 - (full if r in (rail_row, spring) else widths[r]) * m_per_px_x, z_of(r)) for r in side]
+    pts = left + [(2.0, z_of(apex_row))] + [(4 - x, z) for x, z in reversed(left)]
+    # Every point lies on the edge of the transparent area (within 2 px), checked here.
+    for x, z in pts:
+        r = min(h - 1, max(0, int(round(h - z / m_per_px_z))))
+        c = (x / m_per_px_x)
+        near = clear[max(0, r - 2):r + 3, max(0, int(c) - 3):int(c) + 3]
+        if not (near.any() and (~near).any()):
+            sys.exit(f'arch outline point ({x:.3f}, {z:.3f}) is not on the opening\'s edge')
+    lines = ',\n'.join(f'  [{x:.4f}, {z:.4f}]' for x, z in pts)
+    (ROOT / 'src' / 'render' / 'arch.gen.ts').write_text(
+        '// Generated by scripts/cutout.py from the prepared tex-arcade (M10 §6). Do not edit.\n'
+        '/** The arch opening above the rail, in bay meters (x 0-4 across, z 0-8 up): from the rail up the left\n'
+        ' * side, over the apex and down the right side. */\n'
+        f'export const ARCH_OPENING: ReadonlyArray<readonly [number, number]> = [\n{lines},\n];\n',
+        encoding='utf8',
+    )
+    print(f'arch outline: {len(pts)} points, opening {2 * full * m_per_px_x:.3f} m wide, apex {z_of(apex_row):.3f} m')
+
+
+def arcade(name: str) -> None:
+    rgb = np.asarray(Image.open(source(name)).convert('RGB')).astype(np.float32)
+    top = rgb[ARCADE_COURSES[0]:ARCADE_COURSES[1]].copy()
+    shaft = rgb[ARCADE_SHAFT[0]:ARCADE_SHAFT[1]]
+    top[:, :ARCADE_PIERS[0]] = shaft[:, :ARCADE_PIERS[0]]
+    top[:, ARCADE_PIERS[1]:] = shaft[:, ARCADE_PIERS[1]:]
+    rgb = np.concatenate([top, rgb])
+    color, alpha = key_green(rgb)
+    h, w = alpha.shape
+
+    # The rail's top: the lowest row of the opening at the bay's center, + 1.
+    center = alpha[:, w // 2] < 0.5
+    rows = np.nonzero(center)[0]
+    opening_bottom = rows[rows < h * 0.85].max() + 1
+    rail = (h - opening_bottom) / h * ARCADE_H
+    print(f'{name}: rail at {rail:.3f} m (PARAPET {PARAPET} m), apex at {(h - rows.min()) / h * ARCADE_H:.2f} m')
+    if abs(rail - PARAPET) > 0.03:
+        sys.exit(f'{name}: the rail is at {rail:.3f} m, not PARAPET = {PARAPET} m; update PARAPET in both places')
+
+    trace_arch(alpha, rows.min(), opening_bottom)
+
+    rgba = np.dstack([color, alpha * 255]).round().astype(np.uint8)
+    img = Image.fromarray(rgba, 'RGBA').convert('RGBa').resize((1024, 2048), Image.LANCZOS).convert('RGBA')
+    TEX_OUT.mkdir(exist_ok=True)
+    img.crop((0, 0, 1024, 1024)).save(TEX_OUT / 'arcade-upper.png', optimize=True)
+    img.crop((0, 1024, 1024, 2048)).save(TEX_OUT / 'arcade-lower.png', optimize=True)
+    print(f'{name}: arcade-upper and arcade-lower, 1024x1024 each')
+
+
+def atmosphere_sheet() -> None:
+    """The clouds and the distant spires (M10 §7.2, §7.3): one 2 048 x 1 024 sheet, the clouds' 2 x 2
+    sheet on the left and the spires' on the right. The green is keyed out like the sprites; then the
+    green rim the soft edges leave is removed: every pixel less than 98% opaque, and a 6 px band
+    inside them, takes its color from the nearest opaque pixel further in, and the opacity is remapped
+    to ((a - 0.15) / 0.85)^1.5. Written to assets/textures/fx-atmosphere.png."""
+    halves = []
+    for name in ('fx-clouds', 'fx-spires'):
+        rgb = np.asarray(Image.open(source(name)).convert('RGB').resize((1024, 1024), Image.LANCZOS)).astype(np.float32)
+        color, alpha = key_green(rgb)
+        solid = Image.fromarray(((alpha >= 0.98) * 255).astype(np.uint8)).filter(ImageFilter.MinFilter(13))
+        known = np.asarray(solid) > 0
+        col = np.where(known[..., None], color, 0)
+        # Grow the core's colors outward, one pixel ring per pass, as the average of the known
+        # neighbors, until every pixel with any opacity has one.
+        need = alpha > 0.001
+        for _ in range(200):
+            todo = need & ~known
+            if not todo.any():
+                break
+            acc = np.zeros_like(col)
+            cnt = np.zeros(known.shape, np.float32)
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    k = np.roll(np.roll(known, dy, 0), dx, 1)
+                    c = np.roll(np.roll(col, dy, 0), dx, 1)
+                    acc += c * k[..., None]
+                    cnt += k
+            grow = todo & (cnt > 0)
+            col[grow] = acc[grow] / cnt[grow][..., None]
+            known = known | grow
+        # What spill the soft edges keep: green no higher than the mean of red and blue.
+        col[..., 1] = np.minimum(col[..., 1], (col[..., 0] + col[..., 2]) / 2)
+        a = np.clip((alpha - 0.15) / 0.85, 0, 1) ** 1.5
+        halves.append(np.dstack([col, a * 255]))
+    sheet = np.concatenate(halves, axis=1).round().clip(0, 255).astype(np.uint8)
+    TEX_OUT.mkdir(exist_ok=True)
+    Image.fromarray(sheet, 'RGBA').save(TEX_OUT / 'fx-atmosphere.png', optimize=True)
+    print('fx-atmosphere: 2048x1024')
+
+
 def main() -> None:
-    known = [*SPRITES, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS]
+    known = [*SPRITES, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere']
     for name in sys.argv[1:] or known:
         if name in SPRITES:
             cutout(name, SPRITES[name])
@@ -364,6 +695,12 @@ def main() -> None:
             cutout(name, UI[name][0], UI_OUT, UI[name][1])
         elif name in BACKGROUNDS:
             background(name, BACKGROUNDS[name])
+        elif name in SKIES:
+            sky(name, SKIES[name])
+        elif name == 'tex-arcade':
+            arcade(name)
+        elif name == 'fx-atmosphere':
+            atmosphere_sheet()
         else:
             sys.exit(f'Unknown image {name}; known: {", ".join(known)}')
 

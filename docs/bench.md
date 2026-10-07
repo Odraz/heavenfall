@@ -18,3 +18,67 @@ M8.3: the first run after the audio stage measured 0.99 FPS with normal simulati
 M8.5: two runs measured 24.3 and 28.22 FPS with a 1%-low of 1 FPS (one-second frames) and normal simulation times (3.37 and 4.23 ms). The committed stage 4 code, run right after under the same conditions, measured 0.97 FPS, so the headed benchmark window was being throttled by the desktop (locked or covered), as in the first M8.3 run; the FPS numbers aren't a measurement of the game. Stage 5 adds no per-frame rendering work (the chat is DOM shown only with messages). The FPS rerun needs an active, uncovered desktop.
 
 M9.2: the run measured 0.97 FPS with a 1%-low of 1 FPS and normal simulation times (3.44 ms average, 6.3 ms max), the same signs of a throttled headed window as M8.5. Stage 2 adds per-frame work only while a Field of Blood is down (one pool mesh of about 150 quads, a glare cylinder, 12 embers per second, 30 coins for 0.3 s), none in the benchmark. The FPS rerun needs an active, uncovered desktop. The human reran it on an uncovered desktop after stage 3 (the row above): 59.5 FPS passes the 58 FPS target.
+
+## M10 performance gate
+
+`sh scripts/bench-gate.sh` (M10 §2.3): each run is `npm run bench` uncapped (`--uncapped`: Chromium's frame-rate limit and vsync off; median of 3 runs, 60 s cool-down before each, since the laptop throttles under back-to-back runs) and capped (one run). The flags do uncap the frame rate on this machine (about 140 FPS). A stage passes when every run has capped FPS ≥ 58, simulation ≤ 8 ms, and uncapped frame time ≤ 6% above the previous stage (≤ 10% above the baseline after the last stage). Calls, triangles and texture MB are the renderer's numbers in the last measured frame of the uncapped arcade run (texture MB: estimated GPU memory of the scene's textures, mipmaps included).
+
+| Date | Stage | Commit | Run | Frame ms (uncapped, median) | Spread | FPS (capped) | 1%-low (capped) | Sim ms (avg) | Draw calls | Triangles | Texture MB | Result |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-10-06 | M10 baseline | 44b37d7 | sandbox | 7.13 | 1.7% | 59.5 | 34.75 | 2.02 | 7 | 7 432 | 274.4 | — |
+| 2026-10-06 | M10 baseline | 44b37d7 | pearly-gates | 7.17 | 0.7% | 59.42 | 31.72 | 1.95 | 7 | 25 100 | 274.4 | — |
+| 2026-10-06 | M10 baseline | 44b37d7 | pearly-gates arcade | 7.21 | 0.8% | 59.71 | 42.82 | 1.87 | 8 | 25 124 | 274.4 | — |
+| 2026-10-06 | M10.1 (gate and sky) | 2aa4544 | sandbox | 6.84 (5 runs) | 76% (one run disturbed by a type check, 12.06 ms) | 59.61 | 38.16 | 1.81 | 7 | 7 432 | 293.7 | Pass |
+| 2026-10-06 | M10.1 (gate and sky) | 2aa4544 | pearly-gates | 7.00 | 0.1% | 59.94 | 58.79 | 1.86 | 7 | 25 100 | 293.7 | Pass |
+| 2026-10-06 | M10.1 (gate and sky) | 2aa4544 | pearly-gates arcade | 7.10 | 0.8% | 59.94 | 58.94 | 1.85 | 8 | 25 124 | 293.7 | Pass |
+
+M10.1: the sky texture adds 19.3 MB (2 701 × 1 344, mipmapped) and no draw call (the dome replaces the gradient dome). The capped Pearly Gates run first measured 7.67 ms of simulation on average (20 ms max), a sign of other work on the machine; its rerun (above) measured 4.0 ms. Drawing the sky first instead of last (§2.2): 6.95 ms against 7.10 ms on the arcade view (median of 3 each), so it's drawn first from stage 2.
+| 2026-10-06 | M10.2 (open edges) | f42aa18 | sandbox | 7.19 | 0.7% | 59.61 | 38.34 | 1.80 | 7 | 8 642 | 293.7 | Pass (+5.1% on M10.1's 5-run median; +3.2% on its first 3 runs) |
+| 2026-10-06 | M10.2 (open edges) | f42aa18 | pearly-gates | 7.27 | 2.9% | 59.93 | 58.79 | 1.89 | 7 | 30 464 | 293.7 | Pass (+3.9%) |
+| 2026-10-06 | M10.2 (open edges) | f42aa18 | pearly-gates arcade | 7.22 | 0.4% | 59.82 | 48.5 | 1.82 | 8 | 30 494 | 293.7 | Pass (+1.7%) |
+
+M10.2: in both the M10.1 and M10.2 gates the capped Pearly Gates run (always the 4th run of the sequence) measured about 7.7–7.9 ms of simulation on average where the runs before and after measured under 4; rerun alone on an idle desktop it measured 3.97 and 3.96 ms (59.93 FPS, recorded above). Something on the machine runs at that point; the simulation itself is unchanged. The capped runs' simulation time is about twice the uncapped runs' (about 4 against 2 ms): with the frame rate capped the CPU runs at lower clocks.
+| 2026-10-07 | M10.3 (surfaces) | b280b43 | sandbox | 7.37 | 1.1% | 59.4 | 31.7 | 1.93 | 5 | 8 986 | 332.9 | Pass (+2.5%) |
+| 2026-10-07 | M10.3 (surfaces) | b280b43 | pearly-gates | 7.47 | 0.5% | 59.28 | 29.18 | 1.83 | 5 | 34 510 | 332.9 | Pass (+2.8%) |
+| 2026-10-07 | M10.3 (surfaces) | b280b43 | pearly-gates arcade | 7.40 | 0.3% | 59.89 | 53.11 | 1.82 | 6 | 34 540 | 332.9 | Pass (+2.5%) |
+
+M10.3: the terrain is one draw call instead of three (7 → 5 calls); the texture array adds 39.2 MB (10 layers of 1 024², mipmapped), less the three old terrain textures. Against the baseline: +3.4%, +4.2% and +2.6%.
+| 2026-10-07 | M10.4 (light) | f3532eb | sandbox | 7.35 (5 runs) | 5.2% | 59.96 | 58.57 | 1.76 | 7 | 14 990 | 333.1 | Pass (−0.3%) |
+| 2026-10-07 | M10.4 (light) | f3532eb | pearly-gates | 7.48 | 0.8% | 59.95 | 58.92 | 1.75 | 7 | 40 514 | 334.0 | Pass (+0.1%) |
+| 2026-10-07 | M10.4 (light) | f3532eb | pearly-gates arcade | 7.46 | 1.5% | 59.94 | 58.86 | 1.81 | 8 | 40 544 | 334.0 | Pass (+0.8%) |
+
+M10.4: the contact shadows add 2 draw calls (two passes) and 2 triangles per character (about 6 000 with the swarm); the lightmap 0.9 MB. Against the baseline: +3.1%, +4.3% and +3.5%.
+| 2026-10-07 | M10.5 (relief) | d7ea344 | sandbox | 7.34 | 1.5% | 59.93 | 58.77 | 1.77 | 7 | 15 652 | 333.1 | Pass (−0.1%) |
+| 2026-10-07 | M10.5 (relief) | d7ea344 | pearly-gates | 7.54 | 0.4% | 59.96 | 58.94 | 1.75 | 7 | 47 808 | 334.0 | Pass (+0.8%) |
+| 2026-10-07 | M10.5 (relief) | d7ea344 | pearly-gates arcade | 7.47 | 0.7% | 59.78 | 46.38 | 1.76 | 8 | 47 838 | 334.0 | Pass (+0.1%) |
+
+M10.5: the relief adds about 7 300 triangles to the Pearly Gates' terrain (crowns, pilaster strips, 58 window recesses). Against the baseline: +2.9%, +5.2% and +3.6%.
+| 2026-10-07 | M10.6 (arches), first gate | 67586f5 | sandbox | 8.11 | 1.1% | 58.37 | 29.9 | 1.80 | 8 | 17 976 | 333.1 | Fail (+10.5%) |
+| 2026-10-07 | M10.6 (arches), first gate | 67586f5 | pearly-gates | 8.24 | 0.2% | 58.17 | 29.85 | 1.81 | 8 | 53 106 | 334.0 | Fail (+9.3%) |
+| 2026-10-07 | M10.6 (arches), first gate | 67586f5 | pearly-gates arcade | 8.27 | 2.1% | 58.45 | 29.9 | 1.82 | 9 | 53 136 | 334.0 | Fail (+10.7%) |
+| 2026-10-07 | M10.6 (arches), sky drawn last | ab2739a | sandbox | 7.88 | 2.2% | 58.92 | 29.91 | 1.77 | 9 | 18 364 | 333.1 | Rerun (+7.4%, see below) |
+| 2026-10-07 | M10.6 (arches), sky drawn last | ab2739a | pearly-gates | 7.89 | 0.3% | 58.69 | 29.94 | 1.81 | 9 | 53 982 | 334.0 | Pass (+4.6%) |
+| 2026-10-07 | M10.6 (arches), sky drawn last | ab2739a | pearly-gates arcade | 7.97 | 0.6% | 59.47 | 33.64 | 1.79 | 10 | 54 012 | 334.0 | Rerun (+6.7%, see below) |
+| 2026-10-07 | M10.6 rerun: M10.5 and M10.6 back to back | d7ea344 / ab2739a | sandbox | 7.30 → 7.46 | — | 59.96 (M10.6) | 58.92 | 1.74 | 9 | 18 364 | 333.1 | Pass (+2.2%) |
+| 2026-10-07 | M10.6 rerun: M10.5 and M10.6 back to back | d7ea344 / ab2739a | pearly-gates arcade | 7.45 → 7.61 | — | 59.96 | 58.92 | 1.68 | 10 | 54 012 | 334.0 | Pass (+2.1%) |
+
+M10.6: the first gate failed all three runs by about 10%: the sky, drawn first since stage 2, was shaded under the arcades' large painted faces before they covered it. Drawn last (ab2739a), the sandbox measured 7.43 ms right away, but the full gate an hour later read 7.88 and 7.97 ms, with capped 1%-lows of 30 FPS in every run where M10.5 had 59. Measured back to back (two runs each, alternating builds, same session), M10.6 costs +2.2% and +2.1% on M10.5, and capped it runs at 59.96 FPS with a 1%-low of 58.92 and no frame over 20 ms (the benchmark now counts them), the same as M10.5: the gate's readings came from a slower spell of the machine. Per §2.3 a failure within the noise is run again before anything is cut; the back-to-back runs are that rerun. The painted faces add 2 draw calls (the cut-out mesh and the alpha pass) and the arches about 6 200 triangles.
+| 2026-10-07 | M10.7 (atmosphere), gate | 539fdfc | sandbox | 7.97 | 0.4% | 58.34 | 29.84 | 1.75 | 11 | 18 558 | 344.7 | +1.1% on M10.6's gate run |
+| 2026-10-07 | M10.7 (atmosphere), gate | 539fdfc | pearly-gates | 7.91 | 0.4% | 58.6 | 29.86 | 1.80 | 11 | 54 190 | 345.6 | +0.3% |
+| 2026-10-07 | M10.7 (atmosphere), gate | 539fdfc | pearly-gates arcade | 8.07 | 0.6% | 59.26 | 29.93 | 1.83 | 12 | 54 220 | 345.6 | +1.3% |
+
+### M10 final: against the baseline, back to back
+
+The gate runs drifted by several percent between sessions (the baseline measured 7.13 ms in the morning and 6.63–6.74 ms at night), so the final check against the baseline (≤ +10%) measures both builds in one session, alternating single uncapped runs, two each per view: the baseline is commit 44b37d7 with only the benchmark's instrumentation added (`../mg-base0`). Steps taken until it passed:
+
+| Build | Sandbox | Pearly Gates | Arcade view |
+|---|---|---|---|
+| 539fdfc (M10.7 as specified) | 6.70 → 7.56 (+12.8%) | 6.66 → 7.49 (+12.5%) | 6.74 → 7.62 (+13.1%) |
+| 36edd14 (fog color per vertex, sky mip from the viewport) | 6.99 → 7.79 (+11.4%) | 7.04 → 7.75 (+10.1%) | 7.08 → 7.91 (+11.7%) |
+| fc44352 (the sky's coordinates per vertex) | 6.66 → 7.37 (+10.7%) | 6.69 → 7.41 (+10.8%) | 6.72 → 7.49 (+11.5%) |
+| 09c8bda (cut 1–2: no wisps, minimum cloud and spire counts, 12 shafts) | 6.69 → 7.34 (+9.8%) | 6.67 → 7.33 (+9.9%) | 6.72 → 7.53 (+12.0%) |
+| **7491068 (cut 3: contact shadows under players and the Gatekeeper only)** | **6.64 → 7.26 (+9.3%)** | **6.66 → 7.25 (+8.9%)** | **6.78 → 7.44 (+9.7%)** |
+
+Final build (7491068), capped: sandbox 59.93 FPS (1%-low 58.92), Pearly Gates 59.96 (58.9), arcade 59.95 (58.98), no frame over 20 ms; simulation 3.5–3.6 ms per tick on average (8.5 ms max). Budgets (§2.1), arcade run: 12 draw calls (+4; the baseline's 8), 51 136 triangles (+26 000 on the Pearly Gates), 345.6 MB of textures (+71 MB). Download: the new images add 4.3 MB (the sky 0.23, the arcade 2.37, the clouds and spires 0.76, the shaft 0.02, the five new terrain textures 0.94) and the four old terrain textures shrank from 5.26 MB of PNG to 0.80 MB of JPEG, so the first load is about 0.15 MB smaller.
+
+Measured costs in the arcade view (one run each, same session, M10.7 before the cuts at 7.60 ms): the swarm's contact shadows 0.21 ms, the painted arches 0.17 ms (alpha to coverage 0.11 of it), the clouds, spires and shafts 0.10 ms.
