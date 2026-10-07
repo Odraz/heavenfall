@@ -19,6 +19,9 @@ Reads assets/art-src/<name>.png (or a JPEG with the same base name: .jpg, .jpeg,
   assets/ui/<name>.jpg.
 - SKIES (M10 §4.2): the horizon band, cropped to the listed width from the left (the mirrored
   sampling makes the right edge meet itself), written to assets/textures/<name>.jpg.
+- gate (M10 gate §2): the Heavenly Gate's four images, each 1 280 x 2 276 for the gate array: the
+  leaves, the railing and the post top keyed (WebP with alpha), the post shaft made to tile (JPEG);
+  the measurements written to src/render/gate.gen.ts.
 
 Needs Python 3 with Pillow and NumPy.
 Usage: python scripts/cutout.py [name ...]   (no names: every image)
@@ -680,8 +683,218 @@ def atmosphere_sheet() -> None:
     print('fx-atmosphere: 2048x1024')
 
 
+# The Heavenly Gate (M10 gate §2): four images packed into one texture array of 1 280 x 2 276 layers.
+GATE_LAYER = (1280, 2276)
+GATE_GEN = ROOT / 'src' / 'render' / 'gate.gen.ts'
+# WebP quality for the cut-outs (with alpha).
+WEBP_QUALITY = 88
+# The leaves span 18 m and stand 31.7 m tall (F + 0.3 to F + 32); the crowns of the gateposts start at
+# F + 28, so the leaves' outer edges must stay below it near the posts.
+LEAVES_W = 18
+LEAVES_Z0 = 0.3
+LEAVES_Z1 = 32
+GATEPOST_CROWN = 28
+# The post shaft: the brightness gradient is smoothed over this many rows; the seam is cross-faded
+# over this fraction at the top and bottom; a repeat is cropped only for an autocorrelation peak this high.
+SHAFT_SMOOTH = 64
+SHAFT_FADE = 0.03
+SHAFT_PEAK = 0.5
+
+
+def save_layer(rgba: np.ndarray, name: str) -> None:
+    """Resizes a cut-out to the gate array's layer (premultiplied, so the transparent parts don't bleed
+    into the edges) and writes it as WebP with alpha."""
+    img = Image.fromarray(rgba.round().clip(0, 255).astype(np.uint8), 'RGBA').convert('RGBa').resize(GATE_LAYER, Image.LANCZOS).convert('RGBA')
+    TEX_OUT.mkdir(exist_ok=True)
+    img.save(TEX_OUT / f'{name}.webp', quality=WEBP_QUALITY, method=6)
+    print(f'{name}: {GATE_LAYER[0]}x{GATE_LAYER[1]} webp')
+
+
+def check_cutout(name: str, color: np.ndarray, alpha: np.ndarray) -> None:
+    """The checks of M10 gate §2: symmetric left to right, the gaps clearly transparent, no green left
+    inside the metal or stone."""
+    sym = float(np.abs(alpha - alpha[:, ::-1]).mean())
+    gaps = float((alpha < 0.05).mean())
+    mid = float(((alpha > 0.05) & (alpha < 0.95)).mean())
+    solid = alpha > 0.9
+    green = float((greenness(color[solid]) > 12).mean()) if solid.any() else 0.0
+    print(f'{name}: asymmetry {sym:.3f}, transparent {gaps:.0%}, partly transparent {mid:.1%}, green in the solid {green:.2%}')
+    if sym > 0.08:
+        sys.exit(f'{name}: not symmetric left to right ({sym:.3f}); stop and ask (M10 gate §2)')
+    if gaps < 0.15:
+        sys.exit(f'{name}: the gaps are not clearly transparent; stop and ask (M10 gate §2)')
+    if green > 0.01:
+        sys.exit(f'{name}: green left inside the metal or stone; stop and ask (M10 gate §2)')
+
+
+def opaque_cols(alpha: np.ndarray) -> tuple[int, int]:
+    cols = np.nonzero((alpha >= 0.5).any(axis=0))[0]
+    return int(cols.min()), int(cols.max())
+
+
+def gate_leaves() -> float:
+    """Keyed, cropped to the metal's columns (so no sky shows between the leaves and the posts).
+    Returns the outer edges' top within 0.5 m of each side, as a fraction of the height."""
+    rgb = np.asarray(Image.open(source('gate-leaves')).convert('RGB')).astype(np.float32)
+    color, alpha = key_green(rgb)
+    c0, c1 = opaque_cols(alpha)
+    color, alpha = color[:, c0:c1 + 1], alpha[:, c0:c1 + 1]
+    h, w = alpha.shape
+    print(f'gate-leaves: {rgb.shape[1]}x{rgb.shape[0]}, metal in columns {c0}-{c1}')
+    check_cutout('gate-leaves', color, alpha)
+    # The outer edges' top: the topmost opaque row within 0.5 m of either side.
+    band = max(1, round(0.5 / LEAVES_W * w))
+    tops = []
+    for cols in (alpha[:, :band], alpha[:, -band:]):
+        rows = np.nonzero((cols >= 0.5).any(axis=1))[0]
+        tops.append(1 - rows.min() / h)
+    edge = max(tops)
+    z = LEAVES_Z0 + edge * (LEAVES_Z1 - LEAVES_Z0)
+    print(f'gate-leaves: outer edges reach {tops[0]:.3f} and {tops[1]:.3f} of the height, {z:.2f} m above F')
+    if z >= GATEPOST_CROWN:
+        sys.exit(f'gate-leaves: the outer edges reach {z:.2f} m, not below the crowns at {GATEPOST_CROWN} m; stop and ask (M10 gate §2)')
+    # The outer edges are vertical: below their top, the first and last opaque column of each row stay put.
+    rows = range(round((1 - edge) * h) + 20, h - 20)
+    lefts = [int(np.argmax(alpha[r] >= 0.5)) for r in rows]
+    rights = [w - 1 - int(np.argmax(alpha[r, ::-1] >= 0.5)) for r in rows]
+    print(f'gate-leaves: outer edges wander {max(lefts) - min(lefts)} and {max(rights) - min(rights)} px')
+    save_layer(np.dstack([color, alpha * 255]), 'gate-leaves')
+    return edge
+
+
+def gate_railing() -> None:
+    """Keyed, cropped to the metal's columns, so the panel reaches the posts on both sides."""
+    rgb = np.asarray(Image.open(source('gate-railing')).convert('RGB')).astype(np.float32)
+    color, alpha = key_green(rgb)
+    c0, c1 = opaque_cols(alpha)
+    color, alpha = color[:, c0:c1 + 1], alpha[:, c0:c1 + 1]
+    print(f'gate-railing: {rgb.shape[1]}x{rgb.shape[0]}, metal in columns {c0}-{c1}')
+    check_cutout('gate-railing', color, alpha)
+    save_layer(np.dstack([color, alpha * 255]), 'gate-railing')
+
+
+def gate_post_top() -> dict:
+    """Keyed; measures the crown (its base band, its widest row with the horn tips, its top: the
+    topmost row of the outer horn tips) and the columns of everything above it."""
+    rgb = np.asarray(Image.open(source('gate-post-top-2')).convert('RGB')).astype(np.float32)
+    color, alpha = key_green(rgb)
+    h, w = alpha.shape
+    check_cutout('gate-post-top-2', color, alpha)
+    solid = alpha >= 0.5
+    span = np.zeros(h, dtype=int)
+    first = np.full(h, -1)
+    last = np.full(h, -1)
+    for r in range(h):
+        cols = np.nonzero(solid[r])[0]
+        if len(cols):
+            first[r], last[r] = cols.min(), cols.max()
+            span[r] = cols.max() - cols.min() + 1
+    # The base band: the median width of the bottom 2% of the rows.
+    bottom = [r for r in range(h - round(0.02 * h), h) if span[r] > 0]
+    base = float(np.median(span[bottom]))
+    # The widest row (the horn tips), in the crown: the lower half of the image.
+    wide = max(range(h // 2, h), key=lambda r: span[r])
+    # The crown's top: going up from the widest row, the last row still wider than halfway between the
+    # spire's width above it and the horns' width.
+    sc = np.nonzero(solid[:wide - 200].any(axis=0))[0]
+    spire_w = sc.max() - sc.min() + 1
+    r = wide
+    while r > 0 and span[r - 1] > (spire_w + span[wide]) / 2:
+        r -= 1
+    top = r
+    sc = np.nonzero(solid[:top].any(axis=0))[0]
+    scale = 4 / base
+    m = {'base': base, 'wide': (int(first[wide]), int(last[wide])), 'top': top, 'spire': (int(sc.min()), int(sc.max())), 'w': w, 'h': h}
+    print(f'gate-post-top-2: {w}x{h}, base band {base:.0f} px (4 m), widest row {wide} columns {first[wide]}-{last[wide]} '
+          f'({span[wide] * scale:.2f} m), crown top row {top} ({(h - top) * scale:.2f} m tall), above it columns '
+          f'{sc.min()}-{sc.max()} ({(sc.max() - sc.min() + 1) * scale:.2f} m)')
+    save_layer(np.dstack([color, alpha * 255]), 'gate-post-top')
+    return m
+
+
+def gate_post_shaft() -> float:
+    """Made to tile (M10 gate §2): the vertical brightness gradient removed, cropped to whole repeats of
+    the ornament only for a clear autocorrelation peak, the top and bottom cross-faded over the seam.
+    Returns the repeat height in meters on a 3 m shaft."""
+    rgb = np.asarray(Image.open(source('gate-post-shaft')).convert('RGB')).astype(np.float64)
+    h, w, _ = rgb.shape
+    # 1. Each row scaled so its mean, smoothed over SHAFT_SMOOTH rows, is the image's mean.
+    rows = rgb.mean(axis=(1, 2))
+    k = SHAFT_SMOOTH
+    smooth = np.convolve(np.pad(rows, k // 2, mode='edge'), np.ones(k) / k, mode='same')[k // 2:k // 2 + h]
+    rgb = np.clip(rgb * (rows.mean() / smooth)[:, None, None], 0, 255)
+    after = rgb.mean(axis=(1, 2))
+    print(f'gate-post-shaft: {w}x{h}, smoothed rows from {smooth.min():.1f} to {smooth.max():.1f}; now {after[:64].mean():.1f} at the top, {after[-64:].mean():.1f} at the bottom')
+    # 2. The autocorrelation of the central strip's row profile (the ornament's width: the middle third).
+    strip = rgb[:, w // 3:2 * w // 3].mean(axis=(1, 2))
+    p = strip - strip.mean()
+    ac = {lag: float((p[:-lag] * p[lag:]).mean() / (p * p).mean()) for lag in range(h // 10, h * 9 // 10)}
+    lag = max(ac, key=ac.get)
+    print(f'gate-post-shaft: autocorrelation peak {ac[lag]:.2f} at {lag} px')
+    cropped = False
+    if ac[lag] >= SHAFT_PEAK:
+        n = h // lag
+        # From one repeat's start: the row that best matches the row a repeat below it.
+        start = min(range(h - n * lag + 1), key=lambda s: float(((rgb[s] - rgb[s + lag - 1]) ** 2).mean()))
+        rgb = rgb[start:start + n * lag]
+        cropped = True
+        print(f'gate-post-shaft: cropped to {n} repeats of {lag} px from row {start}')
+    # 3. Cross-fade: the top rows are dropped and blended into the bottom ones, so the bottom row leads
+    # into the top row.
+    h = rgb.shape[0]
+    f = round(SHAFT_FADE * h)
+    t = ((np.arange(f) + 0.5) / f)[:, None, None]
+    body = rgb[f:].copy()
+    body[-f:] = body[-f:] * (1 - t) + rgb[:f] * t
+    rgb = body
+    # 4. The repeat height.
+    repeat = 3 * rgb.shape[0] / rgb.shape[1] if cropped else 3 * GATE_LAYER[1] / GATE_LAYER[0]
+    out = Image.fromarray(rgb.round().astype(np.uint8)).resize(GATE_LAYER, Image.LANCZOS)
+    TEX_OUT.mkdir(exist_ok=True)
+    out.save(TEX_OUT / 'gate-post-shaft.jpg', quality=JPEG_QUALITY, optimize=True)
+    # 5. The check: stacked three times, the seams are no rougher than the rows elsewhere.
+    a = np.asarray(out).astype(np.float64)
+    stack = np.concatenate([a, a, a])
+    diffs = np.abs(np.diff(stack.mean(axis=2), axis=0)).mean(axis=1)
+    seam = diffs[a.shape[0] - 1]
+    print(f'gate-post-shaft: repeat {repeat:.4f} m, seam step {seam:.2f} against {np.median(diffs):.2f} typical (99th percentile {np.percentile(diffs, 99):.2f})')
+    (ROOT / 'test-results').mkdir(exist_ok=True)
+    Image.fromarray(stack.astype(np.uint8)).resize((GATE_LAYER[0] // 4, GATE_LAYER[1] * 3 // 4)).save(ROOT / 'test-results' / 'gate-shaft-stacked.jpg', quality=85)
+    if seam > np.percentile(diffs, 99):
+        sys.exit('gate-post-shaft: a seam shows when stacked; stop and ask (M10 gate §2)')
+    return repeat
+
+
+def gate() -> None:
+    edge = gate_leaves()
+    gate_railing()
+    m = gate_post_top()
+    repeat = gate_post_shaft()
+    q = "'"
+    GATE_GEN.write_text(
+        f'// Generated by scripts/cutout.py from the Heavenly Gate{q}s images (M10 gate §2). Do not edit.\n'
+        f'/** gate-post-top-2{q}s size in pixels. */\n'
+        f'export const POST_TOP_W = {m["w"]};\n'
+        f'export const POST_TOP_H = {m["h"]};\n'
+        f'/** The crown{q}s base band, in pixels across: it spans the 4 m crown box. */\n'
+        f'export const CROWN_BASE_PX = {m["base"]:.0f};\n'
+        f'/** The crown{q}s widest row (its horn tips): its first column and the one past its last. */\n'
+        f'export const CROWN_WIDE: readonly [number, number] = [{m["wide"][0]}, {m["wide"][1] + 1}];\n'
+        f'/** The crown{q}s top: the topmost row of the outer horn tips. */\n'
+        f'export const CROWN_TOP_ROW = {m["top"]};\n'
+        f'/** Everything above the crown{q}s top (struts, ring, spire): its first column and the one past its last. */\n'
+        f'export const SPIRE_COLS: readonly [number, number] = [{m["spire"][0]}, {m["spire"][1] + 1}];\n'
+        f'/** gate-leaves{q} outer edges{q} top within 0.5 m of each side, as a fraction of the leaves{q} height. */\n'
+        f'export const LEAVES_EDGE_TOP = {edge:.4f};\n'
+        f'/** The post shaft{q}s repeat height in meters on a 3 m shaft. */\n'
+        f'export const SHAFT_REPEAT = {repeat:.4f};\n',
+        encoding='utf8',
+    )
+    print(f'wrote {GATE_GEN.relative_to(ROOT)}')
+
+
 def main() -> None:
-    known = [*SPRITES, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere']
+    known = [*SPRITES, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere', 'gate']
     for name in sys.argv[1:] or known:
         if name in SPRITES:
             cutout(name, SPRITES[name])
@@ -701,6 +914,8 @@ def main() -> None:
             arcade(name)
         elif name == 'fx-atmosphere':
             atmosphere_sheet()
+        elif name == 'gate':
+            gate()
         else:
             sys.exit(f'Unknown image {name}; known: {", ".join(known)}')
 

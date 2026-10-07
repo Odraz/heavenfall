@@ -19,6 +19,10 @@ import smokeUrl from '../../assets/textures/fx-smoke.png';
 import skyUrl from '../../assets/textures/sky-day.jpg';
 import shaftUrl from '../../assets/textures/fx-lightshaft.png';
 import atmosphereUrl from '../../assets/textures/fx-atmosphere.png';
+import gateLeavesUrl from '../../assets/textures/gate-leaves.webp';
+import gateRailingUrl from '../../assets/textures/gate-railing.webp';
+import gatePostTopUrl from '../../assets/textures/gate-post-top.webp';
+import gateShaftUrl from '../../assets/textures/gate-post-shaft.jpg';
 import { prepareSkyTexture } from './sky';
 import { loadTextureArray } from './textureArray';
 
@@ -36,7 +40,13 @@ export interface TerrainTextures {
   shaft: THREE.Texture;
   /** The clouds' and the spires' paintings, one sheet (M10 §7.2, §7.3). */
   atmosphere: THREE.Texture;
+  /** The Heavenly Gate's array (M10 gate §2), in the order of the G_ layers in gate.ts; null on maps without a gate. */
+  gate: THREE.DataArrayTexture | null;
 }
+
+/** The gate array's layers are this size (M10 gate §2). */
+export const GATE_LAYER_W = 1280;
+export const GATE_LAYER_H = 2276;
 
 /** Transparent where the generated image was black; white ones are tinted per effect. */
 export interface EffectTextures {
@@ -63,10 +73,14 @@ async function load(url: string): Promise<THREE.Texture> {
   return tex;
 }
 
-export async function loadGameTextures(): Promise<GameTextures> {
+/** Loads the textures of a game; the gate array only for a map with a gate (M10 gate §2). */
+export async function loadGameTextures(withGate: boolean): Promise<GameTextures> {
   const layers = [floorUrl, floorPlainUrl, medallionUrl, riserUrl, wallUrl, windowUrl, pilasterUrl, corniceUrl, arcadeLowerUrl, arcadeUpperUrl];
-  const [array, [door, sky, shaft, atmosphere, ring, beam, chain, glow, smoke]] = await Promise.all([
+  // Nothing in the gate wraps: the shafts repeat by geometry.
+  const gateLayers = [gateLeavesUrl, gateRailingUrl, gatePostTopUrl, gateShaftUrl];
+  const [array, gate, [door, sky, shaft, atmosphere, ring, beam, chain, glow, smoke]] = await Promise.all([
     loadTextureArray(layers, 1024),
+    withGate ? loadTextureArray(gateLayers, GATE_LAYER_W, GATE_LAYER_H, THREE.ClampToEdgeWrapping) : Promise.resolve(null),
     Promise.all([doorUrl, skyUrl, shaftUrl, atmosphereUrl, ringUrl, beamUrl, chainUrl, glowUrl, smokeUrl].map(load)),
   ]);
   prepareSkyTexture(sky);
@@ -74,5 +88,5 @@ export async function loadGameTextures(): Promise<GameTextures> {
     t.wrapS = THREE.ClampToEdgeWrapping;
     t.wrapT = THREE.ClampToEdgeWrapping;
   }
-  return { terrain: { array, door, sky, shaft, atmosphere }, fx: { ring, beam, chain, glow, smoke } };
+  return { terrain: { array, door, sky, shaft, atmosphere, gate }, fx: { ring, beam, chain, glow, smoke } };
 }

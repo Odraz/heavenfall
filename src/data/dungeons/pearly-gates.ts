@@ -168,4 +168,6 @@ export const pearlyGates: DungeonDef = {
       boss: true,
     },
   ],
+  // The boss arena's west wall is drawn as the gate of Heaven (M10 gate §1).
+  gate: { x: 6, yCenter: 75, y0: 49, y1: 101 },
 };

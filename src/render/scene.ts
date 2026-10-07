@@ -41,6 +41,7 @@ export class GameScene {
     this.terrain = buildTerrain(map, textures);
     this.scene.add(this.terrain.mesh);
     this.scene.add(this.terrain.painted, this.terrain.paintedAlpha);
+    if (this.terrain.gate) this.scene.add(this.terrain.gate.mesh);
     this.atmosphere = new Atmosphere(map, this.terrain.arches, textures.shaft, textures.atmosphere, textures.sky);
     this.scene.add(this.atmosphere.cards, this.atmosphere.shafts);
     for (const d of this.terrain.doors) for (const m of [d.entry, d.exit]) if (m) this.scene.add(m);

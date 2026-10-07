@@ -1,5 +1,5 @@
 import { isDecorId, type DecorId } from '../data/decor';
-import type { ArenaDef, DungeonDef } from '../data/dungeons/types';
+import type { ArenaDef, DungeonDef, GateDef } from '../data/dungeons/types';
 import { PHASE_CLEARED, PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
 import { HEIGHT_STEP, MAX_MAP_SIZE } from './constants';
 import { computeHeights, K_VOID, type Heights } from './heights';
@@ -45,6 +45,8 @@ export interface GameMap {
   /** Decorations in reading order; drawn only (§8.1). */
   decorations: Array<{ id: DecorId; c: number; r: number }>;
   arenas: ArenaDef[];
+  /** The Heavenly Gate (M10 gate §3), drawn only; null on maps without one. */
+  gate: GateDef | null;
 }
 
 /** Marker characters with a fixed meaning; a `decor` key can't be one of these. */
@@ -148,7 +150,7 @@ export function loadMap(def: DungeonDef): GameMap {
   const top = new Float32Array(n);
   for (let i = 0; i < n; i++) top[i] = wall[i] ? walls.height[i] : floor[i];
 
-  return { id: def.id, name: def.name, w, h, floor, wall, doorArena, solid, top, heights: walls, spawns, arenaSpawnPoints, boss, decorations, arenas: def.arenas };
+  return { id: def.id, name: def.name, w, h, floor, wall, doorArena, solid, top, heights: walls, spawns, arenaSpawnPoints, boss, decorations, arenas: def.arenas, gate: def.gate ?? null };
 }
 
 /** Opens or closes the doors of one arena. */

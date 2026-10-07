@@ -80,7 +80,7 @@ async function loadGameAssets(dungeonId: string, roster: RosterEntry[], localId:
   progress('Drawing the sprites…');
   const localClass = roster.find((r) => r.id === localId)?.classId;
   const others = multiplayer ? CLASS_IDS.filter((c) => c !== localClass) : roster.filter((r) => r.id !== localId).map((r) => r.classId);
-  const [atlas, textures, enemyAnims, players] = await Promise.all([buildAtlas(), loadGameTextures(), loadEnemyAnims(), loadPlayerAnims(others)]);
+  const [atlas, textures, enemyAnims, players] = await Promise.all([buildAtlas(), loadGameTextures(map.gate !== null), loadEnemyAnims(), loadPlayerAnims(others)]);
   return { map, atlas, textures, enemyAnims, players };
 }
 

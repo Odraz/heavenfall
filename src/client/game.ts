@@ -21,6 +21,7 @@ import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
 import { ContactShadows } from '../render/contactShadows';
 import { archStoneHit } from '../render/arches';
+import { gateHit } from '../render/gate';
 import { PLAYER_RADIUS } from '../sim/constants';
 import { Particles } from '../render/particles';
 import { GameScene } from '../render/scene';
@@ -1101,6 +1102,9 @@ export class Game {
       let end = stop < w.range ? this.scene.terrain.relief.adjust(ex, ey, ez, dx, dy, dz, stop) : stop;
       // A shot crossing an arch's painted stone flies on in the simulation; its tracer ends there (M10 §6.1).
       end = Math.min(end, archStoneHit(this.scene.terrain.arches, ex, ey, ez, dx, dy, dz, stop));
+      // And at the Heavenly Gate, which the simulation sees as a wall (M10 gate §3).
+      const gate = this.scene.terrain.gate;
+      if (gate) end = Math.min(end, gateHit(gate.layout, ex, ey, ez, dx, dy, dz, stop));
       if (ts.length > 0) {
         hit = true;
         if (w.kind === 'silverBullet') {
