@@ -519,3 +519,51 @@ This is not a game screenshot and not a scene: no characters, no HUD, no floor, 
 | `prop-balustrade-sheet.png` | a 2 m section of a stone balustrade about 1.1 m high: a pier at each end with a small ornament on top, a row of five fat baluster posts between them, and a thin gold-trimmed top rail |
 | `prop-spire-sheet.png` | a cluster of three slender white towers of different heights (the tallest about 40 m) with pointed gold-capped roofs, one with a small dome, joined at the base by a low terrace with a few arched openings |
 | `prop-island-sheet.png` | a small floating island of rock, about 30 m wide, its underside a tapering cone of rough stone with a few hanging roots and waterfalls dripping off the edge, with a flat grassy top carrying one small white pavilion with a gold dome and two columns |
+
+---
+
+## The Heavenly Gate (M10 follow-up)
+
+4 images for the gate that replaces the boss arena's west wall ([m10-gate.md](m10-gate.md)): the golden gate of the title painting. The game builds simple shapes (square posts, crown boxes, crossed cards for the spires) and lays these paintings on them, so both are **flat, straight-on elevations**: no perspective, perfectly symmetric, evenly lit (the game adds its own sunlight). The sky shows through the bars, so the gaps must be clean flat green. Players can walk right up to the gate, so **generate at the largest size your tool offers, and upscale 4× (the generator's own upscale, or a free AI upscaler such as Upscayl)**. Save them in `assets/art-src/` as PNG. Generate each in a new chat.
+
+**Attach to both:** `assets/art-src/ui-title-bg.png` (the title painting: the gate to match) and `assets/art-src/reference/concept-1.webp`.
+
+- [x] `gate-leaves`
+- [x] `gate-railing`
+- [x] `gate-post-shaft`
+- [x] `gate-post-top` (saved as `gate-post-top-2`; the first try had a ghost scene over its spire)
+
+#### Gate leaves — `gate-leaves.png` · 9:16
+The two closed leaves of the great gate, 18 m wide; their arched top reaches 32 m at the center. White stone gateposts stand at both sides in the game, so the image is only the ironwork.
+```text
+The two closed leaves of a colossal heavenly gate, exactly like the great golden gate in the first attached image, seen perfectly straight on as a flat elevation with no perspective, perfectly symmetric left to right, filling the whole frame. Elegant wrought ironwork of white and gold: tall slender vertical bars close together, with large flowing gold scrollwork, rings and curls, a great circle formed by curved bars across both leaves at mid height, and a round gold medallion at the top center. The two leaves meet at a vertical center line, marked by a heavier gold bar. Their outer edges are straight vertical frames from the bottom edge up to 60% of the image height; from there the top edge sweeps up in one smooth round arch to the top center of the image, lined with a row of small gold spear-point finials. A solid gold rail runs along the bottom edge. The gaps between the bars are clearly open, each about as wide as a bar, and every gap, and all the space above the arched top, is flat pure green (#00FF00), so the gate can be cut out and the sky seen through it. Even, flat, frontal light: no shadows, no glow, no light rays. Hand-painted stylized game art matching the attached images: crisp thin dark ink outlines, cel shading, white enamel and bright gold. No posts or pillars at the sides, no wall, no sky, no clouds, no people, no text. Aspect ratio 9:16.
+```
+
+**Check before saving:** symmetric; the leaves fill the frame edge to edge with straight vertical outer edges; the arched top touches the top edge only at the center; every gap is clean green (not grey or blurred) and about as wide as the bars; no posts at the sides.
+
+#### Railing — `gate-railing.png` · 9:16
+One panel of the tall gilded railing either side of the gate, 6 m wide and 10.7 m tall. The game repeats it four times between spired posts, so its left and right edges must continue into each other.
+```text
+One panel of a tall heavenly railing, matching the gilded railings beside the great gate in the first attached image, seen perfectly straight on as a flat elevation with no perspective, perfectly symmetric left to right, filling the whole frame. White and gold wrought ironwork: evenly spaced tall vertical bars from the bottom edge to near the top edge, each ending in a gold spear-point finial, a horizontal band of gold scrollwork across the bars at 15% and at 80% of the height, and a gentle gold arch of curved bars between the two bands. A solid gold rail along the bottom edge and a thin gold rail just below the finials. The left edge continues seamlessly into the right edge: the bars, rails and scroll bands line up so that panels placed side by side form one continuous railing, with no post or frame at either side. The gaps between the bars are clearly open, each about twice as wide as a bar, and every gap, and the space above the finials, is flat pure green (#00FF00). Even, flat, frontal light: no shadows, no glow. Hand-painted stylized game art matching the attached images: crisp thin dark ink outlines, cel shading, white enamel and bright gold. No posts, no wall, no sky, no clouds, no people, no text. Aspect ratio 9:16.
+```
+
+**Check before saving:** symmetric; no post or frame at either side; the rails and bands meet the left and right edges at the same heights; every gap is clean green.
+
+#### Post shaft — `gate-post-shaft.png` · 9:16
+One face of the tall square white posts beside the gate (the title painting's gateposts), 3 m wide. The game repeats it up the post, so its top must continue into its bottom. Opaque: no green.
+```text
+One flat face of a tall square heavenly gatepost, exactly like the white posts beside the great gate in the first attached image, seen perfectly straight on with no perspective, perfectly symmetric left to right, filling the whole frame edge to edge. Smooth white enamel stone with a long recessed vertical panel down the middle framed by thin gold lines, a slender gold vertical ornament inside the panel, and thin gold edge lines along the left and right edges. The top edge continues seamlessly into the bottom edge: the panel, its gold frame and the ornament run straight off the top and bottom, so faces placed one above another form one continuous post. Even, flat, frontal light: no shadows. Hand-painted stylized game art matching the attached images: crisp thin dark ink outlines, cel shading, white enamel and bright gold. No background, no capital, no base, no text. Aspect ratio 9:16.
+```
+
+**Check before saving:** fills the frame with no background; symmetric; the panel and lines run straight off the top and bottom edges at the same positions.
+
+#### Post top — `gate-post-top.png` · 9:16
+The gold crown and slender spire on top of each gatepost, as in the title painting. The game puts the crown on a 4 m box around the post's top and the spire on crossed cards above it, so it must be seen straight on and centered, with only green around it.
+```text
+The top of a tall heavenly gatepost, exactly like the crowned spires on the white posts in the first attached image, seen perfectly straight on with no perspective, perfectly symmetric left to right, centered. At the bottom, a square crown of gold: a band of tall pointed gold leaves and pointed arches flaring outward, as wide as one third of the image width, its bottom edge at the bottom edge of the image, about one fifth of the image height tall. Above it, rising from its center, a very slender white spire with gold edges and a small gold ring near its base, tapering to a sharp gold tip just below the top edge of the image; the spire's base is one sixth of the image width. Everything around the crown and spire is flat pure green (#00FF00). Even, flat, frontal light: no shadows, no glow. Hand-painted stylized game art matching the attached images: crisp thin dark ink outlines, cel shading, white enamel and bright gold. No post below the crown, no sky, no clouds, no text. Aspect ratio 9:16.
+```
+
+**Check before saving:** symmetric and centered; the crown sits on the bottom edge and is clearly wider than the spire's base; the tip doesn't touch the top edge; only green around it.
+
+#### Kept for later: the cathedral-style gate
+The first attempt, a cathedral front with towers and a pointed portal, isn't used by this gate. It's kept for later level design. Save the full-quality originals in `assets/art-src/reference/` as `cathedral-gate-front` (the towers, sunburst and portal) and `cathedral-gate-doors` (the scrolled doors), JPEG.
