@@ -63,3 +63,22 @@ M10.5: the relief adds about 7 300 triangles to the Pearly Gates' terrain (crown
 | 2026-10-07 | M10.6 rerun: M10.5 and M10.6 back to back | d7ea344 / ab2739a | pearly-gates arcade | 7.45 → 7.61 | — | 59.96 | 58.92 | 1.68 | 10 | 54 012 | 334.0 | Pass (+2.1%) |
 
 M10.6: the first gate failed all three runs by about 10%: the sky, drawn first since stage 2, was shaded under the arcades' large painted faces before they covered it. Drawn last (ab2739a), the sandbox measured 7.43 ms right away, but the full gate an hour later read 7.88 and 7.97 ms, with capped 1%-lows of 30 FPS in every run where M10.5 had 59. Measured back to back (two runs each, alternating builds, same session), M10.6 costs +2.2% and +2.1% on M10.5, and capped it runs at 59.96 FPS with a 1%-low of 58.92 and no frame over 20 ms (the benchmark now counts them), the same as M10.5: the gate's readings came from a slower spell of the machine. Per §2.3 a failure within the noise is run again before anything is cut; the back-to-back runs are that rerun. The painted faces add 2 draw calls (the cut-out mesh and the alpha pass) and the arches about 6 200 triangles.
+| 2026-10-07 | M10.7 (atmosphere), gate | 539fdfc | sandbox | 7.97 | 0.4% | 58.34 | 29.84 | 1.75 | 11 | 18 558 | 344.7 | +1.1% on M10.6's gate run |
+| 2026-10-07 | M10.7 (atmosphere), gate | 539fdfc | pearly-gates | 7.91 | 0.4% | 58.6 | 29.86 | 1.80 | 11 | 54 190 | 345.6 | +0.3% |
+| 2026-10-07 | M10.7 (atmosphere), gate | 539fdfc | pearly-gates arcade | 8.07 | 0.6% | 59.26 | 29.93 | 1.83 | 12 | 54 220 | 345.6 | +1.3% |
+
+### M10 final: against the baseline, back to back
+
+The gate runs drifted by several percent between sessions (the baseline measured 7.13 ms in the morning and 6.63–6.74 ms at night), so the final check against the baseline (≤ +10%) measures both builds in one session, alternating single uncapped runs, two each per view: the baseline is commit 44b37d7 with only the benchmark's instrumentation added (`../mg-base0`). Steps taken until it passed:
+
+| Build | Sandbox | Pearly Gates | Arcade view |
+|---|---|---|---|
+| 539fdfc (M10.7 as specified) | 6.70 → 7.56 (+12.8%) | 6.66 → 7.49 (+12.5%) | 6.74 → 7.62 (+13.1%) |
+| 36edd14 (fog color per vertex, sky mip from the viewport) | 6.99 → 7.79 (+11.4%) | 7.04 → 7.75 (+10.1%) | 7.08 → 7.91 (+11.7%) |
+| fc44352 (the sky's coordinates per vertex) | 6.66 → 7.37 (+10.7%) | 6.69 → 7.41 (+10.8%) | 6.72 → 7.49 (+11.5%) |
+| 09c8bda (cut 1–2: no wisps, minimum cloud and spire counts, 12 shafts) | 6.69 → 7.34 (+9.8%) | 6.67 → 7.33 (+9.9%) | 6.72 → 7.53 (+12.0%) |
+| **7491068 (cut 3: contact shadows under players and the Gatekeeper only)** | **6.64 → 7.26 (+9.3%)** | **6.66 → 7.25 (+8.9%)** | **6.78 → 7.44 (+9.7%)** |
+
+Final build (7491068), capped: sandbox 59.93 FPS (1%-low 58.92), Pearly Gates 59.96 (58.9), arcade 59.95 (58.98), no frame over 20 ms; simulation 3.5–3.6 ms per tick on average (8.5 ms max). Budgets (§2.1), arcade run: 12 draw calls (+4; the baseline's 8), 51 136 triangles (+26 000 on the Pearly Gates), 345.6 MB of textures (+71 MB). Download: the new images add about 3.6 MB and the four terrain textures shrank by 4.9 MB as JPEGs, so the first load is about 1.3 MB smaller.
+
+Measured costs in the arcade view (one run each, same session, M10.7 before the cuts at 7.60 ms): the swarm's contact shadows 0.21 ms, the painted arches 0.17 ms (alpha to coverage 0.11 of it), the clouds, spires and shafts 0.10 ms.
