@@ -10,7 +10,8 @@ export type MainToWorker =
       players: SimPlayerInit[];
       seed: number;
       god: boolean;
-      bench: boolean;
+      /** The benchmark's arena, or -1 when not benchmarking (M10 gate §4). */
+      benchArena: number;
       singleplayer: boolean;
       localPlayerId: number;
     }

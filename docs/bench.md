@@ -82,3 +82,15 @@ The gate runs drifted by several percent between sessions (the baseline measured
 Final build (7491068), capped: sandbox 59.93 FPS (1%-low 58.92), Pearly Gates 59.96 (58.9), arcade 59.95 (58.98), no frame over 20 ms; simulation 3.5–3.6 ms per tick on average (8.5 ms max). Budgets (§2.1), arcade run: 12 draw calls (+4; the baseline's 8), 51 136 triangles (+26 000 on the Pearly Gates), 345.6 MB of textures (+71 MB). Download: the new images add 4.3 MB (the sky 0.23, the arcade 2.37, the clouds and spires 0.76, the shaft 0.02, the five new terrain textures 0.94) and the four old terrain textures shrank from 5.26 MB of PNG to 0.80 MB of JPEG, so the first load is about 0.15 MB smaller.
 
 Measured costs in the arcade view (one run each, same session, M10.7 before the cuts at 7.60 ms): the swarm's contact shadows 0.21 ms, the painted arches 0.17 ms (alpha to coverage 0.11 of it), the clouds, spires and shafts 0.10 ms.
+
+## M10 gate: the Heavenly Gate
+
+M10 gate §4. Back to back, in one session: `sh scripts/bench-ab.sh <build A> <build B> <args>` alternates single uncapped runs (A B A B), then one capped run each, with a 60 s cool-down before every run. "Frame ms" is the mean of a build's two uncapped runs. Budgets against the M10 final build (7491068): draw calls +3 with a gate, triangles +2 500, texture memory +65 MB with a gate (0 elsewhere), download +5 MB.
+
+| Date | Stage | Builds (A → B) | Run | Frame ms, A → B (uncapped) | Change | FPS capped (A / B) | Frames over 20 ms capped (A / B) | Sim ms (B, uncapped) | Draw calls | Triangles | Texture MB | Result |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-10-07 | M10.8.1 (gate view) | 7491068 → stage 1 | pearly-gates | 7.45 → 7.55 | +1.3% | 59.47 / 58.95 | 14 / 29 | 1.92 | 11 | 51 106 | 345.6 | Pass (no rendering change) |
+| 2026-10-07 | M10.8.1 (gate view) | 7491068 → stage 1 | pearly-gates arcade | 7.52 → 7.65 | +1.8% | 59.92 / 59.37 | 1 / 18 | 2.24 | 12 | 51 136 | 345.6 | Pass (no rendering change) |
+| 2026-10-07 | M10.8.1 (gate view) | stage 1 | pearly-gates gate (baseline, median of 3) | 7.02 (6.83, 7.02, 7.36) | — | 59.92 | 1 | 2.43 | 13 | 51 126 | 345.6 | Baseline |
+
+M10.8.1: stage 1 changes only how the benchmark picks its arena and camera, so the first two rows measure noise: the same frame on the same scene, +1.3% and +1.8%. The human worked on another screen during the runs, which shows as about 450 frames over 20 ms in every uncapped run (both builds alike, about one every 60 ms) and more slow frames in the capped runs than in M10's final session; the alternating order keeps the comparison fair. The gate view's three runs spread by 7.5%; its baseline is informational, since the gate's own check after stages 2 and 3 runs it back to back against this build. In the gate view the swarm surrounds the player at the boss arena's entry, the Gatekeeper on his dais: 1 499 enemies and the Gatekeeper.

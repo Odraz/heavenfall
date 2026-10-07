@@ -1,6 +1,6 @@
 // M10 screenshots that need a later arena (M10 §11): a bot plays the Pearly Gates with god mode, the
 // dev key K clears each arena, and when the given arena is in combat the fixed camera (`cam`) is shown
-// and saved. Usage: node scripts/views-progress.mjs <prefix>   (serves dist/ on port 4174)
+// and saved. Usage: node scripts/views-progress.mjs <prefix> [name ...]   (serves dist/ on port 4174)
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const PORT = 4174;
 const prefix = process.argv[2] ?? 'after';
+const only = process.argv.slice(3);
 const outDir = fileURLToPath(new URL('../screenshots/m10/', import.meta.url));
 mkdirSync(outDir, { recursive: true });
 
@@ -18,6 +19,8 @@ const SHOTS = [
   { name: 'a2-cherubs-2', arena: 1, after: 13000, cam: '118,12,2.1,160,14' },
   // The boss arena: Blessed about 60 m away across it.
   { name: 'boss-blessed-60m', arena: 3, after: 6000, cam: '8,52,6.1,31,-2' },
+  // The Heavenly Gate (M10 gate §8): the Gatekeeper on the dais in front of the leaves.
+  { name: 'fight', arena: 3, after: 6000, cam: '36,80,6.1,186,22' },
 ];
 
 const vite = fileURLToPath(new URL('../node_modules/vite/bin/vite.js', import.meta.url));
@@ -35,6 +38,7 @@ for (let i = 0; ; i++) {
 const browser = await chromium.launch({ headless: false, args: ['--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--disable-features=CalculateNativeWinOcclusion', '--disable-renderer-backgrounding'] });
 try {
   for (const shot of SHOTS) {
+    if (only.length && !only.includes(shot.name)) continue;
     const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
     page.on('pageerror', (e) => console.log(`[pageerror] ${e.message}`));
     await page.goto(`http://localhost:${PORT}/?dev=1&map=pearly-gates&class=fallen&bot=1&god=1&seed=7&cam=${shot.cam}`);

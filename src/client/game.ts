@@ -51,6 +51,10 @@ import { PlayerAnimator } from './playerAnim';
 import { SnapshotBuffer, type InterpolatedEnemies } from './snapshots';
 
 const BENCH_TURN_RATE = 0.3;
+/** The gate view's camera (M10 gate §4): it looks at the middle of the boss arena's west wall, 10° up. */
+const GATE_VIEW_X = 6;
+const GATE_VIEW_Y = 75;
+const GATE_VIEW_PITCH = (10 * Math.PI) / 180;
 /** Contact shadows are this many times a body's radius (M10 §5.4). */
 const SHADOW_SIZE = 1.4;
 const PROJECTILE_SPRITES = ['proj-censer', 'proj-orb', 'proj-arrow'];
@@ -335,12 +339,12 @@ export class Game {
     this.pause = new PauseOverlay(o.root, () => this.resume(), () => this.leave());
 
     this.input = new Input(this.canvas);
-    this.input.pointerLockAllowed = !this.params.bot && !this.params.bench;
+    this.input.pointerLockAllowed = !this.params.bot && this.params.benchArena < 0;
     this.input.onKey = (code) => this.onKey(code);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('visibilitychange', this.onVisibility);
 
-    const [sc, sr] = this.params.bench ? this.map.arenas[0].entryCells[0] : this.map.spawns[index];
+    const [sc, sr] = this.params.benchArena >= 0 ? this.map.arenas[this.params.benchArena].entryCells[0] : this.map.spawns[index];
     this.player = new LocalPlayer(sc + 0.5, sr + 0.5, this.map.floor[sr * this.map.w + sc], CLASSES[me.classId].speed);
     this.doorPhase = this.map.arenas.map(() => -1);
 
@@ -349,7 +353,7 @@ export class Game {
     o.transport.onSnapshot = (buf) => this.snaps.addPart(buf, performance.now());
 
     this.bot = this.params.bot ? new Bot(this.map) : null;
-    this.bench = this.params.bench && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString(), () => this.scene.renderStats()) : null;
+    this.bench = this.params.benchArena >= 0 && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString(), () => this.scene.renderStats()) : null;
 
     debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0, primaryShots: 0, secondaryShots: 0 }));
     this.sounds.renderDelay = (this.snaps.delayTicks * TICK_MS) / 1000;
@@ -371,7 +375,7 @@ export class Game {
 
   private onKey(code: string): void {
     if (code === 'F3') this.overlay.toggle();
-    if (this.over || this.params.bench) return;
+    if (this.over || this.params.benchArena >= 0) return;
     if (code === 'Escape') {
       this.openPause();
       return;
@@ -437,7 +441,7 @@ export class Game {
    * simulation. It can't open at or after the result, nor in the benchmark.
    */
   private openPause(): void {
-    if (this.paused || this.over || this.params.bench || this.disposed) return;
+    if (this.paused || this.over || this.params.benchArena >= 0 || this.disposed) return;
     this.paused = true;
     this.pausedAt = performance.now();
     debugState.paused = true;
@@ -1230,10 +1234,12 @@ export class Game {
     if (this.over || this.paused) {
       // The result overlay or Pause: the game keeps rendering without input.
     } else if (this.bench) {
-      // The arcade view (M10 §2.3) looks north-east across Arena 1's north arcade, without turning.
+      // The arcade view (M10 §2.3) looks north-east across Arena 1's north arcade, without turning;
+      // the gate view (M10 gate §4) looks at the middle of the gate, 10° up.
       if (this.params.benchView === 'arcade') p.yaw = -Math.PI / 4;
+      else if (this.params.benchView === 'gate') p.yaw = Math.atan2(GATE_VIEW_Y - p.body.y, GATE_VIEW_X - p.body.x);
       else p.yaw += BENCH_TURN_RATE * dt;
-      p.pitch = 0;
+      p.pitch = this.params.benchView === 'gate' ? GATE_VIEW_PITCH : 0;
     } else if (this.bot) {
       const be = this.botEnemies;
       be.length = ents.count;

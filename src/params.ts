@@ -5,7 +5,11 @@ import { parseJoinId } from './net/invite';
 
 export interface Params {
   dev: boolean;
-  bench: boolean;
+  /**
+   * The benchmark's arena (M10 gate §4), or -1 when not benchmarking: the boss arena in the gate
+   * view, arena 0 otherwise (and in the gate view on a map with no boss arena).
+   */
+  benchArena: number;
   bot: boolean;
   god: boolean;
   mapId: string;
@@ -20,14 +24,19 @@ export interface Params {
   autojoin: boolean;
   /** The `name` parameter, for bot auto-join; null if absent. */
   name: string | null;
-  /** Benchmark camera (M10 §2.3): `turn` (default) or `arcade`, fixed looking north-east. */
-  benchView: 'turn' | 'arcade';
+  /**
+   * Benchmark camera: `turn` (default), `arcade` fixed looking north-east (M10 §2.3), or `gate`, in
+   * the boss arena, fixed looking at the gate (M10 gate §4).
+   */
+  benchView: BenchView;
   /**
    * A fixed camera for screenshots (M10 §11), with dev=1 or bench=1: `cam=x,y,z,yaw,pitch`, a point
    * in map meters (z: height above the map's zero; empty: eye height above the floor there) and angles in degrees.
    */
   cam: DevCamera | null;
 }
+
+export type BenchView = 'turn' | 'arcade' | 'gate';
 
 export interface DevCamera {
   x: number;
@@ -53,8 +62,11 @@ export function parseParams(search: string): Params {
   const mapParam = q.get('map');
   const mapId = getDungeon(mapParam) ? (mapParam as string) : 'sandbox';
   if (bench) {
-    const benchView = q.get('view') === 'arcade' ? 'arcade' : 'turn';
-    return { dev: false, bench: true, bot: false, god: false, mapId, classId: 'betrayer', classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, cam: parseCam(q.get('cam')) };
+    const view = q.get('view');
+    const benchView: BenchView = view === 'arcade' || view === 'gate' ? view : 'turn';
+    const boss = benchView === 'gate' ? getDungeon(mapId)!.arenas.findIndex((a) => a.boss) : -1;
+    const benchArena = Math.max(0, boss);
+    return { dev: false, benchArena, bot: false, god: false, mapId, classId: 'betrayer', classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, cam: parseCam(q.get('cam')) };
   }
   // Without dev=1 (or bench=1) the page opens the menus.
   const dev = q.get('dev') === '1';
@@ -67,7 +79,7 @@ export function parseParams(search: string): Params {
   const join = parseJoinId(q.get('join'));
   return {
     dev,
-    bench,
+    benchArena: -1,
     bot,
     god: q.get('god') === '1',
     mapId,

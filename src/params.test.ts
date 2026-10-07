@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { getDungeon } from './data/dungeons/index';
 import { parseParams } from './params';
 import { validName } from './ui/menus';
 
@@ -6,7 +7,7 @@ describe('URL parameters (§2.5)', () => {
   it('opens the menus without dev=1 or bench=1', () => {
     const p = parseParams('');
     expect(p.dev).toBe(false);
-    expect(p.bench).toBe(false);
+    expect(p.benchArena).toBe(-1);
   });
 
   it('skips the menus with dev=1, defaulting an invalid map and class', () => {
@@ -25,12 +26,21 @@ describe('URL parameters (§2.5)', () => {
   });
 
   it('ignores other parameters with bench=1', () => {
-    expect(parseParams('?bench=1&dev=1&bot=1&god=1&class=fallen')).toMatchObject({ bench: true, dev: false, bot: false, god: false, classId: 'betrayer', mapId: 'sandbox', benchView: 'turn' });
+    expect(parseParams('?bench=1&dev=1&bot=1&god=1&class=fallen')).toMatchObject({ benchArena: 0, dev: false, bot: false, god: false, classId: 'betrayer', mapId: 'sandbox', benchView: 'turn' });
   });
 
   it('takes the map and the view with bench=1 (M10 §2.3)', () => {
-    expect(parseParams('?bench=1&map=pearly-gates&view=arcade')).toMatchObject({ bench: true, mapId: 'pearly-gates', benchView: 'arcade' });
+    expect(parseParams('?bench=1&map=pearly-gates&view=arcade')).toMatchObject({ benchArena: 0, mapId: 'pearly-gates', benchView: 'arcade' });
     expect(parseParams('?bench=1&map=nowhere')).toMatchObject({ mapId: 'sandbox', benchView: 'turn' });
+  });
+
+  it('benches the boss arena in the gate view (M10 gate §4)', () => {
+    const boss = getDungeon('pearly-gates')!.arenas.findIndex((a) => a.boss);
+    expect(boss).toBeGreaterThan(0);
+    expect(parseParams('?bench=1&map=pearly-gates&view=gate')).toMatchObject({ benchView: 'gate', benchArena: boss });
+    // A map with no boss arena benches arena 0.
+    expect(getDungeon('sandbox')!.arenas.some((a) => a.boss)).toBe(false);
+    expect(parseParams('?bench=1&view=gate')).toMatchObject({ mapId: 'sandbox', benchView: 'gate', benchArena: 0 });
   });
 });
 

@@ -6,6 +6,7 @@
 //                  slowdowns the 60 FPS cap would hide
 //   --map <id>     the map to run on (default: sandbox)
 //   --view arcade  a fixed camera looking north-east instead of the turning one
+//   --view gate    the boss arena instead of the first, the camera fixed on the gate (M10 gate §4)
 //   --runs <n>     run n times and print the median and the spread (slowest − fastest)
 //   --cooldown <s> wait s seconds before each run after the first, so a laptop that heats up under
 //                  back-to-back runs (and throttles) starts each one cool
