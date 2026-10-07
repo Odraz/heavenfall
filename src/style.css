@@ -593,17 +593,25 @@ body {
   opacity: 0;
 }
 
-/* The M9 Scourge swing frames (the Binder), until M11 stage 3. */
+/* The Scourge (M11 §3.6): the chain's frames, one image shown a frame at a time, and the fist. */
 .weapon-swing {
   position: absolute;
-  bottom: 0;
-  height: 50vh;
+  user-select: none;
 }
 
-.weapon-sprite {
+div.weapon-swing {
+  overflow: hidden;
+}
+
+.swing-strip {
   position: absolute;
-  inset: 0;
-  background-repeat: no-repeat;
+  left: 0;
+  top: 0;
+  width: 100%;
+}
+
+.swing-strip.weapon-glow {
+  opacity: 0.5;
 }
 
 /* Behind the weapon, blended as light (M8 §3.3), placed at the transformed muzzle each shot. */

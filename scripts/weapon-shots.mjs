@@ -88,23 +88,43 @@ try {
           }
         }
       };
-      const freeze = () => page.evaluate(() => {
-        window.requestAnimationFrame = () => 0;
-      });
+      // Freezes the game loop `ms` after the shot shows on screen (the muzzle flash or the Scourge's
+      // chain appearing), timed in the page by its frames, not from the click (the shot waits for the
+      // next 30 Hz fire tick).
+      const armFreeze = (selector, ms) => page.evaluate(([sel, wait]) => {
+        const raf = window.requestAnimationFrame.bind(window);
+        let t0 = -1;
+        let last = -1;
+        let frame = 16.7;
+        // The game has already asked for its next frame when this stops the loop, so it draws one more:
+        // stop a frame early. And this may see the shot a frame after the game showed it: another frame.
+        const watch = (now) => {
+          if (last >= 0) frame = Math.min(frame, now - last);
+          last = now;
+          const e = document.querySelector(sel);
+          const shown = e && !e.hidden && getComputedStyle(e).opacity !== '0';
+          if (t0 < 0 && shown) t0 = now;
+          if (t0 >= 0 && now - t0 >= wait - 2.5 * frame) {
+            window.requestAnimationFrame = () => 0;
+            window.__frozen = true;
+            return;
+          }
+          raf(watch);
+        };
+        raf(watch);
+      }, [selector, ms]);
+      const shoot = async (button, selector, ms) => {
+        await lock();
+        await page.waitForTimeout(300);
+        await armFreeze(selector, ms);
+        await page.mouse.down({ button });
+        await page.waitForFunction(() => window.__frozen === true, null, { timeout: 5000 });
+        await page.mouse.up({ button });
+      };
       if (shot === 'fire' || shot.startsWith('fire-')) {
-        await lock();
-        await page.waitForTimeout(300);
-        await page.mouse.down({ button: 'left' });
-        await page.waitForTimeout(shot === 'fire' ? 40 : Number(shot.slice(5)));
-        await freeze();
-        await page.mouse.up({ button: 'left' });
+        await shoot('left', '.muzzle-flash', shot === 'fire' ? 40 : Number(shot.slice(5)));
       } else if (shot.startsWith('swing-')) {
-        await lock();
-        await page.waitForTimeout(300);
-        await page.mouse.down({ button: 'right' });
-        await page.waitForTimeout(Number(shot.slice(6)));
-        await freeze();
-        await page.mouse.up({ button: 'right' });
+        await shoot('right', '.weapon-swing', Number(shot.slice(6)));
       } else if (shot === 'cooldown') {
         await lock();
         await page.keyboard.press('KeyQ');

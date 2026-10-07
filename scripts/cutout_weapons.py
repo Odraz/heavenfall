@@ -53,8 +53,8 @@ PUMP = 0.04
 
 SPIN_SHIFT = 4
 
-# The Scourge (M11 §2, §3.6, as reviewed in stage 1): the chain and its weight are the M9 swing's own
-# Blender frames without the hand (scripts/blender/weapons.py swing-chain, rendered to
+# The Scourge (M11 §2, §3.6, as reviewed in stage 1): the chain and its hook are rendered like the M9 swing's
+# Blender chain without the hand (scripts/blender/scourge_chain.py, rendered to
 # assets/art-src/scourge-chain.png), and the painted fist is drawn where the hand was in each frame.
 # Both are stored at half the view's resolution; the sweep painting is a 16:9 view like the others, so
 # the fist keeps the view's scale (its size then matches the rendered fist's).

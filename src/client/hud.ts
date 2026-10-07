@@ -4,13 +4,11 @@ import { ABILITIES, WEAPONS } from '../data/weapons';
 import { mouseGlyph } from '../ui/mouseGlyph';
 import { CHAT_MAX } from '../net/lobby';
 import { spriteUrl } from '../render/atlas';
-import { BINDER_SWING, weaponArt, type ViewBox, type WeaponLayer, type WeaponManifest } from '../render/weaponAtlas';
-import { altLevel, cylinderBlur, recoilLeft, glowLevel, hammerAngle, HealFade, layerOpacities, recoilTilt, Sway, Tilt, transformPoint, VH_PER_PX, WeaponLight } from './fpWeapon';
+import { weaponArt, type ViewBox, type WeaponLayer, type WeaponManifest } from '../render/weaponAtlas';
+import { altLevel, cylinderBlur, recoilLeft, swingPose, glowLevel, hammerAngle, HealFade, layerOpacities, recoilTilt, Sway, Tilt, transformPoint, VH_PER_PX, WeaponLight } from './fpWeapon';
 
 /** Recoil in % of the screen height (MVP §10; the slug and the Silver Bullet kick harder, M9 §5.1). */
 const RECOIL_PCT = 8;
-/** The Scourge's first-person swing (M9 §5.1). */
-const SWING_MS = 300;
 /** The Field of Blood's rising glow pulses over 1.2 s and flares for 0.3 s on entering (M9 §5.1). */
 const FIELD_PULSE_MS = 1200;
 const FIELD_FLARE_MS = 300;
@@ -86,9 +84,13 @@ export class Hud {
   private readonly heal = new HealFade();
   /** The last values written per style, so an unchanged one isn't rewritten. */
   private readonly written = new Map<string, string>();
-  /** The Scourge swing frames, drawn instead of the weapon frame while it plays. */
-  private readonly swingBox: HTMLDivElement | null = null;
-  private readonly swingSprite: HTMLDivElement | null = null;
+  /**
+   * The Scourge (M11 §3.6): the chain's frames (one image, its glow screened over it) and the painted fist
+   * over them where the hand is, drawn over the Chain Gun while the swing plays.
+   */
+  private readonly swingChain: HTMLDivElement | null = null;
+  private readonly swingFist: HTMLImageElement | null = null;
+  private readonly swingLayers: HTMLImageElement[] = [];
   private swingAt = -Infinity;
   private swingFrame = -2;
   /** A steady green vignette while a Sacrament beam heals the player (M9 §5.1). */
@@ -184,6 +186,8 @@ export class Hud {
       img.alt = '';
       img.draggable = false;
       if (at) Object.assign(img.style, { left: vh(at.x), top: vh(at.y), width: vh(at.w), height: vh(at.h) });
+      // Decoded now: the layers first shown by a shot (the alt frame, the green censer) would stall it.
+      img.decode().catch(() => {});
       this.layers[name] = img;
       return img;
     };
@@ -195,17 +199,28 @@ export class Hud {
     if (m.glow) layer('idle-glow', undefined, true);
     if (m.alt?.glow) layer('alt-glow', undefined, true);
     if (m.heal) layer('censer-green-glow', m.heal, true);
-    if (classId === 'binder') {
-      // The M9 swing frames, until M11 stage 3.
-      const sw = BINDER_SWING;
-      const fvh = (px: number) => `${(px / sw.frameH) * 50}vh`;
-      this.swingBox = el('div', 'weapon-swing', this.root);
-      this.swingBox.style.left = `calc(50% - ${fvh(sw.swing.centerX)})`;
-      this.swingBox.style.width = fvh(sw.swing.frameW);
-      this.swingBox.hidden = true;
-      this.swingSprite = el('div', 'weapon-sprite', this.swingBox);
-      this.swingSprite.style.backgroundImage = `url(${sw.url})`;
-      this.swingSprite.style.backgroundSize = `${fvh(sw.width * sw.swing.scale)} ${fvh(sw.height * sw.swing.scale)}`;
+    if (m.swing) {
+      const sw = m.swing;
+      this.swingChain = el('div', 'weapon-swing', this.root);
+      Object.assign(this.swingChain.style, { left: `calc(50% + ${vh(sw.chain.left)})`, top: vh(sw.chain.top), width: vh(sw.chain.w), height: vh(sw.chain.h) });
+      // The frames stacked in one image, shown one at a time through the box (it clips the rest).
+      for (const [name, cls] of [['chain', 'swing-strip'], ['chain-glow', 'swing-strip weapon-glow']] as const) {
+        const strip = el('img', cls, this.swingChain);
+        strip.src = art.url(name);
+        strip.alt = '';
+        strip.draggable = false;
+        strip.style.height = `${sw.chain.frames * 100}%`;
+        this.swingLayers.push(strip);
+      }
+      this.swingFist = el('img', 'weapon-swing', this.root);
+      this.swingFist.src = art.url('fist');
+      this.swingFist.alt = '';
+      this.swingFist.draggable = false;
+      Object.assign(this.swingFist.style, { width: vh(sw.fist.w), height: vh(sw.fist.h), transformOrigin: `${vh(sw.fist.center[0])} ${vh(sw.fist.center[1])}` });
+      this.swingChain.hidden = true;
+      this.swingFist.hidden = true;
+      // Decoded now, not on the first swing: the chain's frames decoding then stalled it by 100 ms.
+      for (const img of [...this.swingLayers, this.swingFist]) img.decode().catch(() => {});
     }
 
     this.vignettes = {
@@ -516,11 +531,19 @@ export class Hud {
     this.swingAt = now;
   }
 
-  /** The weapon's offsets this frame in vh (bob, sway, recoil) and its tilt in degrees (M11 §3.2). */
+  /**
+   * The weapon's offsets this frame in vh (bob, sway, recoil, and moving out of the Scourge's way) and its
+   * tilt in degrees (M11 §3.2, §3.6).
+   */
   private pose(now: number): { dx: number; dy: number; tilt: number } {
     const since = now - this.shotAt;
     const r = recoilLeft(since, this.fireIntervalMs);
-    return { dx: this.bobX + this.sway.x, dy: this.bobY + this.sway.y + r * this.recoilPct, tilt: recoilTilt(this.tilt.T, since, this.fireIntervalMs) };
+    const sw = this.weaponManifest.swing ? swingPose(now - this.swingAt, this.weaponManifest.swing.chain.frames) : null;
+    return {
+      dx: this.bobX + this.sway.x + (sw?.gunX ?? 0),
+      dy: this.bobY + this.sway.y + r * this.recoilPct + (sw?.gunY ?? 0),
+      tilt: recoilTilt(this.tilt.T, since, this.fireIntervalMs),
+    };
   }
 
   /** The first-person muzzle point on screen in CSS pixels, transformed with the weapon (for Sacrament's beam and the flash). */
@@ -549,7 +572,8 @@ export class Hud {
   private writeFilters(): void {
     const f = `brightness(${this.brightness.toFixed(3)})${this.fieldFilter ? ' ' + this.fieldFilter : ''}`;
     this.weaponBox.style.filter = f;
-    if (this.swingBox) this.swingBox.style.filter = f;
+    if (this.swingChain) this.swingChain.style.filter = f;
+    if (this.swingFist) this.swingFist.style.filter = f;
   }
 
   /**
@@ -677,22 +701,34 @@ export class Hud {
     this.result.hidden = false;
   }
 
-  /** The swing frame for the time since the Scourge, shown in place of the weapon frame while it plays. */
-  private updateSwing(now: number, offset: string): void {
-    const sw = BINDER_SWING.swing;
-    if (!this.swingBox || !this.swingSprite) return;
-    const t = now - this.swingAt;
-    const f = t >= 0 && t < SWING_MS ? Math.min(sw.frames.length - 1, Math.floor((t / SWING_MS) * sw.frames.length)) : -1;
+  /**
+   * The Scourge (M11 §3.6): the chain's frame of the moment and the fist where its hand is, turned along
+   * its forearm, with the weapon's bob, sway and light, fading out at the end.
+   */
+  private updateSwing(now: number): void {
+    const sw = this.weaponManifest.swing;
+    if (!sw || !this.swingChain || !this.swingFist) return;
+    const pose = swingPose(now - this.swingAt, sw.chain.frames);
+    const f = pose ? pose.frame : -1;
     if (f !== this.swingFrame) {
       this.swingFrame = f;
-      this.swingBox.hidden = f < 0;
-      this.weaponBox.style.visibility = f < 0 ? '' : 'hidden';
+      this.swingChain.hidden = f < 0;
+      this.swingFist.hidden = f < 0;
       if (f >= 0) {
-        const fvh = (px: number) => `${(px / BINDER_SWING.frameH) * 50}vh`;
-        this.swingSprite.style.backgroundPosition = `-${fvh(sw.frames[f][0] * sw.scale)} -${fvh(sw.frames[f][1] * sw.scale)}`;
+        const at = `translateY(${((-f / sw.chain.frames) * 100).toFixed(4)}%)`;
+        for (const l of this.swingLayers) l.style.transform = at;
+        const [hx, hy] = sw.hands[f];
+        this.swingFist.style.left = `calc(50% + ${vh(hx - sw.fist.center[0])})`;
+        this.swingFist.style.top = vh(hy - sw.fist.center[1]);
       }
     }
-    if (f >= 0) this.swingBox.style.transform = offset;
+    if (!pose) return;
+    const offset = `translate(${(this.bobX + this.sway.x).toFixed(3)}vh, ${(this.bobY + this.sway.y).toFixed(3)}vh)`;
+    this.swingChain.style.transform = offset;
+    this.swingFist.style.transform = `${offset} rotate(${(sw.hands[f][2] - sw.fist.angle).toFixed(2)}deg)`;
+    const op = pose.opacity >= 1 ? '1' : pose.opacity.toFixed(3);
+    this.put(this.swingChain, 'swing-chain', 'opacity', op);
+    this.put(this.swingFist, 'swing-fist', 'opacity', op);
   }
 
   /** Sets a style property unless it already has that value. */
@@ -703,12 +739,11 @@ export class Hud {
   }
 
   /** The painted weapon this frame (M11 §3): its transform, the alt frame, hammer, cylinder, censer and glow. */
-  private updateWeapon(now: number): string {
+  private updateWeapon(now: number): void {
     const m = this.weaponManifest;
     const L = this.layers;
     const { dx, dy, tilt } = this.pose(now);
-    const offset = `translate(${dx.toFixed(3)}vh, ${dy.toFixed(3)}vh)`;
-    this.weaponBox.style.transform = `${offset} rotate(${tilt.toFixed(3)}deg)`;
+    this.weaponBox.style.transform = `translate(${dx.toFixed(3)}vh, ${dy.toFixed(3)}vh) rotate(${tilt.toFixed(3)}deg)`;
     const since = now - this.shotAt;
     const a = m.alt ? altLevel(m.alt.kind, since, this.fireIntervalMs) : 0;
     const h = m.heal ? this.heal.value(now) : 0;
@@ -722,12 +757,11 @@ export class Hud {
     if (L['censer-green-glow']) this.put(L['censer-green-glow'], 'censer-glow', 'opacity', op(o.censerGlow));
     if (L.hammer && m.hammer) this.put(L.hammer, 'hammer', 'transform', `rotate(${hammerAngle(m.hammer.fall, since, this.fireIntervalMs).toFixed(2)}deg)`);
     if (L.cylinder) this.put(L.cylinder, 'cylinder', 'opacity', op(cylinderBlur(since, this.fireIntervalMs)));
-    return offset;
   }
 
   update(now: number): void {
-    const offset = this.updateWeapon(now);
-    this.updateSwing(now, offset);
+    this.updateWeapon(now);
+    this.updateSwing(now);
     // The field's glow: 0.25–0.35 over 1.2 s, flaring to 0.5 for 0.3 s on entering.
     if (this.inField) {
       const pulse = 0.3 + 0.05 * Math.sin((now / FIELD_PULSE_MS) * Math.PI * 2);

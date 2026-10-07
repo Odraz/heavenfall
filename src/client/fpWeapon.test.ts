@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ATTACK_PRIMARY, ATTACK_SECONDARY } from '../data/weapons';
-import { altLevel, attackKick, cylinderBlur, glowLevel, hammerAngle, HealFade, layerOpacities, recoilLeft, recoilTilt, Sway, Tilt, transformPoint, WeaponLight } from './fpWeapon';
+import { altLevel, attackKick, cylinderBlur, glowLevel, hammerAngle, HealFade, layerOpacities, recoilLeft, recoilTilt, Sway, swingPose, Tilt, transformPoint, WeaponLight } from './fpWeapon';
 
 describe('recoil tilt (M11 §3.2)', () => {
   it('is T at the shot, T/4 at D/2 and 0 from D, with D = min(interval, 250 ms)', () => {
@@ -232,5 +232,27 @@ describe('light (M11 §3.5)', () => {
     m.reset(1);
     m.update(0, 1);
     expect(m.update(1 / 60, 0.99)).toBeNull();
+  });
+});
+
+describe('the Scourge swing (M11 §3.6, as reviewed in stage 1)', () => {
+  it('shows each of the chain frames in turn over 300 ms, and nothing outside it', () => {
+    expect(swingPose(-1, 5)).toBeNull();
+    expect(swingPose(300, 5)).toBeNull();
+    expect([0, 59, 60, 150, 299].map((t) => swingPose(t, 5)!.frame)).toEqual([0, 0, 1, 2, 4]);
+  });
+
+  it('is opaque until 240 ms and gone at 300 ms', () => {
+    expect(swingPose(0, 5)!.opacity).toBe(1);
+    expect(swingPose(240, 5)!.opacity).toBe(1);
+    expect(swingPose(270, 5)!.opacity).toBeCloseTo(0.5);
+    expect(swingPose(299.9, 5)!.opacity).toBeLessThan(0.01);
+  });
+
+  it('drops the Chain Gun out of the way and brings it back', () => {
+    expect(swingPose(0, 5)!.gunY).toBe(0);
+    expect(swingPose(150, 5)!.gunY).toBe(30);
+    expect(swingPose(150, 5)!.gunX).toBeCloseTo(3);
+    expect(swingPose(299, 5)!.gunY).toBeLessThan(1);
   });
 });

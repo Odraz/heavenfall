@@ -2,7 +2,7 @@
 
 Every image milestone 6 needs ([mvp.md](mvp.md) §11.2), with a ready-to-paste prompt for each. There are two kinds:
 
-- **Part A, model references (16 images).** Claude builds the characters and first-person weapons as 3D models in Blender and renders them into sprite atlases, as it did for the Blessed. These images show what to build: one front picture to set the look, then front, side and back views to model from. They are never shown in the game.
+- **Part A, model references (16 images).** Claude builds the characters as 3D models in Blender and renders them into sprite atlases, as it did for the Blessed (the first-person weapons were Blender models too until M11 replaced them with paintings; their sheets are still attached to the M11 prompts). These images show what to build: one front picture to set the look, then front, side and back views to model from. They are never shown in the game.
 - **Part B, game assets (43 images).** Used in the game directly, after Claude cuts out the background, crops and resizes them.
 
 The target look is the concept art in `assets/art-src/reference/concept-*.webp`. The game should look like a painted 3D game, but every character is a flat sprite that faces the camera, like in Doom. Pre-rendering 3D models is what gets both: 8 directions and every animation frame come from the same model, which an image generator can't draw consistently.
@@ -124,7 +124,7 @@ Character turnaround reference sheet of the character in the attached image: thr
 
 ### A3 Weapon sheets
 
-The first-person weapons, each held in its class's own hands. The left view is for modeling, the right one shows how it should look on screen. Save in `assets/art-src/reference/`.
+The first-person weapons, each held in its class's own hands. The left view was for modeling (the M8 Blender weapons, replaced in M11 by the paintings below, which attach these sheets), the right one shows how it should look on screen. Save in `assets/art-src/reference/`.
 
 ```text
 Weapon design reference sheet for the <WEAPON> carried by the character in the attached image: two views side by side. Left: an exact side profile of the weapon alone, horizontal, muzzle pointing right. Right: the same weapon as a first-person shooter viewmodel, seen from just behind and above, held in <HANDS>, pointing straight forward into the distance, centered, the hands and the rear of the weapon cut off by the bottom edge of the image. Same design in both views: <DESCRIPTION>. Art style: stylized 3D game art with a hand-inked graphic-novel finish, matching the attached images: bold black ink outlines, cel shading in 2–3 tones with painterly brush texture, crisp edges. Palette: soot black and charred iron with ember red and glowing brimstone-orange accents. Even, flat lighting. Plain flat light grey background, no text, no labels, no scenery. Aspect ratio 16:9.

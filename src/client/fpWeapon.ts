@@ -225,3 +225,29 @@ export class WeaponLight {
     this.written = NaN;
   }
 }
+
+// ------------------------------------------------------------------------------------- the Scourge
+
+/** The Scourge's swing lasts this (M9 §5.1), fading out over its last SWING_FADE_MS. */
+export const SWING_MS = 300;
+const SWING_FADE_MS = 60;
+/** The Chain Gun drops this far (vh) out of the left hand's way during the swing, and jolts this far right. */
+export const SWING_DROP = 30;
+const SWING_JOLT = 3;
+
+/**
+ * The swing `elapsed` ms after the Scourge (M11 §3.6, as reviewed in stage 1): which of the chain's
+ * `frames` shows (with the fist where its hand is), the swing's opacity, and how far the Chain Gun is
+ * moved out of the way (vh, x right, y down). Null outside the swing.
+ */
+export function swingPose(elapsed: number, frames: number): { frame: number; opacity: number; gunX: number; gunY: number } | null {
+  if (!(elapsed >= 0) || elapsed >= SWING_MS) return null;
+  const t = elapsed / SWING_MS;
+  const s = Math.sin(Math.PI * t);
+  return {
+    frame: Math.min(frames - 1, Math.floor(t * frames)),
+    opacity: Math.min(1, (SWING_MS - elapsed) / SWING_FADE_MS),
+    gunX: SWING_JOLT * s,
+    gunY: SWING_DROP * Math.min(1, 1.6 * s),
+  };
+}

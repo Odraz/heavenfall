@@ -5,8 +5,6 @@
  */
 import type { ClassId } from '../data/classes';
 import type { AltKind } from '../client/fpWeapon';
-import binderSwingUrl from '../../assets/sprites/weapon-binder/atlas.png';
-import binderSwingManifest from '../../assets/sprites/weapon-binder/atlas.json';
 
 /** A box in view pixels from the frame's top left. */
 export interface ViewBox {
@@ -72,17 +70,3 @@ export function weaponArt(classId: ClassId): WeaponArt {
     },
   };
 }
-
-/**
- * The Binder's Scourge swing frames from the M9 Blender atlas (M9 §5.1), until M11 stage 3 replaces
- * them: each the bottom half of the view, 600 px tall, stored at 1/`scale` resolution.
- */
-export interface SwingAtlas {
-  url: string;
-  width: number;
-  height: number;
-  frameH: number;
-  swing: { scale: number; frameW: number; centerX: number; frames: number[][] };
-}
-
-export const BINDER_SWING: SwingAtlas = { url: binderSwingUrl, ...(binderSwingManifest as Omit<SwingAtlas, 'url'>) };
