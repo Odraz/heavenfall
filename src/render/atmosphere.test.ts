@@ -27,6 +27,7 @@ describe('atmosphere (M10 §7)', () => {
     expect(cards.filter((c) => c.kind === 'sea').length).toBeGreaterThanOrEqual(30);
     expect(cards.filter((c) => c.kind === 'bank').length).toBeGreaterThanOrEqual(10);
     expect(cards.filter((c) => c.kind === 'wisp').length).toBeLessThanOrEqual(20);
+    expect(cards.filter((c) => c.kind === 'sea').length).toBeLessThanOrEqual(50);
   });
 
   it('6 to 12 spires, at least 25 m apart, all outside the grid', () => {
@@ -48,7 +49,7 @@ describe('atmosphere (M10 §7)', () => {
     expect(placeCards(loadMap(DUNGEONS['pearly-gates']))).toEqual(cards);
   });
 
-  it('at most 24 light shafts, each through a sunlit bay', () => {
+  it('at most 24 light shafts (12 after the cut), each through a sunlit bay', () => {
     const shafts = placeShafts(arches);
     expect(shafts.length).toBeGreaterThan(0);
     expect(shafts.length).toBeLessThanOrEqual(MAX_SHAFTS);

@@ -12,8 +12,8 @@ import { SKY_FOG_GLSL, skyUniforms } from './sky';
 import { SUN_DIR_X, SUN_DIR_Y } from './sun';
 import { SUN } from './lightmap';
 
-/** At most this many light shafts (M10 §7.1). */
-export const MAX_SHAFTS = 24;
+/** At most this many light shafts (M10 §7.1 allows 24; cut to 12 for the performance gate, §2.3). */
+export const MAX_SHAFTS = 12;
 const SHAFT_WIDTH = 2;
 const SHAFT_OPACITY = 0.25;
 /** A shaft fades out as the camera comes closer than this. */
@@ -143,12 +143,14 @@ export function placeCards(map: GameMap): Card[] {
     }
   };
   // The cloud sea below the level, banks the arches frame, wisps close by, then the spires.
-  place('sea', 40, [10, 120], [15, 40], () => lowest - range(10, 40), true);
-  place('bank', 15, [40, 120], [20, 50], (base) => base + range(-10, 10), true);
-  place('wisp', 16, [3, 15], [4, 10], (base) => base + range(-5, 3), true);
+  // The counts are the spec's minimums, and no wisps: cut in its order (wisps, banks, spires) to pass the
+  // performance gate (M10 §2.3, decisions).
+  place('sea', 30, [10, 120], [15, 40], () => lowest - range(10, 40), true);
+  place('bank', 10, [40, 120], [20, 50], (base) => base + range(-10, 10), true);
+  place('wisp', 0, [3, 15], [4, 10], (base) => base + range(-5, 3), true);
   // Spires: feet 20-30 m below the lowest floor, 30-80 m tall (square cards: the painted structure is
   // about 0.4 of the card's width).
-  place('spire', 9, [60, 120], [30, 80], (_base, s) => lowest - range(20, 30) + s / 2, false);
+  place('spire', 6, [60, 120], [30, 80], (_base, s) => lowest - range(20, 30) + s / 2, false);
   const cx = w / 2;
   const cy = h / 2;
   cards.sort((a, b) => Math.hypot(b.x - cx, b.y - cy) - Math.hypot(a.x - cx, a.y - cy));
