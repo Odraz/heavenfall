@@ -31,6 +31,8 @@ AIM_TOL = 115
 MUZZLE_X = (0.55, 0.76)
 MUZZLE_Y = (0.56, 0.68)
 WEBP_QUALITY = 90
+# The gate's cut 3 (M11 §5): every layer stored at this fraction of its storage scale k.
+STORE_CUT = 0.75
 # Opaque specks smaller than this are cleared after keying.
 SPECK_PX = 64
 
@@ -267,6 +269,9 @@ def glow_layer(color: np.ndarray, mask: np.ndarray, blur_px: float) -> np.ndarra
     a = np.clip(p[..., 3], 0, 255)
     with np.errstate(divide='ignore', invalid='ignore'):
         rgb = np.nan_to_num(p[..., :3] / np.maximum(p[..., 3:], 1e-6)) * 255
+    # Drawn with normal alpha, not screen (M11 §5, cut 1): over its own emissive pixels the layer carries
+    # what screen would give there, the color screened over itself, so it brightens them the same way.
+    rgb = np.where(m[..., None] > 0, 255 - (255 - rgb) ** 2 / 255, rgb)
     return np.dstack([np.clip(rgb, 0, 255), a])
 
 
@@ -745,7 +750,7 @@ def weapon(name: str) -> dict:
     pts = opaque_view_points(place, alpha, 0.5 / 255)
     left = max(0, math.floor(pts[:, 0].min()) - FRAME_MARGIN)
     right = min(VIEW_W, math.ceil(pts[:, 0].max()) + FRAME_MARGIN)
-    frame = Frame(left, right, k)
+    frame = Frame(left, right, k * STORE_CUT)
 
     layers: dict[str, np.ndarray] = {}
     hammer = None
@@ -924,7 +929,7 @@ def weapon_group(frame: Frame, layers: dict, glows: dict, which: str = 'idle', g
         composite(grp, layers['cylinder'], cy['x'], cy['y'], cy['w'], cy['h'], opacity=blur)
     key = f'{which}-glow'
     if glows.get(which) and key in layers:
-        composite(grp, layers[key], 0, 0, frame.w, frame.h, mode='screen', opacity=g)
+        composite(grp, layers[key], 0, 0, frame.w, frame.h, opacity=g)
     return grp
 
 
@@ -1003,7 +1008,7 @@ def previews(name: str, manifest: dict, frame: Frame, layers: dict, glows: dict,
         for img, gl in ((orange, orange_glow), (green, green_glow)):
             bg = np.full(img.shape[:2] + (4,), 0, np.float32)
             composite(bg, img, 0, 0, img.shape[1], img.shape[0])
-            composite(bg, gl, 0, 0, img.shape[1], img.shape[0], mode='screen', opacity=0.5)
+            composite(bg, gl, 0, 0, img.shape[1], img.shape[0], opacity=0.5)
             flat = np.full(img.shape[:2] + (3,), 70, np.float32)
             composite(flat, bg, 0, 0, img.shape[1], img.shape[0])
             tiles.append(Image.fromarray(flat.round().clip(0, 255).astype(np.uint8)))
@@ -1054,7 +1059,7 @@ def scourge_preview(name: str, manifest: dict, frame: Frame, layers: dict, glows
     box = (PREVIEW_W / 2 + ch['left'] * s, ch['top'] * s, ch['w'] * s, ch['h'] * s)
     composite(scene, strip[f * fh:(f + 1) * fh], *box)
     rgba = np.dstack([scene, np.full(scene.shape[:2], 255, np.float32)])
-    composite(rgba, glow[f * fh:(f + 1) * fh], *box, mode='screen', opacity=0.5)
+    composite(rgba, glow[f * fh:(f + 1) * fh], *box, opacity=0.5)
     scene = rgba[..., :3].copy()
     hx, hy, ang = sw['hands'][f]
     fist = np.asarray(Image.open(out_dir / 'fist.webp').convert('RGBA')).astype(np.float32)

@@ -9,6 +9,8 @@ import { altLevel, cylinderBlur, recoilLeft, swingPose, glowLevel, hammerAngle, 
 
 /** Recoil in % of the screen height (MVP §10; the slug and the Silver Bullet kick harder, M9 §5.1). */
 const RECOIL_PCT = 8;
+/** The weapon dims in shade (M11 §3.5); a switch kept from the gate's cut 2, which didn't help (M11 §5). */
+const WEAPON_LIGHT = true;
 /** The Field of Blood's rising glow pulses over 1.2 s and flares for 0.3 s on entering (M9 §5.1). */
 const FIELD_PULSE_MS = 1200;
 const FIELD_FLARE_MS = 300;
@@ -562,6 +564,7 @@ export class Hud {
 
   /** The light at the player's position (the lightmap's L, 0–1) over the last `dt` s (M11 §3.5). */
   setLight(L: number, dt: number): void {
+    if (!WEAPON_LIGHT) return;
     const b = this.light.update(dt, L);
     if (b === null) return;
     this.brightness = b;
@@ -570,7 +573,7 @@ export class Hud {
 
   /** The weapon's (and the swing's) filter: its brightness, and the Field of Blood's glow when on. */
   private writeFilters(): void {
-    const f = `brightness(${this.brightness.toFixed(3)})${this.fieldFilter ? ' ' + this.fieldFilter : ''}`;
+    const f = [WEAPON_LIGHT ? `brightness(${this.brightness.toFixed(3)})` : '', this.fieldFilter].filter(Boolean).join(' ');
     this.weaponBox.style.filter = f;
     if (this.swingChain) this.swingChain.style.filter = f;
     if (this.swingFist) this.swingFist.style.filter = f;

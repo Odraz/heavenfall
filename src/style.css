@@ -570,15 +570,16 @@ body {
   background: linear-gradient(#9fd2ff, #3b8fe0);
 }
 
-/*
- * The painted weapon (M11 §3.1): placed and sized by its manifest, its layers stacked inside it. Its
- * transform makes it an isolated group, so the glow layers' screen blend only lightens its own images.
- */
+/* The painted weapon (M11 §3.1): placed and sized by its manifest, its layers stacked inside it. */
 .weapon {
   position: absolute;
   will-change: transform;
 }
 
+/*
+ * Each layer is its own compositor layer, so its per-frame opacity (or the hammer's turn) is composited,
+ * not repainted: painted into the weapon's layer, every change re-rastered the whole weapon (M11 §5).
+ */
 .weapon-layer {
   position: absolute;
   left: 0;
@@ -586,10 +587,11 @@ body {
   width: 100%;
   height: 100%;
   user-select: none;
+  will-change: opacity, transform;
 }
 
+/* Glow layers: normal alpha, their colors made to brighten what they cover (M11 §5, cut 1). */
 .weapon-glow {
-  mix-blend-mode: screen;
   opacity: 0;
 }
 
@@ -597,6 +599,7 @@ body {
 .weapon-swing {
   position: absolute;
   user-select: none;
+  will-change: opacity, transform;
 }
 
 div.weapon-swing {
