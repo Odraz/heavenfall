@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ATTACK_PRIMARY, ATTACK_SECONDARY } from '../data/weapons';
-import { altLevel, attackTilt, cylinderBlur, glowLevel, hammerAngle, HealFade, layerOpacities, recoilTilt, Sway, Tilt, transformPoint, WeaponLight } from './fpWeapon';
+import { altLevel, attackKick, cylinderBlur, glowLevel, hammerAngle, HealFade, layerOpacities, recoilLeft, recoilTilt, Sway, Tilt, transformPoint, WeaponLight } from './fpWeapon';
 
 describe('recoil tilt (M11 §3.2)', () => {
   it('is T at the shot, T/4 at D/2 and 0 from D, with D = min(interval, 250 ms)', () => {
@@ -24,13 +24,14 @@ describe('recoil tilt (M11 §3.2)', () => {
   });
 
   it("takes the table's values, and the Chain Gun's sign alternates", () => {
-    expect(attackTilt('fallen', ATTACK_PRIMARY).deg).toBe(4);
-    expect(attackTilt('fallen', ATTACK_SECONDARY).deg).toBe(6);
-    expect(attackTilt('heretic', ATTACK_PRIMARY).deg).toBe(5);
-    expect(attackTilt('betrayer', ATTACK_PRIMARY).deg).toBe(6);
-    expect(attackTilt('betrayer', ATTACK_SECONDARY).deg).toBe(9);
-    const cg = attackTilt('binder', ATTACK_PRIMARY);
-    expect(cg).toEqual({ deg: 0.8, alternate: true });
+    expect(attackKick('fallen', ATTACK_PRIMARY)).toMatchObject({ deg: 4, recoil: 8 });
+    expect(attackKick('fallen', ATTACK_SECONDARY)).toMatchObject({ deg: 6, recoil: 12 });
+    // The faster weapons kick less (the stage 2 playtest).
+    expect(attackKick('heretic', ATTACK_PRIMARY).recoil).toBeLessThan(8);
+    expect(attackKick('betrayer', ATTACK_PRIMARY).recoil).toBeLessThan(attackKick('betrayer', ATTACK_SECONDARY).recoil);
+    const cg = attackKick('binder', ATTACK_PRIMARY);
+    expect(cg).toMatchObject({ deg: 0.8, alternate: true });
+    expect(cg.recoil).toBeLessThan(2);
     const t = new Tilt();
     const signs = [0, 1, 2, 3].map(() => {
       t.shot(cg.deg, cg.alternate);
@@ -39,6 +40,17 @@ describe('recoil tilt (M11 §3.2)', () => {
     expect(signs).toEqual([0.8, -0.8, 0.8, -0.8]);
     t.shot(6, false);
     expect(t.T).toBe(6);
+  });
+});
+
+describe('recoil (M11 §3.2)', () => {
+  it('falls back over 120 ms, or the interval if shorter, so a fast weapon settles each shot', () => {
+    expect(recoilLeft(0, 800)).toBe(1);
+    expect(recoilLeft(60, 800)).toBeCloseTo(0.5);
+    expect(recoilLeft(120, 800)).toBe(0);
+    const cg = 1000 / 12;
+    expect(recoilLeft(cg, cg)).toBe(0);
+    expect(recoilLeft(Infinity, 800)).toBe(0);
   });
 });
 
@@ -153,6 +165,13 @@ describe('hammer and cylinder (M11 §3.8)', () => {
     expect(cylinderBlur(105, 300)).toBe(1);
     expect(cylinderBlur(120, 300)).toBeCloseTo(0.5);
     expect(cylinderBlur(135, 300)).toBe(0);
+  });
+
+  it('a slow shot (the Silver Bullet) moves them as fast as the revolver: at most 300 ms', () => {
+    for (const t of [20, 45, 90, 120, 135, 200]) {
+      expect(hammerAngle(30, t, 1200)).toBeCloseTo(hammerAngle(30, t, 300));
+      expect(cylinderBlur(t, 1200)).toBeCloseTo(cylinderBlur(t, 300));
+    }
   });
 
   it('halving the interval halves every time', () => {

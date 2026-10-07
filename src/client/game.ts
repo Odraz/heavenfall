@@ -34,7 +34,7 @@ import { DebugOverlay } from '../ui/debugOverlay';
 import { PauseOverlay } from '../ui/pause';
 import type { ResultsData } from '../ui/results';
 import { BenchRunner } from './bench';
-import { attackTilt } from './fpWeapon';
+import { attackKick } from './fpWeapon';
 import { LIGHTMAP_TEXELS } from '../render/lightmap';
 import { Bot, type BotEnemy } from './bot';
 import { corpseFrame, EnemyAnimator, spriteDirection, type Corpse } from './enemyAnim';
@@ -76,10 +76,16 @@ const TRACER_MS = 70;
 /** Tracers are 0.1 m wide; the slug's 0.15 m (M9 §5.1). */
 const TRACER_WIDTH = 0.1;
 const SLUG_TRACER_WIDTH = 0.15;
-/** Recoil in % of the screen height, and the muzzle flash's size, for the heavy shots (M9 §5.1). */
-const SLUG_RECOIL = 12;
+/** The slug's muzzle flash size (M9 §5.1); every attack's recoil is in attackKick (M11). */
 const SLUG_FLASH = 1.3;
-const SILVER_RECOIL = 14;
+/**
+ * The local player's own censer starts at the painted launcher's muzzle (the stage 2 playtest): the
+ * simulation launches it from the eye, so it's drawn from the muzzle, the offset fading over this.
+ * A censer appearing within CENSER_CLAIM_MS of a local censer shot, this near the player, is theirs.
+ */
+const CENSER_BLEND_MS = 250;
+const CENSER_CLAIM_MS = 600;
+const CENSER_CLAIM_DIST = 3;
 /** The Silver Bullet's tracer: an ember strip with a silver-white core, fading over 0.25 s. */
 const SILVER_EMBER = 0xff7a3a;
 const SILVER_CORE = 0xf2f4ff;
@@ -228,6 +234,12 @@ export class Game {
   /** The view's yaw and pitch last frame, for the weapon's sway (M11 §3.2). */
   private swayYaw = 0;
   private swayPitch = 0;
+  /** The local player's censer shots waiting for their projectile, and the censers claimed as theirs, by slot. */
+  private readonly censerShots: Array<{ at: number; from: [number, number, number] }> = [];
+  private readonly ownCensers = new Map<number, { at: number; dx: number; dy: number; dz: number }>();
+  /** Projectile slots drawn this frame and the last. */
+  private projSeen = new Set<number>();
+  private projPrev = new Set<number>();
   /** Whether Sacrament's beam leaves the local player's muzzle this frame (M11 §3.9). */
   private ownBeamOn = false;
   /** When the benchmark's HUD fires next (M11 §5). */
@@ -1055,14 +1067,9 @@ export class Game {
   /** The first-person weapon's shot for an attack: recoil, tilt (M11 §3.2) and muzzle flash. */
   private hudShot(now: number, slot: AttackSlot): void {
     const w = attackDef(this.classId, slot);
-    const { deg, alternate } = attackTilt(this.classId, slot);
-    if (w.kind === 'censer') {
-      this.hud.shot(now, w.interval * 1000, deg, alternate);
-      return;
-    }
-    const secondary = slot === ATTACK_SECONDARY;
-    const heavy = w.kind === 'silverBullet' ? SILVER_RECOIL : secondary ? SLUG_RECOIL : undefined;
-    this.hud.shot(now, w.interval * 1000, deg, alternate, heavy, secondary && w.kind === 'hitscan' ? SLUG_FLASH : 1);
+    const { deg, alternate, recoil } = attackKick(this.classId, slot);
+    const slug = slot === ATTACK_SECONDARY && w.kind === 'hitscan';
+    this.hud.shot(now, w.interval * 1000, deg, alternate, recoil, slug ? SLUG_FLASH : 1);
   }
 
   /**
@@ -1095,18 +1102,19 @@ export class Game {
         }
         return;
       }
-      case 'censer':
+      case 'censer': {
         this.hudShot(now, slot);
         this.sounds.ownShot(this.classId, secondary);
+        const [msx, msy] = this.hud.muzzlePoint(now);
+        this.censerShots.push({ at: now, from: this.unproject(msx, msy, OWN_BEAM_DEPTH) });
         return;
+      }
     }
     this.hudShot(now, slot);
     this.sounds.ownShot(this.classId, secondary);
-    // The muzzle: a little forward, right and down from the eye.
-    const [fx, fy] = [Math.cos(p.yaw), Math.sin(p.yaw)];
-    const mx = ex + fx * 0.6 - fy * 0.15;
-    const my = ey + fy * 0.6 + fx * 0.15;
-    const mz = ez - 0.3;
+    // Tracers start at the painted weapon's muzzle, as drawn this frame (the stage 2 playtest).
+    const [msx, msy] = this.hud.muzzlePoint(now);
+    const [mx, my, mz] = this.unproject(msx, msy, OWN_BEAM_DEPTH);
     const pts: Array<[number, number, number]> = [];
     let hit = false;
     for (let k = 0; k < w.pellets; k++) {
@@ -1553,10 +1561,36 @@ export class Game {
     }
     if (gone) this.corpses.splice(0, gone);
     const proj = this.snaps.projOut;
+    const seen = this.projSeen;
+    seen.clear();
+    while (this.censerShots.length && now - this.censerShots[0].at > CENSER_CLAIM_MS) this.censerShots.shift();
     for (let i = 0; i < proj.count; i++) {
       const k = proj.kind[i];
-      bb.add(this.frames[PROJECTILE_SPRITES[k]], proj.x[i], proj.y[i], proj.z[i], PROJECTILE_SIZES[k], true);
+      const slot = proj.slot[i];
+      seen.add(slot);
+      let x = proj.x[i];
+      let y = proj.y[i];
+      let z = proj.z[i];
+      if (k === PROJ_CENSER) {
+        let own = this.ownCensers.get(slot);
+        // A censer new this frame, near the player, just after a local censer shot: the local player's.
+        if (!own && !this.projPrev.has(slot) && this.censerShots.length && Math.hypot(x - this.player.body.x, y - this.player.body.y) < CENSER_CLAIM_DIST) {
+          const shot = this.censerShots.shift()!;
+          own = { at: now, dx: shot.from[0] - x, dy: shot.from[1] - y, dz: shot.from[2] - z };
+          this.ownCensers.set(slot, own);
+        }
+        if (own) {
+          const f = Math.max(0, 1 - (now - own.at) / CENSER_BLEND_MS);
+          x += own.dx * f;
+          y += own.dy * f;
+          z += own.dz * f;
+        }
+      }
+      bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true);
     }
+    for (const slot of this.ownCensers.keys()) if (!seen.has(slot)) this.ownCensers.delete(slot);
+    this.projSeen = this.projPrev;
+    this.projPrev = seen;
     // Other players, facing their yaw (§11.1); the ally target is tinted gold (§10).
     this.playerAnimator.begin();
     const tethers: Array<[number, number, number, number]> = [];

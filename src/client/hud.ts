@@ -5,9 +5,8 @@ import { mouseGlyph } from '../ui/mouseGlyph';
 import { CHAT_MAX } from '../net/lobby';
 import { spriteUrl } from '../render/atlas';
 import { BINDER_SWING, weaponArt, type ViewBox, type WeaponLayer, type WeaponManifest } from '../render/weaponAtlas';
-import { altLevel, cylinderBlur, glowLevel, hammerAngle, HealFade, layerOpacities, recoilTilt, Sway, Tilt, transformPoint, VH_PER_PX, WeaponLight } from './fpWeapon';
+import { altLevel, cylinderBlur, recoilLeft, glowLevel, hammerAngle, HealFade, layerOpacities, recoilTilt, Sway, Tilt, transformPoint, VH_PER_PX, WeaponLight } from './fpWeapon';
 
-const RECOIL_MS = 120;
 /** Recoil in % of the screen height (MVP §10; the slug and the Silver Bullet kick harder, M9 §5.1). */
 const RECOIL_PCT = 8;
 /** The Scourge's first-person swing (M9 §5.1). */
@@ -520,7 +519,7 @@ export class Hud {
   /** The weapon's offsets this frame in vh (bob, sway, recoil) and its tilt in degrees (M11 §3.2). */
   private pose(now: number): { dx: number; dy: number; tilt: number } {
     const since = now - this.shotAt;
-    const r = Math.max(0, 1 - since / RECOIL_MS);
+    const r = recoilLeft(since, this.fireIntervalMs);
     return { dx: this.bobX + this.sway.x, dy: this.bobY + this.sway.y + r * this.recoilPct, tilt: recoilTilt(this.tilt.T, since, this.fireIntervalMs) };
   }
 

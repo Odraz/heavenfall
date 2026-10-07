@@ -1,8 +1,8 @@
 // M11 screenshots of the painted first-person weapons: for each class, in Arena 1 of the Pearly Gates
 // from a fixed camera, saves screenshots/weapons/<prefix><class>-<shot>.png. Firing is real (pointer lock
 // and mouse buttons); a shot is captured by freezing the game loop the given time after the press.
-// Usage: node scripts/weapon-shots.mjs [--prefix <p>] [--size 1920x1080] [class ...] [-- shot ...]
-//   shots: idle, fire (40 ms after a shot), shade (in the arcade's shadow), cooldown (Q and E pressed),
+// Usage: node scripts/weapon-shots.mjs [--prefix <p>] [--size 1920x1080] [--eye] [class ...] [-- shot ...]
+//   shots: idle, fire (40 ms after a shot; fire-<ms> at another time), shade (in the arcade's shadow), cooldown (Q and E pressed),
 //          down, up (looking at the floor and the sky), beam (the Heretic: Sacrament, needs an ally:
 //          shot by scripts/mp-sacrament.mjs instead), swing-<ms> (the Binder's Scourge)
 // Serves the build in dist/ on port 4176.
@@ -18,6 +18,7 @@ const opt = (name, def) => {
   return i >= 0 ? args.splice(i, 2)[1] : def;
 };
 const prefix = opt('--prefix', '');
+const eye = args.includes('--eye') && args.splice(args.indexOf('--eye'), 1).length > 0;
 const [W, H] = opt('--size', '1920x1080').split('x').map(Number);
 const dash = args.indexOf('--');
 const classes = (dash >= 0 ? args.slice(0, dash) : args).filter(Boolean);
@@ -66,25 +67,35 @@ try {
         problems++;
         console.log(`[${cls} ${shot}] [pageerror] ${e.message}`);
       });
-      await page.goto(`http://localhost:${PORT}/?dev=1&god=1&map=pearly-gates&class=${cls}&cam=${cam}`);
+      // `--eye` shoots from the player's own eyes (so tracers and projectiles start in view), not a fixed camera.
+      await page.goto(`http://localhost:${PORT}/?dev=1&god=1&map=pearly-gates&class=${cls}${eye ? '' : `&cam=${cam}`}`);
       await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame', null, { timeout: 60000 });
       await page.waitForTimeout(2500);
       const box = (await page.locator('canvas').first().boundingBox()) ?? { x: 0, y: 0, width: W, height: H };
       const cx = box.x + box.width / 2;
       const cy = box.y + box.height / 2;
+      // The first click captures the pointer; retried, as a click can land before the page has focus.
       const lock = async () => {
-        await page.mouse.move(cx, cy);
-        await page.mouse.click(cx, cy);
-        await page.waitForFunction(() => document.pointerLockElement !== null, null, { timeout: 5000 });
+        await page.bringToFront();
+        for (let i = 0; ; i++) {
+          await page.mouse.move(cx, cy);
+          await page.mouse.click(cx, cy);
+          try {
+            await page.waitForFunction(() => document.pointerLockElement !== null, null, { timeout: 2000 });
+            return;
+          } catch (e) {
+            if (i >= 3) throw e;
+          }
+        }
       };
       const freeze = () => page.evaluate(() => {
         window.requestAnimationFrame = () => 0;
       });
-      if (shot === 'fire') {
+      if (shot === 'fire' || shot.startsWith('fire-')) {
         await lock();
         await page.waitForTimeout(300);
         await page.mouse.down({ button: 'left' });
-        await page.waitForTimeout(40);
+        await page.waitForTimeout(shot === 'fire' ? 40 : Number(shot.slice(5)));
         await freeze();
         await page.mouse.up({ button: 'left' });
       } else if (shot.startsWith('swing-')) {

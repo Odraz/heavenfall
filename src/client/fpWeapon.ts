@@ -13,20 +13,39 @@ export const VH_PER_PX = 100 / VIEW_H;
 
 // ---------------------------------------------------------------------------------------------- tilt
 
-/** The muzzle's kick per attack, in degrees (M11 §3.2); the Chain Gun alternates up and down. */
-export function attackTilt(classId: ClassId, slot: AttackSlot): { deg: number; alternate: boolean } {
+/**
+ * An attack's kick (M11 §3.2, as tuned in the stage 2 playtest): the muzzle's tilt in degrees (the Chain
+ * Gun's alternates up and down) and the recoil, the weapon pushed down by this % of the screen height. The
+ * shotgun and slug keep M9's 8 and 12; the faster weapons kick less, so they don't shake.
+ */
+export function attackKick(classId: ClassId, slot: AttackSlot): { deg: number; alternate: boolean; recoil: number } {
   const secondary = slot === ATTACK_SECONDARY;
   switch (classId) {
     case 'fallen':
-      return { deg: secondary ? 6 : 4, alternate: false };
+      return secondary ? { deg: 6, alternate: false, recoil: 12 } : { deg: 4, alternate: false, recoil: 8 };
     case 'heretic':
-      return { deg: 5, alternate: false };
+      return { deg: 4, alternate: false, recoil: 5 };
     case 'binder':
-      return { deg: 0.8, alternate: true };
+      return { deg: 0.8, alternate: true, recoil: 1.5 };
     case 'betrayer':
-      return { deg: secondary ? 9 : 6, alternate: false };
+      return secondary ? { deg: 7, alternate: false, recoil: 8 } : { deg: 4, alternate: false, recoil: 3.5 };
   }
 }
+
+/** The recoil falls back over this, or the time between shots if shorter, so a fast weapon settles each shot. */
+export const RECOIL_MS = 120;
+
+/** The recoil's share left `sinceShot` after a shot (1 at the shot, 0 once settled). */
+export function recoilLeft(sinceShot: number, intervalMs: number): number {
+  if (!(sinceShot >= 0) || !Number.isFinite(sinceShot)) return 0;
+  return Math.max(0, 1 - sinceShot / Math.min(RECOIL_MS, intervalMs));
+}
+
+/**
+ * The hammer and cylinder animate over at most this (M11 §3.8, as tuned in the stage 2 playtest): a slow
+ * shot (the Silver Bullet, the Censer Launcher) moves them as fast as the revolver's normal shot.
+ */
+export const ACTION_MAX_MS = 300;
 
 /** The tilt `sinceShot` after a shot of tilt `T`: T (1 − s)², s = sinceShot / min(interval, 250 ms). */
 export function recoilTilt(T: number, sinceShot: number, intervalMs: number): number {
@@ -132,10 +151,10 @@ export function altLevel(kind: AltKind, sinceShot: number, intervalMs: number): 
 
 // ------------------------------------------------------------------------------ hammer and cylinder
 
-/** The hammer's angle (M11 §3.8): `fall` from the shot to s = 0.15, back to 0 by s = 0.45 by (1 − p)². */
+/** The hammer's angle (M11 §3.8): `fall` from the shot to s = 0.15, back to 0 by s = 0.45 by (1 − p)²; s is the time over min(interval, ACTION_MAX_MS). */
 export function hammerAngle(fall: number, sinceShot: number, intervalMs: number): number {
   if (!(sinceShot >= 0) || !Number.isFinite(sinceShot)) return 0;
-  const s = sinceShot / intervalMs;
+  const s = sinceShot / Math.min(intervalMs, ACTION_MAX_MS);
   if (s <= 0.15) return fall;
   if (s >= 0.45) return 0;
   const p = (s - 0.15) / 0.3;
@@ -145,7 +164,7 @@ export function hammerAngle(fall: number, sinceShot: number, intervalMs: number)
 /** The cylinder blur's opacity (M11 §3.8): rising over s 0.15–0.22, held to 0.35, gone by 0.45. */
 export function cylinderBlur(sinceShot: number, intervalMs: number): number {
   if (!(sinceShot >= 0) || !Number.isFinite(sinceShot)) return 0;
-  const s = sinceShot / intervalMs;
+  const s = sinceShot / Math.min(intervalMs, ACTION_MAX_MS);
   if (s <= 0.15 || s >= 0.45) return 0;
   if (s < 0.22) return (s - 0.15) / 0.07;
   if (s <= 0.35) return 1;
