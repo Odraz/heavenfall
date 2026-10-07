@@ -156,6 +156,8 @@ export function placeCards(map: GameMap): Card[] {
 }
 
 const shaftVertex = /* glsl */ `
+  ${SKY_FOG_GLSL}
+  varying vec3 vSkyFog;
   attribute vec3 iTop;
   attribute vec3 iBottom;
   attribute float iPhase;
@@ -179,12 +181,15 @@ const shaftVertex = /* glsl */ `
     vUv = vec2(position.x + 0.5, position.y);
     vec4 world = vec4(p, 1.0);
     vWorld = world.xyz;
+    vSkyFog = skyFogColor(normalize(world.xyz - cameraPosition));
     vec4 mv = viewMatrix * world;
     vFogDepth = -mv.z;
     gl_Position = projectionMatrix * mv;
   }`;
 
 const cardVertex = /* glsl */ `
+  ${SKY_FOG_GLSL}
+  varying vec3 vSkyFog;
   attribute vec4 iCard;   // x, z, y (three.js order), size
   attribute vec4 iUv;     // u0, v0, u1, v1
   attribute vec4 iDrift;  // amplitude, period, phase, spire (1) or cloud (0)
@@ -215,6 +220,7 @@ const cardVertex = /* glsl */ `
     vUv = mix(iUv.xy, iUv.zw, position.xy + 0.5);
     vec4 world = vec4(p, 1.0);
     vWorld = world.xyz;
+    vSkyFog = skyFogColor(normalize(world.xyz - cameraPosition));
     vec4 mv = viewMatrix * world;
     vFogDepth = -mv.z;
     gl_Position = projectionMatrix * mv;
@@ -228,7 +234,7 @@ const fragment = /* glsl */ `
   uniform float fogNear;
   uniform float fogFar;
   ${FOG_GLSL}
-  ${SKY_FOG_GLSL}
+  varying vec3 vSkyFog;
   varying vec2 vUv;
   varying float vAlpha;
   varying vec3 vWorld;
@@ -238,7 +244,7 @@ const fragment = /* glsl */ `
     float a = t.a * vAlpha;
     if (a < 0.003) discard;
     // Fogged into the sky behind it, so a far card melts into the painting.
-    vec3 c = mix(t.rgb * tint, skyFogColor(normalize(vWorld - cameraPosition)), heavenFog(vFogDepth));
+    vec3 c = mix(t.rgb * tint, vSkyFog, heavenFog(vFogDepth));
     gl_FragColor = vec4(c, a);
     #include <colorspace_fragment>
   }`;

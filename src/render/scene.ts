@@ -5,7 +5,7 @@ import type { GameMap } from '../sim/map';
 import { buildTerrain, type Terrain } from './terrain';
 import { Atmosphere } from './atmosphere';
 import { FOG_FAR, FOG_NEAR, installFogCurve } from './fog';
-import { FOG_COLOR, makeSky } from './sky';
+import { FOG_COLOR, makeSky, setSkyLod } from './sky';
 import type { TerrainTextures } from './textures';
 import type { RenderStats } from '../client/bench';
 
@@ -54,6 +54,7 @@ export class GameScene {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    setSkyLod(this.sky, this.renderer.getDrawingBufferSize(new THREE.Vector2()).y, this.camera.fov);
   };
 
   /** Shows or hides an arena's closed entry and exit door columns. */

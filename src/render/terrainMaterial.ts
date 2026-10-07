@@ -11,6 +11,8 @@ import { LIGHT_GAIN, LIT, SHADE } from './lightmap';
 import { SKY_FOG_GLSL, skyUniforms } from './sky';
 
 const VERTEX = /* glsl */ `
+  ${SKY_FOG_GLSL}
+  varying vec3 vSkyFog;
   attribute float layer;
   attribute float fade;
   attribute float shadowZ;
@@ -32,6 +34,9 @@ const VERTEX = /* glsl */ `
     vFloor = floorTop;
     vec4 world = modelMatrix * vec4(position, 1.0);
     vWorld = world.xyz;
+    // The sky's color behind this point, which the scenery fogs into (M10 §4.2): it changes slowly
+    // with the direction, so it's found per vertex and interpolated.
+    vSkyFog = skyFogColor(normalize(world.xyz - cameraPosition));
     vec4 mv = viewMatrix * world;
     vFogDepth = -mv.z;
     gl_Position = projectionMatrix * mv;
@@ -49,7 +54,7 @@ const FRAGMENT = /* glsl */ `
   uniform float fogNear;
   uniform float fogFar;
   ${FOG_GLSL}
-  ${SKY_FOG_GLSL}
+  varying vec3 vSkyFog;
   varying vec2 vUv;
   varying vec3 vColor;
   flat varying float vLayer;
@@ -90,8 +95,7 @@ const FRAGMENT = /* glsl */ `
       // A sun-facing face's shadow line, with a soft edge 0.2 m tall.
       c *= mix(vec3(1.0), SHADOW_TINT, 1.0 - smoothstep(vShadowZ - 0.2, vShadowZ, vWorld.y));
     }
-    vec3 sky = skyFogColor(normalize(vWorld - cameraPosition));
-    c = mix(c, sky, max(vFade, heavenFog(vFogDepth)));
+    c = mix(c, vSkyFog, max(vFade, heavenFog(vFogDepth)));
     gl_FragColor = vec4(c, alpha);
     #include <colorspace_fragment>
   }`;

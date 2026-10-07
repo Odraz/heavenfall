@@ -56,20 +56,23 @@ const SKY_COMMON = /* glsl */ `
 /** GLSL: `vec3 skyColor(vec3 dir)` for a unit direction in three.js space (the sky dome). */
 export const SKY_GLSL = /* glsl */ `
   ${SKY_COMMON}
+  uniform float skyLod;
   vec3 skyColor(vec3 dir) {
     vec3 k = skyCoords(dir);
-    // The jump of atan2 behind the viewer lands on the same texel, but would pick the smallest mip
-    // there: take the gradient of u from a copy whose jump is elsewhere, whichever is smaller.
-    float u2 = k.x < 0.0 ? k.x + 2.0 : k.x;
-    vec2 dx = vec2(dFdx(k.x), dFdx(k.y));
-    vec2 dy = vec2(dFdy(k.x), dFdy(k.y));
-    float dx2 = dFdx(u2);
-    float dy2 = dFdy(u2);
-    if (abs(dx2) < abs(dx.x)) dx.x = dx2;
-    if (abs(dy2) < abs(dy.x)) dy.x = dy2;
-    vec3 band = textureGrad(skyBand, vec2(k.x, clamp(k.y, 0.0, 1.0)), dx, dy).rgb;
+    // One mip level for the whole view, from the angle a pixel covers (setSkyLod): no derivatives,
+    // so the jump of atan2 behind the viewer draws no seam either.
+    vec3 band = textureLod(skyBand, vec2(k.x, clamp(k.y, 0.0, 1.0)), skyLod).rgb;
     return skyBlend(band, k.y, k.z);
   }`;
+
+/**
+ * The sky's mip level for a view (M10 §4.2): the band's texels per pixel, from its 180° width and the
+ * angle one pixel covers vertically. Set when the canvas or the field of view changes.
+ */
+export function setSkyLod(sky: THREE.Mesh, heightPx: number, fovYDeg: number): void {
+  const texelsPerPx = (SKY_WIDTH / Math.PI) * (((fovYDeg * Math.PI) / 180) / Math.max(1, heightPx));
+  ((sky.material as THREE.ShaderMaterial).uniforms.skyLod as THREE.IUniform).value = Math.max(0, Math.log2(texelsPerPx));
+}
 
 /** The sky's mip level about 100 px wide, for the scenery's fog (M10 §4.2). */
 const SKY_FOG_LOD = Math.log2(SKY_WIDTH / 100);
@@ -94,6 +97,7 @@ export function skyUniforms(band: THREE.Texture): Record<string, THREE.IUniform>
     skyBottom: { value: new THREE.Color(SKY_BOTTOM_COLOR) },
     skyZenith: { value: new THREE.Color(SKY_ZENITH_COLOR) },
     skyFog: { value: new THREE.Color(FOG_COLOR) },
+    skyLod: { value: 0 },
   };
 }
 
