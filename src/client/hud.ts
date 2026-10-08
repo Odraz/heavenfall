@@ -4,13 +4,13 @@ import { ABILITIES, WEAPONS } from '../data/weapons';
 import { mouseGlyph } from '../ui/mouseGlyph';
 import { CHAT_MAX } from '../net/lobby';
 import { spriteUrl } from '../render/atlas';
-import { fireFrame, weaponAtlas, type WeaponManifest } from '../render/weaponAtlas';
+import { weaponArt, type ViewBox, type WeaponLayer, type WeaponManifest } from '../render/weaponAtlas';
+import { altLevel, cylinderBlur, recoilLeft, swingPose, glowLevel, hammerAngle, HealFade, layerOpacities, recoilTilt, Sway, Tilt, transformPoint, VH_PER_PX, WeaponLight } from './fpWeapon';
 
-const RECOIL_MS = 120;
 /** Recoil in % of the screen height (MVP §10; the slug and the Silver Bullet kick harder, M9 §5.1). */
 const RECOIL_PCT = 8;
-/** The Scourge's first-person swing (M9 §5.1). */
-const SWING_MS = 300;
+/** The weapon dims in shade (M11 §3.5); a switch kept from the gate's cut 2, which didn't help (M11 §5). */
+const WEAPON_LIGHT = true;
 /** The Field of Blood's rising glow pulses over 1.2 s and flares for 0.3 s on entering (M9 §5.1). */
 const FIELD_PULSE_MS = 1200;
 const FIELD_FLARE_MS = 300;
@@ -39,6 +39,11 @@ const CHAT_SHOW_MS = 10000;
 const CHAT_FADE_MS = 1000;
 const CHAT_LINES = 6;
 
+/** View pixels (M11 §1) as a CSS length. */
+function vh(px: number): string {
+  return `${(px * VH_PER_PX).toFixed(4)}vh`;
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, parent: HTMLElement): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   e.className = className;
@@ -59,19 +64,35 @@ export class Hud {
   private readonly hpFill: HTMLDivElement;
   private readonly shieldFill: HTMLDivElement;
   private readonly hpText: HTMLDivElement;
-  /** The weapon and its muzzle flash, moved together by the recoil. */
+  /**
+   * The painted weapon (M11 §3): its box, placed by the manifest and moved by one transform, holding the
+   * idle image, the alt image, the hammer, the cylinder blur, the green censer and the glow layers. The
+   * muzzle flash is drawn behind it, at its transformed muzzle.
+   */
   private readonly weaponBox: HTMLDivElement;
-  private readonly weapon: HTMLDivElement;
+  private readonly layers: Partial<Record<WeaponLayer, HTMLImageElement>> = {};
   private readonly flash: HTMLImageElement;
   private readonly weaponManifest: WeaponManifest;
-  /** The last shot's fire animation length, recoil and muzzle flash scale (M9 §5.1). */
+  /** The last shot's interval, recoil and muzzle flash scale (M9 §5.1), and its tilt (M11 §3.2). */
   private fireIntervalMs: number;
   private recoilPct = RECOIL_PCT;
   private flashOn = true;
-  private weaponFrame = -2;
-  /** The Scourge swing frames, drawn instead of the weapon frame while it plays. */
-  private readonly swingBox: HTMLDivElement | null = null;
-  private readonly swingSprite: HTMLDivElement | null = null;
+  private readonly tilt = new Tilt();
+  /** The weapon's lag behind the view's turning (M11 §3.2), its brightness in shade (§3.5), the green censer (§3.9). */
+  readonly sway = new Sway();
+  private readonly light = new WeaponLight();
+  private brightness = 1;
+  private fieldFilter = '';
+  private readonly heal = new HealFade();
+  /** The last values written per style, so an unchanged one isn't rewritten. */
+  private readonly written = new Map<string, string>();
+  /**
+   * The Scourge (M11 §3.6): the chain's frames (one image, its glow screened over it) and the painted fist
+   * over them where the hand is, drawn over the Chain Gun while the swing plays.
+   */
+  private readonly swingChain: HTMLDivElement | null = null;
+  private readonly swingFist: HTMLImageElement | null = null;
+  private readonly swingLayers: HTMLImageElement[] = [];
   private swingAt = -Infinity;
   private swingFrame = -2;
   /** A steady green vignette while a Sacrament beam heals the player (M9 §5.1). */
@@ -145,6 +166,65 @@ export class Hud {
 
   constructor(parent: HTMLElement, classId: ClassId, multiplayer: boolean) {
     this.root = el('div', 'hud', parent);
+    // The weapon first, under every other HUD element (M11 §3.7). The muzzle flash is behind the weapon,
+    // outside its box so its screen blend reaches the game view (M8 §3.3).
+    const art = weaponArt(classId);
+    const m = art.manifest;
+    this.weaponManifest = m;
+    this.fireIntervalMs = WEAPONS[classId].interval * 1000;
+    this.flash = el('img', 'muzzle-flash', this.root);
+    this.flash.src = spriteUrl('muzzle-flash');
+    this.flash.alt = '';
+    this.weaponBox = el('div', 'weapon', this.root);
+    const box = this.weaponBox.style;
+    box.left = `calc(50% + ${vh(m.left)})`;
+    box.top = vh(m.top);
+    box.width = vh(m.w);
+    box.height = vh(m.h);
+    box.transformOrigin = `${vh(m.pivot[0] - m.left)} ${vh(m.pivot[1] - m.top)}`;
+    const layer = (name: WeaponLayer, at?: ViewBox, blend = false): HTMLImageElement => {
+      const img = el('img', blend ? 'weapon-layer weapon-glow' : 'weapon-layer', this.weaponBox);
+      img.src = art.url(name);
+      img.alt = '';
+      img.draggable = false;
+      if (at) Object.assign(img.style, { left: vh(at.x), top: vh(at.y), width: vh(at.w), height: vh(at.h) });
+      // Decoded now: the layers first shown by a shot (the alt frame, the green censer) would stall it.
+      img.decode().catch(() => {});
+      this.layers[name] = img;
+      return img;
+    };
+    layer('idle');
+    if (m.alt) layer('alt');
+    if (m.hammer) layer('hammer', m.hammer).style.transformOrigin = `${vh(m.hammer.hinge[0] - m.hammer.x)} ${vh(m.hammer.hinge[1] - m.hammer.y)}`;
+    if (m.cylinder) layer('cylinder', m.cylinder);
+    if (m.heal) layer('censer-green', m.heal);
+    if (m.glow) layer('idle-glow', undefined, true);
+    if (m.alt?.glow) layer('alt-glow', undefined, true);
+    if (m.heal) layer('censer-green-glow', m.heal, true);
+    if (m.swing) {
+      const sw = m.swing;
+      this.swingChain = el('div', 'weapon-swing', this.root);
+      Object.assign(this.swingChain.style, { left: `calc(50% + ${vh(sw.chain.left)})`, top: vh(sw.chain.top), width: vh(sw.chain.w), height: vh(sw.chain.h) });
+      // The frames stacked in one image, shown one at a time through the box (it clips the rest).
+      for (const [name, cls] of [['chain', 'swing-strip'], ['chain-glow', 'swing-strip weapon-glow']] as const) {
+        const strip = el('img', cls, this.swingChain);
+        strip.src = art.url(name);
+        strip.alt = '';
+        strip.draggable = false;
+        strip.style.height = `${sw.chain.frames * 100}%`;
+        this.swingLayers.push(strip);
+      }
+      this.swingFist = el('img', 'weapon-swing', this.root);
+      this.swingFist.src = art.url('fist');
+      this.swingFist.alt = '';
+      this.swingFist.draggable = false;
+      Object.assign(this.swingFist.style, { width: vh(sw.fist.w), height: vh(sw.fist.h), transformOrigin: `${vh(sw.fist.center[0])} ${vh(sw.fist.center[1])}` });
+      this.swingChain.hidden = true;
+      this.swingFist.hidden = true;
+      // Decoded now, not on the first swing: the chain's frames decoding then stalled it by 100 ms.
+      for (const img of [...this.swingLayers, this.swingFist]) img.decode().catch(() => {});
+    }
+
     this.vignettes = {
       red: el('div', 'vignette vignette-red', this.root),
       green: el('div', 'vignette vignette-green', this.root),
@@ -213,34 +293,6 @@ export class Hud {
     for (const [k, v] of Object.entries({ cx: '20', cy: '20', r: String(BUFF_R), transform: 'rotate(-90 20 20)', 'stroke-dasharray': `${BUFF_C} ${BUFF_C}` })) this.buffArc.setAttribute(k, v);
     buffSvg.appendChild(this.buffArc);
     this.buff.appendChild(buffSvg);
-
-    // The weapon frame covers the bottom half of the screen (600 px = 50vh), placed so its
-    // screen-center column lies on the screen's center line (§11.1).
-    const wa = weaponAtlas(classId);
-    const m = wa.manifest;
-    const vh = (px: number) => `${(px / m.frameH) * 50}vh`;
-    this.weaponManifest = m;
-    this.fireIntervalMs = WEAPONS[classId].interval * 1000;
-    // The muzzle flash is drawn behind the weapon frame, so the barrel overlaps it, and outside the
-    // weapon's box so its screen blend reaches the game view (M8 §3.3).
-    this.flash = el('img', 'muzzle-flash', this.root);
-    this.flash.src = spriteUrl('muzzle-flash');
-    this.weaponBox = el('div', 'weapon', this.root);
-    this.weaponBox.style.left = `calc(50% - ${vh(m.centerX)})`;
-    this.weaponBox.style.width = vh(m.frameW);
-    this.weapon = el('div', 'weapon-sprite', this.weaponBox);
-    this.weapon.style.backgroundImage = `url(${wa.url})`;
-    this.weapon.style.backgroundSize = `${vh(m.width)} ${vh(m.height)}`;
-    this.setWeaponFrame(-1);
-    if (m.swing) {
-      this.swingBox = el('div', 'weapon', this.root);
-      this.swingBox.style.left = `calc(50% - ${vh(m.swing.centerX)})`;
-      this.swingBox.style.width = vh(m.swing.frameW);
-      this.swingBox.hidden = true;
-      this.swingSprite = el('div', 'weapon-sprite', this.swingBox);
-      this.swingSprite.style.backgroundImage = `url(${wa.url})`;
-      this.swingSprite.style.backgroundSize = `${vh(m.width * m.swing.scale)} ${vh(m.height * m.swing.scale)}`;
-    }
 
     const abil = el('div', 'abilities', this.root);
     this.abilities = (['Q', 'E'] as const).map((key) => {
@@ -462,12 +514,13 @@ export class Hud {
   }
 
   /**
-   * A shot: recoil (`recoil` % of the screen height), the fire frames over the shorter of `intervalMs`
-   * and 0.3 s, and a muzzle flash `flashScale` times its size, or none. Each flash gets a random
-   * rotation and scale (M8 §3.3).
+   * A shot: recoil (`recoil` % of the screen height), the muzzle tipping up by `tilt` degrees (M11 §3.2;
+   * `alternate` flips its sign each shot), the glow, alt frame and hammer of `intervalMs`, and a muzzle
+   * flash `flashScale` times its size, or none. Each flash gets a random rotation and scale (M8 §3.3).
    */
-  shot(now: number, intervalMs: number, recoil = RECOIL_PCT, flashScale = 1, flash = true): void {
+  shot(now: number, intervalMs: number, tilt: number, alternate = false, recoil = RECOIL_PCT, flashScale = 1, flash = true): void {
     this.shotAt = now;
+    this.tilt.shot(tilt, alternate);
     this.fireIntervalMs = intervalMs;
     this.recoilPct = recoil;
     this.flashOn = flash;
@@ -480,14 +533,50 @@ export class Hud {
     this.swingAt = now;
   }
 
-  /** The first-person muzzle point on screen in CSS pixels, with the recoil and bob (for Sacrament's beam). */
+  /**
+   * The weapon's offsets this frame in vh (bob, sway, recoil, and moving out of the Scourge's way) and its
+   * tilt in degrees (M11 §3.2, §3.6).
+   */
+  private pose(now: number): { dx: number; dy: number; tilt: number } {
+    const since = now - this.shotAt;
+    const r = recoilLeft(since, this.fireIntervalMs);
+    const sw = this.weaponManifest.swing ? swingPose(now - this.swingAt, this.weaponManifest.swing.chain.frames) : null;
+    return {
+      dx: this.bobX + this.sway.x + (sw?.gunX ?? 0),
+      dy: this.bobY + this.sway.y + r * this.recoilPct + (sw?.gunY ?? 0),
+      tilt: recoilTilt(this.tilt.T, since, this.fireIntervalMs),
+    };
+  }
+
+  /** The first-person muzzle point on screen in CSS pixels, transformed with the weapon (for Sacrament's beam and the flash). */
   muzzlePoint(now: number): [number, number] {
     const m = this.weaponManifest;
-    const [, , mx, my] = this.weaponFrame < 0 ? m.idle[0] : m.fire[this.weaponFrame];
-    const vhPx = window.innerHeight / 100;
-    const k = (50 * vhPx) / m.frameH;
-    const r = Math.max(0, 1 - (now - this.shotAt) / RECOIL_MS);
-    return [window.innerWidth / 2 + (mx - m.centerX) * k + this.bobX * vhPx, 50 * vhPx + my * k + (r * this.recoilPct + this.bobY) * vhPx];
+    const { dx, dy, tilt } = this.pose(now);
+    const [x, y] = transformPoint(m.muzzle, m.pivot, tilt, dx / VH_PER_PX, dy / VH_PER_PX);
+    const k = (window.innerHeight / 100) * VH_PER_PX;
+    return [window.innerWidth / 2 + x * k, y * k];
+  }
+
+  /** While Sacrament's beam leaves the local player's muzzle, the censer glows green (M11 §3.9). */
+  setHealing(on: boolean, now: number): void {
+    this.heal.set(on, now);
+  }
+
+  /** The light at the player's position (the lightmap's L, 0–1) over the last `dt` s (M11 §3.5). */
+  setLight(L: number, dt: number): void {
+    if (!WEAPON_LIGHT) return;
+    const b = this.light.update(dt, L);
+    if (b === null) return;
+    this.brightness = b;
+    this.writeFilters();
+  }
+
+  /** The weapon's (and the swing's) filter: its brightness, and the Field of Blood's glow when on. */
+  private writeFilters(): void {
+    const f = [WEAPON_LIGHT ? `brightness(${this.brightness.toFixed(3)})` : '', this.fieldFilter].filter(Boolean).join(' ');
+    this.weaponBox.style.filter = f;
+    if (this.swingChain) this.swingChain.style.filter = f;
+    if (this.swingFist) this.swingFist.style.filter = f;
   }
 
   /**
@@ -499,9 +588,8 @@ export class Hud {
     this.inField = on;
     if (on) this.fieldEnteredAt = now;
     this.crosshair.classList.toggle('blood', on);
-    const glow = on ? 'drop-shadow(0 0 14px rgba(200, 24, 24, 0.85))' : '';
-    this.weaponBox.style.filter = glow;
-    if (this.swingBox) this.swingBox.style.filter = glow;
+    this.fieldFilter = on ? 'drop-shadow(0 0 14px rgba(200, 24, 24, 0.85))' : '';
+    this.writeFilters();
   }
 
   /** The steady green vignette while a Sacrament beam is on the player (M9 §5.1). */
@@ -509,7 +597,7 @@ export class Hud {
     this.beamVignette.style.opacity = on ? '0.15' : '0';
   }
 
-  /** The weapon frame's bob offset in % of the screen height (M8 §3.4). */
+  /** The weapon's bob offset in % of the screen height (M8 §3.4). */
   setBob(x: number, y: number): void {
     this.bobX = x;
     this.bobY = y;
@@ -616,53 +704,78 @@ export class Hud {
     this.result.hidden = false;
   }
 
-  /** The swing frame for the time since the Scourge, shown in place of the weapon frame while it plays. */
-  private updateSwing(now: number, offset: string): void {
+  /**
+   * The Scourge (M11 §3.6): the chain's frame of the moment and the fist where its hand is, turned along
+   * its forearm, with the weapon's bob, sway and light, fading out at the end.
+   */
+  private updateSwing(now: number): void {
     const sw = this.weaponManifest.swing;
-    if (!sw || !this.swingBox || !this.swingSprite) return;
-    const t = now - this.swingAt;
-    const f = t >= 0 && t < SWING_MS ? Math.min(sw.frames.length - 1, Math.floor((t / SWING_MS) * sw.frames.length)) : -1;
+    if (!sw || !this.swingChain || !this.swingFist) return;
+    const pose = swingPose(now - this.swingAt, sw.chain.frames);
+    const f = pose ? pose.frame : -1;
     if (f !== this.swingFrame) {
       this.swingFrame = f;
-      this.swingBox.hidden = f < 0;
-      this.weaponBox.style.visibility = f < 0 ? '' : 'hidden';
+      this.swingChain.hidden = f < 0;
+      this.swingFist.hidden = f < 0;
       if (f >= 0) {
-        const m = this.weaponManifest;
-        const vh = (px: number) => `${(px / m.frameH) * 50}vh`;
-        this.swingSprite.style.backgroundPosition = `-${vh(sw.frames[f][0] * sw.scale)} -${vh(sw.frames[f][1] * sw.scale)}`;
+        const at = `translateY(${((-f / sw.chain.frames) * 100).toFixed(4)}%)`;
+        for (const l of this.swingLayers) l.style.transform = at;
+        const [hx, hy] = sw.hands[f];
+        this.swingFist.style.left = `calc(50% + ${vh(hx - sw.fist.center[0])})`;
+        this.swingFist.style.top = vh(hy - sw.fist.center[1]);
       }
     }
-    if (f >= 0) this.swingBox.style.transform = offset;
+    if (!pose) return;
+    const offset = `translate(${(this.bobX + this.sway.x).toFixed(3)}vh, ${(this.bobY + this.sway.y).toFixed(3)}vh)`;
+    this.swingChain.style.transform = offset;
+    this.swingFist.style.transform = `${offset} rotate(${(sw.hands[f][2] - sw.fist.angle).toFixed(2)}deg)`;
+    const op = pose.opacity >= 1 ? '1' : pose.opacity.toFixed(3);
+    this.put(this.swingChain, 'swing-chain', 'opacity', op);
+    this.put(this.swingFist, 'swing-fist', 'opacity', op);
   }
 
-  /** Shows fire frame `f` (0–3), or the idle frame for -1, with the flash at its muzzle. */
-  private setWeaponFrame(f: number): void {
-    if (f === this.weaponFrame) return;
-    this.weaponFrame = f;
+  /** Sets a style property unless it already has that value. */
+  private put(e: HTMLElement, key: string, prop: 'opacity' | 'transform' | 'visibility', value: string): void {
+    if (this.written.get(key) === value) return;
+    this.written.set(key, value);
+    e.style[prop] = value;
+  }
+
+  /** The painted weapon this frame (M11 §3): its transform, the alt frame, hammer, cylinder, censer and glow. */
+  private updateWeapon(now: number): void {
     const m = this.weaponManifest;
-    const [x, y, mx, my] = f < 0 ? m.idle[0] : m.fire[f];
-    const vh = (px: number) => `${(px / m.frameH) * 50}vh`;
-    this.weapon.style.backgroundPosition = `-${vh(x)} -${vh(y)}`;
-    // The weapon frame's top is at half the screen height.
-    this.flash.style.left = `calc(50% - ${vh(m.centerX)} + ${vh(mx)})`;
-    this.flash.style.top = `calc(50vh + ${vh(my)})`;
+    const L = this.layers;
+    const { dx, dy, tilt } = this.pose(now);
+    this.weaponBox.style.transform = `translate(${dx.toFixed(3)}vh, ${dy.toFixed(3)}vh) rotate(${tilt.toFixed(3)}deg)`;
+    const since = now - this.shotAt;
+    const a = m.alt ? altLevel(m.alt.kind, since, this.fireIntervalMs) : 0;
+    const h = m.heal ? this.heal.value(now) : 0;
+    const o = layerOpacities(glowLevel(now, since), a, h);
+    const op = (n: number) => (n <= 0 ? '0' : n >= 1 ? '1' : n.toFixed(3));
+    if (L.idle) this.put(L.idle, 'idle', 'visibility', a >= 1 ? 'hidden' : 'visible');
+    if (L.alt) this.put(L.alt, 'alt', 'opacity', op(a));
+    if (L['idle-glow']) this.put(L['idle-glow'], 'idle-glow', 'opacity', op(o.idleGlow));
+    if (L['alt-glow']) this.put(L['alt-glow'], 'alt-glow', 'opacity', op(o.altGlow));
+    if (L['censer-green']) this.put(L['censer-green'], 'censer', 'opacity', op(o.censer));
+    if (L['censer-green-glow']) this.put(L['censer-green-glow'], 'censer-glow', 'opacity', op(o.censerGlow));
+    if (L.hammer && m.hammer) this.put(L.hammer, 'hammer', 'transform', `rotate(${hammerAngle(m.hammer.fall, since, this.fireIntervalMs).toFixed(2)}deg)`);
+    if (L.cylinder) this.put(L.cylinder, 'cylinder', 'opacity', op(cylinderBlur(since, this.fireIntervalMs)));
   }
 
   update(now: number): void {
-    // Recoil: 8% of the screen height (more for heavy shots), recovering over 120 ms; plus the bob.
-    const r = Math.max(0, 1 - (now - this.shotAt) / RECOIL_MS);
-    const offset = `translate(${this.bobX.toFixed(3)}vh, ${(r * this.recoilPct + this.bobY).toFixed(3)}vh)`;
-    this.weaponBox.style.transform = offset;
-    this.setWeaponFrame(fireFrame(now - this.shotAt, this.fireIntervalMs));
-    this.updateSwing(now, offset);
+    this.updateWeapon(now);
+    this.updateSwing(now);
     // The field's glow: 0.25–0.35 over 1.2 s, flaring to 0.5 for 0.3 s on entering.
     if (this.inField) {
       const pulse = 0.3 + 0.05 * Math.sin((now / FIELD_PULSE_MS) * Math.PI * 2);
       this.fieldGlow.style.opacity = (now - this.fieldEnteredAt < FIELD_FLARE_MS ? 0.5 : pulse).toFixed(3);
     } else this.fieldGlow.style.opacity = '0';
     const flashing = this.flashOn && now - this.shotAt < FLASH_MS;
-    this.flash.style.opacity = flashing ? '0.9' : '0';
-    if (flashing) this.flash.style.transform = `${offset} rotate(${this.flashRotate.toFixed(1)}deg) scale(${this.flashScale.toFixed(3)})`;
+    this.put(this.flash, 'flash', 'opacity', flashing ? '0.9' : '0');
+    if (flashing) {
+      const [fx, fy] = this.muzzlePoint(now);
+      this.flash.style.transform = `translate(${fx.toFixed(1)}px, ${fy.toFixed(1)}px) rotate(${this.flashRotate.toFixed(1)}deg) scale(${this.flashScale.toFixed(3)})`;
+    }
     // The kill marker replaces the hit marker while shown.
     const killing = now - this.killAt < KILL_MARKER_MS;
     this.hitMarker.style.opacity = !killing && now - this.hitAt < HIT_MARKER_MS ? '1' : '0';

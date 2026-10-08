@@ -3,7 +3,7 @@ import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
 import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
-import { ABILITIES, ATTACK_NONE, ATTACK_SECONDARY, attackDef, BLASPHEMY_RADIUS, chooseAttack, SCOURGE_HALF_ARC, SECONDARIES, type AttackSlot } from '../data/weapons';
+import { ABILITIES, ATTACK_NONE, ATTACK_PRIMARY, ATTACK_SECONDARY, attackDef, BLASPHEMY_RADIUS, chooseAttack, SCOURGE_HALF_ARC, SECONDARIES, type AttackSlot } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
@@ -34,6 +34,8 @@ import { DebugOverlay } from '../ui/debugOverlay';
 import { PauseOverlay } from '../ui/pause';
 import type { ResultsData } from '../ui/results';
 import { BenchRunner } from './bench';
+import { attackKick } from './fpWeapon';
+import { LIGHTMAP_TEXELS } from '../render/lightmap';
 import { Bot, type BotEnemy } from './bot';
 import { corpseFrame, EnemyAnimator, spriteDirection, type Corpse } from './enemyAnim';
 import { FpsCounter } from './fps';
@@ -52,6 +54,8 @@ import { PlayerAnimator } from './playerAnim';
 import { SnapshotBuffer, type InterpolatedEnemies } from './snapshots';
 
 const BENCH_TURN_RATE = 0.3;
+/** A move longer than this in one frame is a teleport: the weapon's sway resets (M11 §3.2, as the bob). */
+const SWAY_TELEPORT = 2;
 /** The gate view's camera (M10 gate §4): it looks at the middle of the boss arena's west wall, 10° up. */
 const GATE_VIEW_X = 6;
 const GATE_VIEW_Y = 75;
@@ -72,10 +76,16 @@ const TRACER_MS = 70;
 /** Tracers are 0.1 m wide; the slug's 0.15 m (M9 §5.1). */
 const TRACER_WIDTH = 0.1;
 const SLUG_TRACER_WIDTH = 0.15;
-/** Recoil in % of the screen height, and the muzzle flash's size, for the heavy shots (M9 §5.1). */
-const SLUG_RECOIL = 12;
+/** The slug's muzzle flash size (M9 §5.1); every attack's recoil is in attackKick (M11). */
 const SLUG_FLASH = 1.3;
-const SILVER_RECOIL = 14;
+/**
+ * The local player's own censer starts at the painted launcher's muzzle (the stage 2 playtest): the
+ * simulation launches it from the eye, so it's drawn from the muzzle, the offset fading over this.
+ * A censer appearing within CENSER_CLAIM_MS of a local censer shot, this near the player, is theirs.
+ */
+const CENSER_BLEND_MS = 250;
+const CENSER_CLAIM_MS = 600;
+const CENSER_CLAIM_DIST = 3;
 /** The Silver Bullet's tracer: an ember strip with a silver-white core, fading over 0.25 s. */
 const SILVER_EMBER = 0xff7a3a;
 const SILVER_CORE = 0xf2f4ff;
@@ -221,6 +231,19 @@ export class Game {
   private attack: AttackSlot = ATTACK_NONE;
   /** Cosmetic fire timer, shared by both attacks and run locally at 30 Hz (M9 §2.2). */
   private fireTimer = 0;
+  /** The view's yaw and pitch last frame, for the weapon's sway (M11 §3.2). */
+  private swayYaw = 0;
+  private swayPitch = 0;
+  /** The local player's censer shots waiting for their projectile, and the censers claimed as theirs, by slot. */
+  private readonly censerShots: Array<{ at: number; from: [number, number, number] }> = [];
+  private readonly ownCensers = new Map<number, { at: number; dx: number; dy: number; dz: number }>();
+  /** Projectile slots drawn this frame and the last. */
+  private projSeen = new Set<number>();
+  private projPrev = new Set<number>();
+  /** Whether Sacrament's beam leaves the local player's muzzle this frame (M11 §3.9). */
+  private ownBeamOn = false;
+  /** When the benchmark's HUD fires next (M11 §5). */
+  private benchFireAt = 0;
   /** Each player's primary and secondary attacks, unwrapped from the snapshots' counters (M9 §10). */
   private readonly shotCounts = new Map<number, { raw: number; raw2: number; n: number; n2: number }>();
   /** The Field of Blood on screen (M9 §5.1), its coins in flight, and whether the local player stands in it. */
@@ -1041,6 +1064,14 @@ export class Game {
     return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
   }
 
+  /** The first-person weapon's shot for an attack: recoil, tilt (M11 §3.2) and muzzle flash. */
+  private hudShot(now: number, slot: AttackSlot): void {
+    const w = attackDef(this.classId, slot);
+    const { deg, alternate, recoil } = attackKick(this.classId, slot);
+    const slug = slot === ATTACK_SECONDARY && w.kind === 'hitscan';
+    this.hud.shot(now, w.interval * 1000, deg, alternate, recoil, slug ? SLUG_FLASH : 1);
+  }
+
   /**
    * Cosmetic attack feedback, local and immediate (§10, M9 §5.1): muzzle flash and recoil; hitscan
    * attacks also draw a tracer per pellet to where the local ray stops, and show a hit marker when it
@@ -1071,19 +1102,19 @@ export class Game {
         }
         return;
       }
-      case 'censer':
-        this.hud.shot(now, w.interval * 1000);
+      case 'censer': {
+        this.hudShot(now, slot);
         this.sounds.ownShot(this.classId, secondary);
+        const [msx, msy] = this.hud.muzzlePoint(now);
+        this.censerShots.push({ at: now, from: this.unproject(msx, msy, OWN_BEAM_DEPTH) });
         return;
+      }
     }
-    const heavy = w.kind === 'silverBullet' ? SILVER_RECOIL : secondary ? SLUG_RECOIL : undefined;
-    this.hud.shot(now, w.interval * 1000, heavy, secondary && w.kind === 'hitscan' ? SLUG_FLASH : 1);
+    this.hudShot(now, slot);
     this.sounds.ownShot(this.classId, secondary);
-    // The muzzle: a little forward, right and down from the eye.
-    const [fx, fy] = [Math.cos(p.yaw), Math.sin(p.yaw)];
-    const mx = ex + fx * 0.6 - fy * 0.15;
-    const my = ey + fy * 0.6 + fx * 0.15;
-    const mz = ez - 0.3;
+    // Tracers start at the painted weapon's muzzle, as drawn this frame (the stage 2 playtest).
+    const [msx, msy] = this.hud.muzzlePoint(now);
+    const [mx, my, mz] = this.unproject(msx, msy, OWN_BEAM_DEPTH);
     const pts: Array<[number, number, number]> = [];
     let hit = false;
     for (let k = 0; k < w.pellets; k++) {
@@ -1166,9 +1197,11 @@ export class Game {
       if (!q) return null;
       return q.dead ? [q.x, q.y, q.z + this.souls.drawnRise(q.id, now) + SOUL_HEIGHT / 2] : [q.x, q.y, q.z + PLAYER_HEIGHT / 2];
     };
+    this.ownBeamOn = false;
     if (this.classId === 'heretic' && this.attack === ATTACK_SECONDARY && !this.dead) {
       const to = bodyOf(this.allyTargetId);
       if (to) {
+        this.ownBeamOn = true;
         const [sx, sy] = this.hud.muzzlePoint(now);
         beams.push([this.unproject(sx, sy, OWN_BEAM_DEPTH), to]);
         beamed.add(this.allyTargetId);
@@ -1244,6 +1277,11 @@ export class Game {
       else if (this.params.benchView === 'gate') p.yaw = Math.atan2(GATE_VIEW_Y - p.body.y, GATE_VIEW_X - p.body.x);
       else p.yaw += BENCH_TURN_RATE * dt;
       p.pitch = this.params.benchView === 'gate' ? GATE_VIEW_PITCH : 0;
+      // M11 §5: the HUD alone fires the primary attack every interval (no simulation, tracers or sound).
+      if (this.params.benchHudFire && now >= this.benchFireAt) {
+        this.hudShot(now, ATTACK_PRIMARY);
+        this.benchFireAt = Math.max(this.benchFireAt + attackDef(this.classId, ATTACK_PRIMARY).interval * 1000, now - 100);
+      }
     } else if (this.bot) {
       const be = this.botEnemies;
       be.length = ents.count;
@@ -1304,8 +1342,20 @@ export class Game {
     const bx = p.body.x;
     const by = p.body.y;
     if (!this.dead && !this.bench && !this.over) p.update(this.map, dt, mx, my, wantJump);
-    this.bob.update(Math.min(dt, MAX_FRAME_DT), Math.hypot(p.body.x - bx, p.body.y - by), p.speed, p.body.grounded && !p.leaping, this.dead);
+    const moved = Math.hypot(p.body.x - bx, p.body.y - by);
+    this.bob.update(Math.min(dt, MAX_FRAME_DT), moved, p.speed, p.body.grounded && !p.leaping, this.dead);
     this.hud.setBob(this.bob.weaponX, this.bob.weaponY);
+    // The weapon lags behind the view's turning (M11 §3.2), reset on a teleport like the bob.
+    const ft = Math.min(dt, MAX_FRAME_DT);
+    const turn = (a: number, b: number) => ((((a - b) * 180) / Math.PI + 540) % 360) - 180;
+    const yawRate = ft > 0 ? turn(p.yaw, this.swayYaw) / ft : 0;
+    const pitchRate = ft > 0 ? turn(p.pitch, this.swayPitch) / ft : 0;
+    this.hud.sway.update(ft, yawRate, pitchRate, this.dead, moved > SWAY_TELEPORT);
+    this.swayYaw = p.yaw;
+    this.swayPitch = p.pitch;
+    // The weapon dims in shade like the characters (M11 §3.5); under a fixed screenshot camera, in its light.
+    const lc = this.params.cam;
+    this.hud.setLight(lc ? this.lightAt(lc.x, lc.y) : this.lightAt(p.body.x, p.body.y), ft);
 
     // The cosmetic fire timer, at 30 Hz like the host's, with the same choice of attack (M9 §2.1,
     // §2.2); Sacrament can fire while there's a local ally target.
@@ -1373,6 +1423,7 @@ export class Game {
     }
     this.drawBillboards(now, ents, enemyZ);
     const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
+    this.hud.setHealing(this.ownBeamOn, now);
     this.hud.setBeamed(beamed.has(this.localId));
     this.party?.setBeamed(beamed);
     this.scene.render();
@@ -1395,6 +1446,15 @@ export class Game {
   };
 
   private readonly glowScratch: Glow = { r: 1, g: 1, b: 1, a: 0 };
+
+  /** The baked lightmap's L (0–1) at a point (M10 §5.4), nearest texel; 1 off the map. */
+  private lightAt(x: number, y: number): number {
+    const img = this.scene.terrain.lightmap.image as { data: Uint8Array; width: number; height: number };
+    const tx = Math.floor(x * LIGHTMAP_TEXELS);
+    const ty = Math.floor(y * LIGHTMAP_TEXELS);
+    if (tx < 0 || ty < 0 || tx >= img.width || ty >= img.height) return 1;
+    return img.data[(ty * img.width + tx) * 4 + 3] / 255;
+  }
 
   /** The floor height of the cell at a point (−∞ over walls and outside the grid). */
   private readonly floorAt = (x: number, y: number): number => {
@@ -1501,10 +1561,36 @@ export class Game {
     }
     if (gone) this.corpses.splice(0, gone);
     const proj = this.snaps.projOut;
+    const seen = this.projSeen;
+    seen.clear();
+    while (this.censerShots.length && now - this.censerShots[0].at > CENSER_CLAIM_MS) this.censerShots.shift();
     for (let i = 0; i < proj.count; i++) {
       const k = proj.kind[i];
-      bb.add(this.frames[PROJECTILE_SPRITES[k]], proj.x[i], proj.y[i], proj.z[i], PROJECTILE_SIZES[k], true);
+      const slot = proj.slot[i];
+      seen.add(slot);
+      let x = proj.x[i];
+      let y = proj.y[i];
+      let z = proj.z[i];
+      if (k === PROJ_CENSER) {
+        let own = this.ownCensers.get(slot);
+        // A censer new this frame, near the player, just after a local censer shot: the local player's.
+        if (!own && !this.projPrev.has(slot) && this.censerShots.length && Math.hypot(x - this.player.body.x, y - this.player.body.y) < CENSER_CLAIM_DIST) {
+          const shot = this.censerShots.shift()!;
+          own = { at: now, dx: shot.from[0] - x, dy: shot.from[1] - y, dz: shot.from[2] - z };
+          this.ownCensers.set(slot, own);
+        }
+        if (own) {
+          const f = Math.max(0, 1 - (now - own.at) / CENSER_BLEND_MS);
+          x += own.dx * f;
+          y += own.dy * f;
+          z += own.dz * f;
+        }
+      }
+      bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true);
     }
+    for (const slot of this.ownCensers.keys()) if (!seen.has(slot)) this.ownCensers.delete(slot);
+    this.projSeen = this.projPrev;
+    this.projPrev = seen;
     // Other players, facing their yaw (§11.1); the ally target is tinted gold (§10).
     this.playerAnimator.begin();
     const tethers: Array<[number, number, number, number]> = [];

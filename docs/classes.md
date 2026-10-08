@@ -15,7 +15,7 @@ Numbers here are starting points for the spec.
 
 ## Milestone 9: the class rework
 
-M9 is dedicated to the changes below; halos and ultimates move to M11. In short:
+M9 is dedicated to the changes below; halos and ultimates move to M12 (M10 became the level art, M11 the first-person weapons). In short:
 
 - **Every class gets a secondary attack** on the right mouse button.
 - **The Fallen:** the shotgun knocks enemies back, Falling Star launches them into the air, and it moves slower.
@@ -100,7 +100,7 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 - **Fire rate, not damage.** A Blessed has 20 HP, and most attacks already kill one per hit, so doubled damage would be wasted in the swarm. Twice the fire rate doubles every class's kills there and its damage on the boss.
 - **The theme:** Judas's thirty pieces bought the Field of Blood. The Betrayer doesn't lead the damned; it pays them.
 - Field of Blood replaces Kiss of Betrayal as the party's boss multiplier, and it works in the swarm too.
-- **Thirty Pieces of Silver** stays reserved as the name for the Betrayer's ultimate (M11).
+- **Thirty Pieces of Silver** stays reserved as the name for the Betrayer's ultimate (M12).
 
 ## Exact rules
 

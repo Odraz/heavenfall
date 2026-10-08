@@ -3,8 +3,12 @@
  * input use the unbobbed eye.
  */
 
-/** One bob cycle per player walk stride (§11.1). */
+/**
+ * One bob cycle per player walk stride (§11.1), at most BOB_HZ cycles a second: the fast classes (8 and
+ * 9 m/s) take longer strides, so their weapon doesn't shake (the M11 stage 2 playtest).
+ */
 const STRIDE = 2.5;
+const BOB_HZ = 6 / STRIDE;
 /** The eye moves down by this much at the bottom of each step. */
 const EYE_DROP = 0.035;
 /** Weapon frame sway, in % of the screen height: sideways and down. */
@@ -33,7 +37,7 @@ export class ViewBob {
     const moving = dt > 0 && grounded && !dead;
     const target = moving ? Math.min(1, dist / dt / speed) : 0;
     this.amp += (target - this.amp) * (1 - Math.exp(-Math.max(0, dt) / EASE));
-    if (moving) this.phase = (this.phase + (2 * Math.PI * dist) / STRIDE) % (2 * Math.PI);
+    if (moving) this.phase = (this.phase + (2 * Math.PI * dist) / Math.max(STRIDE, speed / BOB_HZ)) % (2 * Math.PI);
     const s = Math.sin(this.phase);
     this.eyeDrop = EYE_DROP * Math.abs(s) * this.amp;
     this.weaponX = WEAPON_X * s * this.amp;

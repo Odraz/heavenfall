@@ -26,7 +26,13 @@ describe('URL parameters (§2.5)', () => {
   });
 
   it('ignores other parameters with bench=1', () => {
-    expect(parseParams('?bench=1&dev=1&bot=1&god=1&class=fallen')).toMatchObject({ benchArena: 0, dev: false, bot: false, god: false, classId: 'betrayer', mapId: 'sandbox', benchView: 'turn' });
+    expect(parseParams('?bench=1&dev=1&bot=1&god=1&seed=5')).toMatchObject({ benchArena: 0, dev: false, bot: false, god: false, seed: null, classId: 'betrayer', mapId: 'sandbox', benchView: 'turn', benchHudFire: false });
+  });
+
+  it('takes the class and the HUD fire with bench=1 (M11 §5)', () => {
+    expect(parseParams('?bench=1&class=binder&hudfire=1')).toMatchObject({ classId: 'binder', benchHudFire: true });
+    expect(parseParams('?bench=1&class=nobody')).toMatchObject({ classId: 'betrayer', benchHudFire: false });
+    expect(parseParams('?dev=1&hudfire=1')).toMatchObject({ benchHudFire: false });
   });
 
   it('takes the map and the view with bench=1 (M10 §2.3)', () => {

@@ -29,6 +29,8 @@ export interface Params {
    * the boss arena, fixed looking at the gate (M10 gate §4).
    */
   benchView: BenchView;
+  /** The benchmark's HUD fires the class's primary attack every interval (M11 §5, `hudfire=1`). */
+  benchHudFire: boolean;
   /**
    * A fixed camera for screenshots (M10 §11), with dev=1 or bench=1: `cam=x,y,z,yaw,pitch`, a point
    * in map meters (z: height above the map's zero; empty: eye height above the floor there) and angles in degrees.
@@ -66,7 +68,11 @@ export function parseParams(search: string): Params {
     const benchView: BenchView = view === 'arcade' || view === 'gate' ? view : 'turn';
     const boss = benchView === 'gate' ? getDungeon(mapId)!.arenas.findIndex((a) => a.boss) : -1;
     const benchArena = Math.max(0, boss);
-    return { dev: false, benchArena, bot: false, god: false, mapId, classId: 'betrayer', classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, cam: parseCam(q.get('cam')) };
+    // The class the benchmark plays: the `class` parameter (M11 §5), the Betrayer by default.
+    const cls = q.get('class');
+    const classId: ClassId = isClassId(cls) ? cls : 'betrayer';
+    const benchHudFire = q.get('hudfire') === '1';
+    return { dev: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, cam: parseCam(q.get('cam')) };
   }
   // Without dev=1 (or bench=1) the page opens the menus.
   const dev = q.get('dev') === '1';
@@ -90,6 +96,7 @@ export function parseParams(search: string): Params {
     autojoin: bot && !dev && join !== null && q.get('autojoin') === '1',
     name: q.get('name'),
     benchView: 'turn',
+    benchHudFire: false,
     cam: dev ? parseCam(q.get('cam')) : null,
   };
 }

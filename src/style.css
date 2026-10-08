@@ -570,34 +570,90 @@ body {
   background: linear-gradient(#9fd2ff, #3b8fe0);
 }
 
+/* The painted weapon (M11 §3.1): placed and sized by its manifest, its layers stacked inside it. */
 .weapon {
   position: absolute;
-  bottom: 0;
-  height: 50vh;
+  will-change: transform;
 }
 
-.weapon-sprite {
+/*
+ * Each layer is its own compositor layer, so its per-frame opacity (or the hammer's turn) is composited,
+ * not repainted: painted into the weapon's layer, every change re-rastered the whole weapon (M11 §5).
+ */
+.weapon-layer {
   position: absolute;
-  inset: 0;
-  background-repeat: no-repeat;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  will-change: opacity, transform;
 }
 
-/* Behind the weapon frame, blended as light (M8 §3.3). */
+/* Glow layers: normal alpha, their colors made to brighten what they cover (M11 §5, cut 1). */
+.weapon-glow {
+  opacity: 0;
+}
+
+/* The Scourge (M11 §3.6): the chain's frames, one image shown a frame at a time, and the fist. */
+.weapon-swing {
+  position: absolute;
+  user-select: none;
+  will-change: opacity, transform;
+}
+
+div.weapon-swing {
+  overflow: hidden;
+}
+
+.swing-strip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+}
+
+.swing-strip.weapon-glow {
+  opacity: 0.5;
+}
+
+/* Behind the weapon, blended as light (M8 §3.3), placed at the transformed muzzle each shot. */
 .muzzle-flash {
   position: absolute;
+  left: 0;
+  top: 0;
   width: 16vh;
   translate: -50% -50%;
   opacity: 0;
   mix-blend-mode: screen;
 }
 
-/* The slots sit so their key labels (20 px, 6 px below them) are 24 px from the bottom (M9 §6.4). */
+/* Under every other HUD element (M11 §3.7): the weapon, its flash and the swing at 0, the rest at 1. */
+.hud > .weapon,
+.hud > .muzzle-flash,
+.hud > .weapon-swing {
+  z-index: 0;
+}
+
+.hud > :not(.weapon, .muzzle-flash, .weapon-swing) {
+  z-index: 1;
+}
+
+/*
+ * The slots sit so their key labels (20 px, 6 px below them) are 24 px from the bottom (M9 §6.4). A dark
+ * plate behind the slots and labels keeps them readable over the weapon and the bright world (M11 §3.7):
+ * its padding grows outward from the slots, which stay where they were (right 24 px, bottom 50 px).
+ */
 .abilities {
   position: absolute;
-  right: 24px;
-  bottom: 50px;
+  right: 16px;
+  bottom: 16px;
   display: flex;
   gap: 12px;
+  padding: 8px 8px 34px;
+  background: rgba(14, 10, 8, 0.7);
+  border-radius: 10px;
+  box-shadow: 0 0 16px 6px rgba(14, 10, 8, 0.5);
 }
 
 .ability {

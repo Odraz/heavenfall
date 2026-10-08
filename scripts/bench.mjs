@@ -10,6 +10,9 @@
 //   --runs <n>     run n times and print the median and the spread (slowest − fastest)
 //   --cooldown <s> wait s seconds before each run after the first, so a laptop that heats up under
 //                  back-to-back runs (and throttles) starts each one cool
+//   --class <id>   the class the benchmark plays (default: the Betrayer) (M11 §5)
+//   --hud-fire     the HUD fires the class's primary attack every interval for the whole run: only the
+//                  first-person weapon's cosmetic shot, no simulation, tracers or sound (M11 §5)
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -25,9 +28,13 @@ const mapId = option('--map');
 const view = option('--view');
 const runs = Math.max(1, Number(option('--runs') ?? 1) || 1);
 const cooldown = Math.max(0, Number(option('--cooldown') ?? 0) || 0);
+const classId = option('--class');
+const hudFire = process.argv.includes('--hud-fire');
 const query = new URLSearchParams({ bench: '1' });
 if (mapId) query.set('map', mapId);
 if (view) query.set('view', view);
+if (classId) query.set('class', classId);
+if (hudFire) query.set('hudfire', '1');
 const BENCH_URL = `http://localhost:${PORT}/?${query}`;
 
 let serverExited = false;

@@ -2,7 +2,7 @@
 
 Every image milestone 6 needs ([mvp.md](mvp.md) §11.2), with a ready-to-paste prompt for each. There are two kinds:
 
-- **Part A, model references (16 images).** Claude builds the characters and first-person weapons as 3D models in Blender and renders them into sprite atlases, as it did for the Blessed. These images show what to build: one front picture to set the look, then front, side and back views to model from. They are never shown in the game.
+- **Part A, model references (16 images).** Claude builds the characters as 3D models in Blender and renders them into sprite atlases, as it did for the Blessed (the first-person weapons were Blender models too until M11 replaced them with paintings; their sheets are still attached to the M11 prompts). These images show what to build: one front picture to set the look, then front, side and back views to model from. They are never shown in the game.
 - **Part B, game assets (43 images).** Used in the game directly, after Claude cuts out the background, crops and resizes them.
 
 The target look is the concept art in `assets/art-src/reference/concept-*.webp`. The game should look like a painted 3D game, but every character is a flat sprite that faces the camera, like in Doom. Pre-rendering 3D models is what gets both: 8 directions and every animation frame come from the same model, which an image generator can't draw consistently.
@@ -124,7 +124,7 @@ Character turnaround reference sheet of the character in the attached image: thr
 
 ### A3 Weapon sheets
 
-The first-person weapons, each held in its class's own hands. The left view is for modeling, the right one shows how it should look on screen. Save in `assets/art-src/reference/`.
+The first-person weapons, each held in its class's own hands. The left view was for modeling (the M8 Blender weapons, replaced in M11 by the paintings below, which attach these sheets), the right one shows how it should look on screen. Save in `assets/art-src/reference/`.
 
 ```text
 Weapon design reference sheet for the <WEAPON> carried by the character in the attached image: two views side by side. Left: an exact side profile of the weapon alone, horizontal, muzzle pointing right. Right: the same weapon as a first-person shooter viewmodel, seen from just behind and above, held in <HANDS>, pointing straight forward into the distance, centered, the hands and the rear of the weapon cut off by the bottom edge of the image. Same design in both views: <DESCRIPTION>. Art style: stylized 3D game art with a hand-inked graphic-novel finish, matching the attached images: bold black ink outlines, cel shading in 2–3 tones with painterly brush texture, crisp edges. Palette: soot black and charred iron with ember red and glowing brimstone-orange accents. Even, flat lighting. Plain flat light grey background, no text, no labels, no scenery. Aspect ratio 16:9.
@@ -567,3 +567,135 @@ The top of a tall heavenly gatepost, exactly like the crowned spires on the whit
 
 #### Kept for later: the cathedral-style gate
 The first attempt, a cathedral front with towers and a pointed portal, isn't used by this gate. It's kept for later level design. Save the full-quality originals in `assets/art-src/reference/` as `cathedral-gate-front` (the towers, sunburst and portal) and `cathedral-gate-doors` (the scrolled doors), JPEG.
+
+---
+
+## First-person weapons (M11)
+
+8 images for the painted weapons in the player's hands ([m11.md](m11.md)): one view per class, plus three changed copies and the Binder's chain. Each image is a whole **16:9 first-person view**, with everything but the weapon and hands flat green. Claude cuts the weapon out and puts it on screen exactly where it is in the image, so **where it sits in the frame matters**. Save them in `assets/art-src/` as PNG (JPEG is fine too).
+
+**Size:** the weapon is on screen all the time and big, so generate at the **largest size your tool offers**. Then upscale to **at least 3 840 × 2 160** (the generator's own upscale, or a free AI upscaler such as Upscayl).
+
+- [x] `fp-fallen`
+- [ ] `fp-fallen-pump`: skipped (it didn't come out right); Claude makes the pump from `fp-fallen`
+- [x] `fp-heretic`
+- [x] `fp-heretic-empty`: made, but not used (its muzzle came out ugly); Claude removes the censer from `fp-heretic` instead
+- [x] `fp-binder`: made **without hands** (the right hand didn't come out right)
+- [x] `fp-binder-spin`
+- [x] `fp-binder-sweep`: made in place of `fp-binder-scourge`, the left fist alone. The chain comes from `chain-ring.png`
+- [x] `fp-betrayer`
+
+**Optional:** `fp-binder`, `fp-binder-spin`, `fp-binder-sweep` and `fp-betrayer` are about 930 px tall, so they're a little soft on large screens. Upscaled copies (Upscayl, a digital-art model, 4×) saved under the same names would make them sharper. Upscale the Binder's pair with the same settings so they still line up.
+
+**Order:** make each class's main image first, then its changed copy from it. Generate each main image in a new chat.
+
+### The four weapons
+
+All four use this template, with the class's values from the table below.
+
+```text
+This is not a game screenshot and not a scene: no enemies, no HUD, no crosshair, no level. A first-person shooter weapon view showing only the player's own weapon and hands, framed like the weapon in the first attached image: the <WEAPON> held in <HANDS>, coming into the frame from the bottom edge <SIDE>, pointing forward into the distance toward the center of the image, angled slightly inward. The muzzle is just below and right of the image center, at about <MX>% of the image width from the left and 58% of the image height from the top. No part of the weapon or hands reaches higher than 45% of the image height from the top. The forearms are cut off cleanly by the bottom edge of the image. The weapon's design is copied exactly from the attached weapon sheet: <DESCRIPTION>. The hands and forearms match the attached character. Art style: stylized 3D game art with a hand-inked graphic-novel finish, matching the attached images: bold black ink outlines (a thick outer contour, thinner inner lines), cel shading in 2–3 tones softened with painterly brush texture, worn and scratched metal with crisp highlights, light ink hatching in the deepest shadows, warm golden key light from the upper left and a soft cool fill from the right. The glowing parts glow brightly inside their own outlines. Palette: soot black and charred iron with ember red and glowing brimstone-orange accents. Everything except the weapon, hands and forearms is flat pure green (#00FF00): no background, no floor, no sky, no text, no muzzle flash, no smoke, no sparks, no glow or haze outside the outline. Aspect ratio 16:9.
+```
+
+| File | Attach | `<WEAPON>` | `<HANDS>` | `<SIDE>` | `<MX>` | `<DESCRIPTION>` |
+|---|---|---|---|---|---|---|
+| `fp-fallen.png` | `concept-1.webp`, `weapon-shotgun-sheet.png`, `fallen-front.png` | Brimstone Shotgun | both of the Fallen's charred-black armored gauntlets with glowing molten-orange cracks and spiked vambraces, the right hand on the grip and the left hand on the pump under the barrel | right of center | 58 | a heavy pump-action shotgun of blackened iron with a wide double barrel, glowing red-orange runes carved along the barrel and stock, molten seams, a small orange front sight |
+| `fp-heretic.png` | `concept-1.webp`, `weapon-censer-sheet.png`, `heretic-front.png` | Censer Launcher | soot-black cloth-wrapped hands with ember-red bandages and ragged black sleeves, the right hand on the grip and the left hand under the barrel | right of center | 58 | a stubby wide-mouthed launcher of blackened bronze covered in gothic church filigree, a round incense censer with glowing orange coals loaded in its muzzle and clearly visible, a short chain hanging below |
+| `fp-binder.png` | `concept-2.webp`, `weapon-chaingun-sheet.png`, `binder-front.png` | Chain Gun | only the right hand, in a black iron glove with chain links wrapped around the wrist, on the rear grip; the left hand is not in view | right of center | 58 | a rotary chain gun with six blackened barrels whose front ends are clearly visible, glowing red-hot bands around the barrels, wrapped in heavy chains, a belt of chain links feeding into its side |
+| `fp-betrayer.png` | `concept-3.webp`, `weapon-revolver-sheet.png`, `betrayer-front.png` | Silver Revolver | slim black leather gloves in a two-handed grip, the right hand on the grip and the left hand cupped under it | a little right of center | 54 | an ornate long-barreled silver revolver with engraved filigree, a six-chamber cylinder, a black grip and a small blood-red gem on the hammer |
+
+The concept images are in `assets/art-src/reference/`, like the weapon sheets and the character fronts. They show the framing: the weapon low on the right, pointing at the center.
+
+**Pointing fix.** If the weapon looks turned to the left (you see its whole side, and it seems to aim past the center), add this sentence right after the one about the muzzle and generate again:
+```text
+The weapon points straight ahead, away from the viewer, exactly at the center of the image: we see it mostly from behind and a little from above, its back end nearest to us and its muzzle farthest, with only a thin sliver of its side visible. The line of the barrel, continued forward, runs through the exact center of the image.
+```
+The delivered Censer Launcher and Silver Revolver look turned left. Claude can rotate them on screen so they aim at the crosshair (see [m11.md](m11.md) §2), but a rotation can't hide the side the painting shows. Regenerate them with this fix if they still look turned in the previews.
+
+**If Gemini paints a whole game scene** (enemies, a level, a HUD) instead of the weapon on green, start a new chat and attach only the weapon sheet and the character front.
+
+**Check before saving:**
+- only the weapon, hands and forearms, everything else clean flat green;
+- the weapon comes in from the bottom edge, and nothing of it is in the top 45% of the image;
+- the muzzle is a little right of and below the center;
+- the design matches the weapon sheet; the hands match the class;
+- no muzzle flash, smoke, text or glow outside the outline.
+
+### The changed copies
+
+Each is the main image with one thing changed, so the game can swap between them. Start a new chat and **attach only the finished main image** (after upscaling is fine).
+
+```text
+Edit the attached image. Change only this: <CHANGE>. Keep everything else exactly as it is: the same image size and framing, the same position, angle and size of the weapon and hands, the same lines, colors and light, and the same flat pure green (#00FF00) background. No muzzle flash, no smoke, no sparks, no glow outside the outline, no text.
+```
+
+| File | Attach | `<CHANGE>` |
+|---|---|---|
+| `fp-heretic-empty.png` | `fp-heretic.png` | the incense censer in the launcher's muzzle is gone, just fired: the muzzle is an empty dark bronze bore with a faint orange glow deep inside |
+| `fp-binder-spin.png` | `fp-binder.png` | the six barrels are spinning very fast: paint the barrel cluster as a smooth circular motion blur around its axis, the glowing red-hot bands smeared into continuous bright rings, the barrels' front ends blurred into one ring; the chains wrapped around the barrels blurred the same way |
+| `fp-fallen-pump.png` (optional) | `fp-fallen.png` | the pump grip under the barrel and the left hand holding it slide back toward the viewer by about the length of the hand, as when racking a pump-action shotgun; the barrel and the right hand stay exactly where they are |
+
+**Check before saving:** lay the two images over each other (or flip between them): only the named part changed, nothing else moved. If the whole weapon shifted or changed shape, try again.
+
+### The Binder's chain — `fp-binder-scourge.png` · 16:9
+
+The Scourge: the Binder's free left hand whips a chain across the view. The game swings this image across the screen, so it only shows the fist and the chain. Start a new chat. Attach `fp-binder.png` (to match its style and gloves) and `binder-front.png`.
+
+```text
+This is not a game screenshot and not a scene. A first-person view of only the player's left forearm and fist swinging a chain, as a separate overlay for the attached first-person weapon image, in exactly its style: the left forearm comes in from the bottom-left corner of the image, the fist in a black iron glove with chain links wrapped around the wrist, matching the attached images, at about 20% of the image width from the left and 85% of the image height from the top, gripping a heavy chain of red-hot glowing iron links. The chain sweeps out from the fist toward the upper right in one long smooth curve, as if whipped hard from left to right, and ends in a heavy hooked iron weight with red-hot edges at about 75% of the image width from the left and 45% of the image height from the top. The speed is shown by painted streaks and smeared highlights along the links, inside the chain's outline. Art style: stylized 3D game art with a hand-inked graphic-novel finish: bold black ink outlines, cel shading in 2–3 tones with painterly brush texture, warm golden key light from the upper left. Everything except the forearm, fist, chain and weight is flat pure green (#00FF00): no gun, no right hand, no background, no text, no glow or haze outside the outline. Aspect ratio 16:9.
+```
+
+**Check before saving:** one forearm, fist, chain and weight, nothing else (no gun, no second hand); the chain is one continuous curve with a crisp outline; clean flat green around it.
+
+---
+
+## Pro character models (Meshy)
+
+The images Meshy turns into 3D models, for the sprites rendered from professional models (milestone not numbered yet). The whole process is in [meshy-guide.md](meshy-guide.md). The Blessed is the pilot; the other characters follow once it works.
+
+These images are **inputs for Meshy, not art**. Meshy paints the image's colors onto the model, so the views must be flat (no light, no shadows) and the background a plain grey it can remove. Save them in `assets/art-src/reference/`.
+
+- [ ] `blessed-design.png`: the upgraded look
+- [ ] `blessed-turnaround.png`: front, side and back for Meshy (Claude cuts it into `blessed-mv-front.png`, `blessed-mv-side.png`, `blessed-mv-back.png`)
+- [ ] `blessed-sword.png`: the sword on its own
+
+### The Blessed's design — `blessed-design.png` · 9:16
+
+Attach: `blessed-front.jpg`, `concept-4.jfif`
+
+Raises the Blessed to the concept's level of detail while keeping who he is. Two changes on purpose: the robe becomes a **tabard that ends above the knee** (Meshy's rigging gives legs bones but not a long robe, which would stretch like rubber between the legs), and there is **no halo** (the game draws it in code, so it always faces the camera).
+
+```text
+A redesign of the first attached character, the Blessed, a holy pilgrim-soldier of Heaven and the most common enemy, keeping his identity: a gaunt, bald old man with a short white beard and blind, pale white eyes, ivory cloth with sky-blue trim and polished gold, a straight longsword. Raise the detail and craftsmanship to the level of the soldiers in the second attached image: fitted white plate armor with engraved gold filigree edges over an ivory padded gambeson; layered white pauldrons with gold rims; a gold-trimmed ivory cowl draped over the shoulders; a sky-blue sash at the waist with a gold buckle; an ivory tabard with sky-blue borders and a small gold sunburst on the chest, split at the front, back and sides and reaching just above the knees, so the armored legs are fully visible: white greaves, gold-rimmed knee cops, steel sabatons; gold bracers. No halo, no helmet, no cape, no floor-length robe. He holds the longsword in the right hand, low and diagonally across the body, point down. Art style: stylized 3D game art with a hand-inked graphic-novel finish, matching the attached reference images: bold black ink outlines (a thick outer contour, thinner inner lines), cel shading in 2–3 tones softened with painterly brush texture, light ink hatching in the deepest shadows, warm golden key light from the upper left, crisp clean edges. Palette: ivory, white and polished gold with pastel sky-blue accents. Full body, front view facing the viewer, centered, the whole figure inside the frame with the feet on the bottom edge. Isolated on a flat pure green (#00FF00) background: no floor, no cast shadow, no scenery, no text, no glow or haze outside the outline. Aspect ratio 9:16.
+```
+
+**Check before saving:** the same face (bald, white beard, pale eyes); the legs visible below the tabard from the knee down; no halo; the sword in the right hand. Generate again until you like the look: everything after this copies it.
+
+**The Blessed keeps the sword.** The concept's golden scepter-mace is reserved for a future enemy: bigger, slower, armored and stronger than the Blessed.
+
+### The Blessed for Meshy — `blessed-turnaround.png` · 16:9
+
+Attach: `blessed-design.png` only. Start a new chat.
+
+```text
+Character model sheet for 3D modeling, copying the character in the attached image: three full-body views side by side, from left to right: front, right side profile, back. Copy the attached design exactly: same face, proportions, armor, clothing and colors in every view. Pose in every view: a neutral A-pose: standing straight, feet apart at shoulder width and pointing forward, arms straight and angled down and away from the body at about 45 degrees, palms facing the thighs, so the arms, hands and legs are clearly separated from the body and from each other; both hands empty, the fingers loosely curled as if around a sword grip; neutral face, mouth closed, looking straight ahead. No sword, no weapon, nothing held, no halo. All three views at the same scale, standing on one shared baseline, orthographic with no perspective, evenly spaced with a wide gap between them, nothing overlapping. Colors as a flat color reference for texturing: every surface in its own true color, evenly lit, with no cast shadows, no shading, no hatching, no highlights, no rim light, no glow and no light direction at all; thin dark lines only where two colors or parts meet, no thick outer contour. Plain flat medium grey (#808080) background, no floor, no shadows, no text, no labels, no arrows, no extra views or characters. Aspect ratio 16:9.
+```
+
+**Check before saving:**
+- three views, the same character in each (same armor, same tabard length, same trim);
+- arms clearly away from the body, both hands empty, feet apart;
+- the side view is a true profile and the back view really shows the back (a cowl and tabard back, not a second front);
+- no shadows or shading: the ivory looks the same color on the left and right sides of the body;
+- the whole figure inside each view, feet included, with grey around it.
+
+If one view is wrong, reply *"Fix only the <side/back> view: …"* rather than starting over.
+
+### The Blessed's sword — `blessed-sword.png` · 16:9
+
+Attach: `blessed-design.png` only. Start a new chat.
+
+```text
+Weapon model sheet for 3D modeling: the longsword carried by the character in the attached image, alone, in exact side profile, horizontal, the blade pointing right, the whole sword inside the frame with a margin around it. Copy the attached design: a straight double-edged steel blade with a central fuller and fine gold filigree near the guard, a straight gold crossguard with flared ends, a grip wrapped in brown leather, a round gold pommel. Orthographic with no perspective. Colors as a flat color reference for texturing: every surface in its own true color, evenly lit, with no cast shadows, no shading, no highlights, no reflections, no glow; thin dark lines only where two parts meet. Plain flat medium grey (#808080) background, no hands, no text, no labels. Aspect ratio 16:9.
+```
+
+**Check before saving:** the whole sword, straight and horizontal, matching the design image; no hands; no shine or reflections painted on the blade.
