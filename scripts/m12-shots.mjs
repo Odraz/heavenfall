@@ -1,6 +1,6 @@
 // M12 stage 1 screenshots: the director's F3 readout in each phase, and a wave arriving from several
 // sides with its spawn points glowing. Needs a running server (npm run dev or npm run preview).
-// Usage: node scripts/m12-shots.mjs [readout|glow|glow-ground] [base URL, default http://localhost:5173]
+// Usage: node scripts/m12-shots.mjs [readout|glow|glow-ground|wade] [base URL, default http://localhost:5173]
 import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 
@@ -46,6 +46,23 @@ if (what === 'readout') {
     await page.waitForTimeout(250);
   }
   console.log(`phases shot: ${[...shot].join(', ')}`);
+} else if (what === 'wade') {
+  // Stage 2: the Binder bot (6 m/s) in god mode, caught by three or more Blessed (M12 §3.1).
+  await open('dev=1&map=pearly-gates&class=binder&bot=1&god=1&seed=1');
+  const t0 = Date.now();
+  let max = 0;
+  let shot = false;
+  while (!shot && Date.now() - t0 < 300_000) {
+    const w = await page.evaluate(() => window.__heavenfall.wade);
+    max = Math.max(max, w.count);
+    if (w.count >= 3 && w.factor < 0.6) {
+      await page.screenshot({ path: `${OUT}/wading-caught.png` });
+      console.log(`saved wading-caught.png (${w.count} pressing, ×${w.factor.toFixed(2)})`);
+      shot = true;
+    }
+    await page.waitForTimeout(100);
+  }
+  if (!shot) console.log(`never caught by 3; most pressing at once: ${max}`);
 } else {
   // A fixed camera high over the Courtyard's west entry, looking east over the arena, or at eye height
   // on the terrace's west stairs (glow-ground); the bot fights below.

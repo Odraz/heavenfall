@@ -64,14 +64,15 @@ describe('EnemyAnimator', () => {
     expect(a.pick(1, s.t).anim).toBe('idle');
   });
 
-  it('the attack cycle starts when attacking begins: the blow (frame 4) lands 0.5 s in, then every 1 s', () => {
+  it('the attack cycle starts 267 ms in when attacking begins (M12 §3.2): the blow (frame 4) is up at the first strike, 267 ms in, then every 1 s', () => {
     const a = new EnemyAnimator();
     let s = run(a, 2, { x: 0, y: 0, t: 0 }, 10, 0, 4, ST_MOVING);
     s = run(a, 2, s, 1, 0, 0, ST_ATTACKING);
     const start = s.t;
-    expect(a.pick(2, start)).toEqual({ anim: 'attack', frame: 0 });
-    expect(a.pick(2, start + 500)).toEqual({ anim: 'attack', frame: 4 });
-    expect(a.pick(2, start + 1500)).toEqual({ anim: 'attack', frame: 4 });
+    expect(a.pick(2, start)).toEqual({ anim: 'attack', frame: 2 });
+    expect(a.pick(2, start + 232)).toEqual({ anim: 'attack', frame: 3 });
+    expect(a.pick(2, start + 267)).toEqual({ anim: 'attack', frame: 4 });
+    expect(a.pick(2, start + 1267)).toEqual({ anim: 'attack', frame: 4 });
     // Attacking enemies face their target (the nearest player at x = 100).
     expect(a.facing[2]).toBeCloseTo(0, 1);
   });

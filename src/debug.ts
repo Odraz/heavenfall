@@ -46,6 +46,8 @@ export interface DebugState {
   chat: Array<{ playerId: number; text: string }>;
   /** The director's state (M12 §2.3), on the host and in single player while a combat arena fights; else null. */
   director: DirectorInfo | null;
+  /** Wading (M12 §3.1): ground enemies pressing against the local player this frame, and the applied speed factor. */
+  wade: { count: number; factor: number };
 }
 
 export const debugState: DebugState = {
@@ -66,6 +68,7 @@ export const debugState: DebugState = {
   gameResult: null,
   chat: [],
   director: null,
+  wade: { count: 0, factor: 1 },
 };
 
 /** Resets the game fields to their outside-a-game values. */
@@ -87,6 +90,7 @@ export function resetGameDebug(): void {
     gameResult: null,
     chat: [],
     director: null,
+    wade: { count: 0, factor: 1 },
   });
 }
 

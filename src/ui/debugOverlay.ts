@@ -38,6 +38,7 @@ export class DebugOverlay {
       `projectiles ${d.projectiles}`,
       `net in ${d.netInKBps.toFixed(1)} KB/s  out ${d.netOutKBps.toFixed(1)} KB/s`,
       `pos ${this.position.x.toFixed(2)} ${this.position.y.toFixed(2)} ${this.position.z.toFixed(2)} yaw ${this.position.yaw.toFixed(3)}`,
+      ...(this.dev ? [`Wading: ${d.wade.count} · ×${d.wade.factor.toFixed(2)}`] : []),
       ...(this.dev && dir ? [`Director: ${dir.phase} ${dir.phaseTime.toFixed(1)} s · ${Math.round(dir.intensity)} · ${dir.alive}/${dir.waveTotal}`] : []),
     ].join('\n');
   }

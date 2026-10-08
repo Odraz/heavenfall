@@ -42,6 +42,7 @@ import { FpsCounter } from './fps';
 import type { HostSession } from './hostSession';
 import { Hud } from './hud';
 import { Input, MOUSE_SENSITIVITY } from './input';
+import { WADE_LAUNCH_MS, wadeCount, Wading } from './wading';
 import { audio, type LoopHandle } from '../audio/audio';
 import { SOUL_HEIGHT, SOUL_RADIUS } from '../sim/souls';
 import { pickAllyTarget } from './allyTarget';
@@ -257,6 +258,9 @@ export class Game {
   private readonly incense: IncenseClouds;
   /** When each enemy slot's Falling Star launch arc starts (M9 §3.2). */
   private readonly launchAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
+  /** Wading (M12 §3.1): launched enemies don't press until then (ms), and the applied speed factor. */
+  private readonly wadeLaunchedUntil = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
+  private readonly wading = new Wading();
   /** Others' attack effects waiting for the render delay (M9 §5.1). */
   private readonly pendingFx: Array<{ at: number; run: (now: number) => void }> = [];
   private fireAcc = 0;
@@ -615,7 +619,11 @@ export class Game {
         break;
       case 'starLanded':
         // Launched enemies fly their arc after the render delay, like other effects (M9 §3.2).
-        for (const s of e.launched) this.launchAt[s] = now + this.snaps.delayTicks * TICK_MS;
+        for (const s of e.launched) {
+          this.launchAt[s] = now + this.snaps.delayTicks * TICK_MS;
+          // They don't hold a wading player for 0.4 s from the event's arrival (M12 §3.1).
+          this.wadeLaunchedUntil[s] = now + WADE_LAUNCH_MS;
+        }
         break;
       case 'shroudBurst':
         // A blue ring expanding from 1 m to 5 m over 0.3 s, and 24 embers bursting outward (M9 §5.1).
@@ -1383,6 +1391,13 @@ export class Game {
     this.fire = this.dead || this.over ? 0 : fire;
     const bx = p.body.x;
     const by = p.body.y;
+    // Wading (M12 §3.1): the ground enemies of the newest snapshot pressing against the player slow
+    // it. Counted every frame, in the benchmark too, which doesn't move the player.
+    const newest = this.snaps.newest;
+    const pressing = newest && !this.dead ? wadeCount(this.map, p.body.x, p.body.y, p.body.z, newest, this.wadeLaunchedUntil, now) : 0;
+    p.wade = this.wading.update(pressing, Math.min(dt, MAX_FRAME_DT));
+    debugState.wade.count = pressing;
+    debugState.wade.factor = p.wade;
     if (!this.dead && !this.bench && !this.over) p.update(this.map, dt, mx, my, wantJump);
     const moved = Math.hypot(p.body.x - bx, p.body.y - by);
     this.bob.update(Math.min(dt, MAX_FRAME_DT), moved, p.speed, p.body.grounded && !p.leaping, this.dead);

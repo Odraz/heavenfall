@@ -13,6 +13,8 @@ export class LocalPlayer {
   yaw = 0;
   pitch = 0;
   readonly moveResult: MoveResult = { blocked: false };
+  /** Wading's speed factor (M12 §3.1), set every frame; the dash and the leap ignore it. */
+  wade = 1;
 
   constructor(
     x: number,
@@ -74,7 +76,7 @@ export class LocalPlayer {
       }
       return;
     }
-    let speed = this.speed;
+    let speed = this.speed * this.wade;
     if (this.dash) {
       this.dash.t += dt;
       dirX = this.dash.dx;

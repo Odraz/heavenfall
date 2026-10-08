@@ -281,7 +281,8 @@ const BLESSED_STOP = 1.0;
 const MELEE_RANGE = 1.2;
 const MELEE_HEIGHT = 1.5;
 const MELEE_DAMAGE = 5;
-const MELEE_FIRST = 0.5;
+/** M12 §3.2 (was 0.5): with the per-tick countdown, the first strike lands on the 8th tick in range (0.267 s). */
+const MELEE_FIRST = 0.25;
 const MELEE_INTERVAL = 1.0;
 const CHORISTER_RANGE = 20;
 const CHERUB_RANGE = 25;
@@ -2448,7 +2449,7 @@ export class Simulation {
 
   /**
    * Blessed melee (§7.1): while within 1.2 m horizontally and less than 1.5 m apart in height, 5 damage
-   * 0.5 s after entering range, then every 1 s. Leaving range resets the timer.
+   * on the 8th tick in range (0.267 s, M12 §3.2), then every 1 s. Leaving range resets the timer.
    */
   private updateMelee(slot: number): void {
     const t = this.eTarget[slot];

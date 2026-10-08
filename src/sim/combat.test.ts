@@ -441,17 +441,34 @@ describe('enemy attacks (§7.1)', () => {
     expect(maxSideways).toBeGreaterThan(3.5);
   });
 
+  it('Blessed melee strikes on the 8th tick in range (M12 §3.2), then every 1 s', () => {
+    const sim = makeSim(room(20, 10), ['binder']);
+    const p = sim.players[0];
+    put(sim, p, 10.5, 5.5);
+    const a = enemyAt(sim, BLESSED, 11.5, 5.5);
+    sim.root(a, 10);
+    for (let i = 0; i < 7; i++) sim.step();
+    expect(p.hp).toBe(200);
+    sim.step();
+    expect(p.hp).toBe(195);
+    for (let i = 0; i < 29; i++) sim.step();
+    expect(p.hp).toBe(195);
+    sim.step();
+    expect(p.hp).toBe(190);
+  });
+
   it('Blessed melee resets when the target leaves range', () => {
     const sim = makeSim(room(20, 10), ['binder']);
     const p = sim.players[0];
     put(sim, p, 10.5, 5.5);
     const a = enemyAt(sim, BLESSED, 11.5, 5.5);
     sim.root(a, 10);
-    for (let i = 0; i < 10; i++) sim.step();
+    // 5 ticks in range, then out: the count starts over.
+    for (let i = 0; i < 5; i++) sim.step();
     put(sim, p, 15.5, 5.5);
     sim.step();
     put(sim, p, 10.5, 5.5);
-    for (let i = 0; i < 14; i++) sim.step();
+    for (let i = 0; i < 7; i++) sim.step();
     expect(p.hp).toBe(200);
     sim.step();
     expect(p.hp).toBe(195);
