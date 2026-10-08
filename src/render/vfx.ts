@@ -22,12 +22,23 @@ const SCOURGE_ARC_HEIGHT = 1.2;
 const SCOURGE_ARC_SEGMENTS = 16;
 const SCOURGE_SWEEP_MS = 120;
 const SCOURGE_FADE_MS = 150;
-/** The spawn glow (M12 §2.4): gold, 1.0 m above the point's floor, radius 1.6 m, fading over 0.8 s after its last flare. */
+/**
+ * The spawn ray (M12 §2.4, changed at the human's request from a glow sprite): a golden light shaft
+ * 2.4 m wide and 9 m tall standing on the point's floor, dropping in from above over 150 ms when the
+ * point starts flaring, and fading over 0.8 s after its last flare.
+ */
 const SPAWN_GOLD = 0xffd27a;
-const SPAWN_GLOW_HEIGHT = 1.0;
-const SPAWN_GLOW_RADIUS = 1.6;
-const SPAWN_GLOW_OPACITY = 0.85;
+const SPAWN_RAY_COLOR = 0xffb43a;
+const SPAWN_RAY_WIDTH = 2.4;
+/** Its bright core, added over it so it shines against pale stone and sky. */
+const SPAWN_CORE_COLOR = 0xffe7a8;
+const SPAWN_CORE_WIDTH = 1.1;
+const SPAWN_CORE_OPACITY = 0.75;
+const SPAWN_RAY_HEIGHT = 9;
+const SPAWN_RAY_DROP_MS = 150;
+const SPAWN_RAY_OPACITY = 1;
 const SPAWN_GLOW_FADE_MS = 800;
+const SPAWN_RING_RADIUS = 1.6;
 /** A flare draws a ground ring at most this often per point. */
 const SPAWN_RING_GAP_MS = 400;
 /** A mote's trail: this many sprites, each lagging the one before by this fraction of the flight. */
@@ -56,6 +67,9 @@ const sphereGeo = new THREE.SphereGeometry(1, 20, 12);
 const columnGeo = new THREE.PlaneGeometry(1, 1);
 columnGeo.rotateZ(Math.PI / 2);
 columnGeo.translate(0, 0.5, 0);
+/** A 1 × 1 m upright quad hanging from its top edge, the texture upright: the spawn ray, scaled down from the sky. */
+const shaftGeo = new THREE.PlaneGeometry(1, 1);
+shaftGeo.translate(0, -0.5, 0);
 
 /** Line segments drawn as strips that face the camera, the texture repeating along each one. */
 class Ribbon {
@@ -138,8 +152,11 @@ export class Vfx {
   private readonly columns = new Set<THREE.Mesh>();
   /** Sacrament's beams (M9 §5.1), reused frame to frame. */
   private readonly liveBeams: Ribbon[] = [];
-  /** Spawn glows (M12 §2.4) by spawn point, reused. */
-  private readonly spawnGlows = new Map<string, { sprite: THREE.Sprite; material: THREE.SpriteMaterial; flare: number; ring: number }>();
+  /** Spawn rays (M12 §2.4) by spawn point, reused; `since` is when the ray last appeared. */
+  private readonly spawnRays = new Map<
+    string,
+    { mesh: THREE.Mesh; material: THREE.MeshBasicMaterial; core: THREE.Mesh; coreMaterial: THREE.MeshBasicMaterial; since: number; flare: number; ring: number }
+  >();
   private readonly liveBeamMaterial: THREE.MeshBasicMaterial;
 
   constructor(private readonly tex: EffectTextures) {
@@ -335,35 +352,50 @@ export class Vfx {
   }
 
   /**
-   * A spawn point flares (M12 §2.4) as an enemy comes out of it: its gold glow shows at full strength
-   * and fades over 0.8 s after its last flare; at most every 0.4 s a gold ground ring grows from it.
-   * (x, y, z) is the point's cell center on its floor.
+   * A spawn point flares (M12 §2.4) as an enemy comes out of it: a golden ray of light comes down on
+   * it from above, stays at full strength while enemies keep coming, and fades over 0.8 s after its
+   * last flare; at most every 0.4 s a gold ground ring grows from it. (x, y, z) is the point's cell
+   * center on its floor.
    */
   flareSpawn(now: number, x: number, y: number, z: number): void {
     const key = `${x},${y}`;
-    let g = this.spawnGlows.get(key);
+    let g = this.spawnRays.get(key);
     if (!g) {
-      const material = new THREE.SpriteMaterial({ map: this.tex.glow, color: SPAWN_GOLD, transparent: true, depthWrite: false, fog: false });
-      const sprite = new THREE.Sprite(material);
-      sprite.position.set(x, z + SPAWN_GLOW_HEIGHT, y);
-      sprite.scale.setScalar(2 * SPAWN_GLOW_RADIUS);
-      this.group.add(sprite);
-      g = { sprite, material, flare: now, ring: -Infinity };
-      this.spawnGlows.set(key, g);
+      const material = this.material(this.tex.shaft, SPAWN_RAY_COLOR);
+      const coreMaterial = this.material(this.tex.shaft, SPAWN_CORE_COLOR);
+      coreMaterial.blending = THREE.AdditiveBlending;
+      const [mesh, core] = [material, coreMaterial].map((m) => {
+        const q = new THREE.Mesh(shaftGeo, m);
+        q.position.set(x, z + SPAWN_RAY_HEIGHT, y);
+        q.frustumCulled = false;
+        this.columns.add(q);
+        this.group.add(q);
+        return q;
+      });
+      g = { mesh, material, core, coreMaterial, since: now, flare: -Infinity, ring: -Infinity };
+      this.spawnRays.set(key, g);
     }
+    // A ray that had faded out comes down from the sky again.
+    if (now - g.flare >= SPAWN_GLOW_FADE_MS) g.since = now;
     g.flare = now;
     if (now - g.ring >= SPAWN_RING_GAP_MS) {
       g.ring = now;
-      this.ring(now, x, y, z, SPAWN_GOLD, 0.3, SPAWN_GLOW_RADIUS, SPAWN_RING_GAP_MS);
+      this.ring(now, x, y, z, SPAWN_GOLD, 0.3, SPAWN_RING_RADIUS, SPAWN_RING_GAP_MS);
     }
   }
 
   /** `camera` is the camera's position in three.js coordinates. */
   update(now: number, camera: THREE.Vector3): void {
-    for (const g of this.spawnGlows.values()) {
+    for (const g of this.spawnRays.values()) {
       const f = 1 - (now - g.flare) / SPAWN_GLOW_FADE_MS;
-      g.sprite.visible = f > 0;
-      g.material.opacity = SPAWN_GLOW_OPACITY * Math.max(0, Math.min(1, f));
+      g.mesh.visible = g.core.visible = f > 0;
+      if (!g.mesh.visible) continue;
+      const drop = Math.min(1, Math.max(0, (now - g.since) / SPAWN_RAY_DROP_MS));
+      const h = SPAWN_RAY_HEIGHT * Math.max(1e-3, 1 - (1 - drop) ** 3);
+      g.mesh.scale.set(SPAWN_RAY_WIDTH, h, 1);
+      g.core.scale.set(SPAWN_CORE_WIDTH, h, 1);
+      g.material.opacity = SPAWN_RAY_OPACITY * Math.min(1, f);
+      g.coreMaterial.opacity = SPAWN_CORE_OPACITY * Math.min(1, f);
     }
     for (const c of this.columns) c.rotation.y = Math.atan2(camera.x - c.position.x, camera.z - c.position.z);
     for (let i = this.effects.length - 1; i >= 0; i--) {

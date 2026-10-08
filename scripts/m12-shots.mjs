@@ -1,6 +1,6 @@
 // M12 stage 1 screenshots: the director's F3 readout in each phase, and a wave arriving from several
 // sides with its spawn points glowing. Needs a running server (npm run dev or npm run preview).
-// Usage: node scripts/m12-shots.mjs [readout|glow] [base URL, default http://localhost:5173]
+// Usage: node scripts/m12-shots.mjs [readout|glow|glow-ground] [base URL, default http://localhost:5173]
 import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 
@@ -44,16 +44,20 @@ if (what === 'readout') {
   }
   console.log(`phases shot: ${[...shot].join(', ')}`);
 } else {
-  // A fixed camera high over the Courtyard's west entry, looking east over the arena; the bot fights below.
-  await open('dev=1&map=pearly-gates&class=fallen&bot=1&god=1&seed=1&cam=26,21.5,24,0,-38');
+  // A fixed camera high over the Courtyard's west entry, looking east over the arena, or at eye height
+  // on the terrace's west stairs (glow-ground); the bot fights below.
+  const ground = what === 'glow-ground';
+  const cam = ground ? '30,21.5,,0,4' : '26,21.5,24,0,-38';
+  await open(`dev=1&map=pearly-gates&class=fallen&bot=1&god=1&seed=1&cam=${cam}`);
   const t0 = Date.now();
   let n = 0;
   while (n < 4 && Date.now() - t0 < 300_000) {
     const d = await director();
     // Wave 2 and later, a few seconds into its arrival.
     if (d && d.phase === 'build' && d.wave >= 1 && d.phaseTime >= 2 + n * 1.5 && d.alive < d.waveTotal) {
-      await page.screenshot({ path: `${OUT}/wave-arriving-${n}.png` });
-      console.log(`saved wave-arriving-${n}.png (${fmt(d)})`);
+      const name = `wave-arriving${ground ? '-ground' : ''}-${n}.png`;
+      await page.screenshot({ path: `${OUT}/${name}` });
+      console.log(`saved ${name} (${fmt(d)})`);
       n++;
     }
     await page.waitForTimeout(100);

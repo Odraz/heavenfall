@@ -57,6 +57,8 @@ export interface EffectTextures {
   chain: THREE.Texture;
   glow: THREE.Texture;
   smoke: THREE.Texture;
+  /** The light shaft, upright and clamped (also the terrain's `shaft`), for the spawn ray (M12 §2.4). */
+  shaft: THREE.Texture;
 }
 
 export interface GameTextures {
@@ -88,5 +90,5 @@ export async function loadGameTextures(withGate: boolean): Promise<GameTextures>
     t.wrapS = THREE.ClampToEdgeWrapping;
     t.wrapT = THREE.ClampToEdgeWrapping;
   }
-  return { terrain: { array, door, sky, shaft, atmosphere, gate }, fx: { ring, beam, chain, glow, smoke } };
+  return { terrain: { array, door, sky, shaft, atmosphere, gate }, fx: { ring, beam, chain, glow, smoke, shaft } };
 }
