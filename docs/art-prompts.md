@@ -407,6 +407,43 @@ A single old tarnished silver coin seen straight on: a worn, slightly irregular 
 
 ---
 
+## Milestone 12
+
+New images for the burst death ([m12.md](m12.md) §4.2) and the Betrayer's dagger slash (§5.7). The burst death: when sudden big damage kills an enemy, its body is blasted back and torn apart. No blood ([lore.md](lore.md)): Heaven's bodies break like porcelain with light inside. Claude cuts the pieces out and prepares them; the game flings them along the hit, where they tumble and fall to the floor, and draws the burst as one flash. Save them in `assets/art-src/`.
+
+Only the Cherubs have wings, so the torn wings are theirs. The Blessed, nine in ten of all kills, are torn in half: Claude renders their halves and sword from the Blessed's own Blender model (m12.md §4.2.1), so they match the sprite in the game exactly. No image is needed for them.
+
+- [x] `shred-wing.png` (Cherubs)
+- [x] `shred-wingtip.png` (Cherubs)
+- [x] `fx-burst.png` (everyone)
+- [x] `fp-betrayer-dagger.png` (the Betrayer's Shadowstep slash, first person; mirrored, 1357 × 774, an upscaled copy welcome)
+
+#### The Betrayer's dagger — `fp-betrayer-dagger.png` · 16:9
+The Betrayer's left hand lets go of the revolver and slashes with a dagger held in a reverse grip while it dashes (m12.md §5.7), like the Binder's fist in M11. The first try came out with a forward grip and a sword-length blade; the second, with the prompt below, came out right but as a right hand, and is used **mirrored**: a left hand from the bottom right, the arm crossed for a backhand cut, the blade on the fist's left side. Upscale it like the M11 weapons. A first-person overlay in the style of the M11 weapons (see *First-person weapons (M11)*: generate at the largest size, then upscale to at least 3 840 × 2 160). Attach: `fp-betrayer.png` first, then `betrayer-front.png`.
+```text
+This is not a game screenshot and not a scene. A first-person view of only the player's left forearm and hand slashing with a dagger, as a separate overlay for the attached first-person weapon image, in exactly its style: the left forearm in the same dark brown leather glove and sleeve as the attached image comes in from the bottom-left corner of the image, the hand at about 25% of the image width from the left and 80% of the image height from the top, the fist clenched knuckles-up, holding a short, slightly curved silver dagger in a reverse grip: the blade comes out of the bottom of the fist on the little-finger side and points down and slightly to the right, its edge facing right, the direction of the slash. The dagger is short, the blade about as long as the forearm from wrist to elbow, not a sword, with a dark leather grip and a small silver crossguard set with one red gem, like the gems on the attached revolver. Caught mid-slash from left to right; the speed is shown by painted streaks and smeared highlights along the blade, inside its outline. Art style: stylized 3D game art with a hand-inked graphic-novel finish: bold black ink outlines, cel shading in 2–3 tones with painterly brush texture, warm golden key light from the upper left. Everything except the forearm, hand and dagger is flat pure green (#00FF00): no revolver, no right hand, no background, no text, no glow or haze outside the outline. Aspect ratio 16:9.
+```
+
+#### Torn wing — `shred-wing.png` · 1:1
+Drawn about 0.55 m across, tumbling through the air. Attach: `cherub-front.jpg`, `concept-1.webp`, `feather.png`.
+```text
+A torn-off angel wing: the upper half of a white feathered wing ripped away at its root, the torn edge ragged with loose broken feathers and a snapped pale bone, the long flight feathers still intact and fanned, a few gold-tipped feathers. Tiny game sprite in a hand-inked graphic-novel style matching the attached images: bold black outline, flat cel shading, crisp hard edges, a simple shape readable at 48 pixels. No blood. Centered, filling most of the frame. Isolated on a flat pure green (#00FF00) background: no glow, no shadow, no text. Aspect ratio 1:1.
+```
+
+#### Torn wing tip — `shred-wingtip.png` · 1:1
+Drawn about 0.35 m across. Attach: `cherub-front.jpg`, `concept-1.webp`, `feather.png`.
+```text
+A small torn piece of an angel wing: a ragged clump of five or six long white flight feathers still joined at a torn edge, bent and splayed, one feather snapped. Tiny game sprite in a hand-inked graphic-novel style matching the attached images: bold black outline, flat cel shading, crisp hard edges, a simple shape readable at 32 pixels. No blood. Centered, filling most of the frame. Isolated on a flat pure green (#00FF00) background: no glow, no shadow, no text. Aspect ratio 1:1.
+```
+
+#### Burst — `fx-burst.png` · 1:1
+The flash where a body bursts, drawn about 1–2 m across, growing as it fades. Attach: `blessed-front.jpg`, `concept-1.webp`, `feather.png`.
+```text
+A burst of holy light where an angel was torn apart: a jagged star-shaped explosion of white-gold light with hard-edged rays, a ring of white feathers and small gold shards flying outward from the center, a white-hot core. Game sprite in a hand-inked graphic-novel style matching the attached images: bold black outline around the rays and feathers, flat cel shading, crisp hard edges, the light painted as solid hard-edged bands of white and pale gold. No blood. Centered, the whole burst inside the frame. Isolated on a flat pure green (#00FF00) background: no soft glow or haze outside the outline, no text. Aspect ratio 1:1.
+```
+
+---
+
 ## Milestone 10
 
 10 images for the level art ([m10.md](m10.md)), plus 5 prop sheets made early for a later milestone. The goal is the look of the concept art, `concept-1` above all, at almost no cost per frame, so the prompts ask for flat, evenly lit images: the game adds its own baked light. Attach `concept-1.webp`, `concept-2.webp` and `concept-3.webp` to every prompt unless it says otherwise. Save them as named: the sky, textures and effects in `assets/art-src/`, the prop sheets in `assets/art-src/reference/`. Generate each in a new chat. They're needed in stages, so you can do them stage by stage.

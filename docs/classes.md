@@ -15,7 +15,7 @@ Numbers here are starting points for the spec.
 
 ## Milestone 9: the class rework
 
-M9 is dedicated to the changes below; halos and ultimates move to M12 (M10 became the level art, M11 the first-person weapons). In short:
+M9 is dedicated to the changes below; halos and ultimates move to M13 (M10 became the level art, M11 the first-person weapons, M12 the horde). In short:
 
 - **Every class gets a secondary attack** on the right mouse button.
 - **The Fallen:** the shotgun knocks enemies back, Falling Star launches them into the air, and it moves slower.
@@ -26,6 +26,17 @@ M9 is dedicated to the changes below; halos and ultimates move to M12 (M10 becam
 
 Swarm kill rates should stay roughly level across classes (about 5–9 Blessed per second), with the Betrayer's Silver Bullet the best in a good lane. The Heretic Saint is the exception on purpose: its censer softens the crowd the party holds (about 1 kill per second plus its clouds), and its strength is keeping everyone alive.
 
+## Milestone 12: the horde
+
+The second playtest ([playtests/2026-10-08.md](playtests/2026-10-08.md)) found that fighting the horde was "back up and hold the trigger": it merged into one crowd behind the party, being caught was harmless, kills didn't show, and most classes had no way to clear a crowd. The horde stays; M12 ([m12.md](m12.md)) makes **clearing it fun, with a real risk of being overwhelmed**, before any new enemy types or threats:
+
+- **The horde surrounds the party, paced by a director:** bigger waves that keep arriving for 10 s from wherever the party isn't, each started by a director that watches how hard-pressed the party is (build up, peak, relax), with a gold glow where enemies spawn.
+- **Being caught is dangerous:** players wade through crowds (each enemy pressing on them slows them, down to 55%), and the Blessed strike sooner.
+- **Every class clears a stack its own way**, in its own shape: the Fallen a **circle** around itself (taunt the crowd on, shotgun at point blank, the crater or a slam at its own feet), the Binder an **arc** (pile with Chains, sweep with the Scourge), the Betrayer a **line** (Silver Bullet through ten, the dash cut), the Heretic an **area** (incense on a held crowd, the Shroud's blast). The Fallen and the Binder stack crowds; the Betrayer and the Heretic cash them in.
+- **Kills show:** sudden big damage blasts an enemy back and tears it apart (a Blessed torn in half, a Cherub losing its wings) in a burst of light and feathers, heavier for the heaviest blows; your own kills are confirmed on your screen at once; your big moments shake the screen.
+
+Kill rates may now go well above 9 per second where a class does its job on a stacked crowd. Clearing a stack is meant to feel like a payoff, not a stat.
+
 ## The Fallen (Tank)
 
 - **Verb:** intercept. **Big moment:** "I leapt in and smashed the swarm off them."
@@ -34,14 +45,14 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 
 | Slot | Name | Rule |
 |---|---|---|
-| Primary | Brimstone Shotgun | As now: 8 pellets × 12 dmg, 0.8 s between shots, range 20 m. **New:** each enemy hit within 6 m that survives is knocked back 2 m away from the Fallen, once per shot however many pellets hit it. Bound enemies aren't knocked back, so the Binder's piles hold. |
+| Primary | Brimstone Shotgun | 8 pellets, range 20 m. **M12:** 20 dmg per pellet within 6 m, 10 beyond (was 12), spread ±11° (was ±8°), 0.9 s between shots (was 0.8): up close every pellet kills a Blessed and bursts it; backing away, a Blessed needs two pellets. M9: each enemy hit within 6 m that survives is knocked back 2 m away from the Fallen, once per shot however many pellets hit it. Bound enemies aren't knocked back, so the Binder's piles hold. |
 | Secondary | Brimstone Slug | One hitscan slug: 60 dmg to the first enemy hit, range 50 m, 1.0 s between shots. Kills a Chorister in one hit. |
 | Passives | Brimstone Hide, Sinful | As now. |
-| Q | Blasphemy | As now. |
-| E | Falling Star | As now: the leap and the knockback. **New:** the landing deals only 10 dmg (was 40) to everything within 5 m, and launches the enemies it knocks back. Each flies in an arc up to about 1 m high, out and back down, over 0.4 s instead of sliding along the ground for 0.2 s; the distance stays 4 m. The knockback is the point; the party's fire finishes the scattered crowd. Bound enemies aren't knocked back, like the shotgun's, so the Binder's piles hold. |
+| Q | Blasphemy | As before: every enemy within 12 m targets the Fallen for 5 s, cooldown 12 s. **M12:** it also stuns them for 1 s (not the Gatekeeper), mainly as a visual beat: the crowd recoils ("what was that?!"), trembling and red, sees the Fallen and comes for it. Stunned enemies don't slow anyone wading, so a swarmed ally walks out. |
+| E | Falling Star | The leap and the knockback. M9: the landing launches the enemies it knocks back. Each flies in an arc up to about 1 m high, out and back down, over 0.4 s; the distance is 4 m. Bound enemies aren't knocked back, like the shotgun's, so the Binder's piles hold. **M12:** it leaps anywhere within 30 m, not only to an ally: hold E to see the arc and the landing rings, release to leap. Aimed within 2.5 m of an ally, it lands on them; aimed at its own feet, it slams in place. Red, and no leap, where the arc hits a wall or the landing isn't a place enemies can walk to (the Gatekeeper's dais). The landing deals 40 dmg within 3.5 m, which bursts the Blessed under it heavily, and 10 dmg out to 6 m. Cooldown 10 s (was 15): it's the Fallen's main crowd tool, kept for rescues only by choice. Landing on the Binder's pile kills it whole (bound enemies take double and stay). |
 
 - **Shotgun or slug:** the shotgun for the crowd at the Fallen's feet; the slug for the Chorister or Cherub out of its reach.
-- **The landing has to look like a hit.** A ring of enemies flung into the air around the rescued ally is the Fallen's big moment made visible. The shotgun's knockback stays a flat shove, so the landing stands out. The arc is only drawn: in the simulation the enemy moves along the ground as in any knockback, so collision and the network barely change.
+- **The landing has to look like a hit.** A crater of burst Blessed and a ring of enemies flung into the air around the landing (often around the rescued ally) is the Fallen's big moment made visible. The shotgun's knockback stays a flat shove, so the landing stands out. The arc is only drawn: in the simulation the enemy moves along the ground as in any knockback, so collision and the network barely change.
 
 ## The Heretic Saint (Healer)
 
@@ -50,11 +61,11 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 
 | Slot | Name | Rule |
 |---|---|---|
-| Primary | Censer Launcher | Breaks on the enemy it hits for 40, with no splash, and leaves a rusty-gold cloud of incense for 4 s: 5 dmg per second to every enemy within 2.5 m. Clouds don't stack, and at most 6 exist, so spamming one spot doesn't help and can't cover the map. (Added after review: the old splash made the healer a grenade launcher.) |
+| Primary | Censer Launcher | Breaks on the enemy it hits for 40, with no splash, and leaves a rusty-gold cloud of incense for 4 s. Clouds don't stack, and at most 6 exist, so spamming one spot doesn't help and can't cover the map. (Added after review: the old splash made the healer a grenade launcher.) **M12:** 0.85 s between shots (was 1.0 s); the cloud deals 5 per pulse (was 2.5), pulsing the moment it lands and every 0.5 s, so a Blessed that stays in it dies in 1.5 s; an enemy in two clouds still takes one pulse. |
 | Secondary | Sacrament | While held, heals the ally target 15 HP every 0.5 s (range 40 m, the same ally target as Martyr's Shroud). That's 1.5 times the rate Communion gives everyone nearby. Aimed at a soul, it revives it instead, at the Heretic's double revive rate (about 1.5 s). With no ally target it does nothing. Never heals the Heretic. |
-| Q | Unholy Communion | As now: heals everyone near the Heretic, the Heretic included. |
+| Q | Unholy Communion | Heals everyone within 15 m, the Heretic included. **M12:** 120 HP every 8 s (was 80 every 4 s): less healing overall, but a timing decision ("after the wave hits") instead of a button pressed whenever ready. |
 | Passive | Last Rites | Revives fallen teammates twice as fast (the existing rule, now named). |
-| E | Martyr's Shroud | As now. **New:** when damage breaks it, it explodes for 50 dmg to the 8 nearest enemies within 5 m of the shielded player. It doesn't explode when it expires or is replaced. It still explodes if the Heretic has died or left, or if the hit that breaks it kills the shielded player. |
+| E | Martyr's Shroud | When damage breaks it, it explodes for 50 dmg to every enemy within 3.5 m of the shielded player (**M12:** was the 8 nearest within 5 m; uncapped over 5 m it would have out-killed the Fallen's crater). It doesn't explode when it expires or is replaced. It still explodes if the Heretic has died or left, or if the hit that breaks it kills the shielded player. |
 
 - **Where the censer goes:** a cloud is worth most on enemies that stay in it: the crowd hugging the taunting Fallen, or the Binder's pile, where bound enemies take double and often die before the pile breaks. A crowd running through it only loses a few HP.
 - **Censer or Sacrament:** the censer while the party holds; Sacrament when one teammate is in trouble, even far away. Every second spent healing is a second not killing, which is the Heretic's real decision.
@@ -66,41 +77,41 @@ Swarm kill rates should stay roughly level across classes (about 5–9 Blessed p
 ## The Binder (Support)
 
 - **Verb:** control. **Big moment:** "I dragged a whole crowd into one pile and we shredded it."
-- **Weakness:** low burst damage; needs others to cash in its setups.
+- **Weakness:** must stand in the crowd to kill fast, with 200 HP and no escape; needs others to cash in its piles.
 - **Speed:** 6 m/s (was 8). It still outruns the Blessed, but it has no escape ability, so it must stay near the Fallen.
 
 | Slot | Name | Rule |
 |---|---|---|
 | Primary | Chain Gun | As now: fast, accurate, slows. |
-| Secondary | Scourge | Swings a heavy chain in front of the Binder: 25 dmg to the 6 nearest enemies within 3 m and 120° of the aim, 0.8 s between swings. Like every Binder hit, it slows them for 1 s. |
+| Secondary | Scourge | Swings a heavy chain in front of the Binder: 25 dmg to every enemy within 3 m and 120° of the aim (**M12:** was the 6 nearest, so the swing passed visibly through enemies it didn't hurt), 0.8 s between swings. Like every Binder hit, it slows them for 1 s. |
 | Q | Chains of Tartarus | As now: pull a crowd and bind it. |
 | E | Discord | As now: silence. |
 | Passive | Fetters | Every Chain Gun and Scourge hit slows for 1 s (the existing trait, now named). |
 
-- **Chain Gun or Scourge:** the Chain Gun at range, one enemy at a time; the Scourge when the swarm reaches the Binder. Each swing kills up to 6 Blessed, and the slow lets the Binder back off.
+- **Chain Gun or Scourge:** the Chain Gun at range, one enemy at a time; the Scourge when the swarm reaches the Binder. Each swing kills every Blessed in its arc (M12), so a swing is how the Binder breaks free when the crowd holds it.
 - **It's how the Binder survives being caught.** At 6 m/s with no escape ability, it can't outrun a swarm. The Scourge clears space around it instead.
 - **Every Binder hit slows**, so the slow is the class's trait, not a new effect. Chains of Tartarus moves enemies; the Scourge only hits them.
 
 ## The Betrayer (Damage)
 
-- **Verb:** shred. **Big moment:** "I waited until they lined up and one Silver Bullet burst fifteen of them into feathers."
+- **Verb:** shred. **Big moment:** "I waited until they lined up and one Silver Bullet tore through ten of them."
 - **Weakness:** 120 HP; needs Blasphemy, Falling Star and the Heretic to survive the swarm it shoots into.
 
 | Slot | Name | Rule |
 |---|---|---|
 | Primary | Silver Revolver | 60 dmg to the first enemy hit, 0.3 s between shots, no spread, range 60 m. One Blessed, Cherub or Chorister per shot. (Slowed after review, from 0.15 s / 30 dmg: it felt like a machine gun; its damage per second is unchanged.) |
-| Secondary | Silver Bullet | 240 dmg carried through the line, 1.2 s between shots (quickened after review), range 60 m. Each enemy hit, nearest first, takes what's left; the bullet stops when nothing is left. Kills 12 Blessed in a line; bound Blessed cost half as much. It costs 1.2 s of revolver fire (about 4 kills), so it pays off with 5 or more enemies in the line. |
+| Secondary | Silver Bullet | **M12:** 200 dmg carried through the line (was 240), 1.5 s between shots (was 1.2), range 60 m. Each enemy hit, nearest first, takes what's left; the bullet stops when nothing is left. Kills 10 Blessed in a line; bound Blessed cost half as much. Equal to the revolver with 5 in a line, up to twice as good with 10 or more; the revolver wins on single targets and the boss (200 against 133 damage per second). |
 | Q | Field of Blood | Tosses the thirty pieces of silver 3 m in front of the Betrayer, where they sink into a pool of blood, with no aiming: the Betrayer is fast, so it walks to where it wants the field. For 8 s, every player within 6 m of it (on any level; jumping doesn't take them out) fires twice as fast, even if the Betrayer dies meanwhile: both attacks, so also Sacrament's healing. Cooldown 30 s. |
-| E | Shadowstep | As now. |
+| E | Shadowstep | Dashes 8 m the way the Betrayer moves, invulnerable for 0.5 s, cooldown 6 s. **M12:** the dagger cuts every enemy within 0.5 m of the path (about 10–15 Blessed in a crowd) for 40 dmg, which bursts a Blessed, leaving a silver streak. It's the Betrayer's way through a crowd: the dash isn't slowed by wading, so the Betrayer chooses a line through the crowd instead of only backing away. |
 | Passive | Into the Night | The fastest of the damned, 9 m/s (the existing speed, now named). |
 
-- **Revolver or Silver Bullet:** the revolver for scattered enemies and flyers; Silver Bullet when the enemies line up in a corridor, behind the taunting Fallen or in the Binder's pile. On the boss alone both deal the same damage, but Blessed in front of it soak up the bullet, so the revolver wins there.
+- **Revolver or Silver Bullet:** the revolver for scattered enemies, flyers and the boss; Silver Bullet when ten or more line up in a corridor, behind the taunting Fallen or in the Binder's pile.
 - **Field of Blood looks like a place.** A glowing pool of blood-red liquid with light rising from it, so the party sees where to go. A player standing in it sees a red glow rising at the bottom of the screen, a red glow on the weapon and a buff icon by the HP bar, even when not shooting.
 - **Field of Blood is a rally call.** It's wasted on a scattered party. Its best use is the whole party standing in it in front of a Binder's pile (bound enemies take double damage and the party fires twice as fast, so ×4 damage per second), or near cover on the boss, so the party can still hide from Judgment.
 - **Fire rate, not damage.** A Blessed has 20 HP, and most attacks already kill one per hit, so doubled damage would be wasted in the swarm. Twice the fire rate doubles every class's kills there and its damage on the boss.
 - **The theme:** Judas's thirty pieces bought the Field of Blood. The Betrayer doesn't lead the damned; it pays them.
 - Field of Blood replaces Kiss of Betrayal as the party's boss multiplier, and it works in the swarm too.
-- **Thirty Pieces of Silver** stays reserved as the name for the Betrayer's ultimate (M12).
+- **Thirty Pieces of Silver** stays reserved as the name for the Betrayer's ultimate (M13).
 
 ## Exact rules
 
@@ -115,6 +126,9 @@ For now, they can still come in play later:
 - Two Masters, a timed second revolver: nothing to decide, so it's pressed the moment it's ready.
 - Greed, fire rate rising with each kill: in a swarm it maxes out in two shots, and on the boss it does nothing.
 - A Betrayer double jump: players already pass through enemies, and it would break the rule against jump-only perches.
+- A Fallen charge or War Stomp (playtest 2): Falling Star aimed anywhere now does both jobs, and a War Stomp's stun plus knockback is two effects. A charge may return as a new ability later.
+- Enemies blocking players: wading slows players in a crowd instead, without changing the network.
+- New enemy types and threats (playtest 2's reviews): an Exalted charger, leading shots, a grab special that drags a lone player into the crowd until a teammate frees them. Deferred until clearing the horde is fun on its own (M12).
 
 So they aren't proposed again:
 - Overheal turning into a shield.
