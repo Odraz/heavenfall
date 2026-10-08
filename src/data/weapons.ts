@@ -122,6 +122,8 @@ export const FALLING_STAR_TIME = 0.4;
 /** The landing's damage is small on purpose: the knockback is the point (M9 §3.2). */
 export const FALLING_STAR_DAMAGE = 10;
 export const FALLING_STAR_RADIUS = 5;
+/** Within the crater the landing always bursts what it kills (M12 §4.1). */
+export const FALLING_STAR_CRATER = 3.5;
 export const KNOCKBACK_DIST = 4;
 /** Falling Star's knockback takes 0.4 s (M9 §3.2); others take 0.2 s (MVP §5.6). */
 export const FALLING_STAR_KNOCKBACK_TIME = 0.4;

@@ -17,6 +17,10 @@ const FIELD_FLARE_MS = 300;
 const FLASH_MS = 60;
 const HIT_MARKER_MS = 80;
 const KILL_MARKER_MS = 120;
+/** A predicted burst's marker (M12 §4.4): gold ticks starting 10 px from the center instead of 7. */
+const BURST_MARKER_MS = 160;
+const MARKER_GAP = 7;
+const BURST_MARKER_GAP = 10;
 /** The hit and kill markers' ticks, in degrees around the crosshair (M8 §3.2). */
 const MARKER_TICKS = [45, 135, 225, 315];
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -118,6 +122,7 @@ export class Hud {
   onReady: (slot: 'Q' | 'E') => void = () => {};
   private readonly hitMarker: HTMLDivElement;
   private readonly killMarker: HTMLDivElement;
+  private readonly burstMarker: HTMLDivElement;
   private readonly vignettes: Record<'red' | 'green' | 'blue', HTMLDivElement>;
   private readonly center: HTMLDivElement;
   private readonly remaining: HTMLDivElement;
@@ -160,6 +165,7 @@ export class Hud {
   private shotAt = -Infinity;
   private hitAt = -Infinity;
   private killAt = -Infinity;
+  private burstAt = -Infinity;
   private shakeAt = -Infinity;
   private centerUntil = 0;
   private readonly fades: Fade[] = [];
@@ -235,6 +241,7 @@ export class Hud {
     this.crosshair = el('div', 'crosshair', this.root);
     this.hitMarker = this.marker('marker-hit');
     this.killMarker = this.marker('marker-kill');
+    this.burstMarker = this.marker('marker-burst', BURST_MARKER_GAP);
     this.chevron = el('div', 'ally-chevron', this.root);
     this.chevron.hidden = true;
     const svg = document.createElementNS(SVG_NS, 'svg');
@@ -507,9 +514,9 @@ export class Hud {
   }
 
   /** Hit and kill markers: four short ticks on the diagonals around the crosshair (M8 §3.2). */
-  private marker(className: string): HTMLDivElement {
+  private marker(className: string, gap = MARKER_GAP): HTMLDivElement {
     const m = el('div', `marker ${className}`, this.root);
-    for (const a of MARKER_TICKS) el('div', 'marker-tick', m).style.transform = `rotate(${a}deg) translateY(7px)`;
+    for (const a of MARKER_TICKS) el('div', 'marker-tick', m).style.transform = `rotate(${a}deg) translateY(${gap}px)`;
     return m;
   }
 
@@ -617,6 +624,11 @@ export class Hud {
 
   kill(now: number): void {
     this.killAt = now;
+  }
+
+  /** A predicted burst (M12 §4.4): the burst marker instead of the kill marker. */
+  burst(now: number): void {
+    this.burstAt = now;
   }
 
   shakeHp(now: number): void {
@@ -776,10 +788,12 @@ export class Hud {
       const [fx, fy] = this.muzzlePoint(now);
       this.flash.style.transform = `translate(${fx.toFixed(1)}px, ${fy.toFixed(1)}px) rotate(${this.flashRotate.toFixed(1)}deg) scale(${this.flashScale.toFixed(3)})`;
     }
-    // The kill marker replaces the hit marker while shown.
-    const killing = now - this.killAt < KILL_MARKER_MS;
-    this.hitMarker.style.opacity = !killing && now - this.hitAt < HIT_MARKER_MS ? '1' : '0';
+    // The burst marker replaces the kill marker, which replaces the hit marker, while shown.
+    const bursting = now - this.burstAt < BURST_MARKER_MS;
+    const killing = !bursting && now - this.killAt < KILL_MARKER_MS;
+    this.hitMarker.style.opacity = !bursting && !killing && now - this.hitAt < HIT_MARKER_MS ? '1' : '0';
     this.killMarker.style.opacity = killing ? '1' : '0';
+    this.burstMarker.style.opacity = bursting ? '1' : '0';
     const shaking = now - this.shakeAt < SHAKE_MS;
     this.hpBar.style.transform = shaking ? `translate(${(Math.random() - 0.5) * 8}px, ${(Math.random() - 0.5) * 6}px)` : '';
     if (now > this.centerUntil) this.center.hidden = true;

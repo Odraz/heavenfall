@@ -21,6 +21,8 @@ const FAR = 40;
 const PITCH_VARIATION = 0.05;
 /** Gains change over 50 ms, so dragging a slider doesn't click. */
 const GAIN_RAMP_S = 0.05;
+/** The limiter before the destination (M12 §4.3). */
+export const LIMITER = { threshold: -12, knee: 6, ratio: 6, attack: 0.003, release: 0.15 };
 
 interface Voice {
   name: SfxName;
@@ -59,8 +61,7 @@ export class AudioEngine {
 
   constructor() {
     this.ctx = new AudioContext();
-    this.master = this.ctx.createGain();
-    this.master.connect(this.ctx.destination);
+    this.master = masterChain(this.ctx);
     this.musicBus = this.ctx.createGain();
     this.musicBus.connect(this.master);
     this.sfxBus = this.ctx.createGain();
@@ -120,9 +121,10 @@ export class AudioEngine {
   /**
    * Plays a sound effect, positioned at `pos` if given, at `gain`, `when` seconds from now. It's
    * dropped when out of range, too soon after the same sound, or when no voice of lower or equal
-   * priority can be taken over. `priority` overrides the sound's own (another player's weapon).
+   * priority can be taken over. `priority` overrides the sound's own (another player's weapon). An
+   * explicit `rate` (playback rate) plays without the random pitch variation, so ladders stay exact.
    */
-  play(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number): void {
+  play(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number, rate?: number): void {
     const def = SFX[name];
     const buffer = this.buffers.get(name);
     if (!buffer) return;
@@ -152,7 +154,7 @@ export class AudioEngine {
     this.lastStart.set(name, start);
     const src = this.ctx.createBufferSource();
     src.buffer = buffer;
-    if (!('ui' in def && def.ui)) src.playbackRate.value = 1 + (Math.random() * 2 - 1) * PITCH_VARIATION;
+    src.playbackRate.value = playbackRate('ui' in def && def.ui === true, rate);
     const g = this.ctx.createGain();
     g.gain.value = gain;
     src.connect(g);
@@ -203,6 +205,26 @@ export class AudioEngine {
   }
 }
 
+/** The master gain, through a limiter to the destination, so 24 voices at once don't clip (M12 §4.3). */
+export function masterChain(ctx: Pick<BaseAudioContext, 'createGain' | 'createDynamicsCompressor' | 'destination'>): GainNode {
+  const master = ctx.createGain();
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = LIMITER.threshold;
+  limiter.knee.value = LIMITER.knee;
+  limiter.ratio.value = LIMITER.ratio;
+  limiter.attack.value = LIMITER.attack;
+  limiter.release.value = LIMITER.release;
+  master.connect(limiter);
+  limiter.connect(ctx.destination);
+  return master;
+}
+
+/** A play's playback rate: an explicit `rate` exactly; otherwise ±5% at random, UI sounds excepted. */
+export function playbackRate(ui: boolean, rate?: number, rnd: () => number = Math.random): number {
+  if (rate !== undefined) return rate;
+  return ui ? 1 : 1 + (rnd() * 2 - 1) * PITCH_VARIATION;
+}
+
 let engine: AudioEngine | null = null;
 
 /** The audio engine, once created (on the first user gesture, or at load in dev and bench). */
@@ -234,6 +256,6 @@ export function setMusic(play: TrackId | null, next: TrackId | null = null): voi
 }
 
 /** Plays a sound effect if audio is running (M8 §9.1). */
-export function sfx(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number): void {
-  engine?.play(name, pos, gain, when, priority);
+export function sfx(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number, rate?: number): void {
+  engine?.play(name, pos, gain, when, priority, rate);
 }

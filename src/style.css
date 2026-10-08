@@ -279,6 +279,12 @@ body {
   background: #ff7a3a;
 }
 
+/* A predicted burst (M12 §4.4): gold ticks starting 10 px out. */
+.marker-burst .marker-tick {
+  height: 10px;
+  background: #ffd24a;
+}
+
 /* The ally target's chevron (M8 §3.5), projected above the ally's head and drawn over everything. */
 .ally-chevron {
   position: absolute;
@@ -1623,7 +1629,8 @@ div.weapon-swing {
 .volume-row {
   display: grid;
   text-align: left;
-  grid-template-columns: 64px 1fr 44px;
+  /* Wide enough for "Screen shake", so every row's control starts at the same x (M12 §4.5). */
+  grid-template-columns: 96px 1fr 44px;
   align-items: center;
   gap: 10px;
   font-size: 14px;
@@ -1641,6 +1648,16 @@ div.weapon-swing {
 .volume-value {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* The Screen shake toggle (M12 §4.5): the checkbox where a slider starts. */
+.toggle-row input[type='checkbox'] {
+  justify-self: start;
+  /* The range inputs' own 2 px margin, so it starts where they do. */
+  margin: 0 0 0 2px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brimstone);
 }
 
 /* ---------------------------------------------------------------- Souls and the countdown (M8 §4, §5) */

@@ -48,6 +48,8 @@ export interface DebugState {
   director: DirectorInfo | null;
   /** Wading (M12 §3.1): ground enemies pressing against the local player this frame, and the applied speed factor. */
   wade: { count: number; factor: number };
+  /** Burst deaths (M12 §4.2) played on this client: light and heavy, and mass kills played. */
+  bursts: { light: number; heavy: number; massKills: number };
 }
 
 export const debugState: DebugState = {
@@ -69,6 +71,7 @@ export const debugState: DebugState = {
   chat: [],
   director: null,
   wade: { count: 0, factor: 1 },
+  bursts: { light: 0, heavy: 0, massKills: 0 },
 };
 
 /** Resets the game fields to their outside-a-game values. */
@@ -91,6 +94,7 @@ export function resetGameDebug(): void {
     chat: [],
     director: null,
     wade: { count: 0, factor: 1 },
+    bursts: { light: 0, heavy: 0, massKills: 0 },
   });
 }
 

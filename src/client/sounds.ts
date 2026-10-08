@@ -3,7 +3,7 @@
  * own input, snapshot changes and events.
  */
 import { audio, setMusic, sfx, type SoundPos } from '../audio/audio';
-import { PRIO_OTHERS } from '../audio/sfx';
+import { PRIO_ABILITY, PRIO_OTHERS } from '../audio/sfx';
 import type { ClassId } from '../data/classes';
 import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import type { TrackId } from '../data/music';
@@ -13,6 +13,7 @@ import { ENEMY_SLOTS, TICK_MS } from '../sim/constants';
 import type { GameMap } from '../sim/map';
 import { BOSS_CAST_VOLLEY, PROJ_ARROW, PROJ_ORB } from '../sim/sim';
 import type { SfxName } from '../audio/sfx';
+import type { MassKillPlay } from './massKill';
 
 const WEAPON_SFX: Record<ClassId, SfxName> = { fallen: 'shotgun', heretic: 'censerLaunch', binder: 'chaingun', betrayer: 'revolver' };
 /** Secondary attacks (M9 §5.2); others' Silver Bullets sound from their event instead. */
@@ -57,8 +58,20 @@ export class GameSounds {
     sfx('hitTick');
   }
 
-  kill(): void {
-    sfx('killTick');
+  /** An own kill; a predicted one climbs the pitch ladder at an exact `rate` (M12 §4.4). */
+  kill(rate?: number): void {
+    sfx('killTick', null, 1, 0, undefined, rate);
+  }
+
+  /** A burst death bursts (M12 §4.3): your own at PRIO_ABILITY, others' at PRIO_OTHERS. */
+  burstPop(at: SoundPos, mine: boolean): void {
+    sfx('burstPop', at, 1, 0, mine ? PRIO_ABILITY : PRIO_OTHERS);
+  }
+
+  /** A mass kill (M12 §4.3): yours without position at PRIO_ABILITY, others' at its position. */
+  massKill(m: MassKillPlay): void {
+    if (m.mine) sfx('massKill', null, m.gain, 0, PRIO_ABILITY, m.rate);
+    else sfx('massKill', { x: m.x, y: m.y }, m.gain, 0, PRIO_OTHERS, m.rate);
   }
 
   /** An enemy disappeared (died), when its feather burst plays. */

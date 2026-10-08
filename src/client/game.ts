@@ -3,7 +3,7 @@ import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
 import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
-import { ABILITIES, ATTACK_NONE, ATTACK_PRIMARY, ATTACK_SECONDARY, attackDef, BLASPHEMY_RADIUS, chooseAttack, SCOURGE_HALF_ARC, SECONDARIES, type AttackSlot } from '../data/weapons';
+import { ABILITIES, ATTACK_NONE, ATTACK_PRIMARY, ATTACK_SECONDARY, attackDef, BLASPHEMY_RADIUS, chooseAttack, SCOURGE_HALF_ARC, SECONDARIES, SHOTGUN_KNOCKBACK_RANGE, type AttackSlot } from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
@@ -23,7 +23,7 @@ import { ContactShadows } from '../render/contactShadows';
 import { archStoneHit } from '../render/arches';
 import { gateHit } from '../render/gate';
 import { PLAYER_RADIUS } from '../sim/constants';
-import { Particles } from '../render/particles';
+import { Particles, type Rotations } from '../render/particles';
 import { GameScene } from '../render/scene';
 import type { GameTextures } from '../render/textures';
 import { Vfx } from '../render/vfx';
@@ -35,6 +35,27 @@ import { PauseOverlay } from '../ui/pause';
 import type { ResultsData } from '../ui/results';
 import { BenchRunner } from './bench';
 import { attackKick } from './fpWeapon';
+import {
+  BLAST_GLOW_FROM,
+  BLAST_GLOW_TO,
+  BLAST_MS,
+  BLAST_SIDE,
+  BURST_RISE,
+  BurstMemory,
+  featherBudget,
+  HEAVY,
+  LIGHT,
+  piecesFor,
+  RecentBursts,
+  ROTATED_SPRITES,
+  towardCamera,
+  uniform,
+  type BurstInfo,
+  type Tier,
+} from './burstDeaths';
+import { Flinches, HIT_FLINCH, KILL_FLINCH, PredictedKills, predictHit, predictSilverBullet, type Predicted } from './killPredict';
+import { BurstPops, MassKills } from './massKill';
+import { massKillShake, Shake, SHAKE_BLASPHEMY, SHAKE_LANDING, SHAKE_SHROUD, SHROUD_SHAKE_RANGE } from './shake';
 import { LIGHTMAP_TEXELS } from '../render/lightmap';
 import { Bot, type BotEnemy } from './bot';
 import { corpseFrame, EnemyAnimator, spriteDirection, type Corpse } from './enemyAnim';
@@ -117,6 +138,7 @@ const INCENSE_EMBERS_PER_S = 4;
 const LAUNCH_MS = 400;
 /** At most this many corpses lie around; the oldest vanish first. */
 const MAX_CORPSES = 1000;
+const DEG = Math.PI / 180;
 
 const GLOW_WINDUP: Glow = { r: 1, g: 0.78, b: 0.2, a: 0.5 };
 const GLOW_ALLY: Glow = { r: 1, g: 0.8, b: 0.2, a: 0.08 };
@@ -143,6 +165,38 @@ const TAUNT_MARK_GAP = 0.3;
 const TAUNT_POP_MS = 150;
 const TAUNT_HOLD_MS = 600;
 const TAUNT_FADE_MS = 300;
+
+/** A death or censer break waiting for the render time (M12 §4.2). */
+interface PendingDeath {
+  at: number;
+  censer: boolean;
+  /** The enemy's slot, type and body center; −1 for a censer. */
+  slot: number;
+  type: number;
+  x: number;
+  y: number;
+  z: number;
+  /** The floor under it, its feet (a Cherub's hover height) and its facing, for the corpse or the blast. */
+  ground: number;
+  feet: number;
+  facing: number;
+  /** The ripple's delay was added. */
+  rippled: boolean;
+}
+
+/** A body blasted back before it bursts (M12 §4.2): its start, its offset at the end, lift and swell. */
+interface Blast {
+  start: number;
+  type: number;
+  x: number;
+  y: number;
+  feet: number;
+  facing: number;
+  ex: number;
+  ey: number;
+  lift: number;
+  swell: number;
+}
 
 export interface RosterEntry {
   id: number;
@@ -301,8 +355,28 @@ export class Game {
   /** performance.now() when each enemy was seen taunted, or -1 while it isn't (M8 §3.1). */
   private readonly tauntAt = new Float64Array(ENEMY_SLOTS).fill(-1);
   private readonly botEnemies: BotEnemy[] = [];
-  /** Delayed bursts, played when the render time reaches them. */
-  private readonly pendingBursts: Array<{ at: number; censer: boolean; type: number; x: number; y: number; z: number }> = [];
+  /**
+   * Deaths and censer breaks waiting for the render time. An enemy's death carries its slot and its
+   * corpse, created when the death plays unless the slot bursts instead (M12 §4.2).
+   */
+  private readonly pendingBursts: PendingDeath[] = [];
+  /** Burst deaths (M12 §4.2): the host's `bursts` by slot, the bodies being blasted back, the lately played. */
+  private readonly burstMemory = new BurstMemory();
+  private readonly blasts: Blast[] = [];
+  private readonly recentBursts = new RecentBursts();
+  private readonly massKills = new MassKills();
+  private readonly pops = new BurstPops();
+  /** Each enemy slot's position in the newest snapshot that had it, for the ripple's distances. */
+  private readonly lastEnemyX = new Float32Array(ENEMY_SLOTS);
+  private readonly lastEnemyY = new Float32Array(ENEMY_SLOTS);
+  /** The burst and the torn pieces in their 4 rotations. */
+  private readonly rotations: Record<string, Rotations>;
+  /** Your kills, at once (M12 §4.4), and the screen shake (§4.5). */
+  private readonly predicted = new PredictedKills();
+  private readonly flinches = new Flinches();
+  private readonly shake = new Shake();
+  private wasLeaping = false;
+  private readonly flinchGlow: Glow = { r: 1, g: 1, b: 1, a: 0 };
   private readonly sounds: GameSounds;
   /** Shadowstep afterimages: the Betrayer's idle frame where it started, facing its yaw then. */
   private readonly afterimages: Array<{ start: number; x: number; y: number; z: number; facing: number }> = [];
@@ -359,7 +433,8 @@ export class Game {
     this.judgmentGlow.visible = false;
     this.scene.scene.add(this.judgmentGlow);
     this.frames = o.atlas.frames;
-    this.particles = new Particles([o.atlas.frames.feather, o.atlas.frames.spark, o.atlas.frames.ember]);
+    this.particles = new Particles([o.atlas.frames.feather, o.atlas.frames.spark, o.atlas.frames.ember], this.pieceFloor);
+    this.rotations = Object.fromEntries(ROTATED_SPRITES.map((n) => [n, [0, 1, 2, 3].map((r) => o.atlas.frames[`${n}-r${r}`]) as unknown as Rotations]));
     this.hud = new Hud(o.root, this.classId, !o.singleplayer);
     this.hud.onChatSend = (text) => o.onChat?.(text);
     this.hud.setHp(this.maxHp, 0, this.maxHp);
@@ -438,6 +513,8 @@ export class Game {
     if (this.dead || this.over) return;
     if (slot === 'Q') {
       this.qPresses = (this.qPresses + 1) & 0xff;
+      // Your Blasphemy shakes the screen on its press (M12 §4.5).
+      if (this.classId === 'fallen' && this.displayedCooldown('Q', now) <= 0) this.shake.add(now, SHAKE_BLASPHEMY);
       return;
     }
     this.ePresses = (this.ePresses + 1) & 0xff;
@@ -629,6 +706,17 @@ export class Game {
         // A blue ring expanding from 1 m to 5 m over 0.3 s, and 24 embers bursting outward (M9 §5.1).
         this.vfx.ring(now, e.x, e.y, e.z, 0x4aa3e8, 1, 5, 300);
         this.particles.shroudBurst(e.x, e.y, e.z + PLAYER_HEIGHT / 2);
+        // It shakes the screen of a player within 6 m, after the render delay (M12 §4.5).
+        this.pendingFx.push({
+          at: now + this.snaps.delayTicks * TICK_MS,
+          run: (t) => {
+            const b = this.player.body;
+            if (!this.dead && Math.hypot(e.x - b.x, e.y - b.y) <= SHROUD_SHAKE_RANGE) this.shake.add(t, SHAKE_SHROUD);
+          },
+        });
+        break;
+      case 'bursts':
+        this.burstMemory.remember(e.list, now, (slot, id) => this.distToPlayer(slot, id));
         break;
       case 'silverBullet':
         // Others' Silver Bullets after the render delay; the own one was drawn at once (M9 §5.1).
@@ -864,7 +952,8 @@ export class Game {
           this.hud.shakeHp(now);
         } else if (me.hp > was.hp && !was.dead && !beamed) this.hud.vignette('green', 0.3, now);
         if ((me.shield > 0 && me.shield > was.shield) || (was.shield > 0 && me.shield === 0)) this.hud.vignette('blue', 0.5, now);
-        if (me.kills > was.kills) {
+        // A kill the local player predicted already showed its marker (M12 §4.4).
+        if (me.kills > was.kills && !this.predicted.holdsMarker(now)) {
           this.hud.kill(now);
           this.sounds.kill();
         }
@@ -884,25 +973,41 @@ export class Game {
         const type = prev.enemyType[i];
         const def = ENEMIES[type];
         const g = groundHeight(this.map, prev.enemyX[i], prev.enemyY[i], def.radius, Infinity, false, true);
-        const z = (g === -Infinity ? 0 : g) + (type === CHERUB ? CHERUB_HOVER : 0) + def.height / 2;
-        this.pendingBursts.push({ at: now + delay, censer: false, type, x: prev.enemyX[i], y: prev.enemyY[i], z });
-        if (this.o.enemyAnims[type]?.anims.death) {
-          const ground = g === -Infinity ? 0 : g;
-          // A Cherub falls from its hover height to the ground while it dies (§11.1).
-          const fallFrom = type === CHERUB ? ground + CHERUB_HOVER : undefined;
-          this.corpses.push({ start: now + delay, x: prev.enemyX[i], y: prev.enemyY[i], z: ground, facing: this.animator.facing[slot], type, fallFrom });
-          if (this.corpses.length > MAX_CORPSES) this.corpses.shift();
-        }
+        const ground = g === -Infinity ? 0 : g;
+        // A Cherub falls from its hover height to the ground while it dies (§11.1).
+        const feet = ground + (type === CHERUB ? CHERUB_HOVER : 0);
+        this.pendingBursts.push({
+          at: now + delay,
+          censer: false,
+          slot,
+          type,
+          x: prev.enemyX[i],
+          y: prev.enemyY[i],
+          z: feet + def.height / 2,
+          ground,
+          feet,
+          facing: this.animator.facing[slot],
+          rippled: false,
+        });
       }
       const alive = new Set(s.projSlot.subarray(0, s.projectileCount));
       for (let i = 0; i < prev.projectileCount; i++) {
         if (prev.projKind[i] !== PROJ_CENSER || alive.has(prev.projSlot[i])) continue;
         // A censer that vanished over the void didn't break (M10 §3.4).
         if (overVoid(this.map, prev.projX[i], prev.projY[i])) continue;
-        this.pendingBursts.push({ at: now + delay, censer: true, type: -1, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i] });
+        this.pendingBursts.push({ at: now + delay, censer: true, slot: -1, type: -1, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i], ground: 0, feet: 0, facing: 0, rippled: false });
       }
     }
     if (prev) this.spawnGlows(s, prev, now + this.snaps.delayTicks * TICK_MS);
+    // Where each enemy was last seen, and burst slots reused by new enemies forgotten (M12 §4.2).
+    if (prev) for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 1;
+    for (let i = 0; i < s.enemyCount; i++) {
+      const slot = s.enemySlot[i];
+      this.lastEnemyX[slot] = s.enemyX[i];
+      this.lastEnemyY[slot] = s.enemyY[i];
+      if (prev && !this.prevSlots[slot]) this.burstMemory.forget(slot);
+    }
+    if (prev) for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 0;
     // Others' Scourge swings, after the render delay, spread over the time to the next snapshot (M9 §5.1).
     if (prev) {
       const delay = this.snaps.delayTicks * TICK_MS;
@@ -1146,9 +1251,15 @@ export class Game {
         this.hud.swing(now);
         this.sounds.ownShot(this.classId, true);
         this.vfx.scourgeArc(now, p.body.x, p.body.y, p.body.z, p.yaw);
-        if (this.scourgeHits(ents, enemyZ)) {
+        const hits = this.scourgeHits(ents, enemyZ);
+        if (hits.length) {
           this.hud.hit(now);
           this.sounds.hit();
+        }
+        // Every Scourge kill bursts; each hit flinches away from the Binder (M12 §4.4).
+        for (const i of hits) {
+          const r = predictHit(ents.type[i], w.damage, (ents.flags[i] & FLAG_ROOTED) !== 0, true);
+          this.predictedHit(now, ents.slot[i], ents.x[i] - p.body.x, ents.y[i] - p.body.y, r);
         }
         return;
       }
@@ -1167,6 +1278,10 @@ export class Game {
     const [mx, my, mz] = this.unproject(msx, msy, OWN_BEAM_DEPTH);
     const pts: Array<[number, number, number]> = [];
     let hit = false;
+    // Enemies an earlier pellet of this shot is predicted to kill: later pellets pass them, as on the host.
+    const killed = new Set<number>();
+    const shotgun = this.classId === 'fallen' && slot === ATTACK_PRIMARY;
+    const chainGun = this.classId === 'binder' && slot === ATTACK_PRIMARY;
     for (let k = 0; k < w.pellets; k++) {
       const yaw = p.yaw + (Math.random() * 2 - 1) * w.spreadYaw;
       const pitch = p.pitch + (Math.random() * 2 - 1) * w.spreadPitch;
@@ -1174,6 +1289,7 @@ export class Game {
       const stop = raycastTerrain(this.map, ex, ey, ez, dx, dy, dz, w.range);
       const ts: Array<{ t: number; i: number }> = [];
       for (let i = 0; i < ents.count; i++) {
+        if (killed.has(i)) continue;
         const def = ENEMIES[ents.type[i]];
         const t = rayCylinder(ex, ey, ez, dx, dy, dz, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height);
         if (t <= stop) ts.push({ t, i });
@@ -1195,7 +1311,19 @@ export class Game {
             w.damage,
           );
           if (r.stopped) end = ts[r.reached - 1].t;
-        } else if (ts.length >= w.maxHits) end = ts[w.maxHits - 1].t;
+          const line = ts.slice(0, r.reached).map(({ i }) => ({ type: ents.type[i], rooted: (ents.flags[i] & FLAG_ROOTED) !== 0 }));
+          predictSilverBullet(line, r.carried).forEach((res, n) => this.predictedHit(now, ents.slot[ts[n].i], dx, dy, res));
+        } else {
+          if (ts.length >= w.maxHits) end = ts[w.maxHits - 1].t;
+          for (const { i } of ts.slice(0, w.maxHits)) {
+            // The shotgun bursts what it kills within 6 m of the Fallen's body center (M12 §4.1).
+            const def = ENEMIES[ents.type[i]];
+            const close = shotgun && distToCylinder(ex, ey, p.body.z + PLAYER_HEIGHT / 2, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height) <= SHOTGUN_KNOCKBACK_RANGE;
+            const res = predictHit(ents.type[i], w.damage, (ents.flags[i] & FLAG_ROOTED) !== 0, close, !chainGun);
+            if (res) killed.add(i);
+            this.predictedHit(now, ents.slot[i], dx, dy, res);
+          }
+        }
       }
       // A shot through a teammate's soul (for the revive hum).
       for (const q of this.snaps.playersOut) {
@@ -1215,21 +1343,123 @@ export class Game {
     }
   }
 
-  /** Whether a local Scourge swing would hit an interpolated enemy: within 3 m and the 120° arc (M9 §2.6). */
-  private scourgeHits(ents: InterpolatedEnemies, enemyZ: Float32Array): boolean {
+  /**
+   * The interpolated enemies a local Scourge swing would hit, as on the host: the nearest 6 within 3 m
+   * and the 120° arc (M9 §2.6).
+   */
+  private scourgeHits(ents: InterpolatedEnemies, enemyZ: Float32Array): number[] {
     const p = this.player;
     const w = SECONDARIES.binder;
     const cz = p.body.z + PLAYER_HEIGHT / 2;
     const cosMax = Math.cos(SCOURGE_HALF_ARC);
+    const hits: Array<{ i: number; d: number }> = [];
     for (let i = 0; i < ents.count; i++) {
       const def = ENEMIES[ents.type[i]];
-      if (distToCylinder(p.body.x, p.body.y, cz, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height) > w.range) continue;
+      const d = distToCylinder(p.body.x, p.body.y, cz, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height);
+      if (d > w.range) continue;
       const hx = ents.x[i] - p.body.x;
       const hy = ents.y[i] - p.body.y;
       const len = Math.hypot(hx, hy);
-      if (len < 1e-9 || (hx * Math.cos(p.yaw) + hy * Math.sin(p.yaw)) / len >= cosMax - 1e-9) return true;
+      if (len < 1e-9 || (hx * Math.cos(p.yaw) + hy * Math.sin(p.yaw)) / len >= cosMax - 1e-9) hits.push({ i, d });
     }
-    return false;
+    hits.sort((a, b) => a.d - b.d);
+    return hits.slice(0, w.maxHits).map((h) => h.i);
+  }
+
+  /**
+   * A predicted hit of the local player's on an enemy slot, along the horizontal (dx, dy) (M12 §4.4):
+   * it flinches, and a predicted kill plays the kill marker (or the burst marker) and `killTick` now.
+   */
+  private predictedHit(now: number, slot: number, dx: number, dy: number, r: Predicted): void {
+    this.flinches.add(slot, now, dx, dy, r ? KILL_FLINCH : HIT_FLINCH);
+    if (!r) return;
+    this.sounds.kill(this.predicted.kill(now));
+    if (r === 2) this.hud.burst(now);
+    else this.hud.kill(now);
+  }
+
+  /** An enemy slot's distance from a player, for the ripple: the local one's own position, others' interpolated. */
+  private distToPlayer(slot: number, playerId: number): number {
+    const q = playerId === this.localId ? this.player.body : this.snaps.playersOut.find((o) => o.id === playerId);
+    return q ? Math.hypot(this.lastEnemyX[slot] - q.x, this.lastEnemyY[slot] - q.y) : 0;
+  }
+
+  /** The floor a torn piece lands on (M12 §4.2.1): none over a wall, outside the map or over the void. */
+  private readonly pieceFloor = (x: number, y: number): number => (overVoid(this.map, x, y) ? -Infinity : this.floorAt(x, y));
+
+  /**
+   * An enemy's death plays (M12 §4.2): a burst death if the host burst its slot, otherwise the normal
+   * death with its feathers, chirp and corpse.
+   */
+  private playDeath(b: PendingDeath, now: number): void {
+    const info = this.burstMemory.take(b.slot, now);
+    if (info && this.o.enemyAnims[b.type]?.anims.pain) {
+      this.startBurstDeath(b, info, now);
+      return;
+    }
+    this.particles.featherBurst(b.x, b.y, b.z);
+    this.sounds.enemyDeath(b.type, b);
+    if (this.o.enemyAnims[b.type]?.anims.death) {
+      const fallFrom = b.type === CHERUB ? b.feet : undefined;
+      this.corpses.push({ start: now, x: b.x, y: b.y, z: b.ground, facing: b.facing, type: b.type, fallFrom });
+      if (this.corpses.length > MAX_CORPSES) this.corpses.shift();
+    }
+  }
+
+  /** A burst death's first 80 ms: the body blasted back along the angle, turning white-gold; then it bursts. */
+  private startBurstDeath(b: PendingDeath, info: BurstInfo, now: number): void {
+    const tier = info.heavy ? HEAVY : LIGHT;
+    const a = info.angle * DEG;
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
+    // The camera's right, horizontally: yaw + 90°.
+    const yaw = this.player.yaw;
+    const side = (Math.random() < 0.5 ? -1 : 1) * BLAST_SIDE;
+    const rx = -Math.sin(yaw) * side;
+    const ry = Math.cos(yaw) * side;
+    // A Cherub stays at its hover height and flies level.
+    const lift = b.type === CHERUB ? 0 : tier.lift;
+    const blast: Blast = { start: now, type: b.type, x: b.x, y: b.y, feet: b.feet, facing: b.facing, ex: dx * tier.blast + rx, ey: dy * tier.blast + ry, lift, swell: tier.swell };
+    this.blasts.push(blast);
+    const mine = info.playerId === this.localId;
+    const half = ENEMIES[b.type].height / 2;
+    this.pendingFx.push({ at: now + BLAST_MS, run: (t) => this.burst(t, b.type, b.x + blast.ex, b.y + blast.ey, b.feet + half + lift, dx, dy, tier, mine) });
+  }
+
+  /**
+   * The burst (M12 §4.2 step 2) at the end of the blast, moved toward the camera and up: the burst
+   * sprite, the torn pieces, feathers and sparks within the budget, and `burstPop`.
+   */
+  private burst(now: number, type: number, x: number, y: number, z: number, dx: number, dy: number, tier: Tier, mine: boolean): void {
+    const cam = this.scene.camera.position;
+    const tx = cam.x - x;
+    const ty = cam.z - y;
+    const camDist = Math.hypot(tx, ty);
+    if (camDist > 1e-6) {
+      const k = towardCamera(camDist) / camDist;
+      x += tx * k;
+      y += ty * k;
+    }
+    z += BURST_RISE;
+    // p: perpendicular to the angle, a random one of the two.
+    const ps = Math.random() < 0.5 ? -1 : 1;
+    const px = -dy * ps;
+    const py = dx * ps;
+    this.particles.burstSprite(this.rotations['fx-burst'], x, y, z, tier.sprite0, tier.sprite1);
+    for (const piece of piecesFor(type)) {
+      const along = uniform(piece.along) * tier.pieceSpeed;
+      const sideways = uniform(piece.side) * tier.pieceSpeed * (piece.sideSign || (Math.random() < 0.5 ? -1 : 1));
+      const vz = uniform(piece.vz) * tier.pieceSpeed;
+      this.particles.piece(this.rotations[piece.sprite], x, y, z + piece.dz, dx * along + px * sideways, dy * along + py * sideways, vz, piece.size, piece.turnMs, piece.half);
+    }
+    this.recentBursts.add(now);
+    const n = this.recentBursts.count(now);
+    const budget = featherBudget(tier.feathers, tier.sparks, n, Math.hypot(x - cam.x, y - cam.z));
+    this.particles.burstFeathers(x, y, z, dx, dy, px, py, budget.feathers, budget.sparks);
+    if (this.pops.play(now)) this.sounds.burstPop({ x, y }, mine);
+    this.massKills.burst(now, mine, x, y);
+    if (tier === HEAVY) debugState.bursts.heavy++;
+    else debugState.bursts.light++;
   }
 
   /**
@@ -1435,7 +1665,11 @@ export class Game {
       this.sendInput();
     }
 
-    // Bursts whose time has come.
+    // Particles move before this frame's new ones spawn, so each is first drawn at age 0 (a burst
+    // sprite lives only 220 ms).
+    this.particles.update(dt);
+    // Deaths and censer breaks whose time has come.
+    this.burstMemory.expire(now);
     for (let i = this.pendingBursts.length - 1; i >= 0; i--) {
       const b = this.pendingBursts[i];
       if (now < b.at) continue;
@@ -1446,11 +1680,24 @@ export class Game {
         this.sounds.censerBreak(b);
         this.incense.add(now, b.x, b.y, (x, y) => this.cloudBase(x, y, b.z));
       } else {
-        this.particles.featherBurst(b.x, b.y, b.z);
-        this.sounds.enemyDeath(b.type, b);
+        // A burst's ripple delays it once (M12 §4.2).
+        const ripple = this.burstMemory.peek(b.slot, now)?.ripple ?? 0;
+        if (ripple > 0 && !b.rippled) {
+          b.rippled = true;
+          b.at += ripple;
+          if (now < b.at) continue;
+        }
+        this.playDeath(b, now);
       }
       this.pendingBursts.splice(i, 1);
     }
+    const mass = this.massKills.update(now);
+    if (mass) {
+      this.sounds.massKill(mass);
+      debugState.bursts.massKills++;
+      if (mass.mine) this.shake.add(now, massKillShake(mass.count));
+    }
+    this.flinches.expire(now);
     for (let i = this.pendingFx.length - 1; i >= 0; i--) {
       if (now < this.pendingFx[i].at) continue;
       const fx = this.pendingFx[i];
@@ -1463,16 +1710,21 @@ export class Game {
       const at = this.incense.randomPoint();
       if (at) this.particles.incenseEmber(at[0], at[1], at[2]);
     }
-    this.particles.update(dt);
     this.vfx.update(now, this.scene.camera.position);
     this.incense.update(now, this.scene.camera.position);
 
     const b = p.body;
     audio()?.setListener(b.x, b.y, p.yaw);
+    // Your Falling Star shakes the screen as the leap lands (M12 §4.5).
+    if (this.wasLeaping && !p.leaping) this.shake.add(now, SHAKE_LANDING);
+    this.wasLeaping = p.leaping;
     // The bob only lowers the drawn view; aiming and input use the unbobbed eye (M8 §3.4). While dead,
-    // the camera rises with the soul: 1.6 m above its base (M8 §4.3).
-    if (this.dead) this.scene.setView(b.x, b.y, this.ownGround, p.yaw, p.pitch, PLAYER_EYE + this.souls.rise(this.localId, now));
-    else this.scene.setView(b.x, b.y, b.z, p.yaw, p.pitch, PLAYER_EYE - this.bob.eyeDrop);
+    // the camera rises with the soul: 1.6 m above its base (M8 §4.3). The shake offsets the view only (M12 §4.5).
+    const sh = this.shake.sample(now);
+    const vyaw = p.yaw + sh.yaw * DEG;
+    const vpitch = p.pitch + sh.pitch * DEG;
+    if (this.dead) this.scene.setView(b.x, b.y, this.ownGround, vyaw, vpitch, PLAYER_EYE + this.souls.rise(this.localId, now), sh.roll * DEG);
+    else this.scene.setView(b.x, b.y, b.z, vyaw, vpitch, PLAYER_EYE - this.bob.eyeDrop, sh.roll * DEG);
     const cam = this.params.cam;
     if (cam) {
       const ci = Math.floor(cam.y) * this.map.w + Math.floor(cam.x);
@@ -1556,7 +1808,20 @@ export class Game {
       // Launched by a Falling Star: the billboard flies an arc, peaking 1 m up halfway (M9 §3.2). A
       // flying Cherub is knocked back level, so nothing rises above the headroom (M10 §3.1).
       const lu = def.flying ? 1 : (now - this.launchAt[slot]) / LAUNCH_MS;
-      const z = enemyZ[i] + (lu >= 0 && lu < 1 ? 4 * LAUNCH_HEIGHT * lu * (1 - lu) : 0);
+      let z = enemyZ[i] + (lu >= 0 && lu < 1 ? 4 * LAUNCH_HEIGHT * lu * (1 - lu) : 0);
+      // A local hit's flinch (M12 §4.4): pushed along the shot and the camera's right, squashed, glowing.
+      let fx = ents.x[i];
+      let fy = ents.y[i];
+      let wide = 1;
+      let tall = 1;
+      const fl = this.flinches.at(slot, now);
+      if (fl) {
+        fx += fl.dx - Math.sin(this.player.yaw) * fl.right;
+        fy += fl.dy + Math.cos(this.player.yaw) * fl.right;
+        z += fl.dz;
+        wide = fl.wide;
+        tall = fl.tall;
+      }
       // Status (§10): hurt flash, wind-up gold glow, silenced grey tint.
       let glow = NO_GLOW;
       let judgment: Glow | null = null;
@@ -1578,13 +1843,20 @@ export class Game {
         this.judgmentGlow.material.opacity = 0.25 + 0.5 * t;
       }
       const flashT = now - this.flashAt[ents.slot[i]];
-      if (flashT < ENEMY_FLASH_MS) {
+      if (fl && fl.glow > 0) {
+        const g = this.flinchGlow;
+        g.r = fl.kind.r;
+        g.g = fl.kind.g;
+        g.b = fl.kind.b;
+        g.a = fl.glow;
+        glow = g;
+      } else if (flashT < ENEMY_FLASH_MS) {
         this.flashGlow.a = ENEMY_FLASH_PEAK * (1 - flashT / ENEMY_FLASH_MS);
         glow = this.flashGlow;
       } else if (judgment) glow = judgment;
       else if (ents.state[i] === ST_WINDUP) glow = GLOW_WINDUP;
       const grey = (flags & FLAG_SILENCED) !== 0;
-      target.add(f, ents.x[i], ents.y[i], z, height, false, grey ? 0.55 : 1, grey ? 0.55 : 1, grey ? 0.6 : 1, glow);
+      target.add(f, fx, fy, z, height * tall, false, grey ? 0.55 : 1, grey ? 0.55 : 1, grey ? 0.6 : 1, glow, 1, wide);
       // Contact shadows only under the players and the Gatekeeper, not the swarm: cut for the
       // performance gate (M10 §2.3 cut 3, decisions).
       if (type === GATEKEEPER) shadows.add(x, y, this.floorAt(x, y), def.radius * SHADOW_SIZE);
@@ -1618,6 +1890,7 @@ export class Game {
       this.enemyBillboards.get(c.type)!.add(af, c.x, c.y, c.z - cf.sink, af.height, false);
     }
     if (gone) this.corpses.splice(0, gone);
+    this.drawBlasts(now, eye);
     const proj = this.snaps.projOut;
     const seen = this.projSeen;
     seen.clear();
@@ -1712,11 +1985,37 @@ export class Game {
       bb.add(this.frames.coin, x, y, cz, COIN_SIZE, true);
     }
     this.vfx.setTethers(tethers);
-    this.particles.draw(bb);
+    this.particles.draw(bb, this.scene.camera.position.x, this.scene.camera.position.z);
     bb.end(this.scene.camera);
     shadows.end();
     for (const b of this.enemyBillboards.values()) b.end(this.scene.camera);
     for (const b of this.playerBillboards.values()) b.end(this.scene.camera);
+  }
+
+  private readonly blastGlow: Glow = { r: 1, g: 0.78, b: 0.32, a: 0 };
+
+  /**
+   * Bodies being blasted back (M12 §4.2 step 1): the first pain frame, flying along the angle and
+   * sideways, lifted and swelling with an ease-out, turning white-gold, for 80 ms.
+   */
+  private drawBlasts(now: number, eye: { x: number; y: number }): void {
+    for (let i = this.blasts.length - 1; i >= 0; i--) {
+      const b = this.blasts[i];
+      const u = (now - b.start) / BLAST_MS;
+      if (u >= 1) {
+        this.blasts.splice(i, 1);
+        continue;
+      }
+      const set = this.o.enemyAnims[b.type];
+      if (!set || u < 0) continue;
+      const e = 1 - (1 - u) * (1 - u);
+      const x = b.x + b.ex * e;
+      const y = b.y + b.ey * e;
+      const f = set.anims.pain[spriteDirection(b.facing, eye.x - x, eye.y - y)][0];
+      this.blastGlow.a = BLAST_GLOW_FROM + (BLAST_GLOW_TO - BLAST_GLOW_FROM) * u;
+      const s = 1 + (b.swell - 1) * e;
+      this.enemyBillboards.get(b.type)!.add(f, x, y, b.feet + b.lift * e, f.height * s, false, 1, 1, 1, this.blastGlow, 1, s);
+    }
   }
 
   private lastAnimAt = 0;

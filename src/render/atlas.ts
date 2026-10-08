@@ -1,6 +1,7 @@
 /** PNG sprites (cut out by scripts/cutout.py, §11.2) packed at load time into one 2048² canvas atlas (§11.1). */
 import * as THREE from 'three';
 import { DECOR_IDS, decorSprite } from '../data/decor';
+import { ROTATED_SPRITES } from '../client/burstDeaths';
 
 const pngs = import.meta.glob('../../assets/sprites/*.png', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 
@@ -12,6 +13,8 @@ const BILLBOARD_SPRITES = new Set([
   'proj-censer', 'proj-orb', 'proj-arrow',
   'feather', 'spark', 'ember',
   'coin', 'chain-ring', 'taunt',
+  // M12 §4.2: the burst and the torn pieces, each in 4 rotations.
+  ...ROTATED_SPRITES.flatMap((n) => [0, 1, 2, 3].map((r) => `${n}-r${r}`)),
   ...DECOR_IDS.map(decorSprite),
 ]);
 

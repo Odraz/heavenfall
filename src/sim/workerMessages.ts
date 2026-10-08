@@ -13,6 +13,8 @@ export type MainToWorker =
       god: boolean;
       /** The benchmark's arena, or -1 when not benchmarking (M10 gate §4). */
       benchArena: number;
+      /** The benchmark's bursts (M12 §10). */
+      benchBurst: boolean;
       singleplayer: boolean;
       localPlayerId: number;
     }
