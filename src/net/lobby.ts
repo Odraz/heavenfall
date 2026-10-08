@@ -1,7 +1,7 @@
 /**
- * The host's lobby state (§3, §9.2): players and classes, the start → ready → go handshake, and from
- * M8 joining the game in progress (§6.2). Pure TS; the simulation worker owns one and sends the
- * messages it produces.
+ * The host's lobby state (§3, §9.2): players and classes, the start → ready → go handshake, from
+ * M8 joining the game in progress (§6.2), and back to the Lobby after the game. Pure TS; the
+ * simulation worker owns one and sends the messages it produces.
  */
 import { isClassId, type ClassId } from '../data/classes';
 import type { CtrlMessage, LobbyPlayer, RejectReason } from './messages';
@@ -14,7 +14,7 @@ export const CHAT_MAX = 120;
 /** A client not ready this long after its `start` is dropped (§3). */
 export const LOAD_TIMEOUT_MS = 20000;
 
-/** The whole lobby: before `start`, Loading (everyone loads at once), then the game. */
+/** The whole lobby: before `start` (and again after the game), Loading (everyone loads at once), then the game. */
 export type LobbyPhase = 'lobby' | 'loading' | 'game';
 
 export interface LobbyOptions {
@@ -31,9 +31,9 @@ export type StartPlayer = Extract<CtrlMessage, { type: 'start' }>['players'][num
 
 /**
  * Where a player is: in the Lobby (before the game, or the in-progress Lobby during it), loading
- * (between its `start` and its `ready`), or in the game.
+ * (between its `start` and its `ready`), in the game, or on Results after it.
  */
-type MemberState = 'lobby' | 'loading' | 'game';
+type MemberState = 'lobby' | 'loading' | 'game' | 'results';
 
 interface Member extends LobbyPlayer {
   state: MemberState;
@@ -66,7 +66,7 @@ export class Lobby {
     this.dungeonId = o.dungeonId;
     this.password = o.password;
     this.version = o.version;
-    this.players.set(0, { id: 0, name: cleanName(o.hostName), classId: null, isHost: true, state: 'lobby', startedAt: 0 });
+    this.players.set(0, { id: 0, name: cleanName(o.hostName), classId: null, isHost: true, inResults: false, state: 'lobby', startedAt: 0 });
   }
 
   /**
@@ -80,7 +80,7 @@ export class Lobby {
     if (password !== this.password) return { ok: false, reason: 'bad_password' };
     for (let id = 1; id < MAX_PLAYERS; id++) {
       if (this.players.has(id)) continue;
-      this.players.set(id, { id, name: cleanName(name), classId: null, isHost: false, state: 'lobby', startedAt: 0 });
+      this.players.set(id, { id, name: cleanName(name), classId: null, isHost: false, inResults: false, state: 'lobby', startedAt: 0 });
       return { ok: true, playerId: id, inProgress: this.phase === 'game' };
     }
     return { ok: false, reason: 'full' };
@@ -92,7 +92,9 @@ export class Lobby {
 
   /** The `lobby` message: every connected player, sorted by id. */
   lobbyMessage(): Extract<CtrlMessage, { type: 'lobby' }> {
-    const players = [...this.players.values()].sort((a, b) => a.id - b.id).map(({ id, name, classId, isHost }) => ({ id, name, classId, isHost }));
+    const players = [...this.players.values()]
+      .sort((a, b) => a.id - b.id)
+      .map(({ id, name, classId, isHost, state }) => ({ id, name, classId, isHost, inResults: state === 'results' }));
     return { type: 'lobby', dungeonId: this.dungeonId, players };
   }
 
@@ -116,10 +118,13 @@ export class Lobby {
     return true;
   }
 
-  /** The host's `Start` is enabled only when every connected player has picked a class (§3). */
+  /**
+   * The host's `Start` is enabled only when every connected player has picked a class (§3) and is
+   * back from Results.
+   */
   canStart(): boolean {
     if (this.phase !== 'lobby') return false;
-    for (const p of this.players.values()) if (!p.classId) return false;
+    for (const p of this.players.values()) if (!p.classId || p.state !== 'lobby') return false;
     return true;
   }
 
@@ -194,5 +199,24 @@ export class Lobby {
     this.readyIds.clear();
     for (const p of this.players.values()) p.state = 'game';
     return this.startPlayers();
+  }
+
+  /**
+   * The game ended: the lobby opens again. Players in the game are on Results until their
+   * `backToLobby`; the rest (the in-progress Lobby, or loading into the game) are in the Lobby at
+   * once. Everyone keeps their class.
+   */
+  endGame(): void {
+    if (this.phase !== 'game') return;
+    this.phase = 'lobby';
+    for (const p of this.players.values()) p.state = p.state === 'game' ? 'results' : 'lobby';
+  }
+
+  /** A player's `backToLobby` from Results; false if the player isn't on Results. */
+  backToLobby(id: number): boolean {
+    const p = this.players.get(id);
+    if (!p || p.state !== 'results') return false;
+    p.state = 'lobby';
+    return true;
   }
 }

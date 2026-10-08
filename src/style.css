@@ -985,18 +985,50 @@ div.weapon-swing {
 
 .results .run-time {
   font-size: 22px;
+  text-align: center;
+}
+
+.results .panel {
   margin-bottom: 12px;
 }
 
 .results table {
   border-collapse: collapse;
   font-size: 20px;
-  margin-bottom: 20px;
 }
 
+.results th,
 .results td {
   padding: 6px 18px;
   border-bottom: 1px solid rgba(247, 240, 220, 0.2);
+}
+
+/* Numbers line up on the right; the name column stays on the left. */
+.results th,
+.results td:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.results th {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.results tr.me td:first-child {
+  color: var(--gold);
+}
+
+/* Reserved, so the buttons don't move when the host leaves. */
+.results .message {
+  line-height: 1.2em;
+  text-align: center;
+}
+
+.results .message:empty {
+  display: block;
+  visibility: hidden;
 }
 
 /* 9-slice button images (§11.2): the slices keep the gold border and its end ornaments. */

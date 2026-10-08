@@ -32,7 +32,7 @@ describe('disconnects', () => {
     expect(sim.result).toBe('defeat');
     // gameOver lists the players still connected.
     const over = sim.events.find((e) => e.event.type === 'gameOver')!.event;
-    expect(over.type === 'gameOver' && Object.keys(over.kills)).toEqual(['0']);
+    expect(over.type === 'gameOver' && Object.keys(over.stats)).toEqual(['0']);
   });
 
   it('makes each player index its ID, whoever else is in the game (M8 §6.2)', () => {

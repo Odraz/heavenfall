@@ -62,7 +62,7 @@ import {
   WEAPONS,
   type AttackSlot,
 } from '../data/weapons';
-import type { GameEvent } from '../net/messages';
+import type { GameEvent, PlayerStats } from '../net/messages';
 import {
   ALLY_NONE,
   encodeSnapshot,
@@ -186,6 +186,10 @@ export interface SimPlayer {
   /** Tick of a pending Falling Star landing, or -1. */
   landingTick: number;
   kills: number;
+  /** Damage dealt to enemies, up to their remaining HP, for Results. */
+  damage: number;
+  /** Revives this player helped with, for Results. */
+  reviveAssists: number;
   /** Primary attacks fired, for others' shot sounds (M8 §9.1); wrapped only in snapshots. */
   shots: number;
   /** Secondary attacks fired (M9 §10). */
@@ -197,6 +201,8 @@ export interface SimPlayer {
   revive: number;
   /** Times the player has died this game; reviving slows from the second (M9 review). */
   deaths: number;
+  /** Bit per player index that added to this soul's revive progress since it last was 0. */
+  revivers: number;
   /** Tick the soul started rising (the death); its ground point is the dead player's feet. */
   soulTick: number;
   /** Seconds of cooldown remaining. */
@@ -631,12 +637,15 @@ export class Simulation {
       pendingEAlly: ALLY_NONE,
       landingTick: -1,
       kills: 0,
+      damage: 0,
+      reviveAssists: 0,
       shots: 0,
       shots2: 0,
       beamId: ALLY_NONE,
       beamUntil: 0,
       revive: 0,
       deaths: 0,
+      revivers: 0,
       soulTick: 0,
       cdQ: 0,
       cdE: 0,
@@ -846,6 +855,7 @@ export class Simulation {
         p.hp = p.maxHp;
         p.shield = 0;
         p.revive = 0;
+        p.revivers = 0;
         p.lastDamageTick = this.tick;
         const [c, r] = a.entryCells[p.index];
         this.events.push({ to: 'all', event: { type: 'playerRespawned', playerId: p.id } });
@@ -865,9 +875,11 @@ export class Simulation {
   finish(result: 'victory' | 'defeat'): void {
     if (this.result) return;
     this.result = result;
-    const kills: Record<number, number> = {};
-    for (const p of this.players) if (p.connected) kills[p.id] = p.kills;
-    this.events.push({ to: 'all', event: { type: 'gameOver', result, timeMs: Math.round(this.timeMs), kills } });
+    const stats: Record<number, PlayerStats> = {};
+    for (const p of this.players) {
+      if (p.connected) stats[p.id] = { kills: p.kills, damage: Math.round(p.damage), deaths: p.deaths, reviveAssists: p.reviveAssists };
+    }
+    this.events.push({ to: 'all', event: { type: 'gameOver', result, timeMs: Math.round(this.timeMs), stats } });
   }
 
   // ------------------------------------------------------------------ flow fields
@@ -1113,11 +1125,12 @@ export class Simulation {
       this.judgmentDamage += amount;
       if (this.judgmentDamage >= JUDGMENT_INTERRUPT * partyMultiplier(this.bossParty) - 1e-9) this.interruptJudgment();
     }
+    const shooter = source >= 0 ? this.slots[source] : undefined;
+    if (shooter) shooter.damage += Math.min(amount, this.eHp[slot]);
     this.eHp[slot] -= amount;
     this.eHurtTick[slot] = this.tick;
     // 5. Death and kill credit.
     if (this.eHp[slot] <= 0) {
-      const shooter = source >= 0 ? this.slots[source] : undefined;
       if (shooter) shooter.kills++;
       this.removeEnemy(slot);
     }
@@ -1180,6 +1193,7 @@ export class Simulation {
     if (g !== -Infinity) p.z = g;
     p.soulTick = this.tick;
     p.revive = 0;
+    p.revivers = 0;
     // Its `beam` runs out 0.6 s after its last firing, as while alive (M9 §2.5).
     p.fire = 0;
     p.pendingQ = false;
@@ -1364,7 +1378,7 @@ export class Simulation {
         // revives instead, like a hit (M8 §4.2).
         const ally = this.sacramentTarget(p);
         if (!ally) return;
-        if (ally.dead) this.addRevive(ally, reviveHit(w.interval, true));
+        if (ally.dead) this.addRevive(ally, reviveHit(w.interval, true), p);
         else this.heal(ally, w.damage);
         p.beamId = ally.id;
         p.beamUntil = this.tick + BEAM_HOLD_TICKS;
@@ -1395,7 +1409,7 @@ export class Simulation {
         knock?.add(s);
       }
     }
-    for (const o of souls) this.addRevive(o, reviveHit(w.interval, p.classId === 'heretic'));
+    for (const o of souls) this.addRevive(o, reviveHit(w.interval, p.classId === 'heretic'), p);
     // The shotgun knocks back each survivor within 6 m once per shot, except rooted ones (M9 §3.1).
     if (knock) {
       const cz = p.z + PLAYER_HEIGHT / 2;
@@ -1476,7 +1490,7 @@ export class Simulation {
     const souls = new Set<SimPlayer>();
     this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
     for (const h of dealt.hits) this.damageEnemy(h.s, h.amount, p.index);
-    for (const o of souls) this.addRevive(o, reviveHit(w.interval, false));
+    for (const o of souls) this.addRevive(o, reviveHit(w.interval, false), p);
     this.events.push({ to: 'all', event: { type: 'silverBullet', playerId: p.id, x: ex, y: ey, z: ez, ex: ex + dx * stop, ey: ey + dy * stop, ez: ez + dz * stop } });
   }
 
@@ -1492,17 +1506,23 @@ export class Simulation {
     return p.z + soulRise((this.tick - p.soulTick) / TICK_HZ);
   }
 
-  /** Adds revive progress to a soul, slowed for a player who died before; at 1 the player is revived. */
-  addRevive(p: SimPlayer, amount: number): void {
+  /**
+   * Adds revive progress to a soul, slowed for a player who died before; at 1 the player is revived.
+   * `by` is the player who added it: everyone who did since the progress was last 0 gets a revive assist.
+   */
+  addRevive(p: SimPlayer, amount: number, by: SimPlayer | null = null): void {
     if (!this.hasSoul(p)) return;
     p.revive = Math.min(1, p.revive + amount / reviveSlowdown(p.deaths));
+    if (by) p.revivers |= 1 << by.index;
     if (p.revive >= 1 - 1e-9) this.revivePlayer(p);
   }
 
   /** Revived on the soul's ground point with half HP, invulnerable for 2 s. */
   private revivePlayer(p: SimPlayer): void {
+    for (const q of this.players) if (q !== p && p.revivers & (1 << q.index)) q.reviveAssists++;
     p.dead = false;
     p.revive = 0;
+    p.revivers = 0;
     p.hp = p.maxHp * REVIVE_HP;
     p.shield = 0;
     p.lastDamageTick = this.tick;
@@ -1515,7 +1535,9 @@ export class Simulation {
   /** Revive progress decays every tick, slowed like the progress, so every source takes the same times longer. */
   private updateSouls(): void {
     for (const p of this.players) {
-      if (this.hasSoul(p)) p.revive = Math.max(0, p.revive - (REVIVE_DECAY * TICK_DT) / reviveSlowdown(p.deaths));
+      if (!this.hasSoul(p)) continue;
+      p.revive = Math.max(0, p.revive - (REVIVE_DECAY * TICK_DT) / reviveSlowdown(p.deaths));
+      if (p.revive === 0) p.revivers = 0;
     }
   }
 
@@ -1593,7 +1615,7 @@ export class Simulation {
         // It also adds to every soul within its radius.
         for (const o of this.players) {
           if (o === p || !this.hasSoul(o)) continue;
-          if (distToCylinder(bx, by, bz, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= COMMUNION_RADIUS) this.addRevive(o, REVIVE_COMMUNION);
+          if (distToCylinder(bx, by, bz, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= COMMUNION_RADIUS) this.addRevive(o, REVIVE_COMMUNION, p);
         }
         p.cdQ = cd;
         this.abilityEvent(p, 'Q', p.x, p.y, p.z, healed);
@@ -1862,7 +1884,7 @@ export class Simulation {
     for (const o of this.players) {
       if (o === shooter || !this.hasSoul(o)) continue;
       if (distToCylinder(x, y, z, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= REVIVE_CENSER_RADIUS) {
-        this.addRevive(o, reviveHit(WEAPONS[shooter.classId].interval, shooter.classId === 'heretic'));
+        this.addRevive(o, reviveHit(WEAPONS[shooter.classId].interval, shooter.classId === 'heretic'), shooter);
       }
     }
   }

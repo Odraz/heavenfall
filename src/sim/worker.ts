@@ -67,8 +67,16 @@ function runTick(): void {
   post({ t: 'snap', to: localPlayerId, bufs: parts, simMs: ms }, parts);
   for (const [to, bufs] of remote) post({ t: 'snap', to, bufs, simMs: ms }, bufs);
   flushEvents();
-  // At the result the host sends one last snapshot and gameOver, then stops simulating (§3).
-  if (sim.result) stopLoop();
+  // At the result the host sends one last snapshot and gameOver, then stops simulating (§3). In
+  // multiplayer the lobby opens again.
+  if (sim.result) {
+    stopLoop();
+    if (lobby) {
+      sim = null;
+      lobby.endGame();
+      broadcastLobby();
+    }
+  }
 }
 
 function stopLoop(): void {
@@ -155,9 +163,12 @@ function playerCtrl(playerId: number, msg: CtrlMessage): void {
       }
       break;
     }
+    case 'backToLobby':
+      if (lobby.backToLobby(playerId)) broadcastLobby();
+      break;
     case 'enterGame': {
       const start = lobby.enterGame(playerId, performance.now());
-      if (start && !sim?.result) {
+      if (start) {
         send(playerId, start);
         broadcastLobby();
       }

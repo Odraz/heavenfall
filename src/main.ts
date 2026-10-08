@@ -18,8 +18,8 @@ import type { Transport } from './net/transport';
 import { withoutJoin } from './net/invite';
 import { singleplayerSetupScreen, titleScreen, validName } from './ui/menus';
 import { loadingScreen } from './ui/loading';
-import { hostSetupScreen, joinScreen, lobbyScreen, multiplayerScreen } from './ui/multiplayer';
-import { showResults } from './ui/results';
+import { hostSetupScreen, joinScreen, lobbyScreen, multiplayerScreen, type LobbyView } from './ui/multiplayer';
+import { showResults, type ResultsData, type ResultsView } from './ui/results';
 import { hideTooltip } from './ui/tooltip';
 import { initAudio, setMusic, sfx } from './audio/audio';
 
@@ -114,7 +114,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
     net: null,
     onResults: (data) => {
       end();
-      show('results', showResults(data, () => toTitle()));
+      show('results', showResults(data, { onLeave: () => toTitle() }).el);
     },
     onLeave: () => {
       end();
@@ -185,8 +185,7 @@ function toJoin(name: string, prefillId: string | null = null, auto = false): vo
     joinGame(gameId, name, password, () => left).then(
       (j) =>
         enterLobby(
-          // The in-progress Lobby shows the game ID to clients too (M8 §6.2).
-          { transport: j.transport, playerId: j.playerId, host: null, client: j.transport, gameId: j.inProgress ? gameId : null, net: j.transport.stats },
+          { transport: j.transport, playerId: j.playerId, host: null, client: j.transport, gameId, net: j.transport.stats },
           j.lobby,
           j.inProgress,
           auto,
@@ -234,7 +233,7 @@ interface Session {
   /** The connection to the host, on a client. */
   client: PeerTransport | null;
   /** Shown in the Lobby for the host, and for clients in the in-progress Lobby. */
-  gameId: string | null;
+  gameId: string;
   net: NetStats | null;
 }
 
@@ -243,17 +242,19 @@ const CHAT_LOG = 50;
 
 /**
  * A multiplayer session from the Lobby on: class picks, then `start` → Loading → `ready` → `go` →
- * In Game → Results (§3). The host and its clients run the same flow; only their transports differ.
- * A client joining a game in progress waits in the in-progress Lobby until it presses `Enter game`,
- * which gets it its own `start` (M8 §6.2).
+ * In Game → Results, and from Results `Back to lobby` for the next game (§3). The host and its clients
+ * run the same flow; only their transports differ. A client joining a game in progress waits in the
+ * in-progress Lobby until it presses `Enter game`, which gets it its own `start` (M8 §6.2).
  */
 function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlayer[] } | null, inProgress: boolean, auto = false): void {
   let game: Game | null = null;
+  /** Counts the games of this session: a load from an earlier one stops. */
+  let round = 0;
   let loading = false;
   let go = false;
-  /** `gameOver` arrived: the host closing its connections is expected from now on (§9.4). */
-  let over = false;
   let ended = false;
+  /** Results, while shown. */
+  let results: ResultsView | null = null;
   /** The newest roster, for names and for the game's party frames (M8 §6.2). */
   let latest = initial;
   /** Bot auto-join pressed `Enter game`. */
@@ -261,39 +262,64 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
   /** The chat log with the senders' names as they were when each message arrived (M8 §7). */
   const chat: Array<{ playerId: number; name: string; text: string }> = [];
 
+  const disposeGame = (): void => {
+    game?.dispose();
+    game = null;
+    s.transport.onSnapshot = () => {};
+  };
+
   /** Ends the session and returns to Title. The host leaving sends `leave` to every client. */
   const end = (message: string, left: boolean): void => {
     if (ended) return;
     ended = true;
     if (left) s.transport.sendCtrl({ type: 'leave' });
-    game?.dispose();
+    disposeGame();
     s.host?.stop(left);
     s.client?.close();
     toTitle(message);
   };
 
-  const lobby = lobbyScreen({
-    gameId: s.gameId,
-    isHost: s.host !== null,
-    inProgress,
-    playerId: s.playerId,
-    onPick: (classId) => s.transport.sendCtrl({ type: 'pickClass', classId }),
-    onStart: () => s.host?.startGame(),
-    onEnterGame: () => s.transport.sendCtrl({ type: 'enterGame' }),
-    onChat: (text) => s.transport.sendCtrl({ type: 'chat', text }),
-    onLeave: () => end('', true),
-  });
-  show('lobby', lobby.el);
+  /** The game is over for this player: the next `start` begins a new one. */
+  const nextRound = (): void => {
+    round++;
+    loading = false;
+    go = false;
+    entered = false;
+    if (s.client) s.client.loading = false;
+    disposeGame();
+  };
+
+  let lobby: LobbyView;
+  /** Shows the Lobby; after a game it starts with the session's chat and the newest roster. */
+  const showLobby = (inProg: boolean): void => {
+    inProgress = inProg;
+    results = null;
+    lobby = lobbyScreen({
+      // The in-progress Lobby shows the game ID to clients too (M8 §6.2).
+      gameId: s.host || inProg ? s.gameId : null,
+      isHost: s.host !== null,
+      inProgress: inProg,
+      playerId: s.playerId,
+      onPick: (classId) => s.transport.sendCtrl({ type: 'pickClass', classId }),
+      onStart: () => s.host?.startGame(),
+      onEnterGame: () => s.transport.sendCtrl({ type: 'enterGame' }),
+      onChat: (text) => s.transport.sendCtrl({ type: 'chat', text }),
+      onLeave: () => end('', true),
+    });
+    show('lobby', lobby.el);
+    lobby.setChat(chat);
+    if (latest) updateLobby(latest);
+  };
+
   /**
-   * A new roster. Before Loading the Lobby shows it, and bot auto-join picks a class while it has
-   * none: the host ignores a taken class, and every accepted pick sends a new lobby state, so a lost
-   * race picks again; in the in-progress Lobby it then presses `Enter game` (M8 §6.4). In game, it
-   * names the players.
+   * A new roster. In the Lobby it's shown, and bot auto-join picks a class while it has none: the host
+   * ignores a taken class, and every accepted pick sends a new lobby state, so a lost race picks again;
+   * in the in-progress Lobby it then presses `Enter game` (M8 §6.4). In game, it names the players.
    */
   const updateLobby = (state: { dungeonId: string; players: LobbyPlayer[] }): void => {
     latest = state;
     game?.setRoster(state.players);
-    if (loading) return;
+    if (loading || results) return;
     lobby.update(state);
     if (!auto) return;
     if (state.players.find((p) => p.id === s.playerId)?.classId) {
@@ -306,7 +332,7 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
     const classId = autoClass(state.players);
     if (classId) s.transport.sendCtrl({ type: 'pickClass', classId });
   };
-  if (initial) updateLobby(initial);
+  showLobby(inProgress);
 
   const onChat = (playerId: number, text: string): void => {
     const name = latest?.players.find((p) => p.id === playerId)?.name ?? 'Player';
@@ -323,14 +349,31 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
     game.start();
   };
 
+  /** Results stay up until `Back to lobby`; the host keeps the session open meanwhile. */
+  const showGameResults = (data: ResultsData): void => {
+    nextRound();
+    results = showResults(data, {
+      onLeave: () => (ended ? toTitle() : end('', true)),
+      onBackToLobby: () => {
+        s.transport.sendCtrl({ type: 'backToLobby' });
+        resetGameDebug();
+        debugState.chat = chat.map(({ playerId, text }) => ({ playerId, text }));
+        showLobby(false);
+      },
+    });
+    show('results', results.el);
+  };
+
   const load = async (msg: Extract<CtrlMessage, { type: 'start' }>): Promise<void> => {
+    const r = round;
+    const stale = (): boolean => ended || r !== round;
     const view = loadingScreen();
     show('loading', view.el);
     await view.ready;
-    if (ended) return;
+    if (stale()) return;
     const roster: RosterEntry[] = msg.players;
     const assets = await loadGameAssets(msg.dungeonId, roster, s.playerId, true, view.set);
-    if (ended) return;
+    if (stale()) return;
     const g = new Game({
       root,
       ...assets,
@@ -341,21 +384,14 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
       roster,
       singleplayer: false,
       net: s.net,
-      onResults: (data) => {
-        // The session ends at Results: the host closes all connections (§3).
-        ended = true;
-        g.dispose();
-        s.host?.stop(false);
-        s.client?.close();
-        show('results', showResults(data, () => toTitle()));
-      },
+      onResults: showGameResults,
       onLeave: () => end('', true),
       onChat: (text) => s.transport.sendCtrl({ type: 'chat', text }),
     });
     game = g;
     if (latest) g.setRoster(latest.players);
     await g.prepare();
-    if (ended) return;
+    if (stale()) return;
     view.set('Waiting for the other players…');
     s.transport.sendCtrl({ type: 'ready' });
     if (go) enterGame();
@@ -385,13 +421,12 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
         if (typeof msg.playerId === 'number' && typeof msg.text === 'string') onChat(msg.playerId, msg.text);
         break;
       case 'event':
-        if (msg.event.type === 'gameOver') {
-          over = true;
-          // A player still in the in-progress Lobby or loading into the game goes back to Title.
-          if (!go) {
-            end('The game has ended', false);
-            break;
-          }
+        // A player still in the in-progress Lobby or loading into the game is in the Lobby for the
+        // next one.
+        if (msg.event.type === 'gameOver' && !go) {
+          nextRound();
+          showLobby(false);
+          break;
         }
         // Events are about the game, so they wait until this player is in it.
         if (go) game?.handleCtrl(msg);
@@ -400,7 +435,11 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
   };
   if (s.client) {
     s.client.onHostLeft = () => {
-      if (!over) end('Host left the game', false);
+      // On Results the numbers stay up, and `Leave` returns to Title.
+      if (results) {
+        ended = true;
+        results.hostLeft();
+      } else end('Host left the game', false);
     };
   }
 }

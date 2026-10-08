@@ -18,6 +18,9 @@ describe('damage pipeline (M9 §3.6)', () => {
     expect('mark' in sim || 'markSlot' in sim).toBe(false);
     expect(sim.players[1].kills).toBe(1);
     expect(sim.players[0].kills).toBe(0);
+    // Damage for Results counts up to the HP left: 10 + 30 + 20, the Chorister's 60.
+    expect(sim.players[1].damage).toBe(60);
+    expect(sim.players[0].damage).toBe(0);
   });
 
   it('2: Brimstone Hide takes 40% off for the Fallen', () => {
@@ -465,7 +468,7 @@ describe('defeat (§5.7)', () => {
     sim.step();
     expect(sim.result).toBe('defeat');
     const over = sim.events.find((e) => e.event.type === 'gameOver');
-    expect(over?.event).toMatchObject({ type: 'gameOver', result: 'defeat', kills: { 0: 0, 1: 0 } });
+    expect(over?.event).toMatchObject({ type: 'gameOver', result: 'defeat', stats: { 0: { kills: 0, deaths: 1 }, 1: { kills: 0, deaths: 1 } } });
     // The simulation stops.
     const t = sim.tick;
     sim.step();

@@ -238,7 +238,7 @@ export function lobbyScreen(a: LobbyActions): LobbyView {
         s.name.textContent = p ? p.name : 'Waiting for a player…';
         s.tag.textContent = p?.isHost ? 'host' : '';
         s.tag.hidden = !p?.isHost;
-        s.cls.textContent = p ? (p.classId ? CLASSES[p.classId].name : 'Choosing a class…') : '';
+        s.cls.textContent = p ? (p.inResults ? 'Viewing the results…' : p.classId ? CLASSES[p.classId].name : 'Choosing a class…') : '';
       });
       // A class taken by another player is greyed out and shows who took it (§3).
       for (const [id, { card, taken }] of cardEls) {
@@ -249,9 +249,9 @@ export function lobbyScreen(a: LobbyActions): LobbyView {
         card.classList.toggle('taken', !!owner && !mine);
         taken.textContent = owner && !mine ? `Taken by ${owner.name}` : '';
       }
-      // Start is enabled only when every connected player has picked a class (§3); Enter game once
-      // this player has (M8 §6.2).
-      if (start) start.disabled = !lobby.players.every((p) => p.classId);
+      // Start is enabled only when every connected player has picked a class (§3) and is back from
+      // Results; Enter game once this player has picked (M8 §6.2).
+      if (start) start.disabled = !lobby.players.every((p) => p.classId && !p.inResults);
       if (enter) enter.disabled = entering || !lobby.players.find((p) => p.id === a.playerId)?.classId;
     },
     pressEnterGame: () => enter?.click(),

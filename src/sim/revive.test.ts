@@ -32,6 +32,28 @@ describe('souls and reviving (M8 §4)', () => {
     }
   });
 
+  it('a revive gives an assist to everyone who added to it since the progress was last 0', () => {
+    const sim = makeSim(room(20, 5), ['binder', 'heretic', 'betrayer']);
+    const [a, b, c] = sim.players;
+    put(sim, b, 10.5, 3.5);
+    sim.damagePlayer(b, 10000);
+    // C's progress decays to 0 and no longer counts.
+    sim.addRevive(b, 0.01, c);
+    for (let i = 0; i < 30; i++) sim.step();
+    expect(b.revive).toBe(0);
+    sim.addRevive(b, 0.5, a);
+    sim.addRevive(b, 0.6, b);
+    expect(b.dead).toBe(false);
+    expect([a.reviveAssists, b.reviveAssists, c.reviveAssists]).toEqual([1, 0, 0]);
+    // The next death starts a new list (and revives at half speed).
+    b.invulUntil = 0;
+    sim.damagePlayer(b, 10000);
+    sim.addRevive(b, 1, c);
+    sim.addRevive(b, 1, a);
+    expect(b.dead).toBe(false);
+    expect([a.reviveAssists, b.reviveAssists, c.reviveAssists, b.deaths]).toEqual([2, 0, 1, 2]);
+  });
+
   it('a soul rises to 1.0 m above its ground point over 1.5 s', () => {
     const sim = makeSim(room(20, 5), ['binder', 'heretic']);
     const dead = sim.players[1];

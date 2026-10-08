@@ -787,7 +787,10 @@ export class Game {
     this.resultData = {
       result: e.result,
       timeMs: e.timeMs,
-      kills: Object.entries(e.kills).map(([id, kills]) => ({ name: this.roster.find((r) => r.id === Number(id))?.name ?? `Player ${id}`, kills })),
+      players: Object.entries(e.stats)
+        .map(([id, stats]) => ({ id: Number(id), stats }))
+        .sort((a, b) => a.id - b.id)
+        .map(({ id, stats }) => ({ ...stats, name: this.roster.find((r) => r.id === id)?.name ?? `Player ${id}`, me: id === this.localId })),
     };
     this.hud.showResult(e.result === 'victory' ? 'Victory' : 'Defeat');
     this.hud.closeHints();

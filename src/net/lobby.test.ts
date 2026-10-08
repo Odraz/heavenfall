@@ -184,6 +184,39 @@ describe('lobby', () => {
     expect(l.loadTimedOut(1000 + LOAD_TIMEOUT_MS)).toEqual([2]);
   });
 
+  it('opens again after the game: players come back from Results, and Start waits for them', () => {
+    const l = lobby();
+    l.join('B', 'pw', V);
+    l.pickClass(0, 'fallen');
+    l.pickClass(1, 'heretic');
+    l.start(0);
+    l.ready(0);
+    l.ready(1);
+    l.go();
+    // C waits in the in-progress Lobby.
+    l.join('C', 'pw', V);
+    l.endGame();
+    expect(l.phase).toBe('lobby');
+    expect(l.lobbyMessage().players.map((p) => [p.id, p.classId, p.inResults])).toEqual([
+      [0, 'fallen', true],
+      [1, 'heretic', true],
+      [2, null, false],
+    ]);
+    // A new player joins the Lobby, not a game in progress.
+    expect(l.join('D', 'pw', V)).toEqual({ ok: true, playerId: 3, inProgress: false });
+    l.pickClass(2, 'binder');
+    l.pickClass(3, 'betrayer');
+    // No class change while on Results.
+    expect(l.pickClass(1, 'binder')).toBe(false);
+    expect(l.canStart()).toBe(false);
+    expect(l.backToLobby(0)).toBe(true);
+    expect(l.backToLobby(0)).toBe(false);
+    expect(l.canStart()).toBe(false);
+    expect(l.backToLobby(1)).toBe(true);
+    expect(l.canStart()).toBe(true);
+    expect(l.start(0)!.players.map((p) => p.id)).toEqual([0, 1, 2, 3]);
+  });
+
   it('trims names to 16 characters', () => {
     expect(cleanName('  Bob  ')).toBe('Bob');
     expect(cleanName('abcdefghijklmnopqrstuvwxyz')).toBe('abcdefghijklmnop');

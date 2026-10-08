@@ -110,7 +110,7 @@ e2e/               Playwright tests
   - **Multiplayer, host's own player:** uses `LocalTransport`.
   - **Multiplayer, remote clients:** use `PeerTransport`.
   - Rendering and input code never knows which transport it's using.
-- **The host simulation runs in a dedicated Web Worker.** The worker starts when the host clicks `Create` (singleplayer: `Start`, or the page loads with `dev=1` or `bench=1`) and is terminated when the session ends at Results or on leaving. It owns the lobby state (§3) as well as the game, so every `ctrl` message to or from the host is handled there. Browsers pause `requestAnimationFrame` and throttle timers on the main thread when a tab is in the background, which would freeze the game for every player if the host alt-tabs. The worker isn't throttled that way.
+- **The host simulation runs in a dedicated Web Worker.** The worker starts when the host clicks `Create` (singleplayer: `Start`, or the page loads with `dev=1` or `bench=1`) and is terminated when the session ends: at Results in singleplayer, when the host leaves in multiplayer. It owns the lobby state (§3) as well as the game, so every `ctrl` message to or from the host is handled there. Browsers pause `requestAnimationFrame` and throttle timers on the main thread when a tab is in the background, which would freeze the game for every player if the host alt-tabs. The worker isn't throttled that way.
   - `LocalTransport` is `postMessage` between the main thread and the worker.
   - The host's main thread owns the PeerJS connections and relays messages between remote clients and the worker.
   - The worker encodes every snapshot (§9.4) itself and posts it to the main thread, which only forwards remote clients' snapshots to their connections. Forwarding is driven by worker messages, not main-thread timers, so it keeps full rate while the host's tab is in the background.
@@ -189,7 +189,7 @@ All URL parameters also work in the production build, because the end-to-end tes
 ```
 Title ──► Singleplayer Setup ──► Loading ──► In Game ──► Results ──► Title
   │
-  └──► Multiplayer ──► Host Setup ──► Lobby ──► Loading ──► In Game ──► Results ──► Title
+  └──► Multiplayer ──► Host Setup ──► Lobby ──► Loading ──► In Game ──► Results ──► Lobby (or Title)
              └──────► Join ─────────► Lobby
 ```
 
@@ -203,7 +203,7 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 | **Lobby** | Game ID shown large with a `Copy` button (host only); dungeon name; 4 player slots (name, class, "host" tag); class picker | Everyone: pick a class. Host: `Start`. Everyone: `Leave` |
 | **Loading** | A loading card filling the screen (a painting, its title and text, [lore.md](lore.md)), the class-hints tip and the progress text | — |
 | **In Game** | 3D view and HUD (§10) | Pause overlay: `Resume`, `Leave game` |
-| **Results** | *Victory* or *Defeat*, run time, kills per player | `Back to title` |
+| **Results** | *Victory* or *Defeat*, run time, a table per player: kills, damage, deaths and (with more than one player) revive assists | Singleplayer: `Back to title`. Multiplayer: `Leave`, `Back to lobby` |
 
 **Title messages.** These are set when a game or lobby sends the player back to Title, and cleared by the next button press:
 - `Host left the game`: the host left or timed out (§9.4).
@@ -213,7 +213,7 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 - There are 4 slots, and the host occupies one of them and picks a class too.
 - **Player IDs:** the host is 0. Each joining client gets the lowest free ID from 1 to 3.
 - Each class can be taken by **only one player**. A taken class is greyed out and shows who took it.
-- The host's `Start` button is enabled only when every connected player has picked a class. Starting with 1 to 4 players is allowed.
+- The host's `Start` button is enabled only when every connected player has picked a class and is back from Results. Starting with 1 to 4 players is allowed.
 - A player leaving the lobby frees their slot and class.
 
 **Loading**
@@ -244,8 +244,9 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 **End of game**
 - On victory or defeat, the host sends one last snapshot and `gameOver`, then stops simulating. The result is shown as a large text overlay for 3 s over the game view, which keeps rendering without input, then the Results screen appears.
 - **Run time** is simulation time from `go` (singleplayer: from entering the game) to the result, so time spent paused doesn't count.
-- **Kills per player** lists the players still connected at the end.
-- The session ends at Results: the host closes all connections and destroys its PeerJS peer.
+- **The table** lists the players still connected at the end. *Damage* is damage dealt to enemies, each hit counted up to the HP the enemy had left. A *revive assist* goes to every other player who added to a soul's revive progress since it was last 0, when that soul is revived; an arena clear's respawn gives none.
+- **Back to lobby.** In multiplayer the session stays open at Results. At `gameOver` the host's lobby opens again with the same game ID, password and dungeon, and every player keeps their class. Players on Results are shown as `Viewing the results…` in their slot until they press `Back to lobby` (`backToLobby`, C→H). Players who were in the in-progress Lobby or loading into the game go straight to the Lobby. New players can join as usual.
+- If the host leaves while a client is on Results, the client's numbers stay up, `Back to lobby` is disabled, and the screen says `The host left the game.`
 - **Leaving:** `Leave game` and `Leave` send `leave` and return to Title.
 
 ---
@@ -602,7 +603,8 @@ Layout: Lobby → corridor → **Arena 1** → corridor → **Arena 2** → corr
 | H→C | `welcome` | `playerId` (1–3), `lobby` (the fields of the `lobby` message) |
 | H→C | `reject` | `reason`: `bad_password` \| `full` \| `in_progress` \| `version` \| `load_timeout` |
 | C→H | `pickClass` | `classId` (rejected silently if taken) |
-| H→all | `lobby` | `dungeonId`, `players[]` {`id`, `name`, `classId` \| null, `isHost`}; sent on every change |
+| H→all | `lobby` | `dungeonId`, `players[]` {`id`, `name`, `classId` \| null, `isHost`, `inResults`}; sent on every change |
+| C→H | `backToLobby` | — (from Results, §3) |
 | H→all | `start` | `dungeonId`, `players[]` {`id`, `name`, `classId`}, sorted by `id` |
 | C→H | `ready` | — |
 | H→all | `go` | — |
@@ -622,7 +624,7 @@ Layout: Lobby → corridor → **Arena 1** → corridor → **Arena 2** → corr
 | `arenaStarted` | `arenaIndex` | all |
 | `arenaCleared` | `arenaIndex` | all |
 | `bossCast` | `phase`: `start` \| `interrupted` \| `completed` | all |
-| `gameOver` | `result`: `victory` \| `defeat`, `timeMs`, `kills`: {playerId: count} | all |
+| `gameOver` | `result`: `victory` \| `defeat`, `timeMs`, `stats`: {playerId: {`kills`, `damage`, `deaths`, `reviveAssists`}} | all |
 
 ### 9.3 Input and authority
 
@@ -686,7 +688,7 @@ The counts give the number of records of each block in that part; blocks follow 
   - The local player is drawn from local movement.
 - **Feather burst:** when an enemy slot disappears from a complete snapshot, the client plays the burst at its last position. When a censer projectile disappears, the client plays the censer explosion (§10).
 - **Disconnects:**
-  - If the host leaves (a `leave` or heartbeat timeout), clients return to Title with the message `Host left the game`. After `gameOver`, clients ignore this, because the host closes all connections at Results.
+  - If the host leaves (a `leave` or heartbeat timeout), clients return to Title with the message `Host left the game`, except on Results (§3, *End of game*).
   - If a client leaves, their player is removed and the game continues.
 
 ---

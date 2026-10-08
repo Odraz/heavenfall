@@ -21,13 +21,26 @@ export type GameEvent =
   | { type: 'arenaStarted'; arenaIndex: number }
   | { type: 'arenaCleared'; arenaIndex: number }
   | { type: 'bossCast'; phase: 'start' | 'interrupted' | 'completed' }
-  | { type: 'gameOver'; result: 'victory' | 'defeat'; timeMs: number; kills: Record<number, number> };
+  /** `stats`: the players still connected at the end, by ID. */
+  | { type: 'gameOver'; result: 'victory' | 'defeat'; timeMs: number; stats: Record<number, PlayerStats> };
+
+/** One player's numbers on Results. */
+export interface PlayerStats {
+  kills: number;
+  /** Damage dealt to enemies, rounded. */
+  damage: number;
+  deaths: number;
+  /** Revives the player helped with. */
+  reviveAssists: number;
+}
 
 export interface LobbyPlayer {
   id: number;
   name: string;
   classId: ClassId | null;
   isHost: boolean;
+  /** Still on Results after a game; the host's `Start` waits for them. */
+  inResults: boolean;
 }
 
 export type RejectReason = 'bad_password' | 'full' | 'in_progress' | 'version' | 'load_timeout';
@@ -44,6 +57,8 @@ export type CtrlMessage =
   | { type: 'ready' }
   /** From the in-progress Lobby: the client enters the game (M8 §6.2). */
   | { type: 'enterGame' }
+  /** From Results: the player is back in the Lobby. */
+  | { type: 'backToLobby' }
   /** C→H with `text` only; H→all with the sender's `playerId` too (M8 §7). */
   | { type: 'chat'; text: string; playerId?: number }
   | { type: 'go' }
