@@ -1,4 +1,5 @@
 /** The read-only debug object `window.__heavenfall` (§2.5). */
+import type { DirectorInfo } from './sim/director';
 
 export type Screen =
   | 'title'
@@ -43,6 +44,8 @@ export interface DebugState {
   gameResult: null | 'victory' | 'defeat';
   /** The last 50 chat messages of the session (M8 §10). */
   chat: Array<{ playerId: number; text: string }>;
+  /** The director's state (M12 §2.3), on the host and in single player while a combat arena fights; else null. */
+  director: DirectorInfo | null;
 }
 
 export const debugState: DebugState = {
@@ -62,6 +65,7 @@ export const debugState: DebugState = {
   players: [],
   gameResult: null,
   chat: [],
+  director: null,
 };
 
 /** Resets the game fields to their outside-a-game values. */
@@ -82,6 +86,7 @@ export function resetGameDebug(): void {
     players: [],
     gameResult: null,
     chat: [],
+    director: null,
   });
 }
 

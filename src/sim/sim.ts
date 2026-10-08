@@ -95,6 +95,7 @@ import {
   WALL_TOP,
 } from './constants';
 import { aimDir, rayCylinder, silverBulletHits } from './combat';
+import { Director, ENGAGED_HIT_TICKS, ENGAGED_RADIUS, KILL_NEAR_RADIUS, type DirectorInfo } from './director';
 import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } from './field';
 import { FlowField, UNREACHABLE } from './flowfield';
 import { lineOfSight, raycastTerrain } from './los';
@@ -210,6 +211,8 @@ export interface SimPlayer {
   cdE: number;
   /** Tick of the last hit that did damage after invulnerability (for regeneration). */
   lastDamageTick: number;
+  /** Tick of the last `damagePlayer` hit that removed HP or shield; unlike `lastDamageTick`, revive and respawn don't set it (M12 §2.3). */
+  lastHurtTick: number;
   /** Highest accepted input sequence number, or -1. */
   lastSeq: number;
   /** Host time (ms) when the previous accepted input arrived, or the latest teleport. */
@@ -231,7 +234,6 @@ interface ArenaState {
   phase: number;
   /** Index of the latest started wave, or -1. */
   wave: number;
-  waveStartTick: number;
   queue: SpawnBatch[];
   /** Round-robin position over the spawn points. */
   rr: number;
@@ -245,6 +247,10 @@ interface ArenaState {
   sealTick: number;
   /** Players in the game when it sealed, for party-size scaling (M8 §6.3); 0 before. */
   partySize: number;
+  /** A combat arena's director (M12 §2.3), made at the seal; null otherwise. */
+  director: Director | null;
+  /** A combat arena's placements left this tick: a wave arrives over 10 s (M12 §2.2). */
+  pace: number;
 }
 
 /** Projectile kinds, as encoded in snapshots (§9.4). */
@@ -257,12 +263,14 @@ const PROJECTILE_RANGE = 60;
 /** Enemy type order for spawning ties: Blessed, Choristers, Cherubs. */
 const SPAWN_TYPES = [BLESSED, CHORISTER, CHERUB];
 const SPAWN_ELIGIBLE_DIST = 8;
+/** Combat arenas place a wave only on spawn points this far from every living player, when any are (M12 §2.2). */
+const SPAWN_FAR_DIST = 15;
+/** A combat arena's wave arrives over this many ticks (M12 §2.2). */
+const WAVE_ARRIVAL_TICKS = 10 * TICK_HZ;
 /** Enemies per second each spawn point can place (§8.2 says 50; lowered after playtesting, see decisions.md). */
 export const SPAWN_RATE = 10;
 const BUDGET_PER_TICK = SPAWN_RATE / TICK_HZ;
 const BUDGET_MAX = 2;
-const WAVE_NEXT_FRACTION = 0.2;
-const WAVE_NEXT_TICKS = 20 * TICK_HZ;
 const RETARGET_TICKS = TICK_HZ;
 /** Line of sight is checked at most twice per second per enemy. */
 const LOS_TICKS = TICK_HZ / 2;
@@ -323,6 +331,9 @@ const COUNTDOWN_ALL_IN = 5;
 
 const REGEN_DELAY_TICKS = 8 * TICK_HZ;
 const REGEN_FRACTION = 0.015;
+/** A breath in single player (M12 §2.5): in a combat arena's fight, only while its director relaxes. */
+const BREATH_DELAY_TICKS = 3 * TICK_HZ;
+const BREATH_FRACTION = 0.05;
 /** Bound enemies take this much damage (M8 §8). */
 const BOUND_FACTOR = 2;
 /** Sacrament's `beam` stays on this long after its last firing (M9 §2.5). */
@@ -464,6 +475,10 @@ export class Simulation {
   private readonly hashItems: [Int32Array, Int32Array];
   private readonly hashFill: Int32Array;
 
+  /** Scratch for the director (M12 §2.3), by player index. */
+  private readonly livingScratch: boolean[] = new Array(PLAYER_SLOTS).fill(false);
+  private readonly engagedScratch: boolean[] = new Array(PLAYER_SLOTS).fill(false);
+
   private readonly body: Body = { x: 0, y: 0, z: 0, vz: 0, grounded: true, radius: 0, flying: false };
   private readonly moveResult: MoveResult = { blocked: false };
 
@@ -495,7 +510,6 @@ export class Simulation {
     this.arenas = this.map.arenas.map((a, i) => ({
       phase: PHASE_IDLE,
       wave: -1,
-      waveStartTick: 0,
       queue: [],
       rr: 0,
       budgets: new Float64Array(this.map.arenaSpawnPoints[i].length),
@@ -505,6 +519,8 @@ export class Simulation {
       alive: 0,
       sealTick: 0,
       partySize: 0,
+      director: null,
+      pace: 0,
     }));
     // Idle arenas keep their exit doors closed.
     this.map.arenas.forEach((_, ai) => setArenaDoors(this.map, ai, PHASE_IDLE));
@@ -650,12 +666,14 @@ export class Simulation {
       cdQ: 0,
       cdE: 0,
       lastDamageTick: this.tick,
+      lastHurtTick: -ENGAGED_HIT_TICKS,
       lastSeq: -1,
       lastAcceptMs: this.nowMs,
       teleportId: 0,
       speedCheckSkipUntil: 0,
     };
     this.slots[p.index] = p;
+    this.activeDirector()?.clear(p.index);
     this.players.push(p);
     this.players.sort((a, b) => a.id - b.id);
     this.groundFields[p.index] ??= new FlowField(this.map, false);
@@ -702,6 +720,7 @@ export class Simulation {
     const p = this.playerById(playerId);
     if (!p) return;
     p.connected = false;
+    this.activeDirector()?.clear(p.index);
     this.players.splice(this.players.indexOf(p), 1);
     this.slots[p.index] = undefined;
     // Enemies that targeted them retarget at once (§7.2).
@@ -743,7 +762,7 @@ export class Simulation {
   /** Victory: when the Gatekeeper dies, every remaining enemy bursts without kill credit (§8.2). */
   private checkVictory(): void {
     if (!this.bossKilled || this.result) return;
-    while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1]);
+    while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1], true);
     this.finish('victory');
   }
 
@@ -806,8 +825,52 @@ export class Simulation {
         this.teleport(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
       }
     }
+    if (this.isCombatArena(ai)) {
+      // The director (M12 §2.3): every intensity starts at 0; it can't start a wave while more than
+      // the largest wave is alive.
+      const cap = Math.max(...a.waves.map((w) => scaleCount(w.blessed, st.partySize) + scaleCount(w.choristers, st.partySize) + scaleCount(w.cherubs, st.partySize)));
+      st.director = new Director(a.waves.length, cap);
+    }
     if (this.benchArena < 0 && !this.noWaves && a.waves.length > 0) this.startWave(ai, 0);
     if (a.boss && this.map.boss) this.placeBoss(ai);
+  }
+
+  /**
+   * One of the combat arenas, whose waves the director paces and which arrive from far away over
+   * 10 s (M12 §2): an arena with more than one wave, outside the benchmark, with waves enabled. The
+   * boss arena and the sandbox's single wave keep the MVP's rules.
+   */
+  private isCombatArena(ai: number): boolean {
+    const a = this.map.arenas[ai];
+    return !a.boss && a.waves.length > 1 && ai !== this.benchArena && !this.noWaves;
+  }
+
+  /** The director of the arena in combat, if it has one (M12 §2.3). */
+  private activeDirector(): Director | null {
+    for (const st of this.arenas) if (st.phase === PHASE_COMBAT && st.director) return st.director;
+    return null;
+  }
+
+  /** The director's state for the F3 overlay (M12 §2.3), or null when no combat arena is in combat. */
+  directorInfo(): DirectorInfo | null {
+    const st = this.arenas.find((a) => a.phase === PHASE_COMBAT && a.director);
+    if (!st || !st.director) return null;
+    const d = st.director;
+    return {
+      phase: d.phase,
+      phaseTime: d.phaseTicks / TICK_HZ,
+      intensity: d.party(this.livingMask()),
+      wave: st.wave,
+      alive: st.alive,
+      waveTotal: st.wave >= 0 ? st.waveTotals[st.wave] : 0,
+    };
+  }
+
+  /** Which player slots hold a living, connected player. */
+  private livingMask(): boolean[] {
+    const m = this.livingScratch;
+    for (let i = 0; i < PLAYER_SLOTS; i++) m[i] = this.livingTargetable(this.slots[i]);
+    return m;
   }
 
   /** Places the Gatekeeper on `B` when the boss arena enters combat; all its timers start now (§7.4). */
@@ -832,11 +895,12 @@ export class Simulation {
     const w = this.map.arenas[ai].waves[n];
     const counts = [scaleCount(w.blessed, st.partySize), scaleCount(w.choristers, st.partySize), scaleCount(w.cherubs, st.partySize)];
     st.wave = n;
-    st.waveStartTick = this.tick;
     st.waveTotals[n] = counts[0] + counts[1] + counts[2];
     st.waveAlive[n] = 0;
     st.waveFullySpawned[n] = st.waveTotals[n] === 0;
+    st.pace = 0;
     if (st.waveTotals[n] > 0) st.queue.push({ counts, spawned: [0, 0, 0], wave: n });
+    st.director?.waveStarted(n);
   }
 
   private checkArenaClears(): void {
@@ -936,14 +1000,46 @@ export class Simulation {
       if (need > 0) st.queue.push({ counts: [need, 0, 0], spawned: [0, 0, 0], wave: -1 });
     }
 
-    const waves = this.map.arenas[ai].waves;
-    const n = st.wave;
-    if (n >= 0 && n < waves.length - 1 && st.waveFullySpawned[n]) {
-      const fewLeft = st.waveAlive[n] <= WAVE_NEXT_FRACTION * st.waveTotals[n] + 1e-9;
-      if (fewLeft || this.tick - st.waveStartTick >= WAVE_NEXT_TICKS) this.startWave(ai, n + 1);
+    const d = st.director;
+    if (d) {
+      this.updateIntensity(d);
+      const n = st.wave;
+      if (d.step(d.party(this.livingMask()), st.waveFullySpawned[n], st.alive, st.waveTotals[n])) this.startWave(ai, n + 1);
+      // A wave arrives at an even pace over 10 s (M12 §2.2).
+      if (st.queue.length > 0) st.pace += st.waveTotals[st.wave] / WAVE_ARRIVAL_TICKS;
     }
 
     this.placeQueued(ai);
+  }
+
+  /**
+   * Intensity decay (M12 §2.3), once per tick: −20 per second for each living player who isn't
+   * engaged, that is with no living enemy within 8 m horizontally and no hit in the last 30 ticks.
+   */
+  private updateIntensity(d: Director): void {
+    const engaged = this.engagedScratch;
+    let left = 0;
+    for (let i = 0; i < PLAYER_SLOTS; i++) {
+      const p = this.slots[i];
+      engaged[i] = !this.livingTargetable(p) || this.tick - p.lastHurtTick < ENGAGED_HIT_TICKS;
+      if (!engaged[i]) left++;
+    }
+    const r2 = ENGAGED_RADIUS * ENGAGED_RADIUS;
+    for (let k = 0; k < this.activeCount && left > 0; k++) {
+      const s = this.active[k];
+      if (this.eType[s] === GATEKEEPER) continue;
+      for (let i = 0; i < PLAYER_SLOTS; i++) {
+        if (engaged[i]) continue;
+        const p = this.slots[i]!;
+        const dx = this.eX[s] - p.x;
+        const dy = this.eY[s] - p.y;
+        if (dx * dx + dy * dy <= r2) {
+          engaged[i] = true;
+          left--;
+        }
+      }
+    }
+    for (let i = 0; i < PLAYER_SLOTS; i++) if (!engaged[i]) d.decay(i);
   }
 
   private placeQueued(ai: number): void {
@@ -952,28 +1048,16 @@ export class Simulation {
     const points = this.map.arenaSpawnPoints[ai];
     const np = points.length;
     if (np === 0) return;
+    // Eligible: more than 15 m from every living player in a combat arena (M12 §2.2), else more
+    // than 8 m; if no point is, every point.
+    const paced = st.director !== null;
     const eligible = new Uint8Array(np);
-    let any = false;
-    for (let i = 0; i < np; i++) {
-      const [c, r] = points[i];
-      const px = c + 0.5;
-      const py = r + 0.5;
-      const pz = this.map.floor[r * this.map.w + c];
-      let ok = true;
-      for (const p of this.players) {
-        if (!this.livingTargetable(p)) continue;
-        if (distToCylinder(px, py, pz, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) <= SPAWN_ELIGIBLE_DIST) {
-          ok = false;
-          break;
-        }
-      }
-      eligible[i] = ok ? 1 : 0;
-      if (ok) any = true;
-    }
-    if (!any) eligible.fill(1);
+    const far = paced && this.markEligible(points, SPAWN_FAR_DIST, eligible);
+    if (!far && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible)) eligible.fill(1);
 
     while (st.queue.length > 0) {
       if (this.living >= MAX_LIVING_ENEMIES) return;
+      if (paced && st.pace < 1 - 1e-9) return;
       let found = -1;
       for (let k = 0; k < np; k++) {
         const i = (st.rr + k) % np;
@@ -995,7 +1079,31 @@ export class Simulation {
       this.spawnAt(slot, type, c, r, ai, batch.wave);
       st.budgets[found] -= 1;
       st.rr = (found + 1) % np;
+      // Budget left when the wave is fully placed is dropped.
+      if (paced) st.pace = st.queue.length > 0 ? st.pace - 1 : 0;
     }
+  }
+
+  /** Marks the spawn points farther than `dist` from every living player; returns whether any is. */
+  private markEligible(points: Array<[number, number]>, dist: number, eligible: Uint8Array): boolean {
+    let any = false;
+    for (let i = 0; i < points.length; i++) {
+      const [c, r] = points[i];
+      const px = c + 0.5;
+      const py = r + 0.5;
+      const pz = this.map.floor[r * this.map.w + c];
+      let ok = true;
+      for (const p of this.players) {
+        if (!this.livingTargetable(p)) continue;
+        if (distToCylinder(px, py, pz, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) <= dist) {
+          ok = false;
+          break;
+        }
+      }
+      eligible[i] = ok ? 1 : 0;
+      if (ok) any = true;
+    }
+    return any;
   }
 
   /** The type with the lowest (spawned + 0.5) / count among types with enemies left (§8.2). */
@@ -1075,11 +1183,20 @@ export class Simulation {
     this.retarget(slot);
   }
 
-  /** Removes an enemy and frees its slot (reusable after 1 s). */
-  removeEnemy(slot: number): void {
+  /**
+   * Removes an enemy and frees its slot (reusable after 1 s). Except in the victory sweep (`sweep`), it
+   * adds 1 to the intensity of each living player within 5 m horizontally (M12 §2.3).
+   */
+  removeEnemy(slot: number, sweep = false): void {
     if (!this.eAlive[slot]) return;
     this.eAlive[slot] = 0;
     const type = this.eType[slot];
+    const d = sweep || type === GATEKEEPER ? null : this.activeDirector();
+    if (d) {
+      for (const p of this.players) {
+        if (this.livingTargetable(p) && Math.hypot(this.eX[slot] - p.x, this.eY[slot] - p.y) <= KILL_NEAR_RADIUS) d.killNear(p.index);
+      }
+    }
     if (type !== GATEKEEPER) this.living--;
     const arena = this.eArena[slot];
     if (arena >= 0) {
@@ -1145,15 +1262,19 @@ export class Simulation {
     if (this.isInvulnerable(p)) amount = 0;
     if (amount <= 0) return;
     p.lastDamageTick = this.tick;
+    p.lastHurtTick = this.tick;
     // 4. Shield; one taken to 0 bursts (M9 §3.3).
     let burst = false;
+    let absorbed = 0;
     if (p.shield > 0) {
-      const absorbed = Math.min(p.shield, amount);
+      absorbed = Math.min(p.shield, amount);
       p.shield -= absorbed;
       amount -= absorbed;
       burst = p.shield <= 0;
     }
     const [x, y, z] = [p.x, p.y, p.z];
+    // Intensity (M12 §2.3): the shield absorbed plus the HP lost, counted down to 0 only.
+    this.activeDirector()?.hurt(p.index, absorbed + Math.min(amount, p.hp), p.maxHp);
     p.hp -= amount;
     // 5. Death.
     if (p.hp <= 0) this.killPlayer(p);
@@ -1184,6 +1305,8 @@ export class Simulation {
   }
 
   private killPlayer(p: SimPlayer): void {
+    // A death is a peak (M12 §2.3), and the player's intensity is 0.
+    this.activeDirector()?.died(p.index);
     p.dead = true;
     p.deaths++;
     p.hp = 0;
@@ -1291,6 +1414,18 @@ export class Simulation {
 
   // ------------------------------------------------------------------ players
 
+  /**
+   * Singleplayer regeneration (§5.7): 1.5% of max HP per second after 8 s without damage, except in a
+   * combat arena's fight (M12 §2.5), where it's 5% after 3 s, and only while its director relaxes.
+   */
+  private regenerate(p: SimPlayer): void {
+    const d = this.activeDirector();
+    const [delay, fraction] = d ? [BREATH_DELAY_TICKS, BREATH_FRACTION] : [REGEN_DELAY_TICKS, REGEN_FRACTION];
+    if (d && d.phase !== 'relax') return;
+    if (this.tick - p.lastDamageTick < delay) return;
+    p.hp = Math.min(p.maxHp, p.hp + fraction * p.maxHp * TICK_DT);
+  }
+
   private updatePlayers(): void {
     for (const p of this.players) {
       p.cdQ = Math.max(0, p.cdQ - TICK_DT);
@@ -1300,9 +1435,7 @@ export class Simulation {
         p.fireTimer = Math.max(0, p.fireTimer - TICK_DT);
         continue;
       }
-      if (this.singleplayer && this.tick - p.lastDamageTick >= REGEN_DELAY_TICKS) {
-        p.hp = Math.min(p.maxHp, p.hp + REGEN_FRACTION * p.maxHp * TICK_DT);
-      }
+      if (this.singleplayer) this.regenerate(p);
       if (p.landingTick >= 0 && this.tick >= p.landingTick) {
         p.landingTick = -1;
         this.fallingStarLanding(p);

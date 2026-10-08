@@ -4,6 +4,7 @@
  */
 import type { HostNet } from '../net/hostNet';
 import { LocalTransport } from '../net/transport';
+import type { DirectorInfo } from '../sim/director';
 import type { SimPlayerInit } from '../sim/sim';
 import type { MainToWorker, WorkerToMain } from '../sim/workerMessages';
 
@@ -17,6 +18,8 @@ export class HostSession {
   /** Per-tick worker times (ms) with their arrival times, for the last 1 s. */
   private readonly tickTimes: Array<[number, number]> = [];
   private stopped = false;
+  /** The director's state from the latest local snapshot (M12 §2.3). */
+  director: DirectorInfo | null = null;
   /** Called with each tick's simulation time (ms). */
   onTickMs: (ms: number) => void = () => {};
 
@@ -107,6 +110,7 @@ export class HostSession {
         if (m.to === this.localPlayerId) {
           this.tickTimes.push([performance.now(), m.simMs]);
           this.onTickMs(m.simMs);
+          this.director = m.director ?? null;
           for (const buf of m.bufs) this.local.deliverSnapshot(buf);
         } else {
           // Forwarding is driven by worker messages, so it keeps full rate in a background tab (§2.2).

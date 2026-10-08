@@ -6,7 +6,11 @@ export class DebugOverlay {
   private visible = false;
   private lastUpdate = 0;
 
-  constructor(parent: HTMLElement) {
+  /** `dev`: the director's line is shown (M12 §2.3). */
+  constructor(
+    parent: HTMLElement,
+    private readonly dev = false,
+  ) {
     this.el = document.createElement('div');
     this.el.className = 'debug-overlay';
     this.el.hidden = true;
@@ -26,6 +30,7 @@ export class DebugOverlay {
     if (!this.visible || now - this.lastUpdate < 100) return;
     this.lastUpdate = now;
     const d = debugState;
+    const dir = d.director;
     this.el.textContent = [
       `FPS ${d.fps.toFixed(1)}`,
       `sim ${d.simMs.toFixed(2)} ms/tick`,
@@ -33,6 +38,7 @@ export class DebugOverlay {
       `projectiles ${d.projectiles}`,
       `net in ${d.netInKBps.toFixed(1)} KB/s  out ${d.netOutKBps.toFixed(1)} KB/s`,
       `pos ${this.position.x.toFixed(2)} ${this.position.y.toFixed(2)} ${this.position.z.toFixed(2)} yaw ${this.position.yaw.toFixed(3)}`,
+      ...(this.dev && dir ? [`Director: ${dir.phase} ${dir.phaseTime.toFixed(1)} s · ${Math.round(dir.intensity)} · ${dir.alive}/${dir.waveTotal}`] : []),
     ].join('\n');
   }
 

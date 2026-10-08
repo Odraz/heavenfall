@@ -177,6 +177,9 @@ export interface GameOptions {
   onChat?: (text: string) => void;
 }
 
+/** A new enemy within this many meters (horizontally) of a spawn point flares it (M12 §2.4). */
+const SPAWN_GLOW_REACH = 2;
+
 export class Game {
   private readonly o: GameOptions;
   private readonly map: GameMap;
@@ -288,6 +291,8 @@ export class Game {
   private readonly zScratch = new Float32Array(ENEMY_SLOTS);
   /** performance.now() when each enemy's last white flash started. */
   private readonly flashAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
+  /** Scratch: the slots of the previous snapshot, for the spawn glow (M12 §2.4). */
+  private readonly prevSlots = new Uint8Array(ENEMY_SLOTS);
   private readonly flashGlow: Glow = { r: 1, g: 1, b: 1, a: 0 };
   /** performance.now() when each enemy was seen taunted, or -1 while it isn't (M8 §3.1). */
   private readonly tauntAt = new Float64Array(ENEMY_SLOTS).fill(-1);
@@ -359,7 +364,7 @@ export class Game {
     this.party = o.singleplayer ? null : new PartyFrames(this.hud.leftColumn, this.hud.ownFrame);
     this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id));
     this.hud.onReady = () => this.sounds.abilityReady();
-    this.overlay = new DebugOverlay(o.root);
+    this.overlay = new DebugOverlay(o.root, this.params.dev);
     this.pause = new PauseOverlay(o.root, () => this.resume(), () => this.leave());
 
     this.input = new Input(this.canvas);
@@ -889,6 +894,7 @@ export class Game {
         this.pendingBursts.push({ at: now + delay, censer: true, type: -1, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i] });
       }
     }
+    if (prev) this.spawnGlows(s, prev, now + this.snaps.delayTicks * TICK_MS);
     // Others' Scourge swings, after the render delay, spread over the time to the next snapshot (M9 §5.1).
     if (prev) {
       const delay = this.snaps.delayTicks * TICK_MS;
@@ -941,6 +947,39 @@ export class Game {
     this.bossCastProgress = s.bossCastProgress / 255;
     this.bench?.onSnapshot(s);
     this.sounds.snapshot(s, prev, beamed);
+  }
+
+  /**
+   * The spawn glow (M12 §2.4): an enemy slot that wasn't in the previous snapshot, within 2 m
+   * horizontally of a spawn point of the snapshot's arena, flares that point when it appears on
+   * screen (`at`, after the render delay). Gatekeeper summons glow the same way.
+   */
+  private spawnGlows(s: Snapshot, prev: Snapshot, at: number): void {
+    const points = this.map.arenaSpawnPoints[s.arenaIndex];
+    if (!points?.length) return;
+    for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 1;
+    const flared = new Set<number>();
+    for (let i = 0; i < s.enemyCount; i++) {
+      if (this.prevSlots[s.enemySlot[i]]) continue;
+      let best = -1;
+      let bestD2 = SPAWN_GLOW_REACH * SPAWN_GLOW_REACH;
+      for (let k = 0; k < points.length; k++) {
+        const dx = points[k][0] + 0.5 - s.enemyX[i];
+        const dy = points[k][1] + 0.5 - s.enemyY[i];
+        const d2 = dx * dx + dy * dy;
+        if (d2 <= bestD2) {
+          bestD2 = d2;
+          best = k;
+        }
+      }
+      if (best >= 0) flared.add(best);
+    }
+    for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 0;
+    for (const k of flared) {
+      const [c, r] = points[k];
+      const z = this.map.floor[r * this.map.w + c];
+      this.pendingFx.push({ at, run: (t) => this.vfx.flareSpawn(t, c + 0.5, r + 0.5, z) });
+    }
   }
 
   /** Unwraps each player's `shots` and `shots2` counters into totals, for the debug object (M9 §10). */
@@ -1438,6 +1477,7 @@ export class Game {
     this.hud.update(now);
     debugState.fps = this.fps.frame(now);
     debugState.simMs = this.o.host ? this.o.host.simMs(now) : 0;
+    debugState.director = this.o.host?.director ?? null;
     debugState.netInKBps = this.o.net ? this.o.net.inKBps(now) : 0;
     debugState.netOutKBps = this.o.net ? this.o.net.outKBps(now) : 0;
     this.overlay.position.x = b.x;

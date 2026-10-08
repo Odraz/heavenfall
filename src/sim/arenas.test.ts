@@ -123,35 +123,6 @@ describe('arenas', () => {
     expect(p2.x).toBeCloseTo(7.6);
   });
 
-  it('starts the next wave when at most 20% of the previous one is alive', () => {
-    const sim = makeSim([wave(10), wave(5)]);
-    enterArena0(sim);
-    const st = sim.arenas[0];
-    while (!st.waveFullySpawned[0]) sim.step();
-    expect(st.wave).toBe(0);
-    const kill = (n: number) => {
-      for (let i = 0; i < n; i++) sim.removeEnemy(sim.active[0]);
-    };
-    kill(7); // 3 of 10 alive: 30%
-    sim.step();
-    expect(st.wave).toBe(0);
-    kill(1); // 2 of 10 alive: 20%
-    sim.step();
-    expect(st.wave).toBe(1);
-  });
-
-  it('starts the next wave 20 s after the previous one started', () => {
-    const sim = makeSim([wave(10), wave(5)]);
-    enterArena0(sim);
-    const start = sim.tick;
-    const st = sim.arenas[0];
-    while (sim.tick < start + 599) sim.step();
-    expect(st.wave).toBe(0);
-    sim.step();
-    expect(st.wave).toBe(1);
-    expect(sim.tick - start).toBe(600);
-  });
-
   it('spawns at most SPAWN_RATE enemies per second from one spawn point', () => {
     // Only one x cell.
     const markers = ['........................', '.SS..D....x..D.D....x.x.', '.SS..D.......D.D......x.', '.....................x..', '........................', '........................'];
@@ -215,11 +186,11 @@ describe('arenas', () => {
     const dead = sim.players[3];
     dead.dead = true;
     dead.hp = 0;
-    for (let i = 0; i < 3; i++) sim.step();
+    while (!sim.arenas[0].waveFullySpawned[0]) sim.step();
     sim.killAll();
-    sim.step(); // wave 2 starts
+    sim.step(); // wave 2 starts: none of wave 1 is left (M12 §2.3)
     expect(sim.arenas[0].wave).toBe(1);
-    for (let i = 0; i < 3; i++) sim.step();
+    while (!sim.arenas[0].waveFullySpawned[1]) sim.step();
     expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
     sim.events.length = 0;
     sim.killAll();
@@ -257,7 +228,7 @@ describe('arenas', () => {
     const sim = makeSim([wave(10), wave(5)]);
     enterArena0(sim);
     expect(sim.enemiesRemaining()).toBe(15);
-    for (let i = 0; i < 5; i++) sim.step();
+    while (sim.activeCount === 0) sim.step();
     sim.removeEnemy(sim.active[0]);
     expect(sim.enemiesRemaining()).toBe(14);
   });

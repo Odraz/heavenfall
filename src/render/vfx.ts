@@ -22,6 +22,14 @@ const SCOURGE_ARC_HEIGHT = 1.2;
 const SCOURGE_ARC_SEGMENTS = 16;
 const SCOURGE_SWEEP_MS = 120;
 const SCOURGE_FADE_MS = 150;
+/** The spawn glow (M12 §2.4): gold, 1.0 m above the point's floor, radius 1.6 m, fading over 0.8 s after its last flare. */
+const SPAWN_GOLD = 0xffd27a;
+const SPAWN_GLOW_HEIGHT = 1.0;
+const SPAWN_GLOW_RADIUS = 1.6;
+const SPAWN_GLOW_OPACITY = 0.85;
+const SPAWN_GLOW_FADE_MS = 800;
+/** A flare draws a ground ring at most this often per point. */
+const SPAWN_RING_GAP_MS = 400;
 /** A mote's trail: this many sprites, each lagging the one before by this fraction of the flight. */
 const MOTE_TRAIL = 4;
 const MOTE_TRAIL_LAG = 0.08;
@@ -130,6 +138,8 @@ export class Vfx {
   private readonly columns = new Set<THREE.Mesh>();
   /** Sacrament's beams (M9 §5.1), reused frame to frame. */
   private readonly liveBeams: Ribbon[] = [];
+  /** Spawn glows (M12 §2.4) by spawn point, reused. */
+  private readonly spawnGlows = new Map<string, { sprite: THREE.Sprite; material: THREE.SpriteMaterial; flare: number; ring: number }>();
   private readonly liveBeamMaterial: THREE.MeshBasicMaterial;
 
   constructor(private readonly tex: EffectTextures) {
@@ -324,8 +334,37 @@ export class Vfx {
     this.add({ obj: ribbon.mesh, material, duration, update: (f) => (material.opacity = 1 - f), ribbon }, now, 0);
   }
 
+  /**
+   * A spawn point flares (M12 §2.4) as an enemy comes out of it: its gold glow shows at full strength
+   * and fades over 0.8 s after its last flare; at most every 0.4 s a gold ground ring grows from it.
+   * (x, y, z) is the point's cell center on its floor.
+   */
+  flareSpawn(now: number, x: number, y: number, z: number): void {
+    const key = `${x},${y}`;
+    let g = this.spawnGlows.get(key);
+    if (!g) {
+      const material = new THREE.SpriteMaterial({ map: this.tex.glow, color: SPAWN_GOLD, transparent: true, depthWrite: false, fog: false });
+      const sprite = new THREE.Sprite(material);
+      sprite.position.set(x, z + SPAWN_GLOW_HEIGHT, y);
+      sprite.scale.setScalar(2 * SPAWN_GLOW_RADIUS);
+      this.group.add(sprite);
+      g = { sprite, material, flare: now, ring: -Infinity };
+      this.spawnGlows.set(key, g);
+    }
+    g.flare = now;
+    if (now - g.ring >= SPAWN_RING_GAP_MS) {
+      g.ring = now;
+      this.ring(now, x, y, z, SPAWN_GOLD, 0.3, SPAWN_GLOW_RADIUS, SPAWN_RING_GAP_MS);
+    }
+  }
+
   /** `camera` is the camera's position in three.js coordinates. */
   update(now: number, camera: THREE.Vector3): void {
+    for (const g of this.spawnGlows.values()) {
+      const f = 1 - (now - g.flare) / SPAWN_GLOW_FADE_MS;
+      g.sprite.visible = f > 0;
+      g.material.opacity = SPAWN_GLOW_OPACITY * Math.max(0, Math.min(1, f));
+    }
     for (const c of this.columns) c.rotation.y = Math.atan2(camera.x - c.position.x, camera.z - c.position.z);
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i];
