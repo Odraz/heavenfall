@@ -352,6 +352,15 @@ export const SFX = {
     priority: PRIO_ABILITY,
     parts: [part({ wave: 'noise', freq: 8000, attack: 0.04, decay: 0.12, sustain: 0.3, release: 0.12, volume: 0.45, lowpass: 600, lowpassEnd: 5000 })],
   },
+  /** Shadowstep's dagger (M12 §5.7): a sharp metallic swish, about 0.25 s, rising through the air with a thin ring of steel. */
+  daggerCut: {
+    priority: PRIO_ABILITY,
+    parts: [
+      part({ wave: 'noise', freq: 12000, attack: 0.012, decay: 0.07, sustain: 0.3, release: 0.13, volume: 0.5, lowpass: 2200, lowpassEnd: 11000 }),
+      part({ wave: 'sine', freq: 3400, freqEnd: 2700, delay: 0.03, decay: 0.05, sustain: 0.25, release: 0.15, volume: 0.12, vibratoRate: 45, vibratoDepth: 1 }),
+      part({ wave: 'triangle', freq: 5200, freqEnd: 4800, delay: 0.045, decay: 0.03, sustain: 0.2, release: 0.1, volume: 0.06 }),
+    ],
+  },
 
   // ---------------------------------------------------------------- arena
   countdownTick: { priority: PRIO_ABILITY, parts: [part({ wave: 'square', freq: 880, decay: 0.04, sustain: 0.3, release: 0.05, volume: 0.25, duty: 0.25 })] },

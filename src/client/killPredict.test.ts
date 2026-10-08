@@ -1,9 +1,9 @@
 /** M12 stage 3: your kills, at once (M12 §4.4, §11.1). */
 import { describe, expect, it } from 'vitest';
 import { BLESSED, CHORISTER, GATEKEEPER } from '../data/enemies';
-import { SECONDARIES, WEAPONS } from '../data/weapons';
+import { SECONDARIES, SHOTGUN_CLOSE_DAMAGE, WEAPONS } from '../data/weapons';
 import { estimateSilverBullet } from '../sim/combat';
-import { Flinches, HIT_FLINCH, KILL_FLINCH, ladderRate, MAX_FLINCHES, PredictedKills, predictHit, predictSilverBullet } from './killPredict';
+import { Flinches, HIT_FLINCH, KILL_FLINCH, ladderRate, MAX_FLINCHES, PredictedKills, predictHit, predictPellets, predictSilverBullet, SHOTGUN_FAR_DAMAGE, type PelletTarget } from './killPredict';
 
 describe('predicted kills (M12 §4.4)', () => {
   it('a revolver hit on a Blessed predicts a burst', () => {
@@ -33,11 +33,28 @@ describe('predicted kills (M12 §4.4)', () => {
     expect(predictHit(CHORISTER, 60, false)).toBe(1);
   });
 
-  it('a 240 Silver Bullet through 12 Blessed predicts 12 kills, the first 11 as bursts (carried 240 down to 40), not the 12th (20)', () => {
-    const line = Array.from({ length: 12 }, () => ({ type: BLESSED, rooted: false }));
-    const est = estimateSilverBullet(line, 240);
-    expect(est.carried).toEqual([240, 220, 200, 180, 160, 140, 120, 100, 80, 60, 40, 20]);
-    expect(predictSilverBullet(line, est.carried)).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1]);
+  it('a pellet within 6 m predicts a burst; beyond 6 m it predicts nothing (M12 §5.1)', () => {
+    const at = (close: boolean): PelletTarget[] => [{ i: 0, t: 5, type: BLESSED, rooted: false, close }];
+    expect(SHOTGUN_CLOSE_DAMAGE).toBe(20);
+    expect(SHOTGUN_FAR_DAMAGE).toBe(10);
+    expect(predictPellets([at(true)], SHOTGUN_FAR_DAMAGE, 1, 'shotgun')[0][0].result).toBe(2);
+    expect(predictPellets([at(false)], SHOTGUN_FAR_DAMAGE, 1, 'shotgun')[0][0].result).toBe(0);
+  });
+
+  it('within one shot, pellets pass an enemy an earlier pellet killed: 8 pellets into a packed column predict 8 kills', () => {
+    const column: PelletTarget[] = Array.from({ length: 10 }, (_, i) => ({ i, t: 1 + 0.4 * i, type: BLESSED, rooted: false, close: true }));
+    const shot = predictPellets(Array(8).fill(column), SHOTGUN_FAR_DAMAGE, 1, 'shotgun');
+    expect(shot.map((hits) => hits.map((h) => [h.target.i, h.result]))).toEqual(Array.from({ length: 8 }, (_, k) => [[k, 2]]));
+    // A Chain Gun never kills, so every bullet hits the first.
+    const gun = predictPellets(Array(3).fill(column), WEAPONS.binder.damage, 1, 'chainGun');
+    expect(gun.map((hits) => hits[0].target.i)).toEqual([0, 0, 0]);
+  });
+
+  it('a Silver Bullet through 10 Blessed predicts 10 kills, the first 9 as bursts (carried 200 down to 40), not the 10th (20)', () => {
+    const line = Array.from({ length: 10 }, () => ({ type: BLESSED, rooted: false }));
+    const est = estimateSilverBullet(line, SECONDARIES.betrayer.damage);
+    expect(est.carried).toEqual([200, 180, 160, 140, 120, 100, 80, 60, 40, 20]);
+    expect(predictSilverBullet(line, est.carried)).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 1]);
   });
 });
 

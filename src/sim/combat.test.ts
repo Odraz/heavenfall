@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, ST_WINDUP } from '../data/enemies';
-import { WEAPONS } from '../data/weapons';
+import { SHOTGUN_CLOSE_DAMAGE, WEAPONS } from '../data/weapons';
 import { PROJ_ORB } from './sim';
 import { aimAt, enemyAt, makeSim, put, room } from './testutil/sims';
 
@@ -324,7 +324,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     return sim.tick;
   }
 
-  it('the censer breaks on the first enemy: 40 to it and nothing to the others (M9 §2.8)', () => {
+  it('the censer breaks on the first enemy: 40 to it and nothing to the others but its cloud, which bites at once (M9 §2.8, M12 §5.4)', () => {
     const sim = makeSim(room(30, 5), ['heretic']);
     const p = sim.players[0];
     put(sim, p, 2.5, 3.5);
@@ -336,18 +336,15 @@ describe('combat (§5.3, §5.4, §6)', () => {
     for (const s of [a, b, far]) sim.root(s, 10);
     aimAt(sim, p, a);
     sim.fireWeapon(p);
-    const t = untilBroken(sim);
-    expect(t % 15).not.toBe(0);
+    untilBroken(sim);
     expect(sim.eAlive[a]).toBe(0);
-    expect(sim.eHp[b]).toBe(60);
     expect(sim.clouds).toHaveLength(1);
-    // The cloud's first pulse: 2.5, doubled while bound; far is outside its 2.5 m.
-    while (sim.tick % 15 !== 0) sim.step();
-    expect(sim.eHp[b]).toBe(55);
+    // The cloud's first pulse, on the tick it appears: 5, doubled while bound; far is outside its 2.5 m.
+    expect(sim.eHp[b]).toBe(50);
     expect(sim.eHp[far]).toBe(60);
   });
 
-  it('a cloud hurts every enemy within 2.5 m for 2.5 every 15th tick, 8 times, then is gone, and sets the hurt flag', () => {
+  it('a cloud hurts every enemy within 2.5 m for 5 on the tick it appears and every 15 ticks after, 8 times, then is gone, and sets the hurt flag (M12 §5.4)', () => {
     const sim = makeSim(room(30, 5), ['heretic']);
     const p = sim.players[0];
     put(sim, p, 2.5, 3.5);
@@ -356,23 +353,20 @@ describe('combat (§5.3, §5.4, §6)', () => {
     const b = enemyAt(sim, CHORISTER, 11.5, 2.4);
     aimAt(sim, p, a);
     sim.fireWeapon(p);
-    untilBroken(sim);
-    expect(sim.eHp[a]).toBe(20);
-    expect(sim.eHp[b]).toBe(60);
-    let pulses = 0;
+    const pulses: number[] = [];
     for (let i = 0; i < 6 * 30; i++) {
       const before = sim.eHp[b];
       sim.step();
       if (sim.eHp[b] < before) {
-        pulses++;
-        expect(sim.tick % 15).toBe(0);
-        expect(before - sim.eHp[b]).toBe(2.5);
+        pulses.push(sim.tick);
+        expect(before - sim.eHp[b]).toBe(5);
         expect(sim.eHurtTick[b]).toBe(sim.tick);
       }
     }
-    expect(pulses).toBe(8);
-    expect(sim.eHp[b]).toBe(40);
-    // a died to the cloud's 8th pulse, credited to the Heretic.
+    const from = pulses[0];
+    expect(pulses).toEqual([0, 1, 2, 3, 4, 5, 6, 7].map((k) => from + 15 * k));
+    expect(sim.eHp[b]).toBe(20);
+    // a took the impact's 40, then died to the cloud's 4th pulse, credited to the Heretic.
     expect(sim.eAlive[a]).toBe(0);
     expect(p.kills).toBe(1);
     expect(sim.clouds).toHaveLength(0);
@@ -391,8 +385,10 @@ describe('combat (§5.3, §5.4, §6)', () => {
     sim.fireWeapon(p);
     untilBroken(sim);
     expect(sim.clouds).toHaveLength(2);
-    while (sim.tick % 15 !== 0) sim.step();
-    expect(sim.eHp[b]).toBe(57.5);
+    // Both bite on the tick they appear; b takes one pulse.
+    expect(sim.eHp[b]).toBe(55);
+    for (let i = 0; i < 15; i++) sim.step();
+    expect(sim.eHp[b]).toBe(50);
     for (let i = 0; i < 5; i++) sim.fireWeapon(p);
     untilBroken(sim);
     expect(sim.clouds).toHaveLength(6);
@@ -412,10 +408,8 @@ describe('combat (§5.3, §5.4, §6)', () => {
     untilBroken(sim);
     expect(sim.clouds).toHaveLength(1);
     expect(sim.clouds[0].x).toBeCloseTo(27.5, 5);
-    expect(sim.eHp[at25]).toBe(60);
-    while (sim.tick % 15 !== 0) sim.step();
-    // A pulse, doubled while bound.
-    expect(sim.eHp[at25]).toBe(55);
+    // The censer missed it; the cloud's first pulse, doubled while bound.
+    expect(sim.eHp[at25]).toBe(50);
   });
 });
 
@@ -526,7 +520,9 @@ describe('balance (M8 §8)', () => {
     expect(sim.eHp[g]).toBe(29000 - 100);
   });
 
-  it('the shotgun fires 8 pellets of 12 every 0.8 s', () => {
-    expect(WEAPONS.fallen).toMatchObject({ pellets: 8, damage: 12, interval: 0.8 });
+  it('the shotgun fires 8 pellets every 0.9 s, ±11°: 20 within 6 m, 10 beyond (M12 §5.1)', () => {
+    expect(WEAPONS.fallen).toMatchObject({ pellets: 8, damage: 10, interval: 0.9 });
+    expect(WEAPONS.fallen.spreadYaw).toBeCloseTo((11 * Math.PI) / 180, 12);
+    expect(SHOTGUN_CLOSE_DAMAGE).toBe(20);
   });
 });

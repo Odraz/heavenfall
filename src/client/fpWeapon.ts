@@ -251,3 +251,105 @@ export function swingPose(elapsed: number, frames: number): { frame: number; opa
     gunY: SWING_DROP * Math.min(1, 1.6 * s),
   };
 }
+
+/**
+ * Shadowstep's slash (M12 §5.7, tuned in stage 4, decisions.md): the dagger, with the painting's height
+ * at 0.55 of the view's, sweeps a backhand cut for 200 ms, its fist's center going from (+40, +22) vh to
+ * (−40, +6) vh from the screen's center (x right, y down) and turning from +25° to −15° relative to the
+ * painting (CSS, clockwise positive), by smoothstep; it fades in over 30 ms and out over the last 40 ms.
+ */
+export const SLASH_MS = 200;
+export const SLASH_S = 0.55;
+const SLASH_FROM: readonly [number, number] = [40, 22];
+const SLASH_TO: readonly [number, number] = [-40, 6];
+const SLASH_TURN: readonly [number, number] = [25, -15];
+const SLASH_FADE_IN = 30;
+const SLASH_FADE_OUT = 40;
+/** The revolver drops 30 vh over 60 ms as the slash starts, and rises back over 120 ms after it. */
+export const SLASH_DROP = 30;
+const SLASH_DROP_MS = 60;
+const SLASH_RISE_MS = 120;
+/** The smear: the last 40 vh of the tip's path, 2.5 vh wide at the tip tapering to 0, fading over 80 ms after the slash. */
+export const SMEAR_LENGTH = 40;
+export const SMEAR_WIDTH = 2.5;
+export const SMEAR_FADE_MS = 80;
+/** The smear's path is the tip's, sampled this often (ms). */
+const SMEAR_STEP_MS = 4;
+
+/** The dagger's image (weapon.json's `slash`): its size, the painting's height, the fist's center and the tip, in its pixels. */
+export interface SlashDagger {
+  paintH: number;
+  w: number;
+  h: number;
+  fist: [number, number];
+  tip: [number, number];
+}
+
+/** vh per dagger pixel. */
+export function daggerScale(d: SlashDagger): number {
+  return (SLASH_S * 100) / d.paintH;
+}
+
+/** The slash `elapsed` ms after it started: the fist's center (vh from the screen's center), its turn and opacity; null outside it. */
+export function slashPose(elapsed: number): { x: number; y: number; angle: number; opacity: number } | null {
+  if (!(elapsed >= 0) || elapsed >= SLASH_MS) return null;
+  const t = elapsed / SLASH_MS;
+  const u = t * t * (3 - 2 * t);
+  return {
+    x: SLASH_FROM[0] + (SLASH_TO[0] - SLASH_FROM[0]) * u,
+    y: SLASH_FROM[1] + (SLASH_TO[1] - SLASH_FROM[1]) * u,
+    angle: SLASH_TURN[0] + (SLASH_TURN[1] - SLASH_TURN[0]) * u,
+    opacity: Math.min(1, elapsed / SLASH_FADE_IN, (SLASH_MS - elapsed) / SLASH_FADE_OUT),
+  };
+}
+
+/** How far the revolver is dropped (vh) `elapsed` ms after the slash started. */
+export function slashGunDrop(elapsed: number): number {
+  if (!(elapsed >= 0)) return 0;
+  if (elapsed < SLASH_MS) return SLASH_DROP * Math.min(1, elapsed / SLASH_DROP_MS);
+  return SLASH_DROP * Math.max(0, 1 - (elapsed - SLASH_MS) / SLASH_RISE_MS);
+}
+
+/** Where the blade's tip is on screen (vh from the center) at a pose: the measured tip through the dagger's transform. */
+export function slashTip(d: SlashDagger, pose: { x: number; y: number; angle: number }): [number, number] {
+  const k = daggerScale(d);
+  const dx = (d.tip[0] - d.fist[0]) * k;
+  const dy = (d.tip[1] - d.fist[1]) * k;
+  const a = (pose.angle * Math.PI) / 180;
+  return [pose.x + dx * Math.cos(a) - dy * Math.sin(a), pose.y + dx * Math.sin(a) + dy * Math.cos(a)];
+}
+
+/**
+ * The smear `elapsed` ms after the slash started: an outline (vh from the screen's center) around the
+ * last 40 vh of the path the tip traced, 2.5 vh wide at the tip and tapering to 0, and its opacity,
+ * fading out over 80 ms after the slash; null when there's none.
+ */
+export function smearOutline(d: SlashDagger, elapsed: number): { points: Array<[number, number]>; opacity: number } | null {
+  if (!(elapsed >= 0) || elapsed >= SLASH_MS + SMEAR_FADE_MS) return null;
+  const end = Math.min(elapsed, SLASH_MS - 1e-6);
+  // The tip's path, newest first.
+  const path: Array<[number, number]> = [];
+  for (let t = end; ; t -= SMEAR_STEP_MS) {
+    path.push(slashTip(d, slashPose(Math.max(0, t))!));
+    if (t <= 0) break;
+  }
+  const left: Array<[number, number]> = [];
+  const right: Array<[number, number]> = [];
+  let along = 0;
+  for (let i = 0; i < path.length && along < SMEAR_LENGTH; i++) {
+    if (i > 0) along += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]);
+    const a = path[Math.max(0, i - 1)];
+    const b = path[Math.min(path.length - 1, i + 1)];
+    let nx = -(b[1] - a[1]);
+    let ny = b[0] - a[0];
+    const len = Math.hypot(nx, ny);
+    if (len < 1e-9) continue;
+    const half = (SMEAR_WIDTH / 2) * Math.max(0, 1 - along / SMEAR_LENGTH);
+    nx = (nx / len) * half;
+    ny = (ny / len) * half;
+    left.push([path[i][0] + nx, path[i][1] + ny]);
+    right.push([path[i][0] - nx, path[i][1] - ny]);
+  }
+  if (left.length < 2) return null;
+  return { points: [...left, ...right.reverse()], opacity: elapsed < SLASH_MS ? 1 : 1 - (elapsed - SLASH_MS) / SMEAR_FADE_MS };
+}

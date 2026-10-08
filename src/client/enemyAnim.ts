@@ -99,6 +99,8 @@ export class EnemyAnimator {
   private readonly state = new Uint8Array(ENEMY_SLOTS);
   private readonly stateSince = new Float64Array(ENEMY_SLOTS);
   private readonly painStart = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
+  /** Stunned in the snapshot (M12 §5.3): the pain animation holds its last frame. */
+  private readonly stunned = new Uint8Array(ENEMY_SLOTS);
   /** When a casting enemy last fired (its state became `attacking`). */
   private readonly firedAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
   private readonly type = new Uint8Array(ENEMY_SLOTS);
@@ -131,6 +133,7 @@ export class EnemyAnimator {
       this.state[slot] = state;
       this.stateSince[slot] = now;
       this.painStart[slot] = -Infinity;
+      this.stunned[slot] = 0;
       this.facing[slot] = Math.atan2(targetY - y, targetX - x);
       return;
     }
@@ -160,9 +163,19 @@ export class EnemyAnimator {
     if (now - this.painStart[slot] >= PAIN_COOLDOWN_MS) this.painStart[slot] = now;
   }
 
+  /**
+   * The snapshot's stun flag for a slot, after `update` (M12 §5.3): on its rising edge the pain
+   * animation starts, whatever the cooldown, and it holds its last frame while the flag is set.
+   */
+  setStunned(slot: number, on: boolean, now: number): void {
+    if (on && !this.stunned[slot]) this.painStart[slot] = now;
+    this.stunned[slot] = on ? 1 : 0;
+  }
+
   /** The animation and frame to show for a slot at `now`; `bossCast` is the snapshot's (BOSS_CAST_*). */
   pick(slot: number, now: number, bossCast = 0): AnimPick {
     const sincePain = now - this.painStart[slot];
+    if (this.stunned[slot]) return { anim: 'pain', frame: Math.min(PAIN_FRAMES - 1, Math.floor((Math.max(0, sincePain) / PAIN_MS) * PAIN_FRAMES)) };
     if (sincePain >= 0 && sincePain < PAIN_MS) return { anim: 'pain', frame: Math.min(PAIN_FRAMES - 1, Math.floor((sincePain / PAIN_MS) * PAIN_FRAMES)) };
     const state = this.state[slot];
     const type = this.type[slot];

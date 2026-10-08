@@ -85,16 +85,16 @@ describe('burst tiers (M12 §4.1)', () => {
     expect(tiers(sim).get(s)).toBe(2);
   });
 
-  it('a 240 Silver Bullet through 12 Blessed: force 240 down to 20, the first 9 heavy, the next 2 light, the 12th normal', () => {
+  it('a Silver Bullet through 10 Blessed: force 200 down to 20, the first 7 heavy, the 8th and 9th light, the 10th normal', () => {
     const sim = makeSim(room(80, 4), ['betrayer']);
     const p = sim.players[0];
-    const slots = Array.from({ length: 12 }, (_, i) => enemyAt(sim, BLESSED, 5.5 + i, 2.5));
+    const slots = Array.from({ length: 10 }, (_, i) => enemyAt(sim, BLESSED, 5.5 + i, 2.5));
     put(sim, p, 1.5, 2.5);
     p.z = -0.8;
     sim.fireWeapon(p, ATTACK_SECONDARY);
     expect(slots.every((s) => !sim.eAlive[s])).toBe(true);
     const t = tiers(sim);
-    expect(slots.map((s) => t.get(s) ?? 0)).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 0]);
+    expect(slots.map((s) => t.get(s) ?? 0)).toEqual([2, 2, 2, 2, 2, 2, 2, 1, 1, 0]);
   });
 
   it('a bound Blessed killed by a 20-dmg hit bursts light', () => {

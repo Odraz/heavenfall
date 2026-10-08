@@ -5,7 +5,26 @@ import { mouseGlyph } from '../ui/mouseGlyph';
 import { CHAT_MAX } from '../net/lobby';
 import { spriteUrl } from '../render/atlas';
 import { weaponArt, type ViewBox, type WeaponLayer, type WeaponManifest } from '../render/weaponAtlas';
-import { altLevel, cylinderBlur, recoilLeft, swingPose, glowLevel, hammerAngle, HealFade, layerOpacities, recoilTilt, Sway, Tilt, transformPoint, VH_PER_PX, WeaponLight } from './fpWeapon';
+import {
+  altLevel,
+  cylinderBlur,
+  daggerScale,
+  recoilLeft,
+  slashGunDrop,
+  slashPose,
+  smearOutline,
+  swingPose,
+  glowLevel,
+  hammerAngle,
+  HealFade,
+  layerOpacities,
+  recoilTilt,
+  Sway,
+  Tilt,
+  transformPoint,
+  VH_PER_PX,
+  WeaponLight,
+} from './fpWeapon';
 
 /** Recoil in % of the screen height (MVP §10; the slug and the Silver Bullet kick harder, M9 §5.1). */
 const RECOIL_PCT = 8;
@@ -99,6 +118,11 @@ export class Hud {
   private readonly swingLayers: HTMLImageElement[] = [];
   private swingAt = -Infinity;
   private swingFrame = -2;
+  /** Shadowstep's slash (M12 §5.7): the dagger, the smear (an SVG in vh around the screen's center), when it began. */
+  private readonly dagger: HTMLImageElement | null = null;
+  private readonly smear: SVGSVGElement | null = null;
+  private readonly smearShape: SVGPolygonElement | null = null;
+  private slashAt = -Infinity;
   /** A steady green vignette while a Sacrament beam heals the player (M9 §5.1). */
   private readonly beamVignette: HTMLDivElement;
   /** Standing in a Field of Blood (M9 §5.1): the rising glow, the weapon's red glow, the red crosshair. */
@@ -229,6 +253,29 @@ export class Hud {
       this.swingFist.hidden = true;
       // Decoded now, not on the first swing: the chain's frames decoding then stalled it by 100 ms.
       for (const img of [...this.swingLayers, this.swingFist]) img.decode().catch(() => {});
+    }
+    if (m.slash) {
+      // The smear behind the dagger, the dagger over it.
+      this.smear = document.createElementNS(SVG_NS, 'svg');
+      this.smear.setAttribute('class', 'slash-smear');
+      this.smearShape = document.createElementNS(SVG_NS, 'polygon');
+      this.smear.appendChild(this.smearShape);
+      this.root.appendChild(this.smear);
+      this.smear.style.display = 'none';
+      const k = daggerScale(m.slash);
+      this.dagger = el('img', 'weapon-swing', this.root);
+      this.dagger.src = art.url('dagger');
+      this.dagger.alt = '';
+      this.dagger.draggable = false;
+      Object.assign(this.dagger.style, {
+        width: `${(m.slash.w * k).toFixed(3)}vh`,
+        height: `${(m.slash.h * k).toFixed(3)}vh`,
+        transformOrigin: `${(m.slash.fist[0] * k).toFixed(3)}vh ${(m.slash.fist[1] * k).toFixed(3)}vh`,
+        left: `calc(50% - ${(m.slash.fist[0] * k).toFixed(3)}vh)`,
+        top: `calc(50% - ${(m.slash.fist[1] * k).toFixed(3)}vh)`,
+      });
+      this.dagger.hidden = true;
+      this.dagger.decode().catch(() => {});
     }
 
     this.vignettes = {
@@ -540,6 +587,11 @@ export class Hud {
     this.swingAt = now;
   }
 
+  /** Shadowstep: the left hand's dagger cuts across the view for the dash's 200 ms (M12 §5.7). */
+  slash(now: number): void {
+    this.slashAt = now;
+  }
+
   /**
    * The weapon's offsets this frame in vh (bob, sway, recoil, and moving out of the Scourge's way) and its
    * tilt in degrees (M11 §3.2, §3.6).
@@ -548,9 +600,10 @@ export class Hud {
     const since = now - this.shotAt;
     const r = recoilLeft(since, this.fireIntervalMs);
     const sw = this.weaponManifest.swing ? swingPose(now - this.swingAt, this.weaponManifest.swing.chain.frames) : null;
+    const drop = this.weaponManifest.slash ? slashGunDrop(now - this.slashAt) : 0;
     return {
       dx: this.bobX + this.sway.x + (sw?.gunX ?? 0),
-      dy: this.bobY + this.sway.y + r * this.recoilPct + (sw?.gunY ?? 0),
+      dy: this.bobY + this.sway.y + r * this.recoilPct + (sw?.gunY ?? 0) + drop,
       tilt: recoilTilt(this.tilt.T, since, this.fireIntervalMs),
     };
   }
@@ -584,6 +637,7 @@ export class Hud {
     this.weaponBox.style.filter = f;
     if (this.swingChain) this.swingChain.style.filter = f;
     if (this.swingFist) this.swingFist.style.filter = f;
+    if (this.dagger) this.dagger.style.filter = f;
   }
 
   /**
@@ -746,6 +800,31 @@ export class Hud {
     this.put(this.swingFist, 'swing-fist', 'opacity', op);
   }
 
+  /**
+   * Shadowstep's slash (M12 §5.7): the dagger at its pose, with the weapon's bob, sway and light, and the
+   * smear along the tip's path, fading out after it.
+   */
+  private updateSlash(now: number): void {
+    const d = this.weaponManifest.slash;
+    if (!d || !this.dagger || !this.smear || !this.smearShape) return;
+    const t = now - this.slashAt;
+    const pose = slashPose(t);
+    this.dagger.hidden = !pose;
+    if (pose) {
+      const x = pose.x + this.bobX + this.sway.x;
+      const y = pose.y + this.bobY + this.sway.y;
+      this.dagger.style.transform = `translate(${x.toFixed(3)}vh, ${y.toFixed(3)}vh) rotate(${pose.angle.toFixed(2)}deg)`;
+      this.dagger.style.opacity = pose.opacity.toFixed(3);
+    }
+    const smear = smearOutline(d, t);
+    this.smear.style.display = smear ? '' : 'none';
+    if (!smear) return;
+    const a = window.innerWidth / window.innerHeight;
+    this.smear.setAttribute('viewBox', `${(-50 * a).toFixed(3)} -50 ${(100 * a).toFixed(3)} 100`);
+    this.smearShape.setAttribute('points', smear.points.map(([x, y]) => `${(x + this.bobX + this.sway.x).toFixed(2)},${(y + this.bobY + this.sway.y).toFixed(2)}`).join(' '));
+    this.smear.style.opacity = smear.opacity.toFixed(3);
+  }
+
   /** Sets a style property unless it already has that value. */
   private put(e: HTMLElement, key: string, prop: 'opacity' | 'transform' | 'visibility', value: string): void {
     if (this.written.get(key) === value) return;
@@ -777,6 +856,7 @@ export class Hud {
   update(now: number): void {
     this.updateWeapon(now);
     this.updateSwing(now);
+    this.updateSlash(now);
     // The field's glow: 0.25–0.35 over 1.2 s, flaring to 0.5 for 0.3 s on entering.
     if (this.inField) {
       const pulse = 0.3 + 0.05 * Math.sin((now / FIELD_PULSE_MS) * Math.PI * 2);

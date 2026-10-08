@@ -2,16 +2,15 @@ import type { Browser, Page } from '@playwright/test';
 import { expect, state, test } from './fixtures';
 
 /**
- * A client page in its own browser context, failing the test on console and page errors like `page`.
- * Smaller than A's, so four software-rendered games on one machine block each other less. With `own`,
- * the context is in a browser of its own, with its own GPU process: in one browser every page's WebGL
- * shares one software renderer, and three games loading at once took 17–22 s, past the host's 20 s
- * limit (M12 stage 4). D, who joins later, stays in A's browser: with B and C in their own, D's Loading
- * starved for CPU beside the three running games.
+ * A client page in its own browser, failing the test on console and page errors like `page`. Smaller
+ * than A's, so four software-rendered games on one machine block each other less. Its own browser has
+ * its own GPU process: in one browser every page's WebGL shares one software renderer, and three games
+ * loading at once took 17–22 s, past the host's 20 s limit, and D, sharing A's, starved and timed out
+ * (M12 stage 4).
  */
-async function clientPage(browser: Browser, errors: string[], label: string, own: boolean): Promise<Page> {
-  const into = own ? await browser.browserType().launch(test.info().project.use.launchOptions ?? {}) : browser;
-  const context = await into.newContext({ viewport: { width: 800, height: 450 } });
+async function clientPage(browser: Browser, errors: string[], label: string): Promise<Page> {
+  const own = await browser.browserType().launch(test.info().project.use.launchOptions ?? {});
+  const context = await own.newContext({ viewport: { width: 800, height: 450 } });
   const page = await context.newPage();
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(`${label} console.error: ${m.text()}`);
@@ -39,7 +38,7 @@ async function join(page: Page, gameId: string, password: string): Promise<void>
 test('multiplayer', async ({ page: a, browser }) => {
   test.setTimeout(300_000);
   const errors: string[] = [];
-  const [b, c, d] = await Promise.all(['B', 'C', 'D'].map((l) => clientPage(browser, errors, l, l !== 'D')));
+  const [b, c, d] = await Promise.all(['B', 'C', 'D'].map((l) => clientPage(browser, errors, l)));
   const clients = [b, c, d];
 
   // (1) A hosts with password `pw` and reads the game ID.
@@ -83,8 +82,8 @@ test('multiplayer', async ({ page: a, browser }) => {
   // D's Loading past the 20 s timeout.
   const sizes = await Promise.all([a, b, c].map((p) => p.viewportSize()!));
   await Promise.all([a, b, c].map((p) => p.setViewportSize({ width: 320, height: 180 })));
-  // B's and C's own browsers render at full speed beside D's Loading, so their pages run at an eighth of
-  // the CPU until D is in (A, the host, isn't slowed).
+  // B's and C's browsers render at full speed beside D's Loading, so their pages run at an eighth of the
+  // CPU until D is in (A, the host, isn't slowed).
   const throttles = await Promise.all([b, c].map((p) => p.context().newCDPSession(p)));
   await Promise.all(throttles.map((t) => t.send('Emulation.setCPUThrottlingRate', { rate: 8 })));
   await d.goto(`/?join=${gameId}&bot=1`);
@@ -181,5 +180,5 @@ test('multiplayer', async ({ page: a, browser }) => {
     }),
   );
   expect(errors).toEqual([]);
-  await Promise.all([b, c].map((p) => p.context().browser()?.close()));
+  await Promise.all(clients.map((p) => p.context().browser()?.close()));
 });

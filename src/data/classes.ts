@@ -33,10 +33,10 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     passive: { name: 'Brimstone Hide', description: 'Takes 40% less damage. Enemies prefer to attack the Fallen.' },
     hints: [
       { text: 'Stand in front: you take less damage and enemies prefer you.' },
-      { key: 'LMB', text: 'The shotgun blasts back the crowd at your feet.' },
+      { key: 'LMB', text: 'The shotgun bursts the crowd at your feet. Taunt them onto you first.' },
       { key: 'RMB', text: 'The slug hits one enemy far away.' },
-      { key: 'Q', text: 'Q: when a teammate is swarmed, taunt the swarm off them.' },
-      { key: 'E', text: 'E: aim at a teammate (gold marker) to leap to their rescue.' },
+      { key: 'Q', text: 'Q: the crowd recoils, then comes for you. Use it to pull a swarm off a teammate.' },
+      { key: 'E', text: "Hold E to aim the leap, release to jump. Land on a crowd, a Binder's pile, or at your own feet after a taunt." },
     ],
   },
   heretic: {
@@ -47,10 +47,10 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     speed: 8,
     passive: { name: 'Last Rites', description: 'Revives fallen teammates twice as fast.' },
     hints: [
-      { key: 'LMB', text: 'Censers leave burning incense. Throw them where the crowd is held.' },
+      { key: 'LMB', text: 'Incense kills what stays in it: throw it on the crowd held by the Fallen, the Binder, or whoever wears your shield.' },
       { key: 'RMB', text: 'Hold on a teammate (gold marker) to heal them, or on their soul to revive them.' },
-      { key: 'Q', text: 'Q heals everyone near you. Stay close to the party.' },
-      { key: 'E', text: 'E: shield a teammate (gold marker), or yourself. When enemies break it, it blasts the enemies around them.' },
+      { key: 'Q', text: 'Q heals everyone near you. Save it for after the wave hits.' },
+      { key: 'E', text: 'E: shield the one about to be swarmed, then incense at their feet. With no one aimed, it shields you.' },
       { text: 'You revive fallen teammates twice as fast.' },
     ],
   },
@@ -64,7 +64,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     hints: [
       { key: 'LMB', text: 'Every bullet slows its target.' },
       { key: 'RMB', text: 'Swing your chain when the swarm reaches you.' },
-      { key: 'Q', text: 'Q: pull a crowd together, then let the party shred it. Bound enemies take double damage.' },
+      { key: 'Q', text: 'Q: pull a crowd together, then call the Fallen down on it. Bound enemies take double damage.' },
       { key: 'E', text: "E: silence Choristers, Cherubs and the Gatekeeper's Judgment." },
     ],
   },
@@ -77,9 +77,9 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     passive: { name: 'Into the Night', description: 'The fastest of the damned: outruns every other class.' },
     hints: [
       { key: 'LMB', text: 'Fast shots, one enemy at a time.' },
-      { key: 'RMB', text: "Wait until enemies line up: the bullet tears through the line until it's spent." },
+      { key: 'RMB', text: 'Wait until enemies line up: the bullet tears through ten.' },
       { key: 'Q', text: 'Q: go where the party fights and toss the silver. Everyone in it fires twice as fast.' },
-      { key: 'E', text: 'E: dash out of trouble.' },
+      { key: 'E', text: 'E: dash through a crowd, cutting everything in your path.' },
     ],
   },
 };

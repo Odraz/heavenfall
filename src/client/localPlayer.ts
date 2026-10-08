@@ -1,5 +1,6 @@
 /** Local player movement, run every render frame on the player's own main thread (§2.2, §5.2). */
 import { FALLING_STAR_TIME, SHADOWSTEP_SPEED, SHADOWSTEP_TIME } from '../data/weapons';
+import { arcPoint } from './fallingStarAim';
 import { JUMP_VZ, PLAYER_RADIUS } from '../sim/constants';
 import type { GameMap } from '../sim/map';
 import { jump, stepBody, updateGround, type Body, type MoveResult } from '../sim/movement';
@@ -30,12 +31,12 @@ export class LocalPlayer {
     this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch + dPitch));
   }
 
-  /** Falling Star in progress: a straight line from → to, ignoring collision. */
+  /** Falling Star in progress: the arc from → to, ignoring collision. */
   private leap: { fx: number; fy: number; fz: number; tx: number; ty: number; tz: number; t: number } | null = null;
   /** Shadowstep in progress: a horizontal dash with normal movement rules. */
   private dash: { dx: number; dy: number; t: number } | null = null;
 
-  /** Falling Star (§6.1): moves linearly to the ally's position over 0.4 s, ignoring collision. */
+  /** Falling Star (M12 §5.2): flies the arc to the landing point (feet) over 0.4 s, ignoring collision. */
   startLeap(tx: number, ty: number, tz: number): void {
     const b = this.body;
     this.leap = { fx: b.x, fy: b.y, fz: b.z, tx, ty, tz, t: 0 };
@@ -53,6 +54,10 @@ export class LocalPlayer {
     return this.leap !== null;
   }
 
+  get dashing(): boolean {
+    return this.dash !== null;
+  }
+
   /**
    * Moves the player. `dirX`, `dirY` is the horizontal movement direction in world space
    * (normalized, or zero to stand still).
@@ -64,9 +69,7 @@ export class LocalPlayer {
       const l = this.leap;
       l.t += dt;
       const f = Math.min(1, l.t / FALLING_STAR_TIME);
-      b.x = l.fx + (l.tx - l.fx) * f;
-      b.y = l.fy + (l.ty - l.fy) * f;
-      b.z = l.fz + (l.tz - l.fz) * f;
+      [b.x, b.y, b.z] = arcPoint(l.fx, l.fy, l.fz, l.tx, l.ty, l.tz, f);
       this.moveResult.blocked = false;
       if (f >= 1) {
         this.leap = null;

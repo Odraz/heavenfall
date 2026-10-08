@@ -4,6 +4,7 @@
  * and local. Pure: no DOM or three.js.
  */
 import { ENEMIES, GATEKEEPER } from '../data/enemies';
+import { SHOTGUN_CLOSE_DAMAGE, WEAPONS } from '../data/weapons';
 import { BURST_LIGHT } from '../sim/combat';
 
 /** A predicted hit's outcome: 0 survives, 1 a kill, 2 a kill that bursts. */
@@ -30,6 +31,48 @@ export function predictHit(type: number, damage: number, rooted: boolean, always
 export function predictSilverBullet(line: ReadonlyArray<{ type: number; rooted: boolean }>, carried: readonly number[]): Predicted[] {
   return carried.map((c, i) => predictHit(line[i].type, c, line[i].rooted));
 }
+
+/** An enemy along one pellet's ray, as the local ray test found it. */
+export interface PelletTarget {
+  /** The enemy's index in the interpolated list. */
+  i: number;
+  /** Distance along the ray. */
+  t: number;
+  type: number;
+  rooted: boolean;
+  /** Within 6 m of the Fallen's body center (the shotgun's burst range, M12 §5.1). */
+  close: boolean;
+}
+
+/**
+ * One hitscan shot's predictions (M12 §4.4): each pellet's targets, nearest first, hit up to `maxHits`;
+ * an enemy an earlier pellet is predicted to kill is passed by later pellets, as on the host. The
+ * shotgun's pellets deal 20 within 6 m (and always burst what they kill there) and 10 beyond; the
+ * Chain Gun never kills. Returns each pellet's hits with their outcomes.
+ */
+export function predictPellets(
+  pellets: ReadonlyArray<readonly PelletTarget[]>,
+  damage: number,
+  maxHits: number,
+  kind: 'shotgun' | 'chainGun' | 'other',
+): Array<Array<{ target: PelletTarget; result: Predicted }>> {
+  const killed = new Set<number>();
+  return pellets.map((ts) => {
+    const hits: Array<{ target: PelletTarget; result: Predicted }> = [];
+    for (const t of ts) {
+      if (hits.length >= maxHits) break;
+      if (killed.has(t.i)) continue;
+      const close = kind === 'shotgun' && t.close;
+      const result = predictHit(t.type, close ? SHOTGUN_CLOSE_DAMAGE : damage, t.rooted, close, kind !== 'chainGun');
+      if (result) killed.add(t.i);
+      hits.push({ target: t, result });
+    }
+    return hits;
+  });
+}
+
+/** The shotgun's far damage, for tests and the cosmetic shot. */
+export const SHOTGUN_FAR_DAMAGE = WEAPONS.fallen.damage;
 
 /** Predicted kills within this long climb the `killTick` pitch ladder. */
 export const LADDER_MS = 500;

@@ -3,6 +3,7 @@
  * movement is the client's, and the host's speed check only caps from above. Pure, for tests.
  */
 import { BLESSED, CHORISTER, ENEMIES } from '../data/enemies';
+import { FLAG_STUNNED } from '../net/protocol';
 import { PLAYER_RADIUS } from '../sim/constants';
 import type { GameMap } from '../sim/map';
 import { groundHeight } from '../sim/movement';
@@ -27,13 +28,15 @@ export interface WadeEnemies {
   enemyX: ArrayLike<number>;
   enemyY: ArrayLike<number>;
   enemyType: ArrayLike<number>;
+  enemyFlags: ArrayLike<number>;
 }
 
 /**
  * The living ground enemies (Blessed and Choristers) pressing against a player whose feet are at
  * (x, y, z): centers within the player's radius + the enemy's + 0.45 m horizontally and feet within
  * 1.5 m vertically. An enemy's feet are the ground under it (snapshots carry no height), computed only
- * for enemies within reach. `launchedUntil[slot]` (ms): launched enemies don't count until then.
+ * for enemies within reach. Stunned enemies (`FLAG_STUNNED`, M12 §5.3) don't count, nor launched ones
+ * until `launchedUntil[slot]` (ms).
  */
 export function wadeCount(map: GameMap, x: number, y: number, z: number, e: WadeEnemies, launchedUntil: ArrayLike<number>, now: number): number {
   let n = 0;
@@ -45,7 +48,7 @@ export function wadeCount(map: GameMap, x: number, y: number, z: number, e: Wade
     const dx = e.enemyX[i] - x;
     const dy = e.enemyY[i] - y;
     if (dx * dx + dy * dy > reach * reach) continue;
-    if (now < launchedUntil[e.enemySlot[i]]) continue;
+    if (now < launchedUntil[e.enemySlot[i]] || e.enemyFlags[i] & FLAG_STUNNED) continue;
     const g = groundHeight(map, e.enemyX[i], e.enemyY[i], r, Infinity, false, true);
     if (g === -Infinity || Math.abs(g - z) > WADE_HEIGHT) continue;
     n++;

@@ -71,7 +71,7 @@ describe('controls (M9 §2.1)', () => {
 });
 
 describe('the shared fire timer (M9 §2.2)', () => {
-  it('a Silver Bullet followed by the primary: the next revolver shot comes 1.2 s later', () => {
+  it('a Silver Bullet followed by the primary: the next revolver shot comes 1.5 s later (M12 §5.6)', () => {
     const sim = makeSim(room(30, 5), ['betrayer']);
     const p = sim.players[0];
     const shots = recordShots(sim);
@@ -81,7 +81,7 @@ describe('the shared fire timer (M9 §2.2)', () => {
     p.fire = FIRE_LEFT;
     for (let i = 0; i < 60; i++) sim.step();
     expect(shots[0]).toEqual([ATTACK_SECONDARY, t0]);
-    expect(shots[1]).toEqual([ATTACK_PRIMARY, t0 + 36]);
+    expect(shots[1]).toEqual([ATTACK_PRIMARY, t0 + 45]);
   });
 
   it("switching doesn't reset the timer, and an attack waiting for it still counts as held", () => {
@@ -99,7 +99,7 @@ describe('the shared fire timer (M9 §2.2)', () => {
       [ATTACK_SECONDARY, t0 + 9],
     ]);
     // The timer kept counting while the Silver Bullet waited; nothing was reset.
-    expect(p.fireTimer).toBeCloseTo(0.3 + 1.2 - 11 / 30, 9);
+    expect(p.fireTimer).toBeCloseTo(0.3 + 1.5 - 11 / 30, 9);
   });
 
   it('released, the timer stops at 0', () => {
@@ -139,8 +139,8 @@ describe('attacks (M9 §2.3)', () => {
     expect(WEAPONS.betrayer).toMatchObject({ interval: 0.3, damage: 60, maxHits: 1, range: 60 });
     expect(SECONDARIES.fallen).toMatchObject({ interval: 1.0, damage: 60, maxHits: 1, range: 50 });
     expect(SECONDARIES.heretic).toMatchObject({ interval: 0.5, damage: 15, range: 40 });
-    expect(SECONDARIES.binder).toMatchObject({ interval: 0.8, damage: 25, maxHits: 6, range: 3 });
-    expect(SECONDARIES.betrayer).toMatchObject({ interval: 1.2, damage: 240, range: 60 });
+    expect(SECONDARIES.binder).toMatchObject({ interval: 0.8, damage: 25, maxHits: Infinity, range: 3 });
+    expect(SECONDARIES.betrayer).toMatchObject({ interval: 1.5, damage: 200, range: 60 });
   });
 
   it('the slug deals 60 to the first enemy only, up to 50 m', () => {
@@ -164,7 +164,7 @@ describe('attacks (M9 §2.3)', () => {
   it('every hitscan attack revives with its own interval ÷ 3; the Scourge doesn’t revive', () => {
     for (const [cls, slot, interval] of [
       ['fallen', ATTACK_SECONDARY, 1.0],
-      ['betrayer', ATTACK_SECONDARY, 1.2],
+      ['betrayer', ATTACK_SECONDARY, 1.5],
       ['betrayer', ATTACK_PRIMARY, 0.3],
     ] as const) {
       const sim = makeSim(room(30, 10), [cls, 'binder']);
@@ -186,7 +186,7 @@ describe('attacks (M9 §2.3)', () => {
   });
 });
 
-describe('the Silver Bullet (M9 §2.4)', () => {
+describe('the Silver Bullet (M9 §2.4, M12 §5.6: carries 200)', () => {
   /** A line of enemies along +x from x = 5, one per meter; returns their slots. */
   function line(sim: Simulation, types: number[], bound: (i: number) => boolean = () => false): number[] {
     return types.map((t, i) => {
@@ -204,35 +204,35 @@ describe('the Silver Bullet (M9 §2.4)', () => {
     return { sim, slots };
   }
 
-  it('kills 12 Blessed in a line and stops at the 12th', () => {
-    const { sim, slots } = fire(Array(13).fill(BLESSED));
-    expect(slots.slice(0, 12).every((s) => !sim.eAlive[s])).toBe(true);
-    expect(sim.eHp[slots[12]]).toBe(20);
-    expect(sim.players[0].kills).toBe(12);
-    // The tracer ends at the 12th, where the ray enters its cylinder.
-    expect(bulletEvents(sim)[0].ex).toBeCloseTo(5.5 + 11 - 0.35, 6);
-  });
-
-  it('kills 24 bound Blessed', () => {
-    const { sim, slots } = fire(Array(25).fill(BLESSED), () => true);
-    expect(slots.slice(0, 24).every((s) => !sim.eAlive[s])).toBe(true);
-    expect(sim.eHp[slots[24]]).toBe(20);
-  });
-
-  it('11 Blessed then a Chorister: the Chorister takes the remaining 20', () => {
-    const { sim, slots } = fire([...Array(11).fill(BLESSED), CHORISTER]);
-    expect(sim.eHp[slots[11]]).toBe(40);
-  });
-
-  it("11 Blessed then a bound Chorister: it takes 40 and survives with 20 (the doubling isn't applied twice)", () => {
-    const { sim, slots } = fire([...Array(11).fill(BLESSED), CHORISTER], (i) => i === 11);
-    expect(sim.eHp[slots[11]]).toBe(20);
-  });
-
-  it('a Chorister then 9 Blessed: all die, and a 10th is untouched', () => {
-    const { sim, slots } = fire([CHORISTER, ...Array(10).fill(BLESSED)]);
+  it('kills 10 Blessed in a line and stops at the 10th', () => {
+    const { sim, slots } = fire(Array(11).fill(BLESSED));
     expect(slots.slice(0, 10).every((s) => !sim.eAlive[s])).toBe(true);
     expect(sim.eHp[slots[10]]).toBe(20);
+    expect(sim.players[0].kills).toBe(10);
+    // The tracer ends at the 10th, where the ray enters its cylinder.
+    expect(bulletEvents(sim)[0].ex).toBeCloseTo(5.5 + 9 - 0.35, 6);
+  });
+
+  it('kills 20 bound Blessed', () => {
+    const { sim, slots } = fire(Array(21).fill(BLESSED), () => true);
+    expect(slots.slice(0, 20).every((s) => !sim.eAlive[s])).toBe(true);
+    expect(sim.eHp[slots[20]]).toBe(20);
+  });
+
+  it('9 Blessed then a Chorister: the Chorister takes the remaining 20', () => {
+    const { sim, slots } = fire([...Array(9).fill(BLESSED), CHORISTER]);
+    expect(sim.eHp[slots[9]]).toBe(40);
+  });
+
+  it("9 Blessed then a bound Chorister: it takes 40 and survives with 20 (the doubling isn't applied twice)", () => {
+    const { sim, slots } = fire([...Array(9).fill(BLESSED), CHORISTER], (i) => i === 9);
+    expect(sim.eHp[slots[9]]).toBe(20);
+  });
+
+  it('a Chorister then 7 Blessed: all die, and an 8th is untouched', () => {
+    const { sim, slots } = fire([CHORISTER, ...Array(8).fill(BLESSED)]);
+    expect(slots.slice(0, 8).every((s) => !sim.eAlive[s])).toBe(true);
+    expect(sim.eHp[slots[8]]).toBe(20);
   });
 
   it('the Gatekeeper absorbs the rest and stops it', () => {
@@ -243,7 +243,7 @@ describe('the Silver Bullet (M9 §2.4)', () => {
     aimLevel(sim, sim.players[0], 1.5, 4.5);
     sim.fireWeapon(sim.players[0], ATTACK_SECONDARY);
     expect(blessed.every((s) => !sim.eAlive[s])).toBe(true);
-    expect(sim.eHp[boss]).toBe(29000 - 140);
+    expect(sim.eHp[boss]).toBe(29000 - 100);
     expect(sim.eHp[behind]).toBe(20);
   });
 
@@ -257,7 +257,7 @@ describe('the Silver Bullet (M9 §2.4)', () => {
     line(sim, Array(12).fill(BLESSED));
     aimLevel(sim, p, 1.5, 2.5);
     sim.fireWeapon(p, ATTACK_SECONDARY);
-    expect(front.revive).toBeCloseTo(1.2 / 3, 9);
+    expect(front.revive).toBeCloseTo(1.5 / 3, 9);
     expect(back.revive).toBe(0);
   });
 
@@ -267,7 +267,7 @@ describe('the Silver Bullet (M9 §2.4)', () => {
     // The Cherub is put at ground level, so the level ray crosses it like the others.
     const { sim, slots } = fire(types, bound);
     const reachedOnHost = slots.filter((s) => sim.eHp[s] !== [20, 60, 30][sim.eType[s]] || !sim.eAlive[s]).length;
-    const est = estimateSilverBullet(types.map((type, i) => ({ type, rooted: bound(i) })), 240);
+    const est = estimateSilverBullet(types.map((type, i) => ({ type, rooted: bound(i) })), 200);
     expect(est.reached).toBe(reachedOnHost);
     expect(est.stopped).toBe(true);
   });
@@ -337,8 +337,8 @@ describe('Sacrament (M9 §2.5)', () => {
   });
 });
 
-describe('the Scourge (M9 §2.6)', () => {
-  it('hits at most the 6 nearest within 3 m and the 120° arc for 25, slowing them for 1 s', () => {
+describe('the Scourge (M9 §2.6, M12 §5.5)', () => {
+  it('hits every enemy within 3 m and the 120° arc for 25, slowing them for 1 s', () => {
     const sim = makeSim(room(20, 20), ['binder']);
     const p = sim.players[0];
     put(sim, p, 10.5, 10.5, 0);
@@ -352,8 +352,8 @@ describe('the Scourge (M9 §2.6)', () => {
     const side = enemyAt(sim, CHORISTER, 10.5 + Math.cos(1.25) * 1.5, 10.5 + Math.sin(1.25) * 1.5);
     const beyond = enemyAt(sim, CHORISTER, 10.5 + 3.6, 10.5);
     sim.fireWeapon(p, ATTACK_SECONDARY);
-    expect(front.map((s) => sim.eHp[s])).toEqual([35, 35, 35, 35, 35, 35, 60, 60]);
-    expect(front.slice(0, 6).every((s) => sim.eSlowUntil[s] === sim.tick + 30)).toBe(true);
+    expect(front.map((s) => sim.eHp[s])).toEqual([35, 35, 35, 35, 35, 35, 35, 35]);
+    expect(front.every((s) => sim.eSlowUntil[s] === sim.tick + 30)).toBe(true);
     expect([behind, side, beyond].map((s) => sim.eHp[s])).toEqual([60, 60, 60]);
   });
 

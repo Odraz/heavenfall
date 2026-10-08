@@ -22,6 +22,8 @@ export class Input {
    * still opens Pause; fire is ignored. Mouse look goes on.
    */
   typing = false;
+  /** How many times `release()` was called: Falling Star's preview cancels on a frame it changes (M12 §5.2). */
+  releases = 0;
   /** Called on every key press (not repeats): F3, Q, E and the dev keys. */
   onKey: (code: string) => void = () => {};
 
@@ -56,6 +58,7 @@ export class Input {
 
   /** Releases held input (movement keys, both mouse buttons). */
   readonly release = (): void => {
+    this.releases++;
     this.keys.clear();
     this.leftHeld = false;
     this.rightHeld = false;

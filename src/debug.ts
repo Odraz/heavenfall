@@ -50,6 +50,17 @@ export interface DebugState {
   wade: { count: number; factor: number };
   /** Burst deaths (M12 §4.2) played on this client: light and heavy, and mass kills played. */
   bursts: { light: number; heavy: number; massKills: number };
+  /** performance.now() when the local Shadowstep's slash last began (M12 §5.7), for screenshots; -1 before. */
+  slashAt: number;
+  /** ...and when its streak was last drawn, as the dash ended; -1 before. */
+  streakAt: number;
+  /** With `dev=1`: the local player's feet and view (radians), and the interpolated enemies within 8 m of it (screenshots). */
+  self: { x: number; y: number; z: number; yaw: number; pitch: number };
+  near: number;
+  /** ...and the yaw (radians) from it to their centroid. */
+  nearYaw: number;
+  /** With `dev=1`: Falling Star's preview this frame (M12 §5.2), or null when not aiming. */
+  star: { x: number; y: number; z: number; valid: boolean; ally: number } | null;
 }
 
 export const debugState: DebugState = {
@@ -72,6 +83,12 @@ export const debugState: DebugState = {
   director: null,
   wade: { count: 0, factor: 1 },
   bursts: { light: 0, heavy: 0, massKills: 0 },
+  slashAt: -1,
+  streakAt: -1,
+  self: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 },
+  near: 0,
+  nearYaw: 0,
+  star: null,
 };
 
 /** Resets the game fields to their outside-a-game values. */
@@ -95,12 +112,20 @@ export function resetGameDebug(): void {
     director: null,
     wade: { count: 0, factor: 1 },
     bursts: { light: 0, heavy: 0, massKills: 0 },
+    slashAt: -1,
+    streakAt: -1,
+    self: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 },
+    near: 0,
+    nearYaw: 0,
+    star: null,
   });
 }
 
 declare global {
   interface Window {
     readonly __heavenfall: Readonly<DebugState>;
+    /** With `dev=1`, in game: moves the local player to (x, y) on the floor there, as a teleport (screenshots, M12 stage 4). */
+    __heavenfallTeleport?: (x: number, y: number) => void;
   }
 }
 

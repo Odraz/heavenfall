@@ -27,8 +27,6 @@ const ABILITY_SFX: Record<string, SfxName> = {
   'betrayer:Q': 'fieldOfBlood',
   'betrayer:E': 'shadowstep',
 };
-/** Falling Star lands this long after the press. */
-const LEAP_S = 0.4;
 /** An enemy melee blow: a Blessed attacking within this horizontal distance. */
 const MELEE_REACH = 1.6;
 const NO_STATE = 255;
@@ -56,6 +54,16 @@ export class GameSounds {
 
   hit(): void {
     sfx('hitTick');
+  }
+
+  /** Your Falling Star lands, as its leap ends (M12 §5.2). */
+  ownLanding(): void {
+    sfx('fallingStarLand');
+  }
+
+  /** Your Shadowstep's dagger cut, as its streak appears (M12 §5.7). */
+  ownDaggerCut(): void {
+    sfx('daggerCut');
   }
 
   /** An own kill; a predicted one climbs the pitch ladder at an exact `rate` (M12 §4.4). */
@@ -171,15 +179,21 @@ export class GameSounds {
         const key = `${this.classOf(e.playerId)}:${e.slot}`;
         const at = { x: e.x, y: e.y };
         if (key === 'fallen:E') {
-          // The leap from where the Fallen is, the landing at the ally 0.4 s later.
-          const from = pose(e.playerId);
-          sfx('fallingStarLeap', from ?? at);
-          sfx('fallingStarLand', at, 1, LEAP_S);
+          // The leap from where the Fallen is; the landing sounds when it lands (M12 §5.2).
+          sfx('fallingStarLeap', e.playerId === this.localId ? null : (pose(e.playerId) ?? at));
         } else if (ABILITY_SFX[key]) sfx(ABILITY_SFX[key], key === 'betrayer:Q' || key === 'binder:Q' || key === 'binder:E' ? at : (pose(e.playerId) ?? at));
         break;
       }
       case 'shroudBurst':
         sfx('shroudBurst', { x: e.x, y: e.y });
+        break;
+      case 'starLanded':
+        // Others' landings after the render delay, where they land; the own one played as its leap ended.
+        if (e.playerId !== this.localId) sfx('fallingStarLand', { x: e.x, y: e.y }, 1, this.renderDelay);
+        break;
+      case 'dashCut':
+        // Others' dagger cuts at the streak's start, after the render delay (M12 §5.7).
+        if (e.playerId !== this.localId) sfx('daggerCut', { x: e.x0, y: e.y0 }, 1, this.renderDelay);
         break;
       case 'silverBullet':
         if (e.playerId !== this.localId) sfx('silverBullet', { x: e.x, y: e.y }, 1, this.renderDelay, PRIO_OTHERS);

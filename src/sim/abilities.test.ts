@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BLESSED, CHERUB, CHORISTER, GATEKEEPER } from '../data/enemies';
+import { CHERUB, CHORISTER, GATEKEEPER } from '../data/enemies';
 import { decodeSnapshot, FLAG_TAUNTED } from '../net/protocol';
 import { aimAt, enemyAt, makeSim, press, put, room } from './testutil/sims';
 
@@ -83,80 +83,7 @@ describe('Blasphemy (Fallen Q)', () => {
   });
 });
 
-describe('Falling Star (Fallen E)', () => {
-  it('does nothing without an ally target, and starts no cooldown', () => {
-    const sim = makeSim(room(30, 10), ['fallen', 'binder']);
-    press(sim.players[0], 'E');
-    sim.step();
-    expect(sim.players[0].cdE).toBe(0);
-    expect(usedEvents(sim)).toEqual([]);
-  });
-
-  it('with an ally: cooldown, 0.4 s invulnerability, then 10 damage and a 4 m knockback over 0.4 s within 5 m (M9 §3.2)', () => {
-    const sim = makeSim(room(40, 20), ['fallen', 'binder']);
-    const [fallen, binder] = sim.players;
-    put(sim, fallen, 5.5, 10.5);
-    put(sim, binder, 20.5, 10.5);
-    const near = enemyAt(sim, CHORISTER, 23.5, 10.5);
-    const far = enemyAt(sim, CHORISTER, 30.5, 10.5);
-    for (const s of [near, far]) sim.root(s, 20);
-    press(fallen, 'E', binder.id);
-    sim.step();
-    expect(fallen.cdE).toBe(15);
-    expect(usedEvents(sim)).toContainEqual(expect.objectContaining({ slot: 'E', x: 20.5, y: 10.5, targets: [1] }));
-    // Invulnerable during the leap.
-    sim.damagePlayer(fallen, 100);
-    expect(fallen.hp).toBe(400);
-    // The client leaps; the host only sees the reported position.
-    put(sim, fallen, 20.5, 10.5);
-    for (let i = 0; i < 11; i++) sim.step();
-    expect(sim.eHp[near]).toBe(60);
-    // Unbound for the landing, so its damage isn't doubled and it's knocked back; they stand still while casting.
-    for (const s of [near, far]) sim.eRootUntil[s] = 0;
-    sim.events.length = 0;
-    sim.step();
-    expect(sim.eHp[near]).toBe(50);
-    expect(sim.eHp[far]).toBe(60);
-    expect(sim.events.map((e) => e.event)).toContainEqual(expect.objectContaining({ type: 'starLanded', playerId: 0, launched: [near] }));
-    // Knocked back 4 m away from the landing point over 12 ticks (0.4 s); it walks a little meanwhile.
-    expect(sim.eKbUntil[near]).toBe(sim.tick + 12);
-    for (let i = 0; i < 12; i++) sim.step();
-    expect(sim.eX[near]).toBeGreaterThan(27.5 - 0.1);
-  });
-
-  it("doesn't knock back rooted enemies (they take the damage) or launch the dead (M9 §3.2)", () => {
-    const sim = makeSim(room(40, 20), ['fallen', 'binder']);
-    const [fallen, binder] = sim.players;
-    put(sim, binder, 20.5, 10.5);
-    const rooted = enemyAt(sim, CHORISTER, 23.5, 10.5);
-    const dies = enemyAt(sim, BLESSED, 20.5, 13.5);
-    sim.root(dies, 20);
-    sim.root(rooted, 20);
-    press(fallen, 'E', binder.id);
-    sim.step();
-    put(sim, fallen, 20.5, 10.5);
-    sim.events.length = 0;
-    for (let i = 0; i < 12; i++) sim.step();
-    expect(sim.eHp[rooted]).toBe(40);
-    expect(sim.eAlive[dies]).toBe(0);
-    expect(sim.eKbUntil[rooted]).toBe(0);
-    expect(sim.events.map((e) => e.event)).toContainEqual(expect.objectContaining({ type: 'starLanded', launched: [] }));
-  });
-
-  it('is accepted when the cooldown has 0.25 s or less remaining', () => {
-    const sim = makeSim(room(30, 10), ['fallen', 'binder']);
-    const [fallen, binder] = sim.players;
-    fallen.cdE = 0.25 + 1 / 30;
-    press(fallen, 'E', binder.id);
-    sim.step(); // the cooldown drops to 0.25 before the press is resolved
-    expect(fallen.cdE).toBeCloseTo(15, 6);
-    const sim2 = makeSim(room(30, 10), ['fallen', 'binder']);
-    sim2.players[0].cdE = 0.3 + 1 / 30;
-    press(sim2.players[0], 'E', 1);
-    sim2.step();
-    expect(sim2.players[0].cdE).toBeCloseTo(0.3, 6);
-  });
-});
+// Falling Star's tests are in classes.test.ts (M12 §5.2).
 
 describe('Unholy Communion (Heretic Q)', () => {
   it('heals every living player within 15 m, including self, capped at max HP', () => {
@@ -173,10 +100,11 @@ describe('Unholy Communion (Heretic Q)', () => {
     press(heretic, 'Q');
     sim.step();
     expect(heretic.hp).toBe(150);
-    expect(near.hp).toBe(130);
+    // 120 (M12 §5.4).
+    expect(near.hp).toBe(170);
     expect(far.hp).toBe(50);
     expect(dead.hp).toBe(0);
-    expect(heretic.cdQ).toBe(4);
+    expect(heretic.cdQ).toBe(8);
   });
 
   it('lists every player it healed in abilityUsed.targets, including those at full HP (M8 §10)', () => {
@@ -352,7 +280,7 @@ describe('ability presses from inputs', () => {
     const base = { x: p.x, y: p.y, z: p.z, yaw: 0, pitch: 0, fire: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 };
     sim.applyInput(0, { ...base, seq: 1, qPresses: 3 }, 0);
     sim.step();
-    expect(p.hp).toBe(90);
+    expect(p.hp).toBe(130);
     sim.damagePlayer(p, 1000);
     sim.applyInput(0, { ...base, seq: 2, qPresses: 4 }, 33);
     expect(p.pendingQ).toBe(false);

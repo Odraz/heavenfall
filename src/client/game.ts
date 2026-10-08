@@ -3,11 +3,28 @@ import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
 import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
-import { ABILITIES, ATTACK_NONE, ATTACK_PRIMARY, ATTACK_SECONDARY, attackDef, BLASPHEMY_RADIUS, chooseAttack, SCOURGE_HALF_ARC, SECONDARIES, SHOTGUN_KNOCKBACK_RANGE, type AttackSlot } from '../data/weapons';
+import {
+  ABILITIES,
+  ATTACK_NONE,
+  ATTACK_PRIMARY,
+  ATTACK_SECONDARY,
+  attackDef,
+  BLASPHEMY_RADIUS,
+  chooseAttack,
+  FALLING_STAR_RADIUS,
+  FIRE_RIGHT,
+  FIRE_RIGHT_LAST,
+  SCOURGE_HALF_ARC,
+  SECONDARIES,
+  SHADOWSTEP_TIME,
+  SHOTGUN_KNOCKBACK_RANGE,
+  SHROUD_BURST_RADIUS,
+  type AttackSlot,
+} from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
-import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
+import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_STUNNED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
 import { aimDir, estimateSilverBullet, rayCylinder } from '../sim/combat';
@@ -53,7 +70,7 @@ import {
   type BurstInfo,
   type Tier,
 } from './burstDeaths';
-import { Flinches, HIT_FLINCH, KILL_FLINCH, PredictedKills, predictHit, predictSilverBullet, type Predicted } from './killPredict';
+import { Flinches, HIT_FLINCH, KILL_FLINCH, PredictedKills, predictHit, predictPellets, predictSilverBullet, type PelletTarget, type Predicted } from './killPredict';
 import { BurstPops, MassKills } from './massKill';
 import { massKillShake, Shake, SHAKE_BLASPHEMY, SHAKE_LANDING, SHAKE_SHROUD, SHROUD_SHAKE_RANGE } from './shake';
 import { LIGHTMAP_TEXELS } from '../render/lightmap';
@@ -64,6 +81,7 @@ import type { HostSession } from './hostSession';
 import { Hud } from './hud';
 import { Input, MOUSE_SENSITIVITY } from './input';
 import { WADE_LAUNCH_MS, wadeCount, Wading } from './wading';
+import { ARC_SEGMENTS, arcPoint, StarAim, starLanding, walkableCells, type Landing, type StarAlly } from './fallingStarAim';
 import { audio, type LoopHandle } from '../audio/audio';
 import { SOUL_HEIGHT, SOUL_RADIUS } from '../sim/souls';
 import { pickAllyTarget } from './allyTarget';
@@ -134,6 +152,19 @@ const COIN_MS = 300;
 const POOL_EMBERS_PER_S = 12;
 /** Gold embers rising from each incense cloud per second (M9 §5.1). */
 const INCENSE_EMBERS_PER_S = 4;
+/** Falling Star's landing (M12 §5.2): a ring out to the reach and a glow, gold-orange. */
+const LANDING_COLOR = 0xf08a24;
+const LANDING_MS = 450;
+/**
+ * Shadowstep's streak (M12 §5.7): 1.0 m above the path, fading over 250 ms; a silver core over a dark band
+ * 0.35 m wide (decisions.md: silver alone vanished against the pale marble and stone).
+ */
+const DASH_STREAK = 0xdfe6f0;
+const DASH_STREAK_CORE = 0.14;
+const DASH_SHADOW = 0x2e2a3a;
+const DASH_STREAK_WIDTH = 0.35;
+const DASH_STREAK_HEIGHT = 1;
+const DASH_STREAK_MS = 250;
 /** Falling Star's launched enemies fly an arc LAUNCH_HEIGHT high over 0.4 s (M9 §3.2). */
 const LAUNCH_MS = 400;
 /** At most this many corpses lie around; the oldest vanish first. */
@@ -141,6 +172,13 @@ const MAX_CORPSES = 1000;
 const DEG = Math.PI / 180;
 
 const GLOW_WINDUP: Glow = { r: 1, g: 0.78, b: 0.2, a: 0.5 };
+/** Stunned by Blasphemy (M12 §5.3): tinted red, trembling sideways 0.04 m at 12 Hz. */
+const GLOW_STUNNED: Glow = { r: 1, g: 0.25, b: 0.1, a: 0.35 };
+const STUN_TREMBLE = 0.04;
+const STUN_TREMBLE_HZ = 12;
+/** Blasphemy's shockwave (M12 §5.3): a ground ring out to its radius over 300 ms. */
+const BLASPHEMY_RING = 0xff5a1e;
+const BLASPHEMY_RING_MS = 300;
 const GLOW_ALLY: Glow = { r: 1, g: 0.8, b: 0.2, a: 0.08 };
 /** Judgment: the glow sphere around the Gatekeeper grows from this radius to the next over the cast. */
 const JUDGMENT_GLOW_R0 = 3;
@@ -159,7 +197,7 @@ const SOUL_MARKER_HEIGHT = 2.2;
 const CHEVRON_ABOVE_SOUL_MARKER = 46;
 /** The revive hum plays while a shot hit a soul this recently, or the player's own progress rose. */
 const HUM_HOLD_MS = 300;
-/** The taunt `!` (M8 §3.1): 0.5 m tall, 0.3 m above the head; pops in, holds, then fades. */
+/** The taunt `!` (M8 §3.1): 0.4 m tall, 0.3 m above the head; pops in, holds, then fades. */
 const TAUNT_MARK_HEIGHT = 0.4;
 const TAUNT_MARK_GAP = 0.3;
 const TAUNT_POP_MS = 150;
@@ -376,6 +414,15 @@ export class Game {
   private readonly flinches = new Flinches();
   private readonly shake = new Shake();
   private wasLeaping = false;
+  /** Falling Star aimed anywhere (M12 §5.2): the hold, the walkable cells (once per map), this frame's preview, the ally leapt to. */
+  private readonly starAim = new StarAim();
+  private walkable: Uint8Array | null = null;
+  private starPreview: Landing | null = null;
+  private leapAlly = ALLY_NONE;
+  /** Shadowstep (M12 §5.7): when the local slash began, and where the dash started. */
+  private slashAt = -Infinity;
+  private dashFrom: [number, number, number] | null = null;
+  private wasDashing = false;
   private readonly flinchGlow: Glow = { r: 1, g: 1, b: 1, a: 0 };
   private readonly sounds: GameSounds;
   /** Shadowstep afterimages: the Betrayer's idle frame where it started, facing its yaw then. */
@@ -461,6 +508,7 @@ export class Game {
     o.transport.onSnapshot = (buf) => this.snaps.addPart(buf, performance.now());
 
     this.bot = this.params.bot ? new Bot(this.map) : null;
+    if (this.params.dev) window.__heavenfallTeleport = (x, y) => this.player.teleport(x, y, this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)]);
     this.bench = this.params.benchArena >= 0 && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString(), () => this.scene.renderStats()) : null;
 
     debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0, primaryShots: 0, secondaryShots: 0 }));
@@ -517,26 +565,94 @@ export class Game {
       if (this.classId === 'fallen' && this.displayedCooldown('Q', now) <= 0) this.shake.add(now, SHAKE_BLASPHEMY);
       return;
     }
-    this.ePresses = (this.ePresses + 1) & 0xff;
     const def = ABILITIES[this.classId].E;
-    if (!def.movement || this.displayedCooldown('E', now) > 0) return;
+    // The Heretic and the Binder count every E key-down; the Fallen and the Betrayer only the leaps and
+    // dashes they execute (M12 §5.2).
+    if (!def.movement) {
+      this.ePresses = (this.ePresses + 1) & 0xff;
+      return;
+    }
+    const ready = this.displayedCooldown('E', now) <= 0;
     const p = this.player;
     if (this.classId === 'fallen') {
-      // Falling Star: no ally target, nothing happens and there's no cooldown.
-      const ally = this.snaps.playersOut.find((q) => q.id === this.allyTargetId);
-      if (!ally) return;
-      p.startLeap(ally.x, ally.y, ally.z);
-    } else {
-      // Shadowstep: the movement direction (WASD relative to yaw), forward if not moving.
-      let dir: [number, number] | null = this.botDir;
+      // Falling Star: held to aim, released to leap (M12 §5.2). The bot leaps at once, only to an ally target.
       if (!this.bot) {
-        const axes = this.input.moveAxes();
-        dir = axes.forward !== 0 || axes.right !== 0 ? wasdDirection(p.yaw, axes.forward, axes.right) : null;
+        this.starAim.keyDown(ready, !this.dead);
+        return;
       }
-      const [dx, dy] = dir ?? [Math.cos(p.yaw), Math.sin(p.yaw)];
-      p.startDash(dx, dy);
+      const ally = ready ? this.snaps.playersOut.find((q) => q.id === this.allyTargetId) : undefined;
+      if (ally) this.leap(now, ally.x, ally.y, ally.z, ally.id);
+      return;
     }
+    if (!ready) return;
+    // Shadowstep: the movement direction (WASD relative to yaw), forward if not moving.
+    let dir: [number, number] | null = this.botDir;
+    if (!this.bot) {
+      const axes = this.input.moveAxes();
+      dir = axes.forward !== 0 || axes.right !== 0 ? wasdDirection(p.yaw, axes.forward, axes.right) : null;
+    }
+    const [dx, dy] = dir ?? [Math.cos(p.yaw), Math.sin(p.yaw)];
+    p.startDash(dx, dy);
+    this.ePresses = (this.ePresses + 1) & 0xff;
     this.localEReadyAt = now + def.cooldown * 1000;
+    // The dagger cuts across the view for the dash's 200 ms (M12 §5.7).
+    this.slashAt = now;
+    debugState.slashAt = now;
+    this.hud.slash(now);
+    this.dashFrom = [p.body.x, p.body.y, p.body.z];
+  }
+
+  /** Falling Star's leap to a landing point (feet) starts: counted for the host, cooling down locally (M12 §5.2). */
+  private leap(now: number, x: number, y: number, z: number, ally: number): void {
+    this.player.startLeap(x, y, z);
+    this.leapAlly = ally;
+    this.ePresses = (this.ePresses + 1) & 0xff;
+    this.localEReadyAt = now + ABILITIES.fallen.E.cooldown * 1000;
+  }
+
+  /**
+   * The local Fallen's aim this frame (M12 §5.2): the preview while E is held, the leap on its release
+   * if the landing is valid. The ally target is the snapped ally while aiming, the one leapt to while
+   * leaping. Returns the fire bits, without the right button after a cancel until it's let go.
+   */
+  private updateStarAim(now: number, fire: number): number {
+    const p = this.player;
+    const step = this.starAim.frame(this.input.isDown('KeyE'), this.input.rightHeld, this.input.releases);
+    let landing: Landing | null = null;
+    if (this.starAim.aiming || step === 'release') {
+      this.walkable ??= walkableCells(this.map);
+      landing = starLanding(this.map, this.walkable, p.body.x, p.body.y, p.body.z, p.yaw, p.pitch, this.starAllies());
+    }
+    if (step === 'release' && landing?.valid) this.leap(now, landing.x, landing.y, landing.z, landing.ally >= 0 ? landing.ally : ALLY_NONE);
+    this.starPreview = this.starAim.aiming ? landing : null;
+    this.allyTargetId = this.starPreview && this.starPreview.ally >= 0 ? this.starPreview.ally : p.leaping ? this.leapAlly : ALLY_NONE;
+    return this.starAim.rightBlocked ? fire & ~(FIRE_RIGHT | FIRE_RIGHT_LAST) : fire;
+  }
+
+  /** The teammates a leap can snap to: their interpolated feet. */
+  private starAllies(): StarAlly[] {
+    return this.snaps.playersOut.filter((q) => q.id !== this.localId).map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, dead: q.dead }));
+  }
+
+  /** Falling Star's preview: its arc from the feet and its rings, gold-orange when valid, red when not. */
+  private drawStarPreview(): void {
+    const l = this.starPreview;
+    const b = this.player.body;
+    const pts = l ? Array.from({ length: ARC_SEGMENTS + 1 }, (_, i) => arcPoint(b.x, b.y, b.z, l.x, l.y, l.z, i / ARC_SEGMENTS)) : null;
+    this.vfx.setStarPreview(pts, l ? [l.x, l.y, l.z] : null, l?.valid ?? false, this.scene.camera.position);
+  }
+
+  /** Falling Star's landing (M12 §5.2): the ring out to the 6 m reach and the glow, where it lands. */
+  private landingFx(now: number, x: number, y: number, z: number): void {
+    this.vfx.ring(now, x, y, z, LANDING_COLOR, 0.5, FALLING_STAR_RADIUS, LANDING_MS);
+    this.vfx.glow(now, x, y, z + 0.5, LANDING_COLOR, 1, 2.5, LANDING_MS);
+  }
+
+  /** Shadowstep's silver streak along a dash (M12 §5.7), 1 m above its path, with the dagger's cut. */
+  private dashStreak(now: number, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): void {
+    const pts: Array<[number, number, number]> = [[x0, y0, z0 + DASH_STREAK_HEIGHT], [x1, y1, z1 + DASH_STREAK_HEIGHT]];
+    this.vfx.beam(now, pts, DASH_SHADOW, DASH_STREAK_WIDTH, DASH_STREAK_MS);
+    this.vfx.beam(now, pts, DASH_STREAK, DASH_STREAK_CORE, DASH_STREAK_MS);
   }
 
   /** Pause opens when pointer lock is lost, before the result (§3). */
@@ -695,6 +811,8 @@ export class Game {
         this.hud.judgmentEvent(e.phase, now);
         break;
       case 'starLanded':
+        // Others' landings show after the render delay; the own one showed when its leap ended (M12 §5.2).
+        if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.landingFx(t, e.x, e.y, e.z) });
         // Launched enemies fly their arc after the render delay, like other effects (M9 §3.2).
         for (const s of e.launched) {
           this.launchAt[s] = now + this.snaps.delayTicks * TICK_MS;
@@ -703,8 +821,8 @@ export class Game {
         }
         break;
       case 'shroudBurst':
-        // A blue ring expanding from 1 m to 5 m over 0.3 s, and 24 embers bursting outward (M9 §5.1).
-        this.vfx.ring(now, e.x, e.y, e.z, 0x4aa3e8, 1, 5, 300);
+        // A blue ring expanding from 1 m to the burst's 3.5 m over 0.3 s (M12 §5.4), and 24 embers bursting outward (M9 §5.1).
+        this.vfx.ring(now, e.x, e.y, e.z, 0x4aa3e8, 1, SHROUD_BURST_RADIUS, 300);
         this.particles.shroudBurst(e.x, e.y, e.z + PLAYER_HEIGHT / 2);
         // It shakes the screen of a player within 6 m, after the render delay (M12 §4.5).
         this.pendingFx.push({
@@ -717,6 +835,10 @@ export class Game {
         break;
       case 'bursts':
         this.burstMemory.remember(e.list, now, (slot, id) => this.distToPlayer(slot, id));
+        break;
+      case 'dashCut':
+        // Others' Shadowstep streaks after the render delay; the own one was drawn when its dash ended (M12 §5.7).
+        if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.dashStreak(t, e.x0, e.y0, e.z0, e.x1, e.y1, e.z1) });
         break;
       case 'silverBullet':
         // Others' Silver Bullets after the render delay; the own one was drawn at once (M9 §5.1).
@@ -766,12 +888,9 @@ export class Game {
     const key = `${cls}:${e.slot}`;
     const user = this.playerPose(e.playerId);
     switch (key) {
-      case 'fallen:Q': // taunt sphere, growing to Blasphemy's radius (M8 §3.1)
-        this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0xe0301e, 1, BLASPHEMY_RADIUS, 400, 0.3);
-        break;
-      case 'fallen:E': // landing shockwave, when the leap lands
-        this.vfx.ring(now, e.x, e.y, e.z, 0xf08a24, 0.5, 5, 450, 400);
-        this.vfx.glow(now, e.x, e.y, e.z + 0.5, 0xf08a24, 1, 2.5, 450, 400);
+      case 'fallen:Q': // taunt sphere, growing to Blasphemy's radius (M8 §3.1), and its shockwave (M12 §5.3)
+        this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0xe0301e, 1, BLASPHEMY_RADIUS, 400, 0.45);
+        this.vfx.ring(now, e.x, e.y, e.z, BLASPHEMY_RING, 0.5, BLASPHEMY_RADIUS, BLASPHEMY_RING_MS);
         break;
       case 'heretic:Q': {
         // Heal ring, and a heal column on every player it healed, even at full HP (M8 §3.1).
@@ -1136,6 +1255,11 @@ export class Game {
    */
   private computeAllyTarget(now: number): void {
     const range = ABILITIES[this.classId].E.allyRange;
+    // The Fallen's own player snaps its leap to an ally instead (M12 §5.2); its bot keeps the cone.
+    if (this.classId === 'fallen' && !this.bot) {
+      this.allyOutOfRange = ALLY_NONE;
+      return;
+    }
     if (range <= 0 || this.dead) {
       this.allyTargetId = ALLY_NONE;
       this.allyOutOfRange = ALLY_NONE;
@@ -1278,23 +1402,29 @@ export class Game {
     const [mx, my, mz] = this.unproject(msx, msy, OWN_BEAM_DEPTH);
     const pts: Array<[number, number, number]> = [];
     let hit = false;
-    // Enemies an earlier pellet of this shot is predicted to kill: later pellets pass them, as on the host.
-    const killed = new Set<number>();
     const shotgun = this.classId === 'fallen' && slot === ATTACK_PRIMARY;
     const chainGun = this.classId === 'binder' && slot === ATTACK_PRIMARY;
-    for (let k = 0; k < w.pellets; k++) {
+    // Each pellet's ray and the enemies along it, nearest first; the shotgun's within 6 m of the
+    // Fallen's body center deal 20 and burst what they kill (M12 §5.1, §4.1).
+    const rays = Array.from({ length: w.pellets }, () => {
       const yaw = p.yaw + (Math.random() * 2 - 1) * w.spreadYaw;
       const pitch = p.pitch + (Math.random() * 2 - 1) * w.spreadPitch;
       const [dx, dy, dz] = aimDir(yaw, pitch);
       const stop = raycastTerrain(this.map, ex, ey, ez, dx, dy, dz, w.range);
-      const ts: Array<{ t: number; i: number }> = [];
+      const ts: PelletTarget[] = [];
       for (let i = 0; i < ents.count; i++) {
-        if (killed.has(i)) continue;
         const def = ENEMIES[ents.type[i]];
         const t = rayCylinder(ex, ey, ez, dx, dy, dz, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height);
-        if (t <= stop) ts.push({ t, i });
+        if (t > stop) continue;
+        const close = shotgun && distToCylinder(ex, ey, p.body.z + PLAYER_HEIGHT / 2, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height) <= SHOTGUN_KNOCKBACK_RANGE;
+        ts.push({ i, t, type: ents.type[i], rooted: (ents.flags[i] & FLAG_ROOTED) !== 0, close });
       }
       ts.sort((a, b) => a.t - b.t);
+      return { dx, dy, dz, stop, ts };
+    });
+    // Enemies an earlier pellet of this shot is predicted to kill: later pellets pass them, as on the host.
+    const predicted = w.kind === 'silverBullet' ? null : predictPellets(rays.map((r) => r.ts), w.damage, w.maxHits, shotgun ? 'shotgun' : chainGun ? 'chainGun' : 'other');
+    rays.forEach(({ dx, dy, dz, stop, ts }, k) => {
       // A shot that meets a wall ends on its drawn surface: a relief's front, or a window's glass (M10 §5.3).
       let end = stop < w.range ? this.scene.terrain.relief.adjust(ex, ey, ez, dx, dy, dz, stop) : stop;
       // A shot crossing an arch's painted stone flies on in the simulation; its tracer ends there (M10 §6.1).
@@ -1304,25 +1434,16 @@ export class Game {
       if (gate) end = Math.min(end, gateHit(gate.layout, ex, ey, ez, dx, dy, dz, stop));
       if (ts.length > 0) {
         hit = true;
-        if (w.kind === 'silverBullet') {
+        if (!predicted) {
           // An estimate (M9 §5.1): every enemy at its type's full HP, doubled for the rooted flag.
-          const r = estimateSilverBullet(
-            ts.map(({ i }) => ({ type: ents.type[i], rooted: (ents.flags[i] & FLAG_ROOTED) !== 0 })),
-            w.damage,
-          );
+          const line = ts.map(({ type, rooted }) => ({ type, rooted }));
+          const r = estimateSilverBullet(line, w.damage);
           if (r.stopped) end = ts[r.reached - 1].t;
-          const line = ts.slice(0, r.reached).map(({ i }) => ({ type: ents.type[i], rooted: (ents.flags[i] & FLAG_ROOTED) !== 0 }));
-          predictSilverBullet(line, r.carried).forEach((res, n) => this.predictedHit(now, ents.slot[ts[n].i], dx, dy, res));
+          predictSilverBullet(line.slice(0, r.reached), r.carried).forEach((res, n) => this.predictedHit(now, ents.slot[ts[n].i], dx, dy, res));
         } else {
-          if (ts.length >= w.maxHits) end = ts[w.maxHits - 1].t;
-          for (const { i } of ts.slice(0, w.maxHits)) {
-            // The shotgun bursts what it kills within 6 m of the Fallen's body center (M12 §4.1).
-            const def = ENEMIES[ents.type[i]];
-            const close = shotgun && distToCylinder(ex, ey, p.body.z + PLAYER_HEIGHT / 2, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height) <= SHOTGUN_KNOCKBACK_RANGE;
-            const res = predictHit(ents.type[i], w.damage, (ents.flags[i] & FLAG_ROOTED) !== 0, close, !chainGun);
-            if (res) killed.add(i);
-            this.predictedHit(now, ents.slot[i], dx, dy, res);
-          }
+          const hits = predicted[k];
+          if (hits.length >= w.maxHits) end = hits[hits.length - 1].target.t;
+          for (const h of hits) this.predictedHit(now, ents.slot[h.target.i], dx, dy, h.result);
         }
       }
       // A shot through a teammate's soul (for the revive hum).
@@ -1334,7 +1455,7 @@ export class Game {
         }
       }
       pts.push([mx, my, mz], [ex + dx * end, ey + dy * end, ez + dz * end]);
-    }
+    });
     if (w.kind === 'silverBullet') this.silverTracer(now, pts[0], pts[1], this.inFieldNow ? BLOOD_TRACER : SILVER_EMBER);
     else this.vfx.beam(now, pts, this.inFieldNow ? BLOOD_TRACER : TRACER_COLOR, secondary ? SLUG_TRACER_WIDTH : TRACER_WIDTH, TRACER_MS);
     if (hit) {
@@ -1344,8 +1465,8 @@ export class Game {
   }
 
   /**
-   * The interpolated enemies a local Scourge swing would hit, as on the host: the nearest 6 within 3 m
-   * and the 120° arc (M9 §2.6).
+   * The interpolated enemies a local Scourge swing would hit, as on the host: every one within 3 m and
+   * the 120° arc (M12 §5.5).
    */
   private scourgeHits(ents: InterpolatedEnemies, enemyZ: Float32Array): number[] {
     const p = this.player;
@@ -1548,6 +1669,11 @@ export class Game {
     let my = 0;
     let wantJump = false;
     let fire = 0;
+    this.starPreview = null;
+    if (this.over || this.paused || this.dead || this.bot || this.bench) {
+      this.starAim.reset();
+      if (this.classId === 'fallen' && !this.bot) this.allyTargetId = this.player.leaping ? this.leapAlly : ALLY_NONE;
+    }
     if (this.over || this.paused) {
       // The result overlay or Pause: the game keeps rendering without input.
     } else if (this.bench) {
@@ -1612,6 +1738,7 @@ export class Game {
       [mx, my] = wasdDirection(p.yaw, axes.forward, axes.right);
       wantJump = this.input.jumpQueued || this.input.isDown('Space');
       fire = this.input.fireBits();
+      if (this.classId === 'fallen') fire = this.updateStarAim(now, fire);
     } else {
       // Dead: the camera can only rotate.
       const { dx, dy } = this.input.takeMouse();
@@ -1619,6 +1746,8 @@ export class Game {
     }
     this.input.jumpQueued = false;
     this.fire = this.dead || this.over ? 0 : fire;
+    // Neither attack fires during Shadowstep's slash; held buttons resume afterwards (M12 §5.7).
+    if (now - this.slashAt < SHADOWSTEP_TIME * 1000) this.fire = 0;
     const bx = p.body.x;
     const by = p.body.y;
     // Wading (M12 §3.1): the ground enemies of the newest snapshot pressing against the player slow
@@ -1710,14 +1839,27 @@ export class Game {
       const at = this.incense.randomPoint();
       if (at) this.particles.incenseEmber(at[0], at[1], at[2]);
     }
+    // Before the effects update, so the new ones are placed and faced on their first frame.
+    // Your Falling Star lands as the leap ends: its ring and glow, its sound and the shake (M12 §5.2, §4.5).
+    if (this.wasLeaping && !p.leaping) {
+      this.shake.add(now, SHAKE_LANDING);
+      this.landingFx(now, p.body.x, p.body.y, p.body.z);
+      this.sounds.ownLanding();
+    }
+    this.wasLeaping = p.leaping;
+    // Your Shadowstep's streak, from where it started to where it ended, as the dash ends (M12 §5.7).
+    if (this.wasDashing && !p.dashing && this.dashFrom) {
+      this.dashStreak(now, ...this.dashFrom, p.body.x, p.body.y, p.body.z);
+      this.sounds.ownDaggerCut();
+      debugState.streakAt = now;
+      this.dashFrom = null;
+    }
+    this.wasDashing = p.dashing;
     this.vfx.update(now, this.scene.camera.position);
     this.incense.update(now, this.scene.camera.position);
 
     const b = p.body;
     audio()?.setListener(b.x, b.y, p.yaw);
-    // Your Falling Star shakes the screen as the leap lands (M12 §4.5).
-    if (this.wasLeaping && !p.leaping) this.shake.add(now, SHAKE_LANDING);
-    this.wasLeaping = p.leaping;
     // The bob only lowers the drawn view; aiming and input use the unbobbed eye (M8 §3.4). While dead,
     // the camera rises with the soul: 1.6 m above its base (M8 §4.3). The shake offsets the view only (M12 §4.5).
     const sh = this.shake.sample(now);
@@ -1730,6 +1872,7 @@ export class Game {
       const ci = Math.floor(cam.y) * this.map.w + Math.floor(cam.x);
       this.scene.setView(cam.x, cam.y, cam.z ?? (this.map.floor[ci] ?? 0) + PLAYER_EYE, cam.yaw, cam.pitch, 0);
     }
+    this.drawStarPreview();
     this.drawBillboards(now, ents, enemyZ);
     const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
     this.hud.setHealing(this.ownBeamOn, now);
@@ -1747,6 +1890,23 @@ export class Game {
     debugState.director = this.o.host?.director ?? null;
     debugState.netInKBps = this.o.net ? this.o.net.inKBps(now) : 0;
     debugState.netOutKBps = this.o.net ? this.o.net.outKBps(now) : 0;
+    if (this.params.dev) {
+      Object.assign(debugState.self, { x: b.x, y: b.y, z: b.z, yaw: p.yaw, pitch: p.pitch });
+      let near = 0;
+      let sx = 0;
+      let sy = 0;
+      for (let i = 0; i < ents.count; i++) {
+        if ((ents.x[i] - b.x) ** 2 + (ents.y[i] - b.y) ** 2 > 64) continue;
+        near++;
+        sx += ents.x[i] - b.x;
+        sy += ents.y[i] - b.y;
+      }
+      debugState.near = near;
+      debugState.nearYaw = Math.atan2(sy, sx);
+      // Set by updateStarAim during this frame (the reset above it would narrow it to null).
+      const l = this.starPreview as Landing | null;
+      debugState.star = l ? { x: l.x, y: l.y, z: l.z, valid: l.valid, ally: l.ally } : null;
+    }
     this.overlay.position.x = b.x;
     this.overlay.position.y = b.y;
     this.overlay.position.z = b.z;
@@ -1799,6 +1959,8 @@ export class Game {
       const y = ents.y[i];
       const t = this.nearestPlayer(x, y);
       this.animator.update(slot, x, y, ents.state[i], now, dt, t.x, t.y, type);
+      const stunned = (ents.flags[i] & FLAG_STUNNED) !== 0;
+      this.animator.setStunned(slot, stunned, now);
       const pick = this.animator.pick(slot, now, this.bossCast);
       const f = set.anims[pick.anim][spriteDirection(this.animator.facing[slot], eye.x - x, eye.y - y)][pick.frame];
       const height = f.height;
@@ -1822,7 +1984,14 @@ export class Game {
         wide = fl.wide;
         tall = fl.tall;
       }
-      // Status (§10): hurt flash, wind-up gold glow, silenced grey tint.
+      // Stunned: it trembles along the camera's right (M12 §5.3).
+      if (stunned) {
+        const off = STUN_TREMBLE * Math.sin(2 * Math.PI * STUN_TREMBLE_HZ * (now / 1000) + slot);
+        fx -= Math.sin(this.player.yaw) * off;
+        fy += Math.cos(this.player.yaw) * off;
+      }
+      // Status (§10): the local flinch, the hurt flash, the stun's red (M12 §5.3), Judgment, the wind-up's
+      // gold glow, in that order; the silenced grey tint.
       let glow = NO_GLOW;
       let judgment: Glow | null = null;
       if (type === GATEKEEPER && this.bossCast === BOSS_CAST_JUDGMENT) {
@@ -1853,7 +2022,8 @@ export class Game {
       } else if (flashT < ENEMY_FLASH_MS) {
         this.flashGlow.a = ENEMY_FLASH_PEAK * (1 - flashT / ENEMY_FLASH_MS);
         glow = this.flashGlow;
-      } else if (judgment) glow = judgment;
+      } else if (stunned) glow = GLOW_STUNNED;
+      else if (judgment) glow = judgment;
       else if (ents.state[i] === ST_WINDUP) glow = GLOW_WINDUP;
       const grey = (flags & FLAG_SILENCED) !== 0;
       target.add(f, fx, fy, z, height * tall, false, grey ? 0.55 : 1, grey ? 0.55 : 1, grey ? 0.6 : 1, glow, 1, wide);
@@ -2068,6 +2238,7 @@ export class Game {
 
   dispose(): void {
     this.disposed = true;
+    window.__heavenfallTeleport = undefined;
     cancelAnimationFrame(this.raf);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     document.removeEventListener('visibilitychange', this.onVisibility);

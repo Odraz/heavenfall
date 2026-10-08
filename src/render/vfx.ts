@@ -40,6 +40,18 @@ const SPAWN_GLOW_FADE_MS = 800;
 const SPAWN_RING_RADIUS = 1.6;
 /** A flare draws a ground ring at most this often per point. */
 const SPAWN_RING_GAP_MS = 400;
+/**
+ * Falling Star's preview (M12 §5.2): the arc 0.12 m wide at 80% opacity, and the landing's rings on the
+ * floor, the crater (3.5 m) at 0.8 and the reach (6 m) at 0.4, gold-orange when valid, red when not.
+ */
+const STAR_VALID = 0xf08a24;
+const STAR_INVALID = 0xd02020;
+const STAR_ARC_WIDTH = 0.12;
+const STAR_ARC_OPACITY = 0.8;
+const STAR_RINGS: ReadonlyArray<readonly [number, number]> = [
+  [3.5, 0.8],
+  [6, 0.4],
+];
 /** A mote's trail: this many sprites, each lagging the one before by this fraction of the flight. */
 const MOTE_TRAIL = 4;
 const MOTE_TRAIL_LAG = 0.08;
@@ -194,11 +206,50 @@ export class Vfx {
     { mesh: THREE.Mesh; material: THREE.ShaderMaterial; since: number; flare: number; ring: number }
   >();
   private readonly liveBeamMaterial: THREE.MeshBasicMaterial;
+  /** Falling Star's preview (M12 §5.2), made on first use and reused. */
+  private starArc: Ribbon | null = null;
+  private readonly starRings: Array<{ mesh: THREE.Mesh; material: THREE.MeshBasicMaterial }> = [];
 
   constructor(private readonly tex: EffectTextures) {
     this.tetherMaterial = this.material(tex.beam, 0xff7a3a);
     this.tetherMaterial.opacity = 0.55;
     this.liveBeamMaterial = this.material(tex.beam, HEAL_GREEN);
+  }
+
+  /**
+   * Falling Star's preview (M12 §5.2): the arc through `points` (simulation coordinates, its 24
+   * segments' ends in order) and the two rings on the floor at `landing`; null hides it.
+   */
+  setStarPreview(points: ReadonlyArray<readonly [number, number, number]> | null, landing: readonly [number, number, number] | null, valid: boolean, camera: THREE.Vector3): void {
+    const show = !!points && !!landing;
+    if (show && !this.starArc) {
+      const pairs = Array.from({ length: (points.length - 1) * 2 }, () => [0, 0, 0] as [number, number, number]);
+      this.starArc = new Ribbon(pairs, STAR_ARC_WIDTH, this.material(this.tex.beam, STAR_VALID), BEAM_TILE);
+      (this.starArc.mesh.material as THREE.MeshBasicMaterial).opacity = STAR_ARC_OPACITY;
+      this.group.add(this.starArc.mesh);
+      for (const [, opacity] of STAR_RINGS) {
+        const material = this.material(this.tex.ring, STAR_VALID);
+        material.opacity = opacity;
+        const mesh = new THREE.Mesh(groundGeo, material);
+        this.group.add(mesh);
+        this.starRings.push({ mesh, material });
+      }
+    }
+    if (this.starArc) this.starArc.mesh.visible = show;
+    for (const r of this.starRings) r.mesh.visible = show;
+    if (!show || !this.starArc) return;
+    const color = valid ? STAR_VALID : STAR_INVALID;
+    const pairs: Array<readonly [number, number, number]> = [];
+    for (let i = 0; i + 1 < points.length; i++) pairs.push(points[i], points[i + 1]);
+    this.starArc.setPoints(pairs);
+    this.starArc.face(camera);
+    (this.starArc.mesh.material as THREE.MeshBasicMaterial).color.setHex(color);
+    STAR_RINGS.forEach(([radius], i) => {
+      const r = this.starRings[i];
+      r.mesh.position.set(landing[0], landing[2] + 0.05, landing[1]);
+      r.mesh.scale.set(radius / RING_RADIUS, 1, radius / RING_RADIUS);
+      r.material.color.setHex(color);
+    });
   }
 
   /**

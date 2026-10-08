@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BLESSED, CHERUB, CHORISTER, GATEKEEPER } from '../data/enemies';
 import { SHADOWSTEP_SPEED } from '../data/weapons';
+import { FLAG_STUNNED } from '../net/protocol';
 import { ENEMY_SLOTS } from '../sim/constants';
 import { mapOf } from '../sim/testutil/maps';
 import { LocalPlayer } from './localPlayer';
@@ -12,13 +13,14 @@ function room(h: string) {
   return mapOf(['#'.repeat(11), row, row, row, row, row, '#'.repeat(11)]);
 }
 
-function enemies(list: Array<[number, number, number]>): WadeEnemies {
+function enemies(list: Array<[number, number, number] | [number, number, number, number]>): WadeEnemies {
   return {
     enemyCount: list.length,
     enemySlot: list.map((_, i) => i),
     enemyX: list.map(([, x]) => x),
     enemyY: list.map(([, , y]) => y),
     enemyType: list.map(([t]) => t),
+    enemyFlags: list.map((e) => e[3] ?? 0),
   };
 }
 
@@ -45,6 +47,15 @@ describe('wading (M12 §3.1)', () => {
     expect(wadeCount(room('7'), 5.6, 3.5, 0, at, NEVER, 0)).toBe(0); // 1.75 m up
     // A player standing on the raised floor counts it again.
     expect(wadeCount(room('7'), 5.6, 3.5, 1.75, at, NEVER, 0)).toBe(1);
+  });
+
+  it("doesn't count stunned enemies (M12 §5.3)", () => {
+    const e = enemies([
+      [BLESSED, 3.5, 3.5, FLAG_STUNNED],
+      [BLESSED, 3.5, 2.5, FLAG_STUNNED | 1],
+      [BLESSED, 2.5, 3.5],
+    ]);
+    expect(wadeCount(map, 3, 3, 0, e, NEVER, 0)).toBe(1);
   });
 
   it("doesn't count launched enemies until 0.4 s after the event arrived", () => {
