@@ -11,6 +11,9 @@ mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', (e) => console.log(`[pageerror] ${e.message}`));
+page.on('console', (m) => {
+  if (m.type() === 'error' || m.type() === 'warning') console.log(`[console.${m.type()}] ${m.text().slice(0, 400)}`);
+});
 
 const director = () => page.evaluate(() => window.__heavenfall.director);
 const fmt = (d) => (d ? `${d.phase} ${d.phaseTime.toFixed(1)} s · ${Math.round(d.intensity)} · w${d.wave} ${d.alive}/${d.waveTotal}` : 'null');
