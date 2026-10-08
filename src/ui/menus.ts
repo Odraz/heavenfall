@@ -1,4 +1,4 @@
-/** The Title, Singleplayer Setup and Loading screens (§3), and helpers shared with the multiplayer screens. */
+/** The Title and Singleplayer Setup screens (§3), and helpers shared with the other screens. */
 import { CLASS_IDS, CLASSES, type ClassId } from '../data/classes';
 import { ABILITIES, SECONDARIES, WEAPONS } from '../data/weapons';
 import { mouseGlyph } from './mouseGlyph';
@@ -211,12 +211,4 @@ export function singleplayerSetupScreen(a: SetupActions): HTMLElement {
   });
   start.disabled = true;
   return screen;
-}
-
-/** The Loading screen: the progress text, and a tip about the class hints under it (M9 §6.2). */
-export function loadingScreen(): { el: HTMLElement; set: (text: string) => void } {
-  const screen = el('div', 'screen loading');
-  const text = el('div', 'loading-text', screen);
-  el('div', 'loading-tip', screen, "Press H in game for your class's hints.");
-  return { el: screen, set: (t) => (text.textContent = t) };
 }

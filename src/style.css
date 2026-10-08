@@ -68,16 +68,78 @@ body {
   gap: 12px;
 }
 
+/* Loading (§3): a loading card filling the screen, its title and text over the darkened bottom. */
 .loading {
+  display: block;
+  overflow: hidden;
   background: var(--soot);
-  font-size: 22px;
-  letter-spacing: 0.05em;
 }
 
-.loading-tip {
+.loading-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.loading-art.shown {
+  opacity: 1;
+}
+
+.loading-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(rgba(27, 21, 19, 0) 55%, rgba(27, 21, 19, 0.6) 75%, rgba(27, 21, 19, 0.9) 100%);
+}
+
+/* Anchored by its top, so the title stays put whatever the text's length. */
+.loading-card {
+  position: absolute;
+  top: 77%;
+  left: 50%;
+  width: min(860px, 88vw);
+  transform: translateX(-50%);
+  text-align: center;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+  transition: opacity 0.6s ease;
+}
+
+.loading-card.fading {
+  opacity: 0;
+}
+
+.loading-title {
+  margin: 0 0 10px;
+  font-family: var(--display-font);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--gold);
+}
+
+.loading-lore {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 21px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--ivory);
+}
+
+.loading-footer {
+  position: absolute;
+  left: 32px;
+  right: 32px;
+  bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
   font-size: 15px;
-  letter-spacing: 0;
-  color: rgba(247, 240, 220, 0.7);
+  color: rgba(247, 240, 220, 0.75);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
 .debug-overlay {

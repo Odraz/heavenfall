@@ -16,7 +16,8 @@ import type { NetStats } from './net/netStats';
 import { joinGame, type PeerTransport } from './net/peerTransport';
 import type { Transport } from './net/transport';
 import { withoutJoin } from './net/invite';
-import { loadingScreen, singleplayerSetupScreen, titleScreen, validName } from './ui/menus';
+import { singleplayerSetupScreen, titleScreen, validName } from './ui/menus';
+import { loadingScreen } from './ui/loading';
 import { hostSetupScreen, joinScreen, lobbyScreen, multiplayerScreen } from './ui/multiplayer';
 import { showResults } from './ui/results';
 import { hideTooltip } from './ui/tooltip';
@@ -93,6 +94,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   const host = new HostSession(0);
   const loading = loadingScreen();
   show('loading', loading.el);
+  await loading.ready;
   const roster: RosterEntry[] = [{ id: 0, name, classId }];
   const assets = await loadGameAssets(dungeonId, roster, 0, false, loading.set);
   // The session ends at Results or on leaving: the worker is terminated (§2.2).
@@ -324,6 +326,8 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
   const load = async (msg: Extract<CtrlMessage, { type: 'start' }>): Promise<void> => {
     const view = loadingScreen();
     show('loading', view.el);
+    await view.ready;
+    if (ended) return;
     const roster: RosterEntry[] = msg.players;
     const assets = await loadGameAssets(msg.dungeonId, roster, s.playerId, true, view.set);
     if (ended) return;

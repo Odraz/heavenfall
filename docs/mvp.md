@@ -201,7 +201,7 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 | **Host Setup** | Password field (0–32 chars; empty means an open game), dungeon picker | `Create` (registers the game ID, then goes to Lobby; errors shown inline), `Back` |
 | **Join** | Game ID field (6 chars, case-insensitive, normalized to upper case), password field | `Join` (connects, then goes to Lobby; errors shown inline), `Back` |
 | **Lobby** | Game ID shown large with a `Copy` button (host only); dungeon name; 4 player slots (name, class, "host" tag); class picker | Everyone: pick a class. Host: `Start`. Everyone: `Leave` |
-| **Loading** | Progress text | — |
+| **Loading** | A loading card filling the screen (a painting, its title and text, [lore.md](lore.md)), the class-hints tip and the progress text | — |
 | **In Game** | 3D view and HUD (§10) | Pause overlay: `Resume`, `Leave game` |
 | **Results** | *Victory* or *Defeat*, run time, kills per player | `Back to title` |
 

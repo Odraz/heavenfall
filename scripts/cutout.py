@@ -150,6 +150,13 @@ SPACED = {'ui-logo': (10, 0.1)}
 # Full-frame paintings: output width in pixels.
 BACKGROUNDS = {
     'ui-title-bg': 1920,
+    # The loading cards (docs/lore.md).
+    'load-verdict': 1920,
+    'load-appeal': 1920,
+    'load-fallen': 1920,
+    'load-heretic': 1920,
+    'load-binder': 1920,
+    'load-betrayer': 1920,
 }
 
 # Sky bands (M10 §4.2): the width kept from the left edge. sky-day is cut through the axis of the
