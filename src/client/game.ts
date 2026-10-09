@@ -10,7 +10,9 @@ import {
   ATTACK_SECONDARY,
   attackDef,
   BLASPHEMY_RADIUS,
-  CHAINS_PULL_TIME,
+  CHAINS_ANGLE,
+  CHAINS_MAX,
+  CHAINS_RANGE,
   chooseAttack,
   FALLING_STAR_RADIUS,
   FIRE_RIGHT,
@@ -33,7 +35,7 @@ import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, PROJECTILE_SLOTS, TICK_DT, TICK
 import { raycastTerrain } from '../sim/los';
 import { arenaPhaseOf, doorsClosed, overVoid, setArenaDoors, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
-import { BOSS_CAST_JUDGMENT, GLOBE_BLAST, PROJ_ARROW, PROJ_CENSER, PROJ_GLOBE } from '../sim/sim';
+import { BOSS_CAST_JUDGMENT, GLOBE_BLAST, GLOBE_SHOT_BLAST, PROJ_ARROW, PROJ_CENSER, PROJ_GLOBE } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
@@ -47,7 +49,7 @@ import type { GameTextures } from '../render/textures';
 import { Vfx } from '../render/vfx';
 import { BloodPool, POOL_LIFT } from '../render/bloodPool';
 import { IncenseClouds } from '../render/incense';
-import { FIELD_FIRE_RATE, FIELD_TIME, inField } from '../sim/field';
+import { FIELD_FIRE_RATE, FIELD_TIME, inField, walkDestination } from '../sim/field';
 import { DebugOverlay } from '../ui/debugOverlay';
 import { PauseOverlay } from '../ui/pause';
 import type { ResultsData } from '../ui/results';
@@ -111,8 +113,8 @@ const PROJECTILE_SPRITES = ['proj-censer', 'proj-orb', 'proj-arrow'];
 const PROJECTILE_SIZES = [0.4, 0.78, 0.55];
 /** Cherub arrows glow a pale holy cyan, which nothing else in the world is, and trail 4 embers 0.25 m apart (M12 §6.3). */
 const GLOW_ARROW: Glow = { r: 0.55, g: 0.9, b: 1, a: 0.6 };
-/** The chains show over a pile with a bound enemy this close to the pile point (M12 follow-up §2.2). */
-const PILE_REACH = 3;
+/** Others' chains show when an enemy being pulled or bound is this close to the pile point (M12 follow-up §2.2): Chains' reach. */
+const PILE_REACH = 22;
 /** A globe is gold (M12 follow-up §1.3). */
 const GLOW_GLOBE: Glow = { r: 1, g: 0.82, b: 0.4, a: 0.55 };
 /** A globe's shatter (M12 follow-up §1.3): a soft gold flash and a thin ring out to the blast's reach. */
@@ -587,6 +589,8 @@ export class Game {
       this.qPresses = (this.qPresses + 1) & 0xff;
       // Your Blasphemy shakes the screen on its press (M12 §4.5).
       if (this.classId === 'fallen' && this.displayedCooldown('Q', now) <= 0) this.shake.add(now, SHAKE_BLASPHEMY);
+      // Your Chains come down at once (M12 follow-up §2.2).
+      if (this.classId === 'binder' && this.displayedCooldown('Q', now) <= 0) this.ownChains(now);
       return;
     }
     const def = ABILITIES[this.classId].E;
@@ -886,24 +890,62 @@ export class Game {
     }
   }
 
-  /** The chains over a Binder's pile (M12 follow-up §2.2), when a bound enemy is within 3 m of the pile point. */
+  /**
+   * Another Binder's chains over its pile (M12 follow-up §2.2), when an enemy is being pulled or bound
+   * within Chains' reach of the pile point.
+   */
   private pileChains(now: number, x: number, y: number, z: number, playerId: number): void {
     const ents = this.snaps.out;
     for (let i = 0; i < ents.count; i++) {
       if (!(ents.flags[i] & FLAG_ROOTED)) continue;
       if ((ents.x[i] - x) ** 2 + (ents.y[i] - y) ** 2 > PILE_REACH * PILE_REACH) continue;
-      this.vfx.chainCone(now, x, y, z, playerId);
-      debugState.chainsAt = now;
+      this.chainsDown(now, x, y, z, playerId);
       return;
     }
   }
 
-  /** A globe shatters (M12 follow-up §1.3): a subtle gold burst sized to its 1.5 m blast; brighter shot down. */
+  private chainsDown(now: number, x: number, y: number, z: number, playerId: number): void {
+    this.vfx.chainCone(now, x, y, z, playerId);
+    debugState.chainsAt = now;
+  }
+
+  /**
+   * The own Chains of Tartarus on its key press (M12 follow-up §2.2): when it's ready and an enemy other
+   * than the Gatekeeper is within 20 m and 30° of the aim, the chains come down at once onto the pile
+   * point, found as the host does. Line of sight isn't checked: a guess the host's pull confirms.
+   */
+  private ownChains(now: number): void {
+    const b = this.player.body;
+    const [px, py] = walkDestination(this.map, b.x, b.y, this.player.yaw, CHAINS_MAX);
+    const ents = this.snaps.out;
+    const ex = b.x;
+    const ey = b.y;
+    const ez = b.z + PLAYER_EYE;
+    const [ax, ay, az] = aimDir(this.player.yaw, this.player.pitch);
+    const cosMax = Math.cos(CHAINS_ANGLE);
+    for (let i = 0; i < ents.count; i++) {
+      if (ents.type[i] === GATEKEEPER) continue;
+      const def = ENEMIES[ents.type[i]];
+      const dx = ents.x[i] - ex;
+      const dy = ents.y[i] - ey;
+      const dz = this.zScratch[i] + def.height / 2 - ez;
+      const len = Math.hypot(dx, dy, dz);
+      if (len - def.radius > CHAINS_RANGE) continue;
+      if (len > 1e-9 && (dx * ax + dy * ay + dz * az) / len < cosMax) continue;
+      this.chainsDown(now, px, py, this.map.floor[Math.floor(py) * this.map.w + Math.floor(px)], this.localId);
+      return;
+    }
+  }
+
+  /**
+   * A globe shatters (M12 follow-up §1.3): a subtle gold burst sized to its 1.5 m blast on players; shot
+   * down, a brighter one sized to its 3 m blast on enemies.
+   */
   private globeFx(now: number, x: number, y: number, z: number, shotDown: boolean): void {
-    this.vfx.glow(now, x, y, z, GLOBE_FLASH, 0.3, shotDown ? 1.3 : 1.0, 180, 0, shotDown ? 0.7 : 0.5);
+    this.vfx.glow(now, x, y, z, GLOBE_FLASH, 0.3, shotDown ? 1.8 : 1.0, shotDown ? 260 : 180, 0, shotDown ? 0.75 : 0.5);
     const floor = this.floorAt(x, y);
-    if (floor > -Infinity && z - floor < 3) this.vfx.ring(now, x, y, floor, GLOBE_RING, 0.3, GLOBE_BLAST, 250);
-    this.particles.globeShards(x, y, z, shotDown ? 16 : 10);
+    if (floor > -Infinity && z - floor < 4) this.vfx.ring(now, x, y, floor, GLOBE_RING, 0.3, shotDown ? GLOBE_SHOT_BLAST : GLOBE_BLAST, shotDown ? 350 : 250);
+    this.particles.globeShards(x, y, z, shotDown ? 24 : 10);
     debugState.globes.shattered++;
     if (shotDown) debugState.globes.shotDown++;
     debugState.globes.at = now;
@@ -977,10 +1019,9 @@ export class Game {
           pts.push([e.x, e.y, e.z + 0.8], [user.x + Math.cos(a) * d, user.y + Math.sin(a) * d, e.z + 0.8]);
         }
         this.vfx.chain(now, pts, 0.3, 500);
-        // When the pull ends, red-hot chains come down onto the pile, if anything was bound there (M12
-        // follow-up §2.2); others' after the render delay.
-        const delay = CHAINS_PULL_TIME * 1000 + (e.playerId === this.localId ? 0 : this.snaps.delayTicks * TICK_MS);
-        this.pendingFx.push({ at: now + delay, run: (t) => this.pileChains(t, e.x, e.y, e.z, e.playerId) });
+        // Red-hot chains come down onto the pile point as the cast begins (M12 follow-up §2.2): the own
+        // ones came on the key press; others' after the render delay, when something is being pulled.
+        if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.pileChains(t, e.x, e.y, e.z, e.playerId) });
         break;
       }
       case 'binder:E': // grey burst

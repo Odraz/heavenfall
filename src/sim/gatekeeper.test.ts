@@ -123,11 +123,11 @@ describe('the Gatekeeper (§7.4)', () => {
     sim.step();
     expect(orbs(sim)).toBe(8);
     expect(sim.eState[sim.bossSlot]).toBe(ST_ATTACKING);
-    // Globes at 8 m/s, like a Chorister's (M12 follow-up §1.3).
+    // Globes at 6 m/s, like a Chorister's (M12 follow-up §1.3).
     const g = sim.projectiles[0];
     const before = sim.pTraveled[g];
     sim.step();
-    expect(sim.pTraveled[g] - before).toBeCloseTo(8 / 30, 9);
+    expect(sim.pTraveled[g] - before).toBeCloseTo(6 / 30, 9);
     // The next one is due 4 s after firing.
     expect(sim.volleyDue).toBe(t0 + 75 + 120);
   });

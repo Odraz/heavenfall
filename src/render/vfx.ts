@@ -125,7 +125,7 @@ const CHAIN_CONE_TOP_R = 5;
 const CHAIN_CONE_BOTTOM_R = 1.2;
 const CHAIN_CONE_HEIGHT = 8;
 const CHAIN_CONE_WIDTH = 0.22;
-const CHAIN_CONE_MS = 1200;
+const CHAIN_CONE_MS = 1500;
 const CHAIN_CONE_DROP_MS = 120;
 const CHAIN_CONE_FADE_MS = 400;
 const CHAIN_CONE_RING = 0xff5a1e;
@@ -484,7 +484,8 @@ export class Vfx {
   /**
    * The bound pile's chains (M12 follow-up §2.2): 6 red-hot chains from a 5 m circle 8 m above the pile's
    * floor at (x, y, z) down to a 1.2 m circle on it, an inverted cone. They come down from the top over
-   * 120 ms, hold, and fade over the last 0.4 s of 1.2 s, with a red ring where they land. A new cone
+   * 120 ms, hold while the pull drags the crowd in, and fade over the last 0.4 s of 1.5 s, with a red
+   * ring where they land. A new cone
    * under the same `key` (the Binder) replaces the old one.
    */
   chainCone(now: number, x: number, y: number, z: number, key: number): void {

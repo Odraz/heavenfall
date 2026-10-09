@@ -309,6 +309,10 @@ interface Squad {
   wave: number;
 }
 
+/** Globes fly at this speed, a Chorister's from this high above its feet (M12 follow-up §1.3). */
+export const GLOBE_SPEED = 6;
+export const GLOBE_CAST_Z = 2.3;
+
 /** Projectile kinds, as encoded in snapshots (§9.4). */
 export const PROJ_CENSER = 0;
 /** A Chorister's or the Orb Volley's globe (M12 follow-up §1.3; was the orb, the same value). */
@@ -355,6 +359,8 @@ const CHERUB_STRAFE_SPEED = 2;
 const CHERUB_STRAFE_SWITCH = 2;
 
 interface CasterDef {
+  /** Where its projectile starts, above its feet; half its height when not given. */
+  castZ?: number;
   range: number;
   windup: number;
   recovery: number;
@@ -365,7 +371,9 @@ interface CasterDef {
 }
 
 const CASTERS: Record<number, CasterDef> = {
-  [CHORISTER]: { range: CHORISTER_RANGE, windup: 1.0, recovery: 1.5, kind: PROJ_GLOBE, speed: 8, damage: 12, radius: 0.3 },
+  // The globe leaves from the orb the Chorister holds above its head (2.3 m, as drawn) and flies at
+  // 6 m/s, so it's seen coming and can be shot (M12 follow-up §1.3, after playtesting stage 9).
+  [CHORISTER]: { castZ: GLOBE_CAST_Z, range: CHORISTER_RANGE, windup: 1.0, recovery: 1.5, kind: PROJ_GLOBE, speed: GLOBE_SPEED, damage: 12, radius: 0.3 },
   [CHERUB]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 18, damage: 8, radius: 0.15 },
 };
 
@@ -376,20 +384,21 @@ const VOLLEY_INTERVAL = 4;
 const VOLLEY_WINDUP = 0.5;
 const VOLLEY_ORBS = 8;
 const VOLLEY_SPREAD = (25 * Math.PI) / 180;
-const VOLLEY_ORB = { speed: 8, damage: 15, radius: 0.3 };
+const VOLLEY_ORB = { speed: GLOBE_SPEED, damage: 15, radius: 0.3 };
 
 // The globe (M12 follow-up §1.3).
 /** A shattering globe hurts the players within this many meters of it, in its line of sight. */
 export const GLOBE_BLAST = 1.5;
 /** A player's ray or censer passing this close to a globe's path shatters it... */
-export const GLOBE_SHOT_REACH = 0.3;
+export const GLOBE_SHOT_REACH = 0.5;
 /**
  * ...over the path it flew in the last this many seconds, as far back as the client sees it drawn
  * (other players' render delay plus their input's way to the host), so it hits what was aimed at.
  */
 export const GLOBE_SHOT_TRAIL = 0.25;
-/** Shot down, it deals this to every enemy within GLOBE_BLAST, in its line of sight, credited to the shooter. */
+/** Shot down, it deals this to every enemy within GLOBE_SHOT_BLAST, in its line of sight, credited to the shooter. */
 export const GLOBE_SHOT_DAMAGE = 40;
+export const GLOBE_SHOT_BLAST = 3;
 /** The shatter point is moved back along the flight this far for line of sight, out of the wall it hit. */
 const GLOBE_LOS_BACK = 0.1;
 const JUDGMENT_FIRST = 20;
@@ -1864,7 +1873,7 @@ export class Simulation {
     if (hit) for (const g of hit) this.shootDownGlobe(g, p);
   }
 
-  /** A globe shot down by player `p`: 40 to every enemy within 1.5 m in its line of sight, credited, and nothing to players. */
+  /** A globe shot down by player `p`: 40 to every enemy within 3 m in its line of sight, credited, and nothing to players. */
   private shootDownGlobe(slot: number, p: SimPlayer): void {
     if (!this.pAlive[slot]) return;
     const x = this.pX[slot];
@@ -1874,7 +1883,7 @@ export class Simulation {
     for (let k = this.activeCount - 1; k >= 0; k--) {
       const s = this.active[k];
       const def = ENEMIES[this.eType[s]];
-      if (distToCylinder(x, y, z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > GLOBE_BLAST + 1e-9) continue;
+      if (distToCylinder(x, y, z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > GLOBE_SHOT_BLAST + 1e-9) continue;
       if (!lineOfSight(this.map, x, y, z, this.eX[s], this.eY[s], this.eZ[s] + def.height / 2)) continue;
       this.damageEnemy(s, GLOBE_SHOT_DAMAGE, p.index, GLOBE_SHOT_DAMAGE, x, y);
     }
@@ -2936,7 +2945,7 @@ export class Simulation {
     const def = ENEMIES[this.eType[slot]];
     const ox = this.eX[slot];
     const oy = this.eY[slot];
-    const oz = this.eZ[slot] + def.height / 2;
+    const oz = this.eZ[slot] + (c.castZ ?? def.height / 2);
     let dx = p.x - ox;
     let dy = p.y - oy;
     let dz = p.z + PLAYER_HEIGHT / 2 - oz;
