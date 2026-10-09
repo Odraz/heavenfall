@@ -231,6 +231,25 @@ describe('the Gatekeeper (§7.4)', () => {
     expect(castEvents(sim)).toEqual(['interrupted']);
   });
 
+  it("is interrupted by a Binder's shout facing it, not by one facing away (M12 follow-up §2.4)", () => {
+    for (const facing of [true, false]) {
+      const sim = makeSim(['binder']);
+      const t0 = startFight(sim, [VISIBLE]);
+      const p = sim.players[0];
+      p.god = true;
+      sim.judgmentDue = t0 + 10;
+      sim.volleyDue = Infinity;
+      runTo(sim, t0 + 10);
+      expect(sim.bossCast).toBe(BOSS_CAST_JUDGMENT);
+      const b = sim.bossSlot;
+      p.yaw = Math.atan2(sim.eY[b] - p.y, sim.eX[b] - p.x) + (facing ? 0 : Math.PI);
+      p.pendingE = true;
+      sim.step();
+      sim.step();
+      expect(sim.bossCast).toBe(facing ? BOSS_CAST_NONE : BOSS_CAST_JUDGMENT);
+    }
+  });
+
   it('has 0.3 of its HP solo, and the party multiplier with more players (M12 follow-up §3.3)', () => {
     expect(bossMultiplier(1)).toBe(0.3);
     for (const n of [2, 3, 4]) expect(bossMultiplier(n)).toBe(partyMultiplier(n));

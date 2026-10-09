@@ -65,7 +65,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
       { key: 'LMB', text: 'Every bullet slows its target.' },
       { key: 'RMB', text: 'Swing your chain when the swarm reaches you.' },
       { key: 'Q', text: 'Q: pull a crowd together, then call the Fallen down on it. Bound enemies take double damage.' },
-      { key: 'E', text: "E: silence Choristers, Cherubs and the Gatekeeper's Judgment." },
+      { key: 'E', text: "E: shout to silence everything in front of you: Choristers, Cherubs and the Gatekeeper's Judgment." },
     ],
   },
   betrayer: {

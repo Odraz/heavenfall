@@ -34,7 +34,7 @@ import {
   CHAINS_ROOT,
   COMMUNION_HEAL,
   COMMUNION_RADIUS,
-  DISCORD_RADIUS,
+  DISCORD_HALF_ANGLE,
   DISCORD_RANGE,
   DISCORD_SILENCE,
   FALLING_STAR_CRATER,
@@ -2170,19 +2170,10 @@ export class Simulation {
       p.cdE = def.cooldown;
       this.abilityEvent(p, 'E', target.x, target.y, target.z, [target.id]);
     } else if (p.classId === 'binder') {
-      // Discord: silences every enemy within 8 m of the impact point.
-      const hit = this.crosshair(p, DISCORD_RANGE);
-      const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
-      const ix = p.x + dx * hit.t;
-      const iy = p.y + dy * hit.t;
-      const iz = p.z + PLAYER_EYE + dz * hit.t;
-      for (let k = 0; k < this.activeCount; k++) {
-        const s = this.active[k];
-        const ed = ENEMIES[this.eType[s]];
-        if (distToCylinder(ix, iy, iz, this.eX[s], this.eY[s], this.eZ[s], ed.radius, ed.height) <= DISCORD_RADIUS) this.silence(s, DISCORD_SILENCE);
-      }
+      for (const s of this.discordTargets(p)) this.silence(s, DISCORD_SILENCE);
       p.cdE = def.cooldown;
-      this.abilityEvent(p, 'E', ix, iy, iz);
+      // At the Binder's feet; clients fan the shout out along its yaw.
+      this.abilityEvent(p, 'E', p.x, p.y, p.z);
     }
   }
 
@@ -2281,6 +2272,33 @@ export class Simulation {
   chainsDestination(p: SimPlayer): [number, number] {
     const [x, y] = walkDestination(this.map, p.x, p.y, p.yaw, CHAINS_MAX);
     return [x, y];
+  }
+
+  /**
+   * Discord's shout (M12 follow-up §2.4): every living enemy, the Gatekeeper included, within 30 m of the
+   * eye (to its cylinder), within 35° either side of the Binder's yaw horizontally (any height, so flyers
+   * overhead too; one on the Binder's own axis counts), and in line of sight of its body center.
+   */
+  discordTargets(p: SimPlayer): number[] {
+    const ex = p.x;
+    const ey = p.y;
+    const ez = p.z + PLAYER_EYE;
+    const ax = Math.cos(p.yaw);
+    const ay = Math.sin(p.yaw);
+    const cosMax = Math.cos(DISCORD_HALF_ANGLE);
+    const out: number[] = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      const def = ENEMIES[this.eType[s]];
+      if (distToCylinder(ex, ey, ez, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > DISCORD_RANGE) continue;
+      const bx = this.eX[s] - ex;
+      const by = this.eY[s] - ey;
+      const len = Math.hypot(bx, by);
+      if (len > 1e-9 && (bx * ax + by * ay) / len < cosMax - 1e-9) continue;
+      if (!lineOfSight(this.map, ex, ey, ez, this.eX[s], this.eY[s], this.eZ[s] + def.height / 2)) continue;
+      out.push(s);
+    }
+    return out;
   }
 
   /** Non-boss enemies within 20 m, in line of sight, with the body center within 30° of the aim. */

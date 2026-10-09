@@ -14,6 +14,8 @@ import {
   CHAINS_MAX,
   CHAINS_RANGE,
   chooseAttack,
+  DISCORD_HALF_ANGLE,
+  DISCORD_RANGE,
   FALLING_STAR_RADIUS,
   FIRE_RIGHT,
   FIRE_RIGHT_LAST,
@@ -120,6 +122,9 @@ const GLOW_GLOBE: Glow = { r: 1, g: 0.82, b: 0.4, a: 0.55 };
 /** A globe's shatter (M12 follow-up §1.3): a soft gold flash and a thin ring out to the blast's reach. */
 const GLOBE_FLASH = 0xffe08a;
 const GLOBE_SPHERE = 0xffc24a;
+/** Discord's wave (M12 follow-up §2.4): the old burst's grey, out to 30 m in 0.3 s. */
+const DISCORD_GREY = 0x8a8f97;
+const DISCORD_WAVE_MS = 300;
 const GLOBE_CORE = 0xfff4d0;
 const GLOBE_RING = 0xffd27a;
 const ARROW_TRAIL_STEP = 0.25;
@@ -1024,8 +1029,9 @@ export class Game {
         // render delay, when something is being pulled.
         if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.pileChains(t, e.x, e.y, e.z, e.playerId) });
         break;
-      case 'binder:E': // grey burst
-        this.vfx.smoke(now, e.x, e.y, e.z, 0x8a8f97, 0.5, 8, 700);
+      case 'binder:E':
+        // Discord's shout (M12 follow-up §2.4): a grey wave fanning out over its cone on the floor.
+        if (user) this.vfx.shoutCone(now, e.x, e.y, e.z, user.yaw, DISCORD_HALF_ANGLE, DISCORD_RANGE, DISCORD_GREY, DISCORD_WAVE_MS);
         break;
       case 'betrayer:Q':
         this.startField(e, user, now);

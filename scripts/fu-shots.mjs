@@ -50,11 +50,11 @@ async function pearlyGates(kind) {
   console.log('saved fu-squad-cand-4..9.png');
 }
 
-const cls = what === 'shotdown' || what.startsWith('chains') ? 'binder' : 'fallen';
+const cls = what === 'shotdown' || what.startsWith('chains') || what === 'shout' ? 'binder' : 'fallen';
 // `sizes` looks from a fixed camera behind and above the player, east across the arena, so the crowd
 // shows as it comes (a crowd at the player's feet hides everyone's size); `chains-far` from farther
 // back and higher, onto the pile 5 m ahead of the Binder.
-const cam = what === 'sizes' ? '&cam=19,7.5,3.2,0,-4' : what === 'chains-far' ? '&cam=16.5,7.5,6,0,-22' : '';
+const cam = what === 'sizes' ? '&cam=19,7.5,3.2,0,-4' : what === 'chains-far' ? '&cam=16.5,7.5,6,0,-22' : what === 'shout' ? '&cam=16,7.5,10,0,-38' : '';
 await page.goto(`${base}/?dev=1&map=sandbox&class=${cls}&god=1&seed=1${cam}`);
 await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame', null, { timeout: 60_000 });
 const canvas = (await page.locator('canvas').first().boundingBox()) ?? { x: 0, y: 0, width: 1280, height: 720 };
@@ -107,7 +107,18 @@ async function frozenShot(path) {
 /** Dev key J: removes the Blessed, leaving the casters. */
 const clearBlessed = () => page.keyboard.press('KeyJ');
 
-if (what.startsWith('chains')) {
+if (what === 'shout') {
+  // Discord's shout (M12 follow-up §2.4) from above and behind the Binder, facing east: frames 80 and
+  // 180 ms after the press.
+  await lookAt(0, 0);
+  await page.waitForTimeout(1200);
+  await page.keyboard.press('KeyE');
+  await page.waitForTimeout(80);
+  await frozenShot(`${OUT}/fu-shout-a.png`);
+  await page.waitForTimeout(100);
+  await frozenShot(`${OUT}/fu-shout-b.png`);
+  console.log('saved fu-shout-a.png, fu-shout-b.png');
+} else if (what.startsWith('chains')) {
   // Chains of Tartarus east into the crowd as it comes; the chains come down 0.3 s later. Frames
   // mid-descent (60 ms) and holding (600 ms), three casts.
   await lookAt(0, -4);

@@ -68,6 +68,15 @@ Slug **0.85 s** between shots (was 1.0). The shotgun is unchanged.
 
 Speed (6 m/s) and the Fetters slow (0.7) are unchanged.
 
+### 2.4 Discord is a shout (Binder, E)
+
+Added after playtesting stage 9: Discord was hard to aim. Its 8 m silence fell where the crosshair ray stopped, which in a crowd is the nearest Blessed and on a Cherub missed by a hair is 40 m up in the sky.
+
+- **Who it silences:** every living enemy, the Gatekeeper included, within **30 m** of the Binder's eye (to its cylinder), within **35°** either side of the Binder's yaw measured horizontally (any height, so Cherubs overhead too; one on the Binder's own axis counts), and in line of sight of its body center. Silence 4 s and cooldown 12 s as before; silencing the Gatekeeper interrupts Judgment as before. (Choristers attack from 20 m, Cherubs from 25 m.)
+- **The event** `abilityUsed` E is at the Binder's feet.
+- **The look, on every client:** a grey wave on the floor (`0x8a8f97`): a faint sector (opacity 0.18) of the cone with a bright arc at its front (opacity 0.6, the outer tenth of the radius), growing from 0.5 m to 30 m with a cubic ease-out over **0.3 s** and fading over its second half; the old grey smoke burst is gone. Silenced enemies keep their grey tint. The Discord sound as now, at the Binder.
+- **Texts:** the card: "A shout that silences every enemy in front of you within 30 m, the flyers too. Stops casters and the Gatekeeper's Judgment."; the hint: "E: shout to silence everything in front of you: Choristers, Cherubs and the Gatekeeper's Judgment."
+
 ### 2.3 Heretic
 
 HP stays 150. Less self-sustain, so the heal and the shield are timing decisions rather than buttons pressed when ready, and more damage on one target:

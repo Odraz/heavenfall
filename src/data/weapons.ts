@@ -107,7 +107,7 @@ export const ABILITIES: Record<ClassId, { Q: AbilityDef; E: AbilityDef }> = {
   },
   binder: {
     Q: { name: 'Chains of Tartarus', description: 'Pulls the enemies in front of you into a clump and binds them. Bound enemies take double damage.', cooldown: 8, movement: false, allyRange: 0, icon: 'icon-chains' },
-    E: { name: 'Discord', description: "Silences every enemy around the point you aim at. Stops casters and the Gatekeeper's Judgment.", cooldown: 12, movement: false, allyRange: 0, icon: 'icon-discord' },
+    E: { name: 'Discord', description: "A shout that silences every enemy in front of you within 30 m, the flyers too. Stops casters and the Gatekeeper's Judgment.", cooldown: 12, movement: false, allyRange: 0, icon: 'icon-discord' },
   },
   betrayer: {
     Q: { name: 'Field of Blood', description: 'Toss the thirty pieces just in front of you. Everyone standing in the field fires twice as fast.', cooldown: 30, movement: false, allyRange: 0, icon: 'icon-field-of-blood' },
@@ -154,8 +154,12 @@ export const CHAINS_STEP = 0.25;
 export const CHAINS_MAX = 5;
 export const CHAINS_PULL_TIME = 0.3;
 export const CHAINS_ROOT = 2.5;
-export const DISCORD_RANGE = 40;
-export const DISCORD_RADIUS = 8;
+/**
+ * Discord is a shout (M12 follow-up §2.4): it silences every enemy in sight within 30 m and 35° either
+ * side of the Binder's facing, at any height (was every enemy within 8 m of where the crosshair ray stopped).
+ */
+export const DISCORD_RANGE = 30;
+export const DISCORD_HALF_ANGLE = 35 * DEG;
 export const DISCORD_SILENCE = 4;
 export const SHADOWSTEP_SPEED = 40;
 export const SHADOWSTEP_TIME = 0.2;

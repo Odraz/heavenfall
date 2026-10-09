@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHERUB, CHORISTER, GATEKEEPER } from '../data/enemies';
 import { decodeSnapshot, FLAG_TAUNTED } from '../net/protocol';
-import { aimAt, enemyAt, makeSim, press, put, room } from './testutil/sims';
+import { enemyAt, makeSim, press, put, room } from './testutil/sims';
 
 const usedEvents = (sim: ReturnType<typeof makeSim>) => sim.events.filter((e) => e.event.type === 'abilityUsed').map((e) => e.event);
 
@@ -206,35 +206,41 @@ describe('Chains of Tartarus (Binder Q)', () => {
   });
 });
 
-describe('Discord (Binder E)', () => {
-  it('silences every enemy within 8 m of where the crosshair ray stops', () => {
-    const sim = makeSim(room(50, 20), ['binder']);
+describe('Discord (Binder E), a shout (M12 follow-up §2.4)', () => {
+  it('silences every enemy within 30 m and 35° either side of the facing, at any height, in sight', () => {
+    // A pillar on cells (12, 15)–(13, 16) hides `hidden`.
+    const rows = room(50, 24).map((r) => [...r]);
+    for (const [x, y] of [[12, 15], [13, 15], [12, 16], [13, 16]]) rows[y][x] = '8';
+    const sim = makeSim(rows.map((r) => r.join('')), ['binder']);
     const p = sim.players[0];
-    put(sim, p, 5.5, 10.5);
-    const hit = enemyAt(sim, CHORISTER, 20.5, 10.5);
-    const near = enemyAt(sim, CHORISTER, 25.5, 14.5);
-    const far = enemyAt(sim, CHORISTER, 32.5, 10.5);
-    for (const s of [hit, near, far]) sim.root(s, 20);
-    aimAt(sim, p, hit);
+    put(sim, p, 5.5, 12.5);
+    // Facing +x, looking at the floor: the pitch doesn't matter.
+    p.pitch = -0.6;
+    const ahead = enemyAt(sim, CHORISTER, 30.5, 12.5);
+    const edge = enemyAt(sim, CHORISTER, 20.5, 12.5 - 15 * Math.tan((33 * Math.PI) / 180));
+    const wide = enemyAt(sim, CHORISTER, 15.5, 12.5 - 10 * Math.tan((38 * Math.PI) / 180));
+    const flyer = enemyAt(sim, CHERUB, 15.5, 10.5, 4);
+    const tooFar = enemyAt(sim, CHORISTER, 37.5, 12.5);
+    const behind = enemyAt(sim, CHORISTER, 2.5, 12.5);
+    const hidden = enemyAt(sim, CHORISTER, 16.5, 17.5);
+    for (const s of [ahead, edge, wide, tooFar, behind, hidden]) sim.root(s, 20);
     press(p, 'E');
     sim.step();
-    expect(sim.eSilenceUntil[hit]).toBe(sim.tick + 120);
-    expect(sim.eSilenceUntil[near]).toBe(sim.tick + 120);
-    expect(sim.eSilenceUntil[far]).toBe(0);
+    const silenced = (s: number) => sim.eSilenceUntil[s] === sim.tick + 120;
+    expect([ahead, edge, flyer].map(silenced)).toEqual([true, true, true]);
+    expect([wide, tooFar, behind, hidden].map(silenced)).toEqual([false, false, false, false]);
     expect(p.cdE).toBe(12);
+    // The event is at the Binder's feet.
+    const e = usedEvents(sim)[0] as { x: number; y: number; z: number };
+    expect([e.x, e.y, e.z]).toEqual([5.5, 12.5, 0]);
   });
 
-  it('lands 40 m along the ray when it hits nothing, and still cools down', () => {
-    const sim = makeSim(room(60, 10), ['binder']);
+  it('cools down with nothing in front', () => {
+    const sim = makeSim(room(20, 10), ['binder']);
     const p = sim.players[0];
     put(sim, p, 2.5, 5.5);
-    // Aim slightly up so the ray never meets the floor within 40 m.
-    p.pitch = 0.01;
     press(p, 'E');
     sim.step();
-    const e = usedEvents(sim)[0] as { x: number; y: number; z: number };
-    expect(e.x).toBeCloseTo(2.5 + 40 * Math.cos(0.01), 5);
-    expect(e.z).toBeCloseTo(1.6 + 40 * Math.sin(0.01), 5);
     expect(p.cdE).toBe(12);
   });
 });

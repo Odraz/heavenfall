@@ -85,7 +85,7 @@ Kill rates may now go well above 9 per second where a class does its job on a st
 | Primary | Chain Gun | As now: fast, accurate, slows. |
 | Secondary | Scourge | Swings a heavy chain in front of the Binder: 25 dmg to every enemy within 3 m and 120° of the aim (**M12:** was the 6 nearest, so the swing passed visibly through enemies it didn't hurt), 0.8 s between swings. Like every Binder hit, it slows them for 1 s. |
 | Q | Chains of Tartarus | As now: pull a crowd and bind it. **M12 follow-up:** bound for 2.5 s (was 1.5), so the Binder reaches the pile with the Scourge; red-hot chains come down onto the pile so everyone sees it's bound. |
-| E | Discord | As now: silence. |
+| E | Discord | **M12 follow-up:** a shout. It silences (4 s) every enemy within 30 m and 35° either side of the Binder's facing, at any height and in line of sight, the Gatekeeper's Judgment included; cooldown 12 s. It was an 8 m silence where the crosshair ray stopped, which in a crowd landed at the Binder's feet and on a Cherub missed by a hair landed in the sky. |
 | Passive | Fetters | Every Chain Gun and Scourge hit slows for 1 s (the existing trait, now named). |
 
 - **Chain Gun or Scourge:** the Chain Gun at range, one enemy at a time; the Scourge when the swarm reaches the Binder. Each swing kills every Blessed in its arc (M12), so a swing is how the Binder breaks free when the crowd holds it.

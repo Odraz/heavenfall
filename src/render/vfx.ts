@@ -65,6 +65,8 @@ interface Effect {
   update: (f: number) => void;
   /** Beams and chains turn to the camera every frame; their geometry is their own. */
   ribbon?: Ribbon;
+  /** Called when it ends, for what the effect owns besides `material` (its own geometry, a second material). */
+  dispose?: () => void;
 }
 
 /** A flat 2 × 2 m square on the ground, so its scale is its half-size. */
@@ -429,6 +431,40 @@ export class Vfx {
     this.add({ obj: mesh, material, duration, update }, now, 0);
   }
 
+  /**
+   * A shout's wave on the floor at (x, y, z) (Discord, M12 follow-up §2.4): a faint sector of `halfAngle`
+   * either side of `yaw` (simulation radians), and a bright arc at its front, growing to `range` with a
+   * cubic ease-out over `duration` and fading after it has spread.
+   */
+  shoutCone(now: number, x: number, y: number, z: number, yaw: number, halfAngle: number, range: number, color: number, duration: number): void {
+    // Flat on the floor: a shape's local angle θ lies along simulation angle −θ.
+    const start = -yaw - halfAngle;
+    const fill = new THREE.Mesh(new THREE.CircleGeometry(1, 24, start, 2 * halfAngle), this.material(null, color));
+    const front = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 32, 1, start, 2 * halfAngle), this.material(null, color));
+    const group = new THREE.Group();
+    for (const m of [fill, front]) {
+      m.rotation.x = -Math.PI / 2;
+      group.add(m);
+    }
+    group.position.set(x, z + 0.06, y);
+    const fillMat = fill.material as THREE.MeshBasicMaterial;
+    const frontMat = front.material as THREE.MeshBasicMaterial;
+    const update = (f: number): void => {
+      const r = 0.5 + (range - 0.5) * (1 - (1 - f) ** 3);
+      fill.scale.setScalar(r);
+      front.scale.setScalar(r);
+      const fade = f < 0.5 ? 1 : 1 - (f - 0.5) / 0.5;
+      fillMat.opacity = 0.18 * fade;
+      frontMat.opacity = 0.6 * fade;
+    };
+    const ended = (): void => {
+      fill.geometry.dispose();
+      front.geometry.dispose();
+      this.release(fillMat);
+    };
+    this.add({ obj: group, material: frontMat, duration, update, dispose: ended }, now, 0);
+  }
+
   /** A translucent sphere at (x, y, z), from radius r0 to r1, fading from `opacity` to 0. */
   sphere(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number, opacity = 0.45, delay = 0): void {
     // Both sides, so a bubble around the camera (a shield on yourself) is visible from inside.
@@ -592,6 +628,7 @@ export class Vfx {
         this.group.remove(e.obj);
         this.release(e.material);
         e.ribbon?.mesh.geometry.dispose();
+        e.dispose?.();
         this.effects.splice(i, 1);
         continue;
       }
