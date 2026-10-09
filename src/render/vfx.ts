@@ -414,6 +414,21 @@ export class Vfx {
     this.add({ obj: sprite, material, duration, update }, now, delay);
   }
 
+  /**
+   * An explosion's sphere (M12 follow-up §1.3): it bursts out from r0 to r1 with a cubic ease-out, most of
+   * its growth in the first third, and fades as (1 − f)², so it reads as a blast, not a bubble.
+   */
+  burstSphere(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number, opacity: number): void {
+    const material = this.material(null, color);
+    const mesh = new THREE.Mesh(sphereGeo, material);
+    mesh.position.set(x, z, y);
+    const update = (f: number): void => {
+      mesh.scale.setScalar(r0 + (r1 - r0) * (1 - (1 - f) ** 3));
+      material.opacity = opacity * (1 - f) ** 2;
+    };
+    this.add({ obj: mesh, material, duration, update }, now, 0);
+  }
+
   /** A translucent sphere at (x, y, z), from radius r0 to r1, fading from `opacity` to 0. */
   sphere(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number, opacity = 0.45, delay = 0): void {
     // Both sides, so a bubble around the camera (a shield on yourself) is visible from inside.
@@ -472,13 +487,6 @@ export class Vfx {
   /** Beams of light between pairs of points (tracers), `width` meters wide, fading. */
   beam(now: number, points: Array<[number, number, number]>, color: number, width: number, duration: number): void {
     this.addRibbon(new Ribbon(points, width, this.material(this.tex.beam, color), BEAM_TILE), now, duration);
-  }
-
-  /** Red-hot chains between pairs of points, `width` meters wide, fading. */
-  chain(now: number, points: Array<[number, number, number]>, width: number, duration: number): void {
-    const img = this.tex.chain.image as { width: number; height: number };
-    const tile = (width * img.width) / img.height;
-    this.addRibbon(new Ribbon(points, width, this.material(this.tex.chain, 0xffffff), tile), now, duration);
   }
 
   /**

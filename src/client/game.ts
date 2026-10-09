@@ -119,6 +119,8 @@ const PILE_REACH = 22;
 const GLOW_GLOBE: Glow = { r: 1, g: 0.82, b: 0.4, a: 0.55 };
 /** A globe's shatter (M12 follow-up §1.3): a soft gold flash and a thin ring out to the blast's reach. */
 const GLOBE_FLASH = 0xffe08a;
+const GLOBE_SPHERE = 0xffc24a;
+const GLOBE_CORE = 0xfff4d0;
 const GLOBE_RING = 0xffd27a;
 const ARROW_TRAIL_STEP = 0.25;
 const ARROW_TRAIL_SIZES = [0.3, 0.24, 0.18, 0.12];
@@ -938,10 +940,17 @@ export class Game {
   }
 
   /**
-   * A globe shatters (M12 follow-up §1.3): a subtle gold burst sized to its 1.5 m blast on players; shot
-   * down, a brighter one sized to its 3 m blast on enemies.
+   * A globe shatters (M12 follow-up §1.3): a golden sphere bursting out to its blast's reach around a hot
+   * core, a flash, a ring on the floor and glass shards; 1.5 m on players, and shot down, brighter and
+   * out to its 3 m on enemies.
    */
   private globeFx(now: number, x: number, y: number, z: number, shotDown: boolean): void {
+    const reach = shotDown ? GLOBE_SHOT_BLAST : GLOBE_BLAST;
+    // Faint when it bursts around the camera (a globe hitting you), so it doesn't flood the view.
+    const b = this.player.body;
+    const inside = Math.hypot(x - b.x, y - b.y, z - (b.z + PLAYER_EYE)) < reach + 0.3 ? 0.25 : 1;
+    this.vfx.burstSphere(now, x, y, z, GLOBE_SPHERE, 0.2, reach, shotDown ? 420 : 320, (shotDown ? 0.55 : 0.45) * inside);
+    this.vfx.burstSphere(now, x, y, z, GLOBE_CORE, 0.1, reach * 0.45, shotDown ? 200 : 160, 0.9 * inside);
     this.vfx.glow(now, x, y, z, GLOBE_FLASH, 0.3, shotDown ? 1.8 : 1.0, shotDown ? 260 : 180, 0, shotDown ? 0.75 : 0.5);
     const floor = this.floorAt(x, y);
     if (floor > -Infinity && z - floor < 4) this.vfx.ring(now, x, y, floor, GLOBE_RING, 0.3, shotDown ? GLOBE_SHOT_BLAST : GLOBE_BLAST, shotDown ? 350 : 250);
@@ -1009,21 +1018,12 @@ export class Game {
         if (target !== undefined && target !== this.localId) this.party?.flash(target, 'blue');
         break;
       }
-      case 'binder:Q': {
-        // Chain lines from the cone in front of the Binder to the destination.
-        if (!user) break;
-        const pts: Array<[number, number, number]> = [];
-        for (let i = -3; i <= 3; i++) {
-          const a = user.yaw + (i / 3) * (Math.PI / 6);
-          const d = 6 + Math.abs(i) * 2;
-          pts.push([e.x, e.y, e.z + 0.8], [user.x + Math.cos(a) * d, user.y + Math.sin(a) * d, e.z + 0.8]);
-        }
-        this.vfx.chain(now, pts, 0.3, 500);
-        // Red-hot chains come down onto the pile point as the cast begins (M12 follow-up §2.2): the own
-        // ones came on the key press; others' after the render delay, when something is being pulled.
+      case 'binder:Q':
+        // Red-hot chains come down onto the pile point as the cast begins (M12 follow-up §2.2), in place of
+        // the old chain lines across the cone: the own ones came on the key press; others' after the
+        // render delay, when something is being pulled.
         if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.pileChains(t, e.x, e.y, e.z, e.playerId) });
         break;
-      }
       case 'binder:E': // grey burst
         this.vfx.smoke(now, e.x, e.y, e.z, 0x8a8f97, 0.5, 8, 700);
         break;
