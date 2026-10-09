@@ -121,6 +121,23 @@ const rayShader = {
     }`,
 };
 
+/** Discord's gust (M12 follow-up §2.4): rings of pale air, flat, facing along the shout. */
+const gustRingGeo = new THREE.RingGeometry(0.82, 1, 40);
+const GUST_RINGS = 3;
+const GUST_RING_GAP_MS = 70;
+const GUST_MS = 420;
+/** It starts this far in front of the eye, so the first ring doesn't fill the view. */
+const GUST_START = 0.6;
+const GUST_RING = 0xdfeaf6;
+/** The first ring is darker, so it shows against the pale sky and marble. */
+const GUST_RING_DARK = 0x8796b0;
+const GUST_RING_OPACITY = 0.55;
+const GUST_STREAKS = 12;
+const GUST_STREAK_LEN = 4;
+const GUST_STREAK_WIDTH = 0.12;
+const GUST_STREAK = 0xf2f7ff;
+const GUST_STREAK_OPACITY = 0.8;
+
 /** The bound pile's chains (M12 follow-up §2.2). */
 const CHAIN_CONE_COUNT = 6;
 const CHAIN_CONE_TOP_R = 5;
@@ -463,6 +480,57 @@ export class Vfx {
       this.release(fillMat);
     };
     this.add({ obj: group, material: frontMat, duration, update, dispose: ended }, now, 0);
+  }
+
+  /**
+   * A shout's gust of air (Discord, M12 follow-up §2.4), like Skyrim's Unrelenting Force: from `from`
+   * along the unit `dir` (simulation coordinates), rings of pale air race out to `range`, each widening to
+   * fill the cone of `halfAngle` and fading, one every 70 ms; and wind streaks shoot forward inside the cone.
+   */
+  gust(now: number, from: readonly [number, number, number], dir: readonly [number, number, number], halfAngle: number, range: number): void {
+    const o = new THREE.Vector3(from[0], from[2], from[1]);
+    const d = new THREE.Vector3(dir[0], dir[2], dir[1]).normalize();
+    const tan = Math.tan(halfAngle);
+    for (let i = 0; i < GUST_RINGS; i++) {
+      const material = this.material(null, i === 0 ? GUST_RING_DARK : GUST_RING);
+      const mesh = new THREE.Mesh(gustRingGeo, material);
+      const update = (f: number): void => {
+        const e = 1 - (1 - f) ** 2;
+        const dist = GUST_START + (range - GUST_START) * e;
+        mesh.position.copy(o).addScaledVector(d, dist);
+        mesh.lookAt(mesh.position.x + d.x, mesh.position.y + d.y, mesh.position.z + d.z);
+        mesh.scale.setScalar(0.25 + dist * tan);
+        material.opacity = GUST_RING_OPACITY * (1 - f) ** 1.5;
+      };
+      this.add({ obj: mesh, material, duration: GUST_MS, update }, now, i * GUST_RING_GAP_MS);
+    }
+    // The streaks: short beams along random directions inside the cone, each racing out and fading.
+    const side = new THREE.Vector3().crossVectors(d, Math.abs(d.y) < 0.95 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize();
+    const up = new THREE.Vector3().crossVectors(side, d);
+    const dirs: THREE.Vector3[] = [];
+    for (let i = 0; i < GUST_STREAKS; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(Math.random()) * tan * 0.9;
+      dirs.push(d.clone().addScaledVector(side, Math.cos(a) * r).addScaledVector(up, Math.sin(a) * r).normalize());
+    }
+    const delays = dirs.map(() => Math.random() * 0.25);
+    const pts = (f: number): Array<[number, number, number]> =>
+      dirs.flatMap((k, i) => {
+        const t = Math.min(1, Math.max(0, (f - delays[i]) / (1 - delays[i])));
+        const head = GUST_START + (range * 0.8 - GUST_START) * (1 - (1 - t) ** 2);
+        const tail = Math.max(GUST_START, head - GUST_STREAK_LEN * (1 - t * 0.5));
+        const a = o.clone().addScaledVector(k, tail);
+        const b = o.clone().addScaledVector(k, Math.max(tail + 1e-3, head));
+        // Ribbon points are in simulation order (x, y, z).
+        return [[a.x, a.z, a.y], [b.x, b.z, b.y]] as Array<[number, number, number]>;
+      });
+    const ribbon = new Ribbon(pts(0), GUST_STREAK_WIDTH, this.material(this.tex.beam, GUST_STREAK), BEAM_TILE);
+    const material = ribbon.mesh.material as THREE.MeshBasicMaterial;
+    const update = (f: number): void => {
+      ribbon.setPoints(pts(f));
+      material.opacity = GUST_STREAK_OPACITY * (1 - f);
+    };
+    this.add({ obj: ribbon.mesh, material, duration: GUST_MS, update, ribbon }, now, 0);
   }
 
   /** A translucent sphere at (x, y, z), from radius r0 to r1, fading from `opacity` to 0. */
