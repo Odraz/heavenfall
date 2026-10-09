@@ -137,7 +137,7 @@ describe('the shared fire timer (M9 §2.2)', () => {
 describe('attacks (M9 §2.3)', () => {
   it('have the new intervals', () => {
     expect(WEAPONS.betrayer).toMatchObject({ interval: 0.3, damage: 60, maxHits: 1, range: 60 });
-    expect(SECONDARIES.fallen).toMatchObject({ interval: 1.0, damage: 60, maxHits: 1, range: 50 });
+    expect(SECONDARIES.fallen).toMatchObject({ interval: 0.85, damage: 60, maxHits: 1, range: 50 });
     expect(SECONDARIES.heretic).toMatchObject({ interval: 0.5, damage: 15, range: 40 });
     expect(SECONDARIES.binder).toMatchObject({ interval: 0.8, damage: 25, maxHits: Infinity, range: 3 });
     expect(SECONDARIES.betrayer).toMatchObject({ interval: 1.5, damage: 200, range: 60 });
@@ -163,7 +163,7 @@ describe('attacks (M9 §2.3)', () => {
 
   it('every hitscan attack revives with its own interval ÷ 3; the Scourge doesn’t revive', () => {
     for (const [cls, slot, interval] of [
-      ['fallen', ATTACK_SECONDARY, 1.0],
+      ['fallen', ATTACK_SECONDARY, 0.85],
       ['betrayer', ATTACK_SECONDARY, 1.5],
       ['betrayer', ATTACK_PRIMARY, 0.3],
     ] as const) {

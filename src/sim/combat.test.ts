@@ -135,9 +135,9 @@ describe('status effects (§5.6)', () => {
     for (let i = 0; i < 16; i++) sim.step();
     expect(sim.eX[a]).toBe(11.5);
     // 5 damage 0.5 s after entering range.
-    expect(p.hp).toBe(195);
+    expect(p.hp).toBe(235);
     for (let i = 0; i < 30; i++) sim.step();
-    expect(p.hp).toBe(190);
+    expect(p.hp).toBe(230);
   });
 
   it('silence cancels a wind-up, and a cast due during silence starts when it ends', () => {
@@ -271,7 +271,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     sim.step();
     sim.step();
     expect(sim.projectiles.length).toBe(0);
-    expect(p.hp).toBe(188);
+    expect(p.hp).toBe(228);
   });
 
   it('projectiles are removed after 60 m and outside the grid', () => {
@@ -324,14 +324,14 @@ describe('combat (§5.3, §5.4, §6)', () => {
     return sim.tick;
   }
 
-  it('the censer breaks on the first enemy: 40 to it and nothing to the others but its cloud, which bites at once (M9 §2.8, M12 §5.4)', () => {
+  it('the censer breaks on the first enemy: 60 to it (M12 follow-up) and nothing to the others but its cloud, which bites at once (M9 §2.8, M12 §5.4)', () => {
     const sim = makeSim(room(30, 5), ['heretic']);
     const p = sim.players[0];
     put(sim, p, 2.5, 3.5);
     const a = enemyAt(sim, CHORISTER, 10.5, 3.5);
-    // The break point is about 0.65 m in front of a's center; b is 1.5 m from it, far 2.9 m.
+    // The break point is about 0.65 m in front of a's center; b is 1.5 m from it, far 3.2 m.
     const b = enemyAt(sim, CHORISTER, 12, 3.5);
-    const far = enemyAt(sim, CHORISTER, 13.2, 3.5);
+    const far = enemyAt(sim, CHORISTER, 13.5, 3.5);
     // Rooted, so they hold still, and bound: they take double damage.
     for (const s of [a, b, far]) sim.root(s, 10);
     aimAt(sim, p, a);
@@ -339,7 +339,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     untilBroken(sim);
     expect(sim.eAlive[a]).toBe(0);
     expect(sim.clouds).toHaveLength(1);
-    // The cloud's first pulse, on the tick it appears: 5, doubled while bound; far is outside its 2.5 m.
+    // The cloud's first pulse, on the tick it appears: 5, doubled while bound; far is outside its 3 m (M12 follow-up).
     expect(sim.eHp[b]).toBe(50);
     expect(sim.eHp[far]).toBe(60);
   });
@@ -366,7 +366,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     const from = pulses[0];
     expect(pulses).toEqual([0, 1, 2, 3, 4, 5, 6, 7].map((k) => from + 15 * k));
     expect(sim.eHp[b]).toBe(20);
-    // a took the impact's 40, then died to the cloud's 4th pulse, credited to the Heretic.
+    // a died to the impact's 60 (M12 follow-up), credited to the Heretic.
     expect(sim.eAlive[a]).toBe(0);
     expect(p.kills).toBe(1);
     expect(sim.clouds).toHaveLength(0);
@@ -442,13 +442,13 @@ describe('enemy attacks (§7.1)', () => {
     const a = enemyAt(sim, BLESSED, 11.5, 5.5);
     sim.root(a, 10);
     for (let i = 0; i < 7; i++) sim.step();
-    expect(p.hp).toBe(200);
+    expect(p.hp).toBe(240);
     sim.step();
-    expect(p.hp).toBe(195);
+    expect(p.hp).toBe(235);
     for (let i = 0; i < 29; i++) sim.step();
-    expect(p.hp).toBe(195);
+    expect(p.hp).toBe(235);
     sim.step();
-    expect(p.hp).toBe(190);
+    expect(p.hp).toBe(230);
   });
 
   it('Blessed melee resets when the target leaves range', () => {
@@ -463,9 +463,9 @@ describe('enemy attacks (§7.1)', () => {
     sim.step();
     put(sim, p, 10.5, 5.5);
     for (let i = 0; i < 7; i++) sim.step();
-    expect(p.hp).toBe(200);
+    expect(p.hp).toBe(240);
     sim.step();
-    expect(p.hp).toBe(195);
+    expect(p.hp).toBe(235);
   });
 });
 

@@ -118,6 +118,14 @@ export function partyMultiplier(partySize: number): number {
   return MULT10[Math.max(1, Math.min(4, partySize))] / 10;
 }
 
+/**
+ * The Gatekeeper's HP and Judgment's interrupt multiplier: 0.3 for a solo game (M12 follow-up §3.3,
+ * was 0.4), the party-size multiplier otherwise.
+ */
+export function bossMultiplier(partySize: number): number {
+  return partySize <= 1 ? 0.3 : partyMultiplier(partySize);
+}
+
 /** Scales one enemy count for the party size, rounding up (§7.5). */
 export function scaleCount(count: number, partySize: number): number {
   const m = MULT10[Math.max(1, Math.min(4, partySize))];
@@ -335,7 +343,7 @@ interface CasterDef {
 
 const CASTERS: Record<number, CasterDef> = {
   [CHORISTER]: { range: CHORISTER_RANGE, windup: 1.0, recovery: 1.5, kind: PROJ_ORB, speed: 12, damage: 12, radius: 0.3 },
-  [CHERUB]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 25, damage: 8, radius: 0.15 },
+  [CHERUB]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 18, damage: 8, radius: 0.15 },
 };
 
 // The Gatekeeper (§7.4).
@@ -366,9 +374,9 @@ const COUNTDOWN_ALL_IN = 5;
 
 const REGEN_DELAY_TICKS = 8 * TICK_HZ;
 const REGEN_FRACTION = 0.015;
-/** A breath in single player (M12 §2.5): in a combat arena's fight, only while its director relaxes. */
-const BREATH_DELAY_TICKS = 3 * TICK_HZ;
-const BREATH_FRACTION = 0.05;
+/** A breath in single player (M12 §2.5, follow-up §3.1): in a combat arena's fight, only while its director relaxes. */
+const BREATH_DELAY_TICKS = 2 * TICK_HZ;
+const BREATH_FRACTION = 0.08;
 /** Bound enemies take this much damage (M8 §8). */
 const BOUND_FACTOR = 2;
 /** Sacrament's `beam` stays on this long after its last firing (M9 §2.5). */
@@ -916,7 +924,7 @@ export class Simulation {
       // The director (M12 §2.3): every intensity starts at 0; it can't start a wave while more than
       // the largest wave is alive.
       const cap = Math.max(...a.waves.map((w) => scaleCount(w.blessed, st.partySize) + scaleCount(w.choristers, st.partySize) + scaleCount(w.cherubs, st.partySize)));
-      st.director = new Director(a.waves.length, cap);
+      st.director = new Director(a.waves.length, cap, this.singleplayer);
     }
     if (this.benchArena < 0 && !this.noWaves && a.waves.length > 0) this.startWave(ai, 0);
     if (a.boss && this.map.boss) this.placeBoss(ai);
@@ -966,7 +974,7 @@ export class Simulation {
     const slot = this.allocSlot();
     if (slot < 0) return;
     this.bossParty = this.arenas[ai].partySize;
-    this.bossMaxHp = ENEMIES[GATEKEEPER].hp * partyMultiplier(this.bossParty);
+    this.bossMaxHp = ENEMIES[GATEKEEPER].hp * bossMultiplier(this.bossParty);
     this.bossCast = BOSS_CAST_NONE;
     this.bossCastTicks = 0;
     this.volleyDue = this.tick + ticks(VOLLEY_FIRST);
@@ -1000,6 +1008,8 @@ export class Simulation {
       setArenaDoors(this.map, ai, PHASE_CLEARED);
       this.invalidateFields();
       this.events.push({ to: 'all', event: { type: 'arenaCleared', arenaIndex: ai } });
+      // The living are healed to full, as the fallen come back at full (M12 follow-up §3.2).
+      for (const p of this.players) if (p.connected && !p.dead) p.hp = p.maxHp;
       for (const p of this.players) {
         if (!p.connected || !p.dead) continue;
         p.dead = false;
@@ -1341,7 +1351,7 @@ export class Simulation {
     // Judgment is interrupted by the boss taking 1 300 damage during it, counted after step 1.
     if (slot === this.bossSlot && this.bossCast === BOSS_CAST_JUDGMENT) {
       this.judgmentDamage += amount;
-      if (this.judgmentDamage >= JUDGMENT_INTERRUPT * partyMultiplier(this.bossParty) - 1e-9) this.interruptJudgment();
+      if (this.judgmentDamage >= JUDGMENT_INTERRUPT * bossMultiplier(this.bossParty) - 1e-9) this.interruptJudgment();
     }
     const shooter = source >= 0 ? this.slots[source] : undefined;
     if (shooter) shooter.damage += Math.min(amount, this.eHp[slot]);
@@ -1544,7 +1554,8 @@ export class Simulation {
 
   /**
    * Singleplayer regeneration (§5.7): 1.5% of max HP per second after 8 s without damage, except in a
-   * combat arena's fight (M12 §2.5), where it's 5% after 3 s, and only while its director relaxes.
+   * combat arena's fight (M12 §2.5), where it's 8% after 2 s (M12 follow-up §3.1), and only while its
+   * director relaxes.
    */
   private regenerate(p: SimPlayer): void {
     const d = this.activeDirector();

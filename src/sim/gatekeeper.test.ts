@@ -4,7 +4,7 @@ import { GridBuilder } from '../data/dungeons/build';
 import type { DungeonDef } from '../data/dungeons/types';
 import { BLESSED, CHERUB, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import { decodeSnapshot } from '../net/protocol';
-import { BOSS_CAST_JUDGMENT, BOSS_CAST_NONE, BOSS_CAST_VOLLEY, PHASE_COMBAT, PROJ_ORB, Simulation, type SimPlayer } from './sim';
+import { BOSS_CAST_JUDGMENT, BOSS_CAST_NONE, BOSS_CAST_VOLLEY, bossMultiplier, partyMultiplier, PHASE_COMBAT, PROJ_ORB, Simulation, type SimPlayer } from './sim';
 import { sealNow } from './testutil/sims';
 
 // A lobby (x 1–4) open to a boss arena (x 6–30). The Gatekeeper's dais is 3 m high around B (25, 10).
@@ -209,7 +209,7 @@ describe('the Gatekeeper (§7.4)', () => {
     expect(sim.judgmentDue).toBe(sim.tick + 750);
   });
 
-  it('is interrupted by taking 1 300 damage (scaled) during the cast (M9 §4)', () => {
+  it('is interrupted by taking 1 300 damage (scaled; solo × 0.3, M12 follow-up §3.3) during the cast (M9 §4)', () => {
     const sim = makeSim(['binder']);
     const t0 = startFight(sim, [VISIBLE]);
     sim.players[0].god = true;
@@ -217,13 +217,18 @@ describe('the Gatekeeper (§7.4)', () => {
     sim.volleyDue = Infinity;
     runTo(sim, t0 + 10);
     const b = sim.bossSlot;
-    // One player: the threshold is 1 300 × 0.4 = 520; 519 isn't enough, 1 more is.
-    sim.damageEnemy(b, 519, 0);
+    // One player: the threshold is 1 300 × 0.3 = 390; 389 isn't enough, 1 more is.
+    sim.damageEnemy(b, 389, 0);
     expect(sim.bossCast).toBe(BOSS_CAST_JUDGMENT);
     sim.events.length = 0;
     sim.damageEnemy(b, 1, 0);
     expect(sim.bossCast).toBe(BOSS_CAST_NONE);
     expect(castEvents(sim)).toEqual(['interrupted']);
+  });
+
+  it('has 0.3 of its HP solo, and the party multiplier with more players (M12 follow-up §3.3)', () => {
+    expect(bossMultiplier(1)).toBe(0.3);
+    for (const n of [2, 3, 4]) expect(bossMultiplier(n)).toBe(partyMultiplier(n));
   });
 
   it('starts a cast that was due during silence when the silence ends', () => {
@@ -292,8 +297,8 @@ describe('the Gatekeeper (§7.4)', () => {
     sim.volleyDue = Infinity;
     runTo(sim, t0 + 10 + 45);
     snap = decodeSnapshot(sim.encodeFor(0)[0])!;
-    expect(snap.bossHp).toBe(11600);
-    expect(snap.bossMaxHp).toBe(11600);
+    expect(snap.bossHp).toBe(8700);
+    expect(snap.bossMaxHp).toBe(8700);
     expect(snap.bossCast).toBe(BOSS_CAST_JUDGMENT);
     expect(snap.bossCastProgress).toBe(128);
   });

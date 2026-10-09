@@ -63,7 +63,7 @@ Up to 4 players, each in their own browser, connect directly to the host's brows
 
 Friends can also join a game that's already running, with the same link or ID: they wait in the Lobby, pick a free class and click `Enter game`. Someone who enters during a fight arrives as a soul for the party to revive; otherwise they arrive next to the party. Only the few seconds of Loading at the start turn them away. Each arena's enemy count and the Gatekeeper's health follow the number of players in the game when the arena seals.
 
-In game, an arena seals 60 s after the first player enters it, or 5 s after the whole party is inside. A player who falls leaves a soul floating where they fell: shoot it to revive them (the Heretic Saint revives twice as fast, and Unholy Communion helps too). Clearing the arena brings back everyone who's still down.
+In game, an arena seals 60 s after the first player enters it, or 5 s after the whole party is inside. A player who falls leaves a soul floating where they fell: shoot it to revive them (the Heretic Saint revives twice as fast, and Unholy Communion helps too). Clearing the arena brings back everyone who's still down and heals everyone to full.
 
 To try it on one computer, open the game in two browser windows. Players whose networks can't connect directly (some office, mobile or VPN networks) go through a relay server ([Metered](https://www.metered.ca/), free plan); its credentials are in [src/net/peerConfig.ts](src/net/peerConfig.ts).
 

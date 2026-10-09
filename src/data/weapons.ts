@@ -33,14 +33,14 @@ export interface WeaponDef {
 /** Primary attacks, left mouse (M9 §2.3). */
 export const WEAPONS: Record<ClassId, WeaponDef> = {
   fallen: { name: 'Brimstone Shotgun', description: '8 pellets of hellfire. Up close every pellet kills a Blessed and bursts it, and what survives is blasted back.', kind: 'hitscan', interval: 0.9, pellets: 8, damage: 10, spreadYaw: 11 * DEG, spreadPitch: 4 * DEG, range: 20, maxHits: 1, slow: 0 },
-  heretic: { name: 'Censer Launcher', description: 'Fires a censer that breaks on the enemy it hits, leaving a cloud of incense that burns the enemies who stay in it.', kind: 'censer', interval: 0.85, pellets: 1, damage: 40, spreadYaw: 0, spreadPitch: 0, range: 25, maxHits: 1, slow: 0 },
+  heretic: { name: 'Censer Launcher', description: 'Fires a censer that breaks on the enemy it hits, leaving a cloud of incense that burns the enemies who stay in it.', kind: 'censer', interval: 0.85, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 25, maxHits: 1, slow: 0 },
   binder: { name: 'Chain Gun', description: 'Fast and accurate. Slows every enemy it hits.', kind: 'hitscan', interval: 1 / 12, pellets: 1, damage: 12, spreadYaw: 2 * DEG, spreadPitch: 2 * DEG, range: 40, maxHits: 1, slow: 1 },
   betrayer: { name: 'Silver Revolver', description: 'Fast, precise shots, one enemy at a time.', kind: 'hitscan', interval: 0.3, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: 1, slow: 0 },
 };
 
 /** Secondary attacks, right mouse (M9 §2.3). */
 export const SECONDARIES: Record<ClassId, WeaponDef> = {
-  fallen: { name: 'Brimstone Slug', description: "One heavy slug for a single enemy out of the shotgun's reach.", kind: 'hitscan', interval: 1.0, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 50, maxHits: 1, slow: 0 },
+  fallen: { name: 'Brimstone Slug', description: "One heavy slug for a single enemy out of the shotgun's reach.", kind: 'hitscan', interval: 0.85, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 50, maxHits: 1, slow: 0 },
   heretic: { name: 'Sacrament', description: "Hold on the ally you aim at to heal them, or on a fallen ally's soul to revive them.", kind: 'sacrament', interval: 0.5, pellets: 1, damage: 15, spreadYaw: 0, spreadPitch: 0, range: 40, maxHits: 1, slow: 0 },
   binder: { name: 'Scourge', description: 'Swing your chain through every enemy in front of you, slowing them.', kind: 'scourge', interval: 0.8, pellets: 1, damage: 25, spreadYaw: 0, spreadPitch: 0, range: 3, maxHits: Infinity, slow: 1 },
   betrayer: { name: 'Silver Bullet', description: "A slow shot whose damage tears through every enemy in a line until it's spent.", kind: 'silverBullet', interval: 1.5, pellets: 1, damage: 200, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: Infinity, slow: 0 },
@@ -102,8 +102,8 @@ export const ABILITIES: Record<ClassId, { Q: AbilityDef; E: AbilityDef }> = {
     E: { name: 'Falling Star', description: 'Hold to aim, release to leap. Crushes the enemies where you land and hurls the rest into the air.', cooldown: 10, movement: true, allyRange: 30, icon: 'icon-falling-star' },
   },
   heretic: {
-    Q: { name: 'Unholy Communion', description: 'Heals everyone within 15 m, you included.', cooldown: 8, movement: false, allyRange: 0, icon: 'icon-communion' },
-    E: { name: "Martyr's Shroud", description: 'Shields the ally you aim at, or you. When enemies break it, it explodes.', cooldown: 10, movement: false, allyRange: 40, icon: 'icon-shroud' },
+    Q: { name: 'Unholy Communion', description: 'Heals everyone within 15 m, you included.', cooldown: 10, movement: false, allyRange: 0, icon: 'icon-communion' },
+    E: { name: "Martyr's Shroud", description: 'Shields the ally you aim at, or you. When enemies break it, it explodes.', cooldown: 12, movement: false, allyRange: 40, icon: 'icon-shroud' },
   },
   binder: {
     Q: { name: 'Chains of Tartarus', description: 'Pulls the enemies in front of you into a clump and binds them. Bound enemies take double damage.', cooldown: 8, movement: false, allyRange: 0, icon: 'icon-chains' },
@@ -153,7 +153,7 @@ export const CHAINS_ANGLE = 30 * DEG;
 export const CHAINS_STEP = 0.25;
 export const CHAINS_MAX = 5;
 export const CHAINS_PULL_TIME = 0.3;
-export const CHAINS_ROOT = 1.5;
+export const CHAINS_ROOT = 2.5;
 export const DISCORD_RANGE = 40;
 export const DISCORD_RADIUS = 8;
 export const DISCORD_SILENCE = 4;
@@ -174,7 +174,7 @@ export const CENSER_RADIUS = 0.2;
 // The censer breaks on what it hits, 40 dmg to that enemy only, and leaves an incense cloud (M9 §2.8):
 // 5 dmg to every enemy within 2.5 m on the tick it appears and every 0.5 s after, for 4 s (M12 §5.4),
 // an enemy taking it at most once per 0.5 s however many clouds cover it; at most 6 clouds.
-export const CLOUD_RADIUS = 2.5;
+export const CLOUD_RADIUS = 3;
 export const CLOUD_TIME = 4;
 export const CLOUD_DAMAGE = 5;
 export const CLOUD_PULSE_TICKS = 15;

@@ -104,7 +104,7 @@ describe('Unholy Communion (Heretic Q)', () => {
     expect(near.hp).toBe(170);
     expect(far.hp).toBe(50);
     expect(dead.hp).toBe(0);
-    expect(heretic.cdQ).toBe(8);
+    expect(heretic.cdQ).toBe(10);
   });
 
   it('lists every player it healed in abilityUsed.targets, including those at full HP (M8 §10)', () => {
@@ -149,7 +149,7 @@ describe("Martyr's Shroud (Heretic E)", () => {
 });
 
 describe('Chains of Tartarus (Binder Q)', () => {
-  it('pulls enemies in a 30° cone within 20 m to 5 m ahead over 0.3 s, then roots them for 1.5 s; cooldown 8 s', () => {
+  it('pulls enemies in a 30° cone within 20 m to 5 m ahead over 0.3 s, then roots them for 2.5 s (M12 follow-up); cooldown 8 s', () => {
     const sim = makeSim(room(40, 20), ['binder']);
     const p = sim.players[0];
     put(sim, p, 5.5, 10.5);
@@ -166,7 +166,7 @@ describe('Chains of Tartarus (Binder Q)', () => {
     expect([sim.eX[inCone], sim.eY[inCone], sim.eZ[inCone]]).toEqual([10.5, 10.5, 0]);
     // Flyers keep their hover height.
     expect(sim.eZ[flyer]).toBe(4);
-    expect(sim.eRootUntil[inCone]).toBe(sim.tick + 45);
+    expect(sim.eRootUntil[inCone]).toBe(sim.tick + 75);
     expect(sim.eX[boss]).toBe(18.5);
     expect(sim.ePullStart[outside]).toBe(-1);
     expect(sim.ePullStart[tooFar]).toBe(-1);

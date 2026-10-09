@@ -1987,7 +1987,7 @@ export class Game {
       this.animator.setStunned(slot, stunned, now);
       const pick = this.animator.pick(slot, now, this.bossCast);
       const f = set.anims[pick.anim][spriteDirection(this.animator.facing[slot], eye.x - x, eye.y - y)][pick.frame];
-      const height = f.height;
+      const height = f.height * ENEMIES[type].draw;
       const target = this.enemyBillboards.get(type)!;
       const def = ENEMIES[type];
       const flags = ents.flags[i];
@@ -2081,7 +2081,7 @@ export class Game {
       }
       leading = false;
       const af = this.o.enemyAnims[c.type]!.anims.death[spriteDirection(c.facing, eye.x - c.x, eye.y - c.y)][cf.frame];
-      this.enemyBillboards.get(c.type)!.add(af, c.x, c.y, c.z - cf.sink, af.height, false);
+      this.enemyBillboards.get(c.type)!.add(af, c.x, c.y, c.z - cf.sink, af.height * ENEMIES[c.type].draw, false);
     }
     if (gone) this.corpses.splice(0, gone);
     this.drawBlasts(now, eye);
@@ -2229,7 +2229,7 @@ export class Game {
       const f = set.anims.pain[spriteDirection(b.facing, eye.x - x, eye.y - y)][0];
       this.blastGlow.a = BLAST_GLOW_FROM + (BLAST_GLOW_TO - BLAST_GLOW_FROM) * u;
       const s = 1 + (b.swell - 1) * e;
-      this.enemyBillboards.get(b.type)!.add(f, x, y, b.feet + b.lift * e, f.height * s, false, 1, 1, 1, this.blastGlow, 1, s);
+      this.enemyBillboards.get(b.type)!.add(f, x, y, b.feet + b.lift * e, f.height * s * ENEMIES[b.type].draw, false, 1, 1, 1, this.blastGlow, 1, s);
     }
   }
 

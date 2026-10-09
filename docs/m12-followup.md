@@ -32,7 +32,7 @@ Speed **18 m/s** (was 25): an arrow from 25 m takes 1.4 s (was 1.0). Damage, win
 | | Hit cylinder height | Radius | Drawn |
 |---|---|---|---|
 | Chorister | **2.4 m** (was 2.0) | 0.45 m, unchanged | **×1.2** |
-| Cherub | **0.92 m** (was 0.8) | 0.4 m, unchanged | **×1.15** |
+| Cherub | 0.8 m, unchanged (it sets the levels' headroom) | 0.4 m, unchanged | **×1.15** |
 
 The radius stays: movement needs a body narrower than a cell. "Drawn" scales the sprite's height and width from its feet (a new per-type draw scale; the atlases are unchanged), including its burst death, pain and stun. Everything placed by the height follows it (the taunt mark, the glows, a Chorister's cast point). Cherub hovering is unchanged.
 

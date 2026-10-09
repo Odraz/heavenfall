@@ -58,7 +58,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     id: 'binder',
     name: 'The Binder',
     role: 'Support',
-    hp: 200,
+    hp: 240,
     speed: 6,
     passive: { name: 'Fetters', description: 'Every Chain Gun and Scourge hit slows the enemy for 1 s.' },
     hints: [
