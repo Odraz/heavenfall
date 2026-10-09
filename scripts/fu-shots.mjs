@@ -50,7 +50,7 @@ async function pearlyGates(kind) {
   console.log('saved fu-squad-cand-4..9.png');
 }
 
-const cls = what === 'shotdown' || what.startsWith('chains') || what === 'shout' ? 'binder' : 'fallen';
+const cls = what === 'shotdown' || what.startsWith('chains') || what === 'shout' || what === 'gust' ? 'binder' : 'fallen';
 // `sizes` looks from a fixed camera behind and above the player, east across the arena, so the crowd
 // shows as it comes (a crowd at the player's feet hides everyone's size); `chains-far` from farther
 // back and higher, onto the pile 5 m ahead of the Binder.
@@ -107,7 +107,34 @@ async function frozenShot(path) {
 /** Dev key J: removes the Blessed, leaving the casters. */
 const clearBlessed = () => page.keyboard.press('KeyJ');
 
-if (what === 'shout') {
+if (what === 'gust') {
+  // Discord's gust (M12 follow-up §2.4) from the Binder's eyes, in the arena before the crowd comes: the
+  // game loop is held and stepped to exact times after the press, so a slow renderer doesn't matter.
+  await page.evaluate(() => window.__heavenfallTeleport?.(17.5, 26.5));
+  await lookAt(0, 2);
+  await page.waitForTimeout(800);
+  await page.evaluate(() => {
+    window.__origRaf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (cb) => {
+      window.__pendingFrame = cb;
+      return 0;
+    };
+  });
+  await page.waitForTimeout(200);
+  await page.keyboard.press('KeyE');
+  // The gust started on the press; frames from here.
+  const t0 = await page.evaluate(() => performance.now());
+  for (const ms of [60, 150, 250, 380, 500]) {
+    await page.evaluate((t) => {
+      const cb = window.__pendingFrame;
+      window.__pendingFrame = undefined;
+      if (cb) cb(t);
+    }, t0 + ms);
+    await page.waitForTimeout(150);
+    await page.screenshot({ path: `${OUT}/fu-gust-${ms}.png` });
+  }
+  console.log('saved fu-gust-60..500.png');
+} else if (what === 'shout') {
   // Discord's shout (M12 follow-up §2.4) from above and behind the Binder, facing east: frames 80 and
   // 180 ms after the press.
   await lookAt(0, 0);
