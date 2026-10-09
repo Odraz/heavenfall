@@ -4,6 +4,11 @@ export interface WaveDef {
   blessed: number;
   choristers: number;
   cherubs: number;
+  /**
+   * A few enemies of one type placed only on their own points, from 5 s after the wave starts
+   * (M12 follow-up §4.2). `count` is for 4 players; `at` holds [col, row] floor cells in the arena.
+   */
+  squad?: { type: 'cherubs' | 'choristers'; count: number; at: Array<[number, number]> };
 }
 
 export interface ArenaDef {

@@ -32,12 +32,16 @@ g.stairs(35, 20, 37, 23, 'E', 0.5, 0.5);
 g.stairs(50, 20, 52, 23, 'W', 0.5, 0.5);
 g.stairs(42, 13, 45, 15, 'S', 0.5, 0.5);
 g.stairs(42, 28, 45, 30, 'N', 0.5, 0.5);
-// The ledge: jump onto its north edge, or take the stairs on its east side.
+// The ledge: jump onto its north edge, or take the stairs on its east side or the step at its
+// north-west corner (M12 follow-up §4.1), so it can't be held from one spot.
 g.fillRect(26, 33, 35, 39, 1);
 g.stairs(36, 35, 36, 36, 'E', 0.5, 0.5);
+g.stairs(26, 32, 27, 32, 'S', 0.5, 0.5);
 markAll('x', [[26, 4], [44, 3], [61, 4], [61, 21], [61, 39], [44, 40], [28, 30], [43, 21]]);
 markAll('u', [[38, 16], [49, 16], [38, 27], [49, 27]]);
 markAll('t', [[28, 6], [58, 6], [58, 36], [30, 37], [44, 8]]);
+/** Squad points (M12 follow-up §4.2): the terrace's inner corners. */
+const terraceSquad: Array<[number, number]> = [[40, 18], [47, 18], [40, 25], [47, 25]];
 const arena1Doors = doors(23, 20, 23, 23);
 const arena1Exit = doors(64, 20, 64, 22);
 // Corridor to Arena 2, climbing 3.5 m in 0.25 m steps.
@@ -61,6 +65,8 @@ g.stairs(81, 32, 85, 34, 'E', 1, 0.5);
 for (const [x, y] of [[107, 23], [107, 35], [91, 23], [103, 19], [111, 31]] as const) g.pillar(x, y, x, y);
 markAll('x', [[84, 4], [122, 4], [122, 39], [84, 39], [100, 10], [95, 21], [109, 38], [100, 33]]);
 markAll('h', [[84, 20], [92, 22], [100, 20], [106, 22], [110, 26], [108, 36], [96, 34]]);
+/** Squad points (M12 follow-up §4.2): on the 3.5 m walkways. */
+const bridgeSquad: Array<[number, number]> = [[88, 21], [104, 21], [109, 29], [98, 33]];
 const arena2Doors = doors(80, 20, 80, 22);
 const arena2Exit = doors(108, 42, 110, 42);
 // Corridor south to Arena 3.
@@ -129,8 +135,9 @@ export const pearlyGates: DungeonDef = {
       waves: [
         { blessed: 150, choristers: 0, cherubs: 0 },
         { blessed: 200, choristers: 0, cherubs: 0 },
-        { blessed: 250, choristers: 0, cherubs: 0 },
-        { blessed: 300, choristers: 0, cherubs: 0 },
+        // Late in the fight, a few Cherubs over the terrace (M12 follow-up §4.2).
+        { blessed: 250, choristers: 0, cherubs: 0, squad: { type: 'cherubs', count: 6, at: terraceSquad } },
+        { blessed: 300, choristers: 0, cherubs: 0, squad: { type: 'cherubs', count: 10, at: terraceSquad } },
       ],
       boss: false,
     },
@@ -144,8 +151,9 @@ export const pearlyGates: DungeonDef = {
       waves: [
         { blessed: 200, choristers: 0, cherubs: 10 },
         { blessed: 250, choristers: 0, cherubs: 15 },
-        { blessed: 300, choristers: 0, cherubs: 15 },
-        { blessed: 350, choristers: 0, cherubs: 20 },
+        // Late in the fight, a few Choristers on the walkways (M12 follow-up §4.2).
+        { blessed: 300, choristers: 0, cherubs: 15, squad: { type: 'choristers', count: 4, at: bridgeSquad } },
+        { blessed: 350, choristers: 0, cherubs: 20, squad: { type: 'choristers', count: 6, at: bridgeSquad } },
       ],
       boss: false,
     },

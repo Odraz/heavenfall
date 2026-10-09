@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FlowField, UNREACHABLE } from './flowfield';
+import { pearlyGates } from '../data/dungeons/pearly-gates';
+import { loadMap } from './map';
 import { mapOf } from './testutil/maps';
 
 // A 2 m plateau (x 5..8, rows 2..4) whose only stairs run along row 4 from the west.
@@ -89,5 +91,21 @@ describe('flow fields', () => {
     g.compute(3, 1);
     // 0 → 0.75 is too steep from either side cell.
     expect(g.at(1, 1)).toBe(UNREACHABLE);
+  });
+});
+
+describe("Arena 1's ledge (M12 follow-up §4.1)", () => {
+  it('has a step at its north-west corner besides its east stairs, so enemies come up both ways', () => {
+    const map = loadMap(pearlyGates);
+    const at = (c: number, r: number) => map.floor[r * map.w + c];
+    expect([at(26, 31), at(26, 32), at(27, 32), at(26, 33)]).toEqual([0, 0.5, 0.5, 1]);
+    // The rest of the north edge stays a jump.
+    for (let c = 28; c <= 35; c++) expect(at(c, 32)).toBe(0);
+    const ground = new FlowField(map, false);
+    ground.compute(26, 36);
+    // Straight up the step: 5 cells, not around through the east stairs.
+    expect(ground.at(26, 31)).toBeLessThanOrEqual(60);
+    ground.compute(35, 36);
+    expect(ground.at(37, 35)).toBeLessThanOrEqual(30);
   });
 });

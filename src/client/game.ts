@@ -1224,11 +1224,12 @@ export class Game {
 
   /**
    * The spawn glow (M12 §2.4): an enemy slot that wasn't in the previous snapshot, within 2 m
-   * horizontally of a spawn point of the snapshot's arena, flares that point when it appears on
+   * horizontally of a spawn or squad point of the snapshot's arena, flares that point when it appears on
    * screen (`at`, after the render delay). Gatekeeper summons glow the same way.
    */
   private spawnGlows(s: Snapshot, prev: Snapshot, at: number): void {
-    const points = this.map.arenaSpawnPoints[s.arenaIndex];
+    // Squad points flare too (M12 follow-up §4.2).
+    const points = this.map.arenaSpawnPoints[s.arenaIndex]?.concat(this.map.arenaSquadPoints[s.arenaIndex]);
     if (!points?.length) return;
     for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 1;
     const flared = new Set<number>();

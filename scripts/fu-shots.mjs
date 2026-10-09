@@ -1,8 +1,9 @@
 // M12 follow-up screenshots (docs/m12-followup.md §6), in the sandbox: Choristers and Cherubs beside the
 // Blessed at their new sizes (`sizes`), globes in flight and shattering (`globe`), and globes shot down
-// by the Binder's Chain Gun aimed at a Chorister (`shotdown`). Saved as screenshots/m12/fu-*.png.
-// Needs a running server (npm run dev or npm run preview).
-// Usage: node scripts/fu-shots.mjs [sizes|globe|shotdown] [base URL, default http://localhost:5173]
+// by the Binder's Chain Gun aimed at a Chorister (`shotdown`); in the Pearly Gates, Arena 1's ledge
+// with its new step (`ledge`) and the Cherub squad over its terrace (`squad`). Saved as
+// screenshots/m12/fu-*.png. Needs a running server (npm run dev or npm run preview).
+// Usage: node scripts/fu-shots.mjs [sizes|globe|shotdown|ledge|squad] [base URL, default http://localhost:5173]
 import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 
@@ -13,6 +14,40 @@ mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', (e) => console.log(`[pageerror] ${e.message}`));
+
+if (what === 'ledge' || what === 'squad') {
+  await pearlyGates(what);
+  await browser.close();
+  process.exit(0);
+}
+
+/** Arena 1 from a fixed camera: the ledge's step, or the bot fighting until the Cherub squad comes. */
+async function pearlyGates(kind) {
+  const cam = kind === 'ledge' ? '31,26.5,3.2,125,-18' : '29,21.5,4.5,0,4';
+  await page.goto(`${base}/?dev=1&map=pearly-gates&class=fallen&bot=1&god=1&seed=1&cam=${cam}`);
+  await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame', null, { timeout: 60_000 });
+  if (kind === 'ledge') {
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: `${OUT}/fu-ledge.png` });
+    console.log('saved fu-ledge.png');
+    return;
+  }
+  // Dev key K clears each wave until wave 3 starts; its squad comes 5 s later, one every 0.5 s.
+  const t0 = Date.now();
+  for (;;) {
+    const d = await page.evaluate(() => window.__heavenfall.director);
+    if (d && d.wave >= 2) break;
+    if (Date.now() - t0 > 400_000) throw new Error('wave 3 never started');
+    await page.keyboard.press('KeyK');
+    await page.waitForTimeout(1000);
+  }
+  console.log('wave 3 started');
+  for (let n = 0; n < 10; n++) {
+    await page.waitForTimeout(1000);
+    if (n >= 4) await page.screenshot({ path: `${OUT}/fu-squad-cand-${n}.png` });
+  }
+  console.log('saved fu-squad-cand-4..9.png');
+}
 
 const cls = what === 'shotdown' ? 'binder' : 'fallen';
 // `sizes` looks from a fixed camera behind and above the player, east across the arena, so the crowd

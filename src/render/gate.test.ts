@@ -239,6 +239,9 @@ describe('the clouds behind the gate (M10 gate §3)', () => {
   });
 });
 
-/** Measured on the M10 final build (7491068), before the gate. */
-const LIGHTMAP_BEFORE = 'e321df47';
+/**
+ * Measured on the M10 final build (7491068), before the gate; then again after the M12 follow-up's
+ * step onto Arena 1's ledge (§4.1), the only change to it (without the step it's still e321df47).
+ */
+const LIGHTMAP_BEFORE = 'fe0e0d15';
 const SANDBOX_BEFORE = '561ee9c2';

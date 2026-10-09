@@ -1,6 +1,6 @@
 /** The host simulation: pure TypeScript, no three.js or DOM (§2.2). */
 import { CLASSES, type ClassId } from '../data/classes';
-import type { DungeonDef } from '../data/dungeons/types';
+import type { DungeonDef, WaveDef } from '../data/dungeons/types';
 import {
   BLESSED,
   CHERUB,
@@ -124,6 +124,11 @@ export function partyMultiplier(partySize: number): number {
  */
 export function bossMultiplier(partySize: number): number {
   return partySize <= 1 ? 0.3 : partyMultiplier(partySize);
+}
+
+/** A wave's enemies for the party size, each type and its squad (M12 follow-up §4.2) scaled. */
+export function waveSize(w: WaveDef, partySize: number): number {
+  return scaleCount(w.blessed, partySize) + scaleCount(w.choristers, partySize) + scaleCount(w.cherubs, partySize) + (w.squad ? scaleCount(w.squad.count, partySize) : 0);
 }
 
 /** Scales one enemy count for the party size, rounding up (§7.5). */
@@ -288,6 +293,20 @@ interface ArenaState {
   director: Director | null;
   /** A combat arena's placements left this tick: a wave arrives over 10 s (M12 §2.2). */
   pace: number;
+  /** ...gained per tick: the latest wave's total without its squad, over 10 s. */
+  paceRate: number;
+  /** The latest wave's squad still to place (M12 follow-up §4.2), or null. */
+  squad: Squad | null;
+}
+
+/** A wave's squad being placed: `left` more of `type` on `at`, the next on tick `next` or later. */
+interface Squad {
+  type: number;
+  at: Array<[number, number]>;
+  left: number;
+  next: number;
+  rr: number;
+  wave: number;
 }
 
 /** Projectile kinds, as encoded in snapshots (§9.4). */
@@ -305,6 +324,9 @@ const SPAWN_ELIGIBLE_DIST = 8;
 const SPAWN_FAR_DIST = 15;
 /** A combat arena's wave arrives over this many ticks (M12 §2.2). */
 const WAVE_ARRIVAL_TICKS = 10 * TICK_HZ;
+/** A wave's squad starts this long after the wave, one every SQUAD_EVERY_TICKS (M12 follow-up §4.2). */
+const SQUAD_DELAY_TICKS = 5 * TICK_HZ;
+const SQUAD_EVERY_TICKS = TICK_HZ / 2;
 /** Enemies per second each spawn point can place (§8.2 says 50; lowered after playtesting, see decisions.md). */
 export const SPAWN_RATE = 10;
 /** The benchmark's bursts (M12 §10). */
@@ -633,6 +655,8 @@ export class Simulation {
       partySize: 0,
       director: null,
       pace: 0,
+      paceRate: 0,
+      squad: null,
     }));
     // Idle arenas keep their exit doors closed.
     this.map.arenas.forEach((_, ai) => setArenaDoors(this.map, ai, PHASE_IDLE));
@@ -975,7 +999,7 @@ export class Simulation {
     if (this.isCombatArena(ai)) {
       // The director (M12 §2.3): every intensity starts at 0; it can't start a wave while more than
       // the largest wave is alive.
-      const cap = Math.max(...a.waves.map((w) => scaleCount(w.blessed, st.partySize) + scaleCount(w.choristers, st.partySize) + scaleCount(w.cherubs, st.partySize)));
+      const cap = Math.max(...a.waves.map((w) => waveSize(w, st.partySize)));
       st.director = new Director(a.waves.length, cap, this.singleplayer);
     }
     if (this.benchArena < 0 && !this.noWaves && a.waves.length > 0) this.startWave(ai, 0);
@@ -1041,12 +1065,16 @@ export class Simulation {
     const st = this.arenas[ai];
     const w = this.map.arenas[ai].waves[n];
     const counts = [scaleCount(w.blessed, st.partySize), scaleCount(w.choristers, st.partySize), scaleCount(w.cherubs, st.partySize)];
+    const squad = w.squad ? scaleCount(w.squad.count, st.partySize) : 0;
     st.wave = n;
-    st.waveTotals[n] = counts[0] + counts[1] + counts[2];
+    const queued = counts[0] + counts[1] + counts[2];
+    st.waveTotals[n] = queued + squad;
     st.waveAlive[n] = 0;
     st.waveFullySpawned[n] = st.waveTotals[n] === 0;
     st.pace = 0;
-    if (st.waveTotals[n] > 0) st.queue.push({ counts, spawned: [0, 0, 0], wave: n });
+    st.paceRate = queued / WAVE_ARRIVAL_TICKS;
+    if (queued > 0) st.queue.push({ counts, spawned: [0, 0, 0], wave: n });
+    st.squad = squad > 0 ? { type: w.squad!.type === 'cherubs' ? CHERUB : CHORISTER, at: w.squad!.at, left: squad, next: this.tick + SQUAD_DELAY_TICKS, rr: 0, wave: n } : null;
     st.director?.waveStarted(n);
   }
 
@@ -1154,11 +1182,43 @@ export class Simulation {
       this.updateIntensity(d);
       const n = st.wave;
       if (d.step(d.party(this.livingMask()), st.waveFullySpawned[n], st.alive, st.waveTotals[n])) this.startWave(ai, n + 1);
-      // A wave arrives at an even pace over 10 s (M12 §2.2).
-      if (st.queue.length > 0) st.pace += st.waveTotals[st.wave] / WAVE_ARRIVAL_TICKS;
+      // A wave arrives at an even pace over 10 s (M12 §2.2); its squad doesn't count (M12 follow-up §4.2).
+      if (st.queue.length > 0) st.pace += st.paceRate;
     }
 
     this.placeQueued(ai);
+    this.placeSquad(ai);
+  }
+
+  /**
+   * A wave's squad (M12 follow-up §4.2): from 5 s after the wave starts, one every 0.5 s, round-robin
+   * over its points more than 8 m from every living player; when none is, it waits.
+   */
+  private placeSquad(ai: number): void {
+    const st = this.arenas[ai];
+    const q = st.squad;
+    if (!q || q.left <= 0 || this.tick < q.next || this.living >= MAX_LIVING_ENEMIES) return;
+    const eligible = new Uint8Array(q.at.length);
+    if (!this.markEligible(q.at, SPAWN_ELIGIBLE_DIST, eligible)) return;
+    let found = -1;
+    for (let k = 0; k < q.at.length; k++) {
+      const i = (q.rr + k) % q.at.length;
+      if (eligible[i]) {
+        found = i;
+        break;
+      }
+    }
+    const slot = this.allocSlot();
+    if (slot < 0) return;
+    const [c, r] = q.at[found];
+    this.spawnAt(slot, q.type, c, r, ai, q.wave);
+    q.rr = (found + 1) % q.at.length;
+    q.left--;
+    q.next = this.tick + SQUAD_EVERY_TICKS;
+    if (q.left === 0) {
+      st.squad = null;
+      if (!st.queue.some((b) => b.wave === q.wave)) st.waveFullySpawned[q.wave] = true;
+    }
   }
 
   /**
@@ -1222,7 +1282,8 @@ export class Simulation {
       const type = this.takeNextType(batch);
       if (batch.spawned.every((s, t) => s >= batch.counts[t])) {
         st.queue.shift();
-        if (batch.wave >= 0) st.waveFullySpawned[batch.wave] = true;
+        // Fully placed once its squad is too (M12 follow-up §4.2).
+        if (batch.wave >= 0 && st.squad?.wave !== batch.wave) st.waveFullySpawned[batch.wave] = true;
       }
       const [c, r] = points[found];
       this.spawnAt(slot, type, c, r, ai, batch.wave);
@@ -2987,12 +3048,10 @@ export class Simulation {
     if (this.map.arenas[arenaIndex].boss) return st.alive;
     let n = st.alive;
     for (const q of st.queue) for (let t = 0; t < 3; t++) n += q.counts[t] - q.spawned[t];
+    n += st.squad?.left ?? 0;
     const waves = this.map.arenas[arenaIndex].waves;
     if (!this.noWaves && this.benchArena < 0) {
-      for (let i = st.wave + 1; i < waves.length; i++) {
-        const w = waves[i];
-        n += scaleCount(w.blessed, st.partySize) + scaleCount(w.choristers, st.partySize) + scaleCount(w.cherubs, st.partySize);
-      }
+      for (let i = st.wave + 1; i < waves.length; i++) n += waveSize(waves[i], st.partySize);
     }
     return n;
   }
