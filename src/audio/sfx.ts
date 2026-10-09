@@ -352,6 +352,16 @@ export const SFX = {
     priority: PRIO_ABILITY,
     parts: [part({ wave: 'noise', freq: 8000, attack: 0.04, decay: 0.12, sustain: 0.3, release: 0.12, volume: 0.45, lowpass: 600, lowpassEnd: 5000 })],
   },
+  /** Low HP's heartbeat (M12 §6.2): a deep double thump. */
+  heartbeat: {
+    priority: PRIO_OWN,
+    parts: [
+      part({ wave: 'sine', freq: 62, freqEnd: 40, attack: 0.005, decay: 0.06, sustain: 0.4, release: 0.12, volume: 0.85 }),
+      part({ wave: 'noise', freq: 2000, attack: 0.003, decay: 0.03, sustain: 0.2, release: 0.06, volume: 0.25, lowpass: 260, lowpassEnd: 120 }),
+      part({ wave: 'sine', freq: 56, freqEnd: 36, delay: 0.17, attack: 0.005, decay: 0.06, sustain: 0.35, release: 0.14, volume: 0.65 }),
+      part({ wave: 'noise', freq: 2000, delay: 0.17, attack: 0.003, decay: 0.03, sustain: 0.2, release: 0.06, volume: 0.18, lowpass: 240, lowpassEnd: 110 }),
+    ],
+  },
   /** Shadowstep's dagger (M12 §5.7): a sharp metallic swish, about 0.25 s, rising through the air with a thin ring of steel. */
   daggerCut: {
     priority: PRIO_ABILITY,

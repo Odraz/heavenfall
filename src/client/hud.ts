@@ -148,6 +148,9 @@ export class Hud {
   private readonly killMarker: HTMLDivElement;
   private readonly burstMarker: HTMLDivElement;
   private readonly vignettes: Record<'red' | 'green' | 'blue', HTMLDivElement>;
+  /** Steady edges (M12 §6.1, §6.2): blue while the own shield is up, dark crimson while at low HP. */
+  private readonly shieldEdge: HTMLDivElement;
+  private readonly lowEdge: HTMLDivElement;
   private readonly center: HTMLDivElement;
   private readonly remaining: HTMLDivElement;
   private readonly death: HTMLDivElement;
@@ -284,6 +287,8 @@ export class Hud {
       blue: el('div', 'vignette vignette-blue', this.root),
     };
     this.beamVignette = el('div', 'vignette vignette-green', this.root);
+    this.shieldEdge = el('div', 'vignette vignette-blue', this.root);
+    this.lowEdge = el('div', 'vignette vignette-crimson', this.root);
     this.fieldGlow = el('div', 'field-glow', this.root);
     this.crosshair = el('div', 'crosshair', this.root);
     this.hitMarker = this.marker('marker-hit');
@@ -689,9 +694,19 @@ export class Hud {
     this.shakeAt = now;
   }
 
-  /** A screen-edge vignette that fades out over 300 ms. */
-  vignette(color: 'red' | 'green' | 'blue', opacity: number, now: number): void {
-    this.fade(this.vignettes[color], opacity, VIGNETTE_MS, now);
+  /** A screen-edge vignette that fades out over `fadeMs` (300 ms by default; M12 §6.1 sets its own). */
+  vignette(color: 'red' | 'green' | 'blue', opacity: number, now: number, fadeMs = VIGNETTE_MS): void {
+    this.fade(this.vignettes[color], opacity, fadeMs, now);
+  }
+
+  /** The steady blue edge while the player's own shield is above 0 (M12 §6.1). */
+  setShieldEdge(opacity: number): void {
+    this.put(this.shieldEdge, 'shield-edge', 'opacity', opacity.toFixed(3));
+  }
+
+  /** The dark crimson edge at low HP (M12 §6.2); 0 hides it. */
+  setLowEdge(opacity: number): void {
+    this.put(this.lowEdge, 'low-edge', 'opacity', opacity.toFixed(3));
   }
 
   private fade(e: HTMLElement, from: number, duration: number, now: number): void {

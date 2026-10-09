@@ -56,6 +56,11 @@ export class GameSounds {
     sfx('hitTick');
   }
 
+  /** Low HP's heartbeat (M12 §6.2). */
+  heartbeat(): void {
+    sfx('heartbeat');
+  }
+
   /** Your Falling Star lands, as its leap ends (M12 §5.2). */
   ownLanding(): void {
     sfx('fallingStarLand');

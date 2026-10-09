@@ -2,8 +2,9 @@
 // spawn points glowing (stage 1), a player caught wading (stage 2), burst deaths seen from the shooter
 // (stage 3: `fire:<class>`), and stage 4's class tools: Falling Star's preview, crater and the pieces
 // after it (`star`), Blasphemy's stun (`stun`), Shadowstep's streak (`dash`) and its first-person slash
-// (`slash`). Needs a running server (npm run dev or npm run preview).
-// Usage: node scripts/m12-shots.mjs [readout|glow|glow-ground|wade|fire:<class>[:right]|star|stun|dash|slash] [base URL, default http://localhost:5173]
+// (`slash`), and stage 5's feedback: the steady shield edge (`shield`), the low-HP edge (`lowhp`) and
+// Cherub arrows (`arrow`). Needs a running server (npm run dev or npm run preview).
+// Usage: node scripts/m12-shots.mjs [readout|glow|glow-ground|wade|fire:<class>[:right]|star|stun|dash|slash|shield|lowhp|arrow] [base URL, default http://localhost:5173]
 // Environment for `fire`: BACK=1 backs away while firing; FREEZE_MS is how long after new bursts the
 // frame is frozen and saved (default 90; 0 is the burst's own frame).
 import { chromium } from '@playwright/test';
@@ -147,6 +148,8 @@ if (what === 'readout') {
   await page.mouse.up({ button: button === 'right' ? 'right' : 'left' });
 } else if (['star', 'stun', 'dash', 'slash'].includes(what)) {
   await stage4(what);
+} else if (['shield', 'lowhp', 'arrow'].includes(what)) {
+  await stage5(what);
 } else {
   // A fixed camera high over the Courtyard's west entry, looking east over the arena, or at eye height
   // on the terrace's west stairs (glow-ground); the bot fights below.
@@ -382,4 +385,75 @@ async function stage4(kind) {
   await page.waitForTimeout(10_500);
   const dyaw = (Math.atan2(78.5 - 92.5, 14.5 - 28.5) * 180) / Math.PI;
   await preview('star-invalid-dais', dyaw, -4.6);
+}
+
+/** Stage 5's shots (M12 §6): a real player, in the Courtyard or the sandbox's arena. */
+async function stage5(kind) {
+  const query = {
+    shield: 'dev=1&map=pearly-gates&class=heretic&god=1&seed=1',
+    // Not invulnerable until HP is low, then dev key G.
+    lowhp: 'dev=1&map=pearly-gates&class=betrayer&seed=1',
+    arrow: 'dev=1&map=sandbox&class=betrayer&god=1&seed=1',
+  }[kind];
+  await open(query);
+  await page.keyboard.press('F3');
+  const canvas = (await page.locator('canvas').first().boundingBox()) ?? { x: 0, y: 0, width: 1280, height: 720 };
+  const cx = canvas.x + canvas.width / 2;
+  const cy = canvas.y + canvas.height / 2;
+  for (let i = 0; i < 5; i++) {
+    await page.mouse.click(cx, cy);
+    if (await page.evaluate(() => document.pointerLockElement !== null)) break;
+    await page.waitForTimeout(500);
+  }
+  [mouseX, mouseY] = [cx, cy];
+  if (kind === 'arrow') {
+    // Into the sandbox's arena, facing east across it.
+    await page.evaluate(() => window.__heavenfallTeleport?.(22.5, 7.5));
+  } else {
+    await page.mouse.move(cx + 85, cy, { steps: 10 });
+    [mouseX, mouseY] = [cx + 85, cy];
+    await page.keyboard.down('KeyW');
+  }
+  await page.waitForFunction(() => window.__heavenfall.arenaPhase !== 'idle', null, { timeout: 30_000 });
+  await page.waitForTimeout(1500);
+  await page.keyboard.up('KeyW');
+
+  if (kind === 'shield') {
+    // Martyr's Shroud on itself (no ally aimed): the steady blue edge once the flash has faded.
+    await page.keyboard.press('KeyE');
+    await page.waitForTimeout(900);
+    await shot('shield-edge', 'own shield up, the flash faded');
+    return;
+  }
+  if (kind === 'lowhp') {
+    const t0 = Date.now();
+    while (Date.now() - t0 < 120_000) {
+      const hp = await page.evaluate(() => window.__heavenfall.players[0]?.hp ?? 120);
+      if (hp < 0.33 * 120) break;
+      await page.waitForTimeout(50);
+    }
+    await page.keyboard.press('KeyG');
+    const hp = await page.evaluate(() => window.__heavenfall.players[0]?.hp);
+    await page.waitForTimeout(400);
+    await shot('lowhp-edge', `HP ${hp} of 120, dev key G pressed`);
+    await page.waitForTimeout(250);
+    await shot('lowhp-edge-1');
+    return;
+  }
+  // Cherub arrows among the gold bursts: circling the crowd (strafing left, turned toward it) while
+  // firing into it, so the Cherubs shoot from range; candidate frames, the one with the most of the
+  // arrows' cyan picked afterwards (nothing else in the world is cyan).
+  await page.mouse.down();
+  await page.keyboard.down('KeyA');
+  for (let n = 0; n < 36; n++) {
+    const yaw = await page.evaluate(() => (window.__heavenfall.near ? (window.__heavenfall.nearYaw * 180) / Math.PI : null));
+    if (yaw !== null) await lookAt(yaw, 8);
+    await page.waitForTimeout(250);
+    await freeze();
+    await page.screenshot({ path: `${OUT}/arrow-cand-${n}.png` });
+    await unfreeze();
+  }
+  await page.keyboard.up('KeyA');
+  await page.mouse.up();
+  console.log('saved arrow-cand-0..35.png');
 }

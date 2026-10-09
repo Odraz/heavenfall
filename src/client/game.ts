@@ -28,11 +28,11 @@ import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_STU
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
 import { aimDir, estimateSilverBullet, rayCylinder } from '../sim/combat';
-import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, TICK_DT, TICK_MS } from '../sim/constants';
+import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, PROJECTILE_SLOTS, TICK_DT, TICK_MS } from '../sim/constants';
 import { raycastTerrain } from '../sim/los';
 import { arenaPhaseOf, doorsClosed, overVoid, setArenaDoors, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
-import { BOSS_CAST_JUDGMENT, PROJ_CENSER } from '../sim/sim';
+import { BOSS_CAST_JUDGMENT, PROJ_ARROW, PROJ_CENSER } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
@@ -82,6 +82,7 @@ import { Hud } from './hud';
 import { Input, MOUSE_SENSITIVITY } from './input';
 import { WADE_LAUNCH_MS, wadeCount, Wading } from './wading';
 import { ARC_SEGMENTS, arcPoint, StarAim, starLanding, walkableCells, type Landing, type StarAlly } from './fallingStarAim';
+import { HEAL_FADE_MS, HEAL_VIGNETTE, HURT_FADE_MS, hurtVignette, LowHp, SHIELD_EDGE, SHIELD_FADE_MS, SHIELD_GONE_FLASH, SHIELD_UP_FLASH } from './lowHp';
 import { audio, type LoopHandle } from '../audio/audio';
 import { SOUL_HEIGHT, SOUL_RADIUS } from '../sim/souls';
 import { pickAllyTarget } from './allyTarget';
@@ -103,7 +104,12 @@ const GATE_VIEW_PITCH = (10 * Math.PI) / 180;
 /** Contact shadows are this many times a body's radius (M10 §5.4). */
 const SHADOW_SIZE = 1.4;
 const PROJECTILE_SPRITES = ['proj-censer', 'proj-orb', 'proj-arrow'];
-const PROJECTILE_SIZES = [0.4, 0.6, 0.3];
+/** Cherub arrows are drawn at 0.55 m (M12 §6.3; were 0.3, and couldn't be seen to be dodged). */
+const PROJECTILE_SIZES = [0.4, 0.6, 0.55];
+/** Cherub arrows glow a pale holy cyan, which nothing else in the world is, and trail 4 embers 0.25 m apart (M12 §6.3). */
+const GLOW_ARROW: Glow = { r: 0.55, g: 0.9, b: 1, a: 0.6 };
+const ARROW_TRAIL_STEP = 0.25;
+const ARROW_TRAIL_SIZES = [0.3, 0.24, 0.18, 0.12];
 const RESULT_OVERLAY_MS = 3000;
 /**
  * A hurt enemy flashes white, fading out over ENEMY_FLASH_MS, and flashes again no sooner than
@@ -353,6 +359,12 @@ export class Game {
   /** Wading (M12 §3.1): launched enemies don't press until then (ms), and the applied speed factor. */
   private readonly wadeLaunchedUntil = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
   private readonly wading = new Wading();
+  /** Low HP (M12 §6.2), from the newest snapshot's own HP. */
+  private readonly lowHp = new LowHp();
+  private ownHp = 0;
+  /** Each projectile slot's drawn position last frame and the frame it was drawn, for the arrows' trails (M12 §6.3). */
+  private readonly projLast = new Float32Array(PROJECTILE_SLOTS * 3);
+  private readonly projLastFrame = new Uint32Array(PROJECTILE_SLOTS);
   /** Others' attack effects waiting for the render delay (M9 §5.1). */
   private readonly pendingFx: Array<{ at: number; run: (now: number) => void }> = [];
   private fireAcc = 0;
@@ -898,7 +910,7 @@ export class Game {
         for (const id of e.targets) {
           const t = this.playerPose(id);
           if (t) this.particles.healColumn(t.x, t.y, t.z);
-          if (id === this.localId) this.hud.vignette('green', 0.3, now);
+          if (id === this.localId) this.hud.vignette('green', HEAL_VIGNETTE, now, HEAL_FADE_MS);
           else this.party?.flash(id, 'green');
         }
         break;
@@ -1064,13 +1076,18 @@ export class Game {
         this.hud.setOwnRevive(progress);
       } else this.ownRevive = 0;
       this.hud.setHp(me.hp, me.shield, this.maxHp);
+      this.ownHp = me.hp;
+      // The steady blue edge while the own shield is up (M12 §6.1).
+      this.hud.setShieldEdge(me.shield > 0 && !me.dead ? SHIELD_EDGE : 0);
       if (was) {
         const lost = was.hp + was.shield - (me.hp + me.shield);
         if (lost > 0 && !me.dead) {
-          this.hud.vignette('red', Math.min(0.8, Math.max(0.2, (lost / this.maxHp) * 3)), now);
+          this.hud.vignette('red', hurtVignette(lost, this.maxHp), now, HURT_FADE_MS);
           this.hud.shakeHp(now);
-        } else if (me.hp > was.hp && !was.dead && !beamed) this.hud.vignette('green', 0.3, now);
-        if ((me.shield > 0 && me.shield > was.shield) || (was.shield > 0 && me.shield === 0)) this.hud.vignette('blue', 0.5, now);
+        } else if (me.hp > was.hp && !was.dead && !beamed) this.hud.vignette('green', HEAL_VIGNETTE, now, HEAL_FADE_MS);
+        // The shield going up flashes the fading blue at 0.6, its going 0.7 (M12 §6.1).
+        if (me.shield > 0 && me.shield > was.shield) this.hud.vignette('blue', SHIELD_UP_FLASH, now, SHIELD_FADE_MS);
+        else if (was.shield > 0 && me.shield === 0) this.hud.vignette('blue', SHIELD_GONE_FLASH, now, SHIELD_FADE_MS);
         // A kill the local player predicted already showed its marker (M12 §4.4).
         if (me.kills > was.kills && !this.predicted.holdsMarker(now)) {
           this.hud.kill(now);
@@ -1883,6 +1900,9 @@ export class Game {
     this.placeSoulMarkers(now);
     this.updateReviveHum(now);
 
+    // Low HP (M12 §6.2): the heartbeat and the crimson edge.
+    if (this.lowHp.update(now, this.seenSelf && !this.dead && !this.over, this.ownHp, this.maxHp)) this.sounds.heartbeat();
+    this.hud.setLowEdge(this.lowHp.edge(now));
     this.hud.setCooldowns(this.displayedCooldown('Q', simNow), ABILITIES[this.classId].Q.cooldown, this.displayedCooldown('E', simNow), ABILITIES[this.classId].E.cooldown);
     this.hud.update(now);
     debugState.fps = this.fps.frame(now);
@@ -2087,7 +2107,28 @@ export class Game {
           z += own.dz * f;
         }
       }
-      bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true);
+      if (k !== PROJ_ARROW) {
+        bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true);
+        continue;
+      }
+      // A Cherub arrow (M12 §6.3): glowing cyan, its embers trailing behind it along its flight, from
+      // where it was drawn last frame.
+      bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true, 1, 1, 1, GLOW_ARROW);
+      const o = slot * 3;
+      const last = this.projLastFrame[slot] === this.frameNo - 1;
+      const dx = x - this.projLast[o];
+      const dy = y - this.projLast[o + 1];
+      const dz = z - this.projLast[o + 2];
+      const len = Math.hypot(dx, dy, dz);
+      this.projLast[o] = x;
+      this.projLast[o + 1] = y;
+      this.projLast[o + 2] = z;
+      this.projLastFrame[slot] = this.frameNo;
+      if (!last || len < 1e-6) continue;
+      ARROW_TRAIL_SIZES.forEach((size, i) => {
+        const back = (ARROW_TRAIL_STEP * (i + 1)) / len;
+        bb.add(this.frames.ember, x - dx * back, y - dy * back, z - dz * back, size, true, 1, 1, 1, GLOW_ARROW);
+      });
     }
     for (const slot of this.ownCensers.keys()) if (!seen.has(slot)) this.ownCensers.delete(slot);
     this.projSeen = this.projPrev;

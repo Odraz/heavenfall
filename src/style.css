@@ -253,6 +253,11 @@ body {
   background: radial-gradient(ellipse at center, transparent 50%, rgba(60, 150, 240, 0.95) 100%);
 }
 
+/* Low HP (M12 §6.2): the vignette's gradient in a dark crimson, a tunnel closing in. */
+.vignette-crimson {
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(74, 0, 0, 0.95) 100%);
+}
+
 /* Hit and kill markers (M8 §3.2): four ticks on the diagonals, starting 7 px from the center. */
 .marker {
   position: absolute;
