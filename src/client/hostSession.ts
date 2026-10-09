@@ -62,8 +62,9 @@ export class HostSession {
     return this.net?.stats ?? null;
   }
 
-  killAll(): void {
-    this.post({ t: 'killAll' });
+  /** Dev keys K and J: removes every enemy, or every Blessed (`blessedOnly`, screenshots). */
+  killAll(blessedOnly = false): void {
+    this.post({ t: 'killAll', blessedOnly });
   }
 
   /** Dev key G: toggles invulnerability for the local player. */

@@ -41,6 +41,9 @@ const BURST_SPARK_LIFE = 0.6;
 const BURST_SPARK_SIZE = 0.22;
 /** The burst sprite's glow, so the baked light doesn't dull it. */
 const BURST_GLOW: Glow = { r: 1, g: 0.95, b: 0.8, a: 0.25 };
+/** A globe's glass shard (M12 follow-up §1.3): gold-white, falling. */
+const P_SHARD = 8;
+const SHARD_GLOW: Glow = { r: 1, g: 0.88, b: 0.55, a: 0.55 };
 const Q_BURST = 0;
 const Q_PIECE = 1;
 
@@ -243,6 +246,19 @@ export class Particles {
     this.spawn(P_INCENSE, x, y, z, 0, 0, 2 / life, life, 0.16);
   }
 
+  /**
+   * A globe shatters (M12 follow-up §1.3): `n` gold-white glass shards, 0.08 m, thrown out at 3–5 m/s
+   * and falling, for 0.6 s.
+   */
+  globeShards(x: number, y: number, z: number, n: number): void {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const e = (Math.random() - 0.2) * 1.1;
+      const s = 3 + Math.random() * 2;
+      this.spawn(P_SHARD, x, y, z, Math.cos(a) * Math.cos(e) * s, Math.sin(a) * Math.cos(e) * s, Math.sin(e) * s, 0.6, 0.08);
+    }
+  }
+
   /** The Shroud's burst (M9 §5.1): 24 embers bursting outward from (x, y, z). */
   shroudBurst(x: number, y: number, z: number): void {
     this.emberBurst(x, y, z);
@@ -275,7 +291,7 @@ export class Particles {
         this.vx[i] *= Math.exp(-2 * dt);
         this.vy[i] *= Math.exp(-2 * dt);
         this.vz[i] = Math.max(-0.8, this.vz[i] - 4 * dt);
-      } else if (k === P_SPARK || k === P_HOT_SPARK) {
+      } else if (k === P_SPARK || k === P_HOT_SPARK || k === P_SHARD) {
         this.vz[i] -= 9 * dt;
       } else if (k === P_EMBER) {
         this.vx[i] *= Math.exp(-3 * dt);
@@ -330,6 +346,7 @@ export class Particles {
       else if (k === P_INCENSE) b.add(this.frames[P_EMBER], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, INCENSE_GLOW);
       else if (k === P_BLOOD) b.add(this.frames[P_EMBER], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, BLOOD_GLOW);
       else if (k === P_RISE) b.add(this.frames[P_EMBER], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, NO_GLOW);
+      else if (k === P_SHARD) b.add(this.frames[P_SPARK], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, SHARD_GLOW);
       else if (k === P_HOT_SPARK) b.add(this.frames[P_SPARK], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, HOT_SPARK_GLOW);
       else b.add(this.frames[k], this.x[i], this.y[i], this.z[i], this.size[i] * f, true, 1, 1, 1, NO_GLOW);
     }

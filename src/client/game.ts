@@ -2,7 +2,7 @@
 import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
-import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
+import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, CHORISTER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
 import {
   ABILITIES,
   ATTACK_NONE,
@@ -32,7 +32,7 @@ import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, PROJECTILE_SLOTS, TICK_DT, TICK
 import { raycastTerrain } from '../sim/los';
 import { arenaPhaseOf, doorsClosed, overVoid, setArenaDoors, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
-import { BOSS_CAST_JUDGMENT, PROJ_ARROW, PROJ_CENSER } from '../sim/sim';
+import { BOSS_CAST_JUDGMENT, GLOBE_BLAST, PROJ_ARROW, PROJ_CENSER, PROJ_GLOBE } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
@@ -106,9 +106,15 @@ const GATE_VIEW_PITCH = (10 * Math.PI) / 180;
 const SHADOW_SIZE = 1.4;
 const PROJECTILE_SPRITES = ['proj-censer', 'proj-orb', 'proj-arrow'];
 /** Cherub arrows are drawn at 0.55 m (M12 §6.3; were 0.3, and couldn't be seen to be dodged). */
-const PROJECTILE_SIZES = [0.4, 0.6, 0.55];
+// The globe is 1.3× the orb it replaced (M12 follow-up §1.3).
+const PROJECTILE_SIZES = [0.4, 0.78, 0.55];
 /** Cherub arrows glow a pale holy cyan, which nothing else in the world is, and trail 4 embers 0.25 m apart (M12 §6.3). */
 const GLOW_ARROW: Glow = { r: 0.55, g: 0.9, b: 1, a: 0.6 };
+/** A globe is gold (M12 follow-up §1.3). */
+const GLOW_GLOBE: Glow = { r: 1, g: 0.82, b: 0.4, a: 0.55 };
+/** A globe's shatter (M12 follow-up §1.3): a soft gold flash and a thin ring out to the blast's reach. */
+const GLOBE_FLASH = 0xffe08a;
+const GLOBE_RING = 0xffd27a;
 const ARROW_TRAIL_STEP = 0.25;
 const ARROW_TRAIL_SIZES = [0.3, 0.24, 0.18, 0.12];
 const RESULT_OVERLAY_MS = 3000;
@@ -560,6 +566,8 @@ export class Game {
     }
     // Dev keys work with the bot too: the full solo run test presses K (§13.2).
     if (code === 'KeyK' && this.params.dev && this.o.host) this.o.host.killAll();
+    // Dev key J removes only the Blessed, leaving the casters in view (M12 follow-up screenshots).
+    else if (code === 'KeyJ' && this.params.dev && this.o.host) this.o.host.killAll(true);
     else if (code === 'KeyG' && this.params.dev && this.o.host) this.o.host.toggleGod();
     else if (this.params.bot) return;
     else if (code === 'KeyQ') this.pressAbility('Q', performance.now());
@@ -853,6 +861,10 @@ export class Game {
         // Others' Shadowstep streaks after the render delay; the own one was drawn when its dash ended (M12 §5.7).
         if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.dashStreak(t, e.x0, e.y0, e.z0, e.x1, e.y1, e.z1) });
         break;
+      case 'globeShatter':
+        // After the render delay, where the globe is drawn breaking (M12 follow-up §1.3).
+        this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.globeFx(t, e.x, e.y, e.z, e.by >= 0) });
+        break;
       case 'silverBullet':
         // Others' Silver Bullets after the render delay; the own one was drawn at once (M9 §5.1).
         if (e.playerId !== this.localId) {
@@ -869,6 +881,17 @@ export class Game {
         this.onGameOver(e, now);
         break;
     }
+  }
+
+  /** A globe shatters (M12 follow-up §1.3): a subtle gold burst sized to its 1.5 m blast; brighter shot down. */
+  private globeFx(now: number, x: number, y: number, z: number, shotDown: boolean): void {
+    this.vfx.glow(now, x, y, z, GLOBE_FLASH, 0.3, shotDown ? 1.3 : 1.0, 180, 0, shotDown ? 0.7 : 0.5);
+    const floor = this.floorAt(x, y);
+    if (floor > -Infinity && z - floor < 3) this.vfx.ring(now, x, y, floor, GLOBE_RING, 0.3, GLOBE_BLAST, 250);
+    this.particles.globeShards(x, y, z, shotDown ? 16 : 10);
+    debugState.globes.shattered++;
+    if (shotDown) debugState.globes.shotDown++;
+    debugState.globes.at = now;
   }
 
   private classOf(playerId: number): ClassId | undefined {
@@ -1927,6 +1950,18 @@ export class Game {
       }
       debugState.near = near;
       debugState.nearYaw = Math.atan2(sy, sx);
+      let best = 30 * 30;
+      debugState.casterAim = null;
+      for (let i = 0; i < ents.count; i++) {
+        if (ents.type[i] !== CHORISTER) continue;
+        const dx = ents.x[i] - b.x;
+        const dy = ents.y[i] - b.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > best) continue;
+        best = d2;
+        const dz = enemyZ[i] + ENEMIES[CHORISTER].height / 2 - (b.z + PLAYER_EYE);
+        debugState.casterAim = { yaw: Math.atan2(dy, dx), pitch: Math.atan2(dz, Math.sqrt(d2)) };
+      }
       // Set by updateStarAim during this frame (the reset above it would narrow it to null).
       const l = this.starPreview as Landing | null;
       debugState.star = l ? { x: l.x, y: l.y, z: l.z, valid: l.valid, ally: l.ally } : null;
@@ -2112,7 +2147,7 @@ export class Game {
         }
       }
       if (k !== PROJ_ARROW) {
-        bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true);
+        bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true, 1, 1, 1, k === PROJ_GLOBE ? GLOW_GLOBE : NO_GLOW);
         continue;
       }
       // A Cherub arrow (M12 §6.3): glowing cyan, its embers trailing behind it along its flight, from

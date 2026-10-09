@@ -61,6 +61,10 @@ export interface DebugState {
   nearYaw: number;
   /** With `dev=1`: Falling Star's preview this frame (M12 §5.2), or null when not aiming. */
   star: { x: number; y: number; z: number; valid: boolean; ally: number } | null;
+  /** Globe shatters (M12 follow-up §1.3) played on this client, and those shot down; performance.now() of the latest. */
+  globes: { shattered: number; shotDown: number; at: number };
+  /** With `dev=1`: the yaw and pitch (radians) from the eye to the nearest Chorister's body center within 30 m, or null. */
+  casterAim: { yaw: number; pitch: number } | null;
 }
 
 export const debugState: DebugState = {
@@ -89,6 +93,8 @@ export const debugState: DebugState = {
   near: 0,
   nearYaw: 0,
   star: null,
+  globes: { shattered: 0, shotDown: 0, at: -1 },
+  casterAim: null,
 };
 
 /** Resets the game fields to their outside-a-game values. */

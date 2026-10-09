@@ -292,7 +292,8 @@ interface ArenaState {
 
 /** Projectile kinds, as encoded in snapshots (§9.4). */
 export const PROJ_CENSER = 0;
-export const PROJ_ORB = 1;
+/** A Chorister's or the Orb Volley's globe (M12 follow-up §1.3; was the orb, the same value). */
+export const PROJ_GLOBE = 1;
 export const PROJ_ARROW = 2;
 const MAX_PROJECTILES = 400;
 const PROJECTILE_RANGE = 60;
@@ -342,7 +343,7 @@ interface CasterDef {
 }
 
 const CASTERS: Record<number, CasterDef> = {
-  [CHORISTER]: { range: CHORISTER_RANGE, windup: 1.0, recovery: 1.5, kind: PROJ_ORB, speed: 12, damage: 12, radius: 0.3 },
+  [CHORISTER]: { range: CHORISTER_RANGE, windup: 1.0, recovery: 1.5, kind: PROJ_GLOBE, speed: 8, damage: 12, radius: 0.3 },
   [CHERUB]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 18, damage: 8, radius: 0.15 },
 };
 
@@ -353,7 +354,22 @@ const VOLLEY_INTERVAL = 4;
 const VOLLEY_WINDUP = 0.5;
 const VOLLEY_ORBS = 8;
 const VOLLEY_SPREAD = (25 * Math.PI) / 180;
-const VOLLEY_ORB = { speed: 12, damage: 15, radius: 0.3 };
+const VOLLEY_ORB = { speed: 8, damage: 15, radius: 0.3 };
+
+// The globe (M12 follow-up §1.3).
+/** A shattering globe hurts the players within this many meters of it, in its line of sight. */
+export const GLOBE_BLAST = 1.5;
+/** A player's ray or censer passing this close to a globe's path shatters it... */
+export const GLOBE_SHOT_REACH = 0.3;
+/**
+ * ...over the path it flew in the last this many seconds, as far back as the client sees it drawn
+ * (other players' render delay plus their input's way to the host), so it hits what was aimed at.
+ */
+export const GLOBE_SHOT_TRAIL = 0.25;
+/** Shot down, it deals this to every enemy within GLOBE_BLAST, in its line of sight, credited to the shooter. */
+export const GLOBE_SHOT_DAMAGE = 40;
+/** The shatter point is moved back along the flight this far for line of sight, out of the wall it hit. */
+const GLOBE_LOS_BACK = 0.1;
 const JUDGMENT_FIRST = 20;
 const JUDGMENT_INTERVAL = 25;
 const JUDGMENT_CAST = 3;
@@ -389,6 +405,42 @@ const DASH_WINDOW_TICKS = 15;
 const DASH_MAX_SEGMENT = 12;
 
 const ticks = (seconds: number) => Math.round(seconds * TICK_HZ);
+
+/** The shortest distance between segments p0–p1 and q0–q1 (Ericson, Real-Time Collision Detection 5.1.9). */
+export function segmentDistance(
+  p0x: number, p0y: number, p0z: number, p1x: number, p1y: number, p1z: number,
+  q0x: number, q0y: number, q0z: number, q1x: number, q1y: number, q1z: number,
+): number {
+  const d1x = p1x - p0x, d1y = p1y - p0y, d1z = p1z - p0z;
+  const d2x = q1x - q0x, d2y = q1y - q0y, d2z = q1z - q0z;
+  const rx = p0x - q0x, ry = p0y - q0y, rz = p0z - q0z;
+  const a = d1x * d1x + d1y * d1y + d1z * d1z;
+  const e = d2x * d2x + d2y * d2y + d2z * d2z;
+  const f = d2x * rx + d2y * ry + d2z * rz;
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+  let s = 0;
+  let t = 0;
+  if (a <= 1e-12) {
+    if (e > 1e-12) t = clamp(f / e);
+  } else {
+    const c = d1x * rx + d1y * ry + d1z * rz;
+    if (e <= 1e-12) s = clamp(-c / a);
+    else {
+      const b = d1x * d2x + d1y * d2y + d1z * d2z;
+      const denom = a * e - b * b;
+      s = denom > 1e-12 ? clamp((b * f - c * e) / denom) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) {
+        t = 0;
+        s = clamp(-c / a);
+      } else if (t > 1) {
+        t = 1;
+        s = clamp((b - c) / a);
+      }
+    }
+  }
+  return Math.hypot(p0x + d1x * s - (q0x + d2x * t), p0y + d1y * s - (q0y + d2y * t), p0z + d1z * s - (q0z + d2z * t));
+}
 
 export class Simulation {
   readonly map: GameMap;
@@ -1320,8 +1372,12 @@ export class Simulation {
   }
 
   /** Dev key K: kills every living enemy, including the Gatekeeper, without kill credit. */
-  killAll(): void {
-    while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1]);
+  killAll(blessedOnly = false): void {
+    if (!blessedOnly) {
+      while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1]);
+      return;
+    }
+    for (let k = this.activeCount - 1; k >= 0; k--) if (this.eType[this.active[k]] === BLESSED) this.removeEnemy(this.active[k]);
   }
 
   /** Marks an enemy as hurt this tick (sets the per-recipient `hurt` flag). */
@@ -1677,6 +1733,7 @@ export class Simulation {
       let stop = raycastTerrain(this.map, ex, ey, ez, dx, dy, dz, w.range);
       if (hits.length >= w.maxHits) stop = this.rayT(hits[hits.length - 1], ex, ey, ez, dx, dy, dz);
       this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
+      this.globesOnRay(p, ex, ey, ez, dx, dy, dz, stop);
       for (const s of hits) {
         // A shotgun pellet within 6 m deals 20, a Blessed's HP, and always bursts what it kills; beyond, 10
         // (M12 §5.1, §4.1).
@@ -1712,6 +1769,65 @@ export class Simulation {
       if (o === p || !this.hasSoul(o) || out.has(o)) continue;
       if (rayCylinder(ox, oy, oz, dx, dy, dz, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= stop) out.add(o);
     }
+  }
+
+  /**
+   * Shoots down every globe whose path in the last 0.25 s passes within 0.3 m of a player's ray from
+   * (ox, oy, oz) along the unit (dx, dy, dz) up to `stop` (M12 follow-up §1.3). The ray carries on.
+   */
+  private globesOnRay(p: SimPlayer, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, stop: number): void {
+    let hit: number[] | null = null;
+    for (const g of this.projectiles) {
+      if (this.pKind[g] !== PROJ_GLOBE || this.pOwner[g] >= 0) continue;
+      const back = Math.min(this.pTraveled[g], this.pSpeed[g] * GLOBE_SHOT_TRAIL);
+      const gx = this.pX[g];
+      const gy = this.pY[g];
+      const gz = this.pZ[g];
+      const d = segmentDistance(ox, oy, oz, ox + dx * stop, oy + dy * stop, oz + dz * stop, gx - this.pDx[g] * back, gy - this.pDy[g] * back, gz - this.pDz[g] * back, gx, gy, gz);
+      if (d <= GLOBE_SHOT_REACH + 1e-9) {
+        if (!hit) hit = [];
+        hit.push(g);
+      }
+    }
+    if (hit) for (const g of hit) this.shootDownGlobe(g, p);
+  }
+
+  /** A globe shot down by player `p`: 40 to every enemy within 1.5 m in its line of sight, credited, and nothing to players. */
+  private shootDownGlobe(slot: number, p: SimPlayer): void {
+    if (!this.pAlive[slot]) return;
+    const x = this.pX[slot];
+    const y = this.pY[slot];
+    const z = this.pZ[slot];
+    this.removeProjectile(slot);
+    for (let k = this.activeCount - 1; k >= 0; k--) {
+      const s = this.active[k];
+      const def = ENEMIES[this.eType[s]];
+      if (distToCylinder(x, y, z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > GLOBE_BLAST + 1e-9) continue;
+      if (!lineOfSight(this.map, x, y, z, this.eX[s], this.eY[s], this.eZ[s] + def.height / 2)) continue;
+      this.damageEnemy(s, GLOBE_SHOT_DAMAGE, p.index, GLOBE_SHOT_DAMAGE, x, y);
+    }
+    this.events.push({ to: 'all', event: { type: 'globeShatter', x, y, z, by: p.id } });
+  }
+
+  /**
+   * A globe shatters on what it touched at (x, y, z) (M12 follow-up §1.3): its damage to the player it hit
+   * (`direct`, or none) and to every other living targetable player within 1.5 m in its line of sight.
+   */
+  private shatterGlobe(slot: number, x: number, y: number, z: number, direct: SimPlayer | null): void {
+    const damage = this.pDamage[slot];
+    const lx = x - this.pDx[slot] * GLOBE_LOS_BACK;
+    const ly = y - this.pDy[slot] * GLOBE_LOS_BACK;
+    const lz = z - this.pDz[slot] * GLOBE_LOS_BACK;
+    this.removeProjectile(slot);
+    for (const p of this.players) {
+      if (!this.livingTargetable(p)) continue;
+      if (p !== direct) {
+        if (distToCylinder(x, y, z, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) > GLOBE_BLAST + 1e-9) continue;
+        if (!lineOfSight(this.map, lx, ly, lz, p.x, p.y, p.z + PLAYER_HEIGHT / 2)) continue;
+      }
+      this.damagePlayer(p, damage);
+    }
+    this.events.push({ to: 'all', event: { type: 'globeShatter', x, y, z, by: -1 } });
   }
 
   /**
@@ -1768,6 +1884,7 @@ export class Simulation {
     if (dealt.stopped) stop = this.rayT(dealt.hits[dealt.hits.length - 1].s, ex, ey, ez, dx, dy, dz);
     const souls = new Set<SimPlayer>();
     this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
+    this.globesOnRay(p, ex, ey, ez, dx, dy, dz, stop);
     // Its force is what the bullet still carried on reaching the enemy (M12 §4.1).
     for (const h of dealt.hits) this.damageEnemy(h.s, h.amount, p.index, h.carried);
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, false), p);
@@ -2173,6 +2290,9 @@ export class Simulation {
         const t = rayCylinder(x, y, z, dx, dy, dz, o.x, o.y, this.soulBase(o) - pr, SOUL_RADIUS + pr, SOUL_HEIGHT + 2 * pr);
         if (t <= terrainT) soulT = Math.min(soulT, t);
       }
+      // A censer passing a globe shatters it and flies on (M12 follow-up §1.3).
+      const shooter = this.slots[owner];
+      if (shooter) this.globesOnRay(shooter, x, y, z, dx, dy, dz, Math.min(len, terrainT, hitT, soulT));
       if (soulT < hitT) {
         this.explodeCenser(slot, x + dx * soulT, y + dy * soulT, z + dz * soulT, -1);
         return;
@@ -2189,6 +2309,7 @@ export class Simulation {
     }
     if (hitSlot >= 0) {
       if (owner >= 0) this.explodeCenser(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT, hitSlot);
+      else if (this.pKind[slot] === PROJ_GLOBE) this.shatterGlobe(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT, this.slots[hitSlot]!);
       else {
         this.damagePlayer(this.slots[hitSlot]!, this.pDamage[slot]);
         this.removeProjectile(slot);
@@ -2197,6 +2318,7 @@ export class Simulation {
     }
     if (terrainT < len) {
       if (owner >= 0) this.explodeCenser(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT, -1);
+      else if (this.pKind[slot] === PROJ_GLOBE) this.shatterGlobe(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT, null);
       else this.removeProjectile(slot);
       return;
     }
@@ -2210,6 +2332,7 @@ export class Simulation {
     if (this.pTraveled[slot] >= this.pMaxDist[slot] - 1e-9) {
       // Beyond an open edge a censer vanishes without breaking (M10 §3.4): its cloud would hurt nothing.
       if (owner >= 0 && !overVoid(this.map, nx, ny)) this.explodeCenser(slot, nx, ny, nz, -1);
+      else if (owner < 0 && this.pKind[slot] === PROJ_GLOBE) this.shatterGlobe(slot, nx, ny, nz, null);
       else this.removeProjectile(slot);
       return;
     }
@@ -2494,7 +2617,7 @@ export class Simulation {
       const sa = Math.sin(a);
       const rx = dx * ca - dy * sa;
       const ry = dx * sa + dy * ca;
-      this.spawnProjectile(PROJ_ORB, ox, oy, oz, rx / len, ry / len, dz / len, VOLLEY_ORB.speed, VOLLEY_ORB.radius, VOLLEY_ORB.damage, PROJECTILE_RANGE, -1);
+      this.spawnProjectile(PROJ_GLOBE, ox, oy, oz, rx / len, ry / len, dz / len, VOLLEY_ORB.speed, VOLLEY_ORB.radius, VOLLEY_ORB.damage, PROJECTILE_RANGE, -1);
     }
   }
 

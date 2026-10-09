@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, ST_WINDUP } from '../data/enemies';
 import { SHOTGUN_CLOSE_DAMAGE, WEAPONS } from '../data/weapons';
-import { PROJ_ORB } from './sim';
+import { PROJ_GLOBE } from './sim';
 import { aimAt, enemyAt, makeSim, put, room } from './testutil/sims';
 
 describe('damage pipeline (M9 §3.6)', () => {
@@ -165,7 +165,7 @@ describe('status effects (§5.6)', () => {
     expect(sim.projectiles.length).toBe(0);
     sim.step();
     expect(sim.projectiles.length).toBe(1);
-    expect(sim.pKind[sim.projectiles[0]]).toBe(PROJ_ORB);
+    expect(sim.pKind[sim.projectiles[0]]).toBe(PROJ_GLOBE);
   });
 
   it('the Gatekeeper is immune to slow, root, pull and knockback, but can be silenced', () => {
@@ -267,7 +267,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     put(sim, p, 20.5, 3.5);
     p.devGod = false;
     // 300 m/s: 10 m per tick, and the player is only 0.8 m wide.
-    sim.spawnProjectile(PROJ_ORB, 2.5, 3.5, 1, 1, 0, 0, 300, 0.3, 12, 60, -1);
+    sim.spawnProjectile(PROJ_GLOBE, 2.5, 3.5, 1, 1, 0, 0, 300, 0.3, 12, 60, -1);
     sim.step();
     sim.step();
     expect(sim.projectiles.length).toBe(0);
@@ -277,25 +277,25 @@ describe('combat (§5.3, §5.4, §6)', () => {
   it('projectiles are removed after 60 m and outside the grid', () => {
     const sim = makeSim(room(80, 5), ['binder']);
     put(sim, sim.players[0], 2.5, 1.5);
-    const orb = sim.spawnProjectile(PROJ_ORB, 5.5, 4.5, 1, 1, 0, 0, 12, 0.3, 12, 60, -1);
+    const orb = sim.spawnProjectile(PROJ_GLOBE, 5.5, 4.5, 1, 1, 0, 0, 12, 0.3, 12, 60, -1);
     for (let i = 0; i < 149; i++) sim.step();
     expect(sim.pAlive[orb]).toBe(1);
     sim.step(); // 150 ticks × 0.4 m = 60 m
     expect(sim.pAlive[orb]).toBe(0);
-    const high = sim.spawnProjectile(PROJ_ORB, 40.5, 3.5, 15.9, 0, 0, 1, 12, 0.3, 12, 60, -1);
+    const high = sim.spawnProjectile(PROJ_GLOBE, 40.5, 3.5, 15.9, 0, 0, 1, 12, 0.3, 12, 60, -1);
     sim.step();
     expect(sim.pAlive[high]).toBe(0);
-    const outside = sim.spawnProjectile(PROJ_ORB, -3, 3.5, 20, -1, 0, 0, 12, 0.3, 12, 60, -1);
+    const outside = sim.spawnProjectile(PROJ_GLOBE, -3, 3.5, 20, -1, 0, 0, 12, 0.3, 12, 60, -1);
     sim.step();
     expect(sim.pAlive[outside]).toBe(0);
   });
 
   it('at most 400 projectiles: one more removes the oldest', () => {
     const sim = makeSim(room(30, 5), ['binder']);
-    const first = sim.spawnProjectile(PROJ_ORB, 2.5, 2.5, 1, 1, 0, 0, 0, 0.3, 12, 60, -1);
-    for (let i = 0; i < 399; i++) sim.spawnProjectile(PROJ_ORB, 2.5, 2.5, 1, 1, 0, 0, 0, 0.3, 12, 60, -1);
+    const first = sim.spawnProjectile(PROJ_GLOBE, 2.5, 2.5, 1, 1, 0, 0, 0, 0.3, 12, 60, -1);
+    for (let i = 0; i < 399; i++) sim.spawnProjectile(PROJ_GLOBE, 2.5, 2.5, 1, 1, 0, 0, 0, 0.3, 12, 60, -1);
     expect(sim.projectiles.length).toBe(400);
-    sim.spawnProjectile(PROJ_ORB, 2.5, 2.5, 1, 1, 0, 0, 0, 0.3, 12, 60, -1);
+    sim.spawnProjectile(PROJ_GLOBE, 2.5, 2.5, 1, 1, 0, 0, 0, 0.3, 12, 60, -1);
     expect(sim.projectiles.length).toBe(400);
     expect(sim.pAlive[first]).toBe(0);
   });

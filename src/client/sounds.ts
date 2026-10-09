@@ -11,7 +11,7 @@ import type { GameEvent } from '../net/messages';
 import { PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, PHASE_IDLE, type Snapshot } from '../net/protocol';
 import { ENEMY_SLOTS, TICK_MS } from '../sim/constants';
 import type { GameMap } from '../sim/map';
-import { BOSS_CAST_VOLLEY, PROJ_ARROW, PROJ_ORB } from '../sim/sim';
+import { BOSS_CAST_VOLLEY, PROJ_ARROW, PROJ_GLOBE } from '../sim/sim';
 import type { SfxName } from '../audio/sfx';
 import type { MassKillPlay } from './massKill';
 
@@ -160,7 +160,7 @@ export class GameSounds {
     for (let i = 0; i < s.projectileCount; i++) {
       if (old.has(s.projSlot[i])) continue;
       const at = { x: s.projX[i], y: s.projY[i] };
-      if (s.projKind[i] === PROJ_ORB && !volleyFired) sfx('orbFired', at);
+      if (s.projKind[i] === PROJ_GLOBE && !volleyFired) sfx('orbFired', at);
       else if (s.projKind[i] === PROJ_ARROW) sfx('arrowFired', at);
     }
     // Own HP and shield.
@@ -199,6 +199,10 @@ export class GameSounds {
       case 'dashCut':
         // Others' dagger cuts at the streak's start, after the render delay (M12 §5.7).
         if (e.playerId !== this.localId) sfx('daggerCut', { x: e.x0, y: e.y0 }, 1, this.renderDelay);
+        break;
+      case 'globeShatter':
+        // Shot down, a little higher (M12 follow-up §1.3).
+        sfx('globeShatter', { x: e.x, y: e.y }, e.by >= 0 ? 1.2 : 1, this.renderDelay);
         break;
       case 'silverBullet':
         if (e.playerId !== this.localId) sfx('silverBullet', { x: e.x, y: e.y }, 1, this.renderDelay, PRIO_OTHERS);

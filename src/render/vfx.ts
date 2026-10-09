@@ -389,14 +389,14 @@ export class Vfx {
     this.add({ obj: mesh, material, duration, update }, now, delay);
   }
 
-  /** A soft round glow facing the camera at (x, y, z), from radius r0 to r1, fading. */
-  glow(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number, delay = 0): void {
+  /** A soft round glow facing the camera at (x, y, z), from radius r0 to r1, fading from `opacity` to 0. */
+  glow(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number, delay = 0, opacity = 1): void {
     const material = this.spriteMaterial(this.tex.glow, color);
     const sprite = new THREE.Sprite(material);
     sprite.position.set(x, z, y);
     const update = (f: number): void => {
       sprite.scale.setScalar(2 * (r0 + (r1 - r0) * f));
-      material.opacity = 1 - f;
+      material.opacity = opacity * (1 - f);
     };
     this.add({ obj: sprite, material, duration, update }, now, delay);
   }

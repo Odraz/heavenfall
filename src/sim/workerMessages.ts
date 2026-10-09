@@ -30,7 +30,7 @@ export type MainToWorker =
   | { t: 'connClosed'; conn: number }
   | { t: 'input'; playerId: number; buf: ArrayBuffer }
   | { t: 'pause'; paused: boolean }
-  | { t: 'killAll' }
+  | { t: 'killAll'; blessedOnly?: boolean }
   | { t: 'toggleGod'; playerId: number }
   | { t: 'stop' };
 

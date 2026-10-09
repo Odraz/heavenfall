@@ -22,6 +22,8 @@ export type GameEvent =
   | { type: 'bursts'; list: number[] }
   /** Shadowstep cut through its path (M12 §5.7): the path's first and last points. */
   | { type: 'dashCut'; playerId: number; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number }
+  /** A globe shattered (M12 follow-up §1.3): `by` is the player who shot it down, or −1 when it broke on its own. */
+  | { type: 'globeShatter'; x: number; y: number; z: number; by: number }
   | { type: 'arenaStarted'; arenaIndex: number }
   | { type: 'arenaCleared'; arenaIndex: number }
   | { type: 'bossCast'; phase: 'start' | 'interrupted' | 'completed' }

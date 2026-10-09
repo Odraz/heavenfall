@@ -4,7 +4,7 @@ import { GridBuilder } from '../data/dungeons/build';
 import type { DungeonDef } from '../data/dungeons/types';
 import { BLESSED, CHERUB, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import { decodeSnapshot } from '../net/protocol';
-import { BOSS_CAST_JUDGMENT, BOSS_CAST_NONE, BOSS_CAST_VOLLEY, bossMultiplier, partyMultiplier, PHASE_COMBAT, PROJ_ORB, Simulation, type SimPlayer } from './sim';
+import { BOSS_CAST_JUDGMENT, BOSS_CAST_NONE, BOSS_CAST_VOLLEY, bossMultiplier, partyMultiplier, PHASE_COMBAT, PROJ_GLOBE, Simulation, type SimPlayer } from './sim';
 import { sealNow } from './testutil/sims';
 
 // A lobby (x 1–4) open to a boss arena (x 6–30). The Gatekeeper's dais is 3 m high around B (25, 10).
@@ -69,7 +69,7 @@ function runTo(sim: Simulation, tick: number): void {
   while (sim.tick < tick) sim.step();
 }
 
-const orbs = (sim: Simulation) => sim.projectiles.filter((s) => sim.pKind[s] === PROJ_ORB).length;
+const orbs = (sim: Simulation) => sim.projectiles.filter((s) => sim.pKind[s] === PROJ_GLOBE).length;
 const castEvents = (sim: Simulation) => sim.events.flatMap((e) => (e.event.type === 'bossCast' ? [e.event.phase] : []));
 
 describe('the Gatekeeper (§7.4)', () => {
@@ -123,6 +123,11 @@ describe('the Gatekeeper (§7.4)', () => {
     sim.step();
     expect(orbs(sim)).toBe(8);
     expect(sim.eState[sim.bossSlot]).toBe(ST_ATTACKING);
+    // Globes at 8 m/s, like a Chorister's (M12 follow-up §1.3).
+    const g = sim.projectiles[0];
+    const before = sim.pTraveled[g];
+    sim.step();
+    expect(sim.pTraveled[g] - before).toBeCloseTo(8 / 30, 9);
     // The next one is due 4 s after firing.
     expect(sim.volleyDue).toBe(t0 + 75 + 120);
   });

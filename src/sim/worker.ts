@@ -264,7 +264,7 @@ ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
       paused = m.paused;
       break;
     case 'killAll':
-      sim?.killAll();
+      sim?.killAll(m.blessedOnly);
       break;
     case 'toggleGod':
       sim?.toggleDevGod(m.playerId);

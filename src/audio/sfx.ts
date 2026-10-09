@@ -166,6 +166,19 @@ export const SFX = {
     priority: PRIO_ENEMY,
     parts: [part({ wave: 'sine', freq: 900, freqEnd: 300, decay: 0.1, sustain: 0.3, release: 0.12, volume: 0.35, vibratoRate: 18, vibratoDepth: 1.5 })],
   },
+  /**
+   * A globe shatters (M12 follow-up §1.3): a glassy crack with a ringing tail, about 0.35 s. Shot down,
+   * it plays at rate 1.2.
+   */
+  globeShatter: {
+    priority: PRIO_ABILITY,
+    parts: [
+      part({ wave: 'noise', freq: 11000, attack: 0.002, decay: 0.04, sustain: 0.2, release: 0.08, volume: 0.45, lowpass: 9000, lowpassEnd: 3500 }),
+      part({ wave: 'sine', freq: 2640, freqEnd: 2600, delay: 0.01, decay: 0.06, sustain: 0.35, release: 0.27, volume: 0.16, vibratoRate: 22, vibratoDepth: 0.4 }),
+      part({ wave: 'triangle', freq: 3960, freqEnd: 3900, delay: 0.02, decay: 0.05, sustain: 0.25, release: 0.22, volume: 0.09 }),
+      part({ wave: 'sine', freq: 1760, freqEnd: 1700, delay: 0.015, decay: 0.08, sustain: 0.3, release: 0.25, volume: 0.1 }),
+    ],
+  },
   cherubWindup: {
     priority: PRIO_ENEMY,
     parts: [part({ wave: 'triangle', freq: 600, freqEnd: 1200, attack: 0.1, decay: 0.15, sustain: 0.6, hold: 0.15, release: 0.1, volume: 0.22, vibratoRate: 8, vibratoDepth: 0.5 })],
