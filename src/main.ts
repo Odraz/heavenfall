@@ -123,7 +123,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   });
   host.local.onCtrl = (msg) => game.handleCtrl(msg);
   await game.prepare();
-  host.start(dungeonId, roster, seed ?? (Math.random() * 2 ** 32) >>> 0, params.god, params.benchArena, true);
+  host.start(dungeonId, roster, seed ?? (Math.random() * 2 ** 32) >>> 0, params.god, params.benchArena, true, params.benchBurst);
   show('inGame', null);
   game.start();
 }

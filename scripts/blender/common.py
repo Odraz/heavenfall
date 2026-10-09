@@ -888,12 +888,13 @@ def cmd_sprites(spec, out_dir, width=None):
     print(f'atlas {width}x{height}, {len(images)} frames')
 
 
-def main(spec, doc=__doc__):
+def main(spec, doc=__doc__, extra=None):
+    """Runs the command after `--`; `extra` adds a model's own commands {name: fn(spec, *args)}."""
     argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
     if not argv:
         raise SystemExit(doc)
     cmd, args = argv[0], argv[1:]
-    commands = {'model': cmd_model, 'sheet': cmd_sheet, 'sprites': cmd_sprites, 'portrait': cmd_portrait}
+    commands = {'model': cmd_model, 'sheet': cmd_sheet, 'sprites': cmd_sprites, 'portrait': cmd_portrait, **(extra or {})}
     if cmd not in commands:
         raise SystemExit(f'Unknown command {cmd}')
     commands[cmd](spec, *args)

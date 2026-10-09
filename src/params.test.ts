@@ -33,6 +33,10 @@ describe('URL parameters (§2.5)', () => {
     expect(parseParams('?bench=1&class=binder&hudfire=1')).toMatchObject({ classId: 'binder', benchHudFire: true });
     expect(parseParams('?bench=1&class=nobody')).toMatchObject({ classId: 'betrayer', benchHudFire: false });
     expect(parseParams('?dev=1&hudfire=1')).toMatchObject({ benchHudFire: false });
+    // M12 §10: the benchmark's bursts, only with bench=1.
+    expect(parseParams('?bench=1&burst=1')).toMatchObject({ benchBurst: true });
+    expect(parseParams('?bench=1')).toMatchObject({ benchBurst: false });
+    expect(parseParams('?dev=1&burst=1')).toMatchObject({ benchBurst: false });
   });
 
   it('takes the map and the view with bench=1 (M10 §2.3)', () => {

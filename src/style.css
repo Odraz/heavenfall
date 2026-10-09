@@ -253,6 +253,11 @@ body {
   background: radial-gradient(ellipse at center, transparent 50%, rgba(60, 150, 240, 0.95) 100%);
 }
 
+/* Low HP (M12 §6.2): the vignette's gradient in a dark crimson, a tunnel closing in. */
+.vignette-crimson {
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(74, 0, 0, 0.95) 100%);
+}
+
 /* Hit and kill markers (M8 §3.2): four ticks on the diagonals, starting 7 px from the center. */
 .marker {
   position: absolute;
@@ -277,6 +282,12 @@ body {
 .marker-kill .marker-tick {
   height: 9px;
   background: #ff7a3a;
+}
+
+/* A predicted burst (M12 §4.4): gold ticks starting 10 px out. */
+.marker-burst .marker-tick {
+  height: 10px;
+  background: #ffd24a;
 }
 
 /* The ally target's chevron (M8 §3.5), projected above the ally's head and drawn over everything. */
@@ -695,6 +706,25 @@ div.weapon-swing {
 .hud > .muzzle-flash,
 .hud > .weapon-swing {
   z-index: 0;
+}
+
+/* Shadowstep's smear (M12 §5.7): pale steel with a 2 px ink edge, behind the dagger. */
+.slash-smear {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.slash-smear polygon {
+  fill: #e8eef6;
+  stroke: #1d1418;
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
 }
 
 .hud > :not(.weapon, .muzzle-flash, .weapon-swing) {
@@ -1623,7 +1653,8 @@ div.weapon-swing {
 .volume-row {
   display: grid;
   text-align: left;
-  grid-template-columns: 64px 1fr 44px;
+  /* Wide enough for "Screen shake", so every row's control starts at the same x (M12 §4.5). */
+  grid-template-columns: 96px 1fr 44px;
   align-items: center;
   gap: 10px;
   font-size: 14px;
@@ -1641,6 +1672,16 @@ div.weapon-swing {
 .volume-value {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* The Screen shake toggle (M12 §4.5): the checkbox where a slider starts. */
+.toggle-row input[type='checkbox'] {
+  justify-self: start;
+  /* The range inputs' own 2 px margin, so it starts where they do. */
+  margin: 0 0 0 2px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brimstone);
 }
 
 /* ---------------------------------------------------------------- Souls and the countdown (M8 §4, §5) */

@@ -172,9 +172,9 @@ export class Billboards {
    * `height` is the billboard height in meters; the width follows the sprite's aspect ratio. A frame
    * with an anchor puts that point at the position instead (`centered` still centers it vertically).
    * The color is multiplied by (tr, tg, tb), then mixed toward `glow` by its amount. `alpha` below 1
-   * dissolves it in a dither pattern, like the near fade.
+   * dissolves it in a dither pattern, like the near fade. `wide` scales the width alone (a flinch's squash).
    */
-  add(f: SpriteFrame, x: number, y: number, z: number, height: number, centered: boolean, tr = 1, tg = 1, tb = 1, glow: Glow = NO_GLOW, alpha = 1): void {
+  add(f: SpriteFrame, x: number, y: number, z: number, height: number, centered: boolean, tr = 1, tg = 1, tb = 1, glow: Glow = NO_GLOW, alpha = 1, wide = 1): void {
     if (this.n >= MAX_BILLBOARDS) return;
     const i = this.n++;
     const p = this.pos.array as Float32Array;
@@ -182,7 +182,7 @@ export class Billboards {
     p[i * 3 + 1] = z;
     p[i * 3 + 2] = y;
     const s = this.size.array as Float32Array;
-    s[i * 4] = height * f.aspect;
+    s[i * 4] = height * f.aspect * wide;
     s[i * 4 + 1] = height;
     s[i * 4 + 2] = f.anchorX ?? 0.5;
     s[i * 4 + 3] = centered ? 0.5 : (f.anchorY ?? 0);

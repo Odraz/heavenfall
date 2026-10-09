@@ -2,11 +2,15 @@ import type { Browser, Page } from '@playwright/test';
 import { expect, state, test } from './fixtures';
 
 /**
- * A client page in its own browser context, failing the test on console and page errors like `page`.
- * Smaller than A's, so four software-rendered games on one machine block each other less.
+ * A client page in its own browser, failing the test on console and page errors like `page`. Smaller
+ * than A's, so four software-rendered games on one machine block each other less. Its own browser has
+ * its own GPU process: in one browser every page's WebGL shares one software renderer, and three games
+ * loading at once took 17–22 s, past the host's 20 s limit, and D, sharing A's, starved and timed out
+ * (M12 stage 4).
  */
 async function clientPage(browser: Browser, errors: string[], label: string): Promise<Page> {
-  const context = await browser.newContext({ viewport: { width: 800, height: 450 } });
+  const own = await browser.browserType().launch(test.info().project.use.launchOptions ?? {});
+  const context = await own.newContext({ viewport: { width: 800, height: 450 } });
   const page = await context.newPage();
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(`${label} console.error: ${m.text()}`);
@@ -78,6 +82,10 @@ test('multiplayer', async ({ page: a, browser }) => {
   // D's Loading past the 20 s timeout.
   const sizes = await Promise.all([a, b, c].map((p) => p.viewportSize()!));
   await Promise.all([a, b, c].map((p) => p.setViewportSize({ width: 320, height: 180 })));
+  // B's and C's browsers render at full speed beside D's Loading, so their pages run at an eighth of the
+  // CPU until D is in (A, the host, isn't slowed).
+  const throttles = await Promise.all([b, c].map((p) => p.context().newCDPSession(p)));
+  await Promise.all(throttles.map((t) => t.send('Emulation.setCPUThrottlingRate', { rate: 8 })));
   await d.goto(`/?join=${gameId}&bot=1`);
   await d.waitForFunction(() => window.__heavenfall?.screen === 'title');
   await d.getByLabel('Player name').fill('Dan');
@@ -112,6 +120,7 @@ test('multiplayer', async ({ page: a, browser }) => {
     expect(typeof atGo.revive).toBe('number');
   }
   await d.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 });
+  await Promise.all(throttles.map((t) => t.send('Emulation.setCPUThrottlingRate', { rate: 1 })));
   await a.waitForFunction(() => window.__heavenfall.players.some((p) => p.id === 3));
   // B chats: Enter opens the chat line, Enter sends; every page has the message within 3 s (M8 §7).
   // Still drawn small, so a starved page doesn't miss the 3 s.
@@ -132,7 +141,9 @@ test('multiplayer', async ({ page: a, browser }) => {
   // (5) For 30 s, sampled every 1 s: every client's snapshots advance, each client's enemy count at its
   // newest tick equals A's at the same tick, and A's upload stays within budget.
   // A keeps only its last 90 ticks (3 s); a client page that was frozen for longer by software
-  // rendering is read again, up to 3 s more, until A still has its newest tick to compare with.
+  // rendering is read again, up to 3 s more, until A still has its newest tick to compare with. So is a
+  // client whose snapshots haven't advanced yet: four games in three browsers' software renderers
+  // freeze a page for over a second now and then (M12 stage 4).
   let prev = await Promise.all(clients.map(async (p) => (await state(p)).lastSnapshotTick));
   for (let i = 0; i < 30; i++) {
     await a.waitForTimeout(1000);
@@ -142,7 +153,8 @@ test('multiplayer', async ({ page: a, browser }) => {
           const s = await state(p);
           const as = await state(a);
           const aTicks = Object.keys(as.enemyCountsByTick).map(Number);
-          if (!(s.lastSnapshotTick in as.enemyCountsByTick) && s.lastSnapshotTick < Math.min(...aTicks) && attempt < 15) {
+          const behind = !(s.lastSnapshotTick in as.enemyCountsByTick) && s.lastSnapshotTick < Math.min(...aTicks);
+          if ((behind || s.lastSnapshotTick <= prev[k]) && attempt < 15) {
             await p.waitForTimeout(200);
             continue;
           }
@@ -168,4 +180,5 @@ test('multiplayer', async ({ page: a, browser }) => {
     }),
   );
   expect(errors).toEqual([]);
+  await Promise.all(clients.map((p) => p.context().browser()?.close()));
 });

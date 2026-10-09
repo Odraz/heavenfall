@@ -31,6 +31,8 @@ export interface Params {
   benchView: BenchView;
   /** The benchmark's HUD fires the class's primary attack every interval (M11 §5, `hudfire=1`). */
   benchHudFire: boolean;
+  /** The benchmark's host bursts 20 Blessed ahead of player 0 every 0.5 s (M12 §10, `burst=1`). */
+  benchBurst: boolean;
   /**
    * A fixed camera for screenshots (M10 §11), with dev=1 or bench=1: `cam=x,y,z,yaw,pitch`, a point
    * in map meters (z: height above the map's zero; empty: eye height above the floor there) and angles in degrees.
@@ -72,7 +74,8 @@ export function parseParams(search: string): Params {
     const cls = q.get('class');
     const classId: ClassId = isClassId(cls) ? cls : 'betrayer';
     const benchHudFire = q.get('hudfire') === '1';
-    return { dev: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, cam: parseCam(q.get('cam')) };
+    const benchBurst = q.get('burst') === '1';
+    return { dev: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')) };
   }
   // Without dev=1 (or bench=1) the page opens the menus.
   const dev = q.get('dev') === '1';
@@ -97,6 +100,7 @@ export function parseParams(search: string): Params {
     name: q.get('name'),
     benchView: 'turn',
     benchHudFire: false,
+    benchBurst: false,
     cam: dev ? parseCam(q.get('cam')) : null,
   };
 }

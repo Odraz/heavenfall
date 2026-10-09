@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GATEKEEPER } from '../data/enemies';
+import { BLESSED, GATEKEEPER } from '../data/enemies';
 import { getDungeon } from '../data/dungeons/index';
 import { PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
 import { MAX_LIVING_ENEMIES } from './constants';
@@ -39,5 +39,35 @@ describe('benchmark arena (M10 gate §4)', () => {
     sim.step();
     expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
     expect(sim.bossSlot).toBe(-1);
+  });
+
+  it('benchBurst: every 0.5 s, 40 damage credited to player 0 bursts the 20 Blessed nearest a point 8 m ahead of it (M12 §10)', () => {
+    const dungeon = getDungeon('sandbox')!;
+    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchArena: 0, benchBurst: true });
+    const p = sim.players[0];
+    for (let t = 0; t < 600 && sim.living < 200; t++) sim.step();
+    sim.events.length = 0;
+    // Steps to just before the next 0.5 s mark.
+    while ((sim.tick + 1) % 15 !== 0) sim.step();
+    const ax = p.x + Math.cos(p.yaw) * 8;
+    const ay = p.y + Math.sin(p.yaw) * 8;
+    const kills = p.kills;
+    sim.step();
+    const bursts = sim.events.flatMap((e) => (e.event.type === 'bursts' ? [e.event.list] : []));
+    expect(bursts.length).toBe(1);
+    expect(p.kills - kills).toBe(20);
+    const slots = bursts[0].filter((_, i) => i % 3 === 0);
+    expect(slots.length).toBe(20);
+    expect(slots.every((s) => sim.eType[s] === BLESSED)).toBe(true);
+    // Light bursts (force 40 = 2 × 20), all credited to player 0.
+    expect(bursts[0].filter((_, i) => i % 3 === 1).every((a) => a < 360)).toBe(true);
+    expect(bursts[0].filter((_, i) => i % 3 === 2).every((id) => id === 0)).toBe(true);
+    // The Blessed left alive are no nearer the point than those that burst (1 m of margin: they moved
+    // during the tick).
+    const far = Math.max(...slots.map((s) => Math.hypot(sim.eX[s] - ax, sim.eY[s] - ay)));
+    for (let k = 0; k < sim.activeCount; k++) {
+      const s = sim.active[k];
+      if (sim.eType[s] === BLESSED) expect(Math.hypot(sim.eX[s] - ax, sim.eY[s] - ay)).toBeGreaterThan(far - 1);
+    }
   });
 });

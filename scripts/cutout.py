@@ -2,6 +2,8 @@
 
 Reads assets/art-src/<name>.png (or a JPEG with the same base name: .jpg, .jpeg, .jfif; M10
 §4.3), writes assets/sprites/<name>.png.
+- ROTATED (flat green background, M12 §4.2.1): cut out like SPRITES, sized by the longer side, and
+  written in 4 rotations as assets/sprites/<name>-r0.png … -r3.png.
 - SPRITES (flat green background): the green keyed out, the green spill removed from the
   edges, cropped to the subject and resized to the listed height. The atlas draws PNG
   sprites at their own size.
@@ -60,6 +62,18 @@ SPRITES = {
     'decor-fountain': 352,
     # HUD: 10vh wide, so 256 stays sharp up to 2560 px tall screens.
     'muzzle-flash': 256,
+}
+
+# Sprites that tumble (M12 §4.2.1): the longer side of the 0° frame in pixels. Each is stored in 4
+# rotations, <name>-r0 … <name>-r3 (r1 is 90° clockwise), since billboards can't rotate in place.
+# The Blessed's pieces are rendered by `blessed.py shreds`, the others painted.
+ROTATED = {
+    'shred-blessed-upper': 160,
+    'shred-blessed-lower': 160,
+    'shred-blessed-sword': 160,
+    'shred-wing': 128,
+    'shred-wingtip': 96,
+    'fx-burst': 256,
 }
 
 # Sprites drawn centered on a point (the muzzle flash on the muzzle): cropped symmetrically
@@ -195,7 +209,11 @@ def greenness(rgb: np.ndarray) -> np.ndarray:
     return rgb[..., 1] - np.maximum(rgb[..., 0], rgb[..., 2])
 
 
-def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN) -> None:
+def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN, rotations: bool = False) -> None:
+    """
+    Keys out the green, crops and resizes to `height`; with `rotations`, `height` is the longer side
+    instead, and the sprite is saved in its 4 rotations (ROTATED).
+    """
     rgb = np.asarray(Image.open(source(name)).convert('RGB')).astype(np.float32)
 
     # The background color, from the corners.
@@ -241,12 +259,23 @@ def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN) ->
 
     # Resize premultiplied, so transparent pixels don't bleed their color into the edges.
     inner = height - 2 * margin
-    width = max(1, round(inner * (x1 - x0) / (y1 - y0)))
+    if rotations and x1 - x0 > y1 - y0:
+        width = inner
+        inner = max(1, round(width * (y1 - y0) / (x1 - x0)))
+    else:
+        width = max(1, round(inner * (x1 - x0) / (y1 - y0)))
     img = Image.fromarray(rgba, 'RGBA').convert('RGBa').resize((width, inner), Image.LANCZOS).convert('RGBA')
-    out = Image.new('RGBA', (width + 2 * margin, height), (0, 0, 0, 0))
+    out = Image.new('RGBA', (width + 2 * margin, inner + 2 * margin), (0, 0, 0, 0))
     out.paste(img, (margin, margin))
-    out.save(out_dir / f'{name}.png', optimize=True)
-    print(f'{name}: {out.width}x{out.height}')
+    if not rotations:
+        out.save(out_dir / f'{name}.png', optimize=True)
+        print(f'{name}: {out.width}x{out.height}')
+        return
+    for r in range(4):
+        # PIL rotates counterclockwise; r1 is 90° clockwise.
+        rot = out.rotate(-90 * r, expand=True)
+        rot.save(out_dir / f'{name}-r{r}.png', optimize=True)
+    print(f'{name}: {out.width}x{out.height}, 4 rotations')
 
 
 def space_letters(color: np.ndarray, alpha: np.ndarray, letters: int, gap: float) -> tuple[np.ndarray, np.ndarray]:
@@ -903,10 +932,12 @@ def gate() -> None:
 
 
 def main() -> None:
-    known = [*SPRITES, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere', 'gate', 'weapons']
+    known = [*SPRITES, *ROTATED, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere', 'gate', 'weapons']
     for name in sys.argv[1:] or known:
         if name in SPRITES:
             cutout(name, SPRITES[name])
+        elif name in ROTATED:
+            cutout(name, ROTATED[name], rotations=True)
         elif name in ICONS:
             icon(name, ICONS[name])
         elif name in TEXTURES:

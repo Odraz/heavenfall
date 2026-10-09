@@ -68,6 +68,12 @@ SWING_DROP = 30
 # How far the Scourge fist's forearm is extended beyond the painting's edges, in its pixels.
 FOREARM_EXTEND = 500
 
+# Shadowstep's dagger (M12 §5.7): drawn with the painting's height at DAGGER_S of the view's (the HUD's
+# starting value; the stored size assumes it), its forearm extended this far past the painting's right
+# and bottom edges, in its pixels.
+DAGGER_S = 0.6
+DAGGER_EXTEND = 700
+
 PREVIEW_W, PREVIEW_H = 1920, 1080
 SHOTS = ROOT / 'screenshots' / 'weapons'
 
@@ -144,6 +150,11 @@ FP = {
                      (1037, 572), (1039, 596), (1030, 604), (1012, 598), (994, 588), (984, 572), (981, 550),
                      (984, 526)],
         'blur': 0.35,
+        # Shadowstep's dagger in a reverse grip (M12 §5.7), already a left hand: the fist's center, the
+        # blade's (steel) tip, a point on the forearm's axis near where it leaves the painting, and the
+        # columns where it leaves through the bottom edge (it also leaves through the right edge).
+        'dagger': 'fp-betrayer-dagger', 'dagger_fist': (840, 265), 'dagger_tip': (212, 654),
+        'dagger_forearm': (1250, 700), 'dagger_cols': (970, 1356),
     },
 }
 
@@ -723,6 +734,31 @@ def scourge(cfg: dict, out_dir) -> dict:
     }
 
 
+def dagger(cfg: dict, k: float, out_dir) -> dict:
+    """Shadowstep's dagger (M12 §5.7): returns the manifest's `slash`, in the stored image's source pixels."""
+    color, alpha = keyed(cfg['dagger'])
+    h, w = alpha.shape
+    # The forearm leaves the painting at its right and bottom edges: mirrored, `extend_forearm` pads the
+    # left and bottom; mirrored back, the padding is at the right, and the painting stays at (0, 0).
+    flip = lambda p: (w - 1 - p[0], p[1])
+    fist, tip, arm = cfg['dagger_fist'], cfg['dagger_tip'], cfg['dagger_forearm']
+    c0, c1 = cfg['dagger_cols']
+    toward = np.array(flip(fist), float) - np.array(flip(arm), float)
+    color, alpha, _ = extend_forearm(color[:, ::-1], alpha[:, ::-1], toward, DAGGER_EXTEND, (w - 1 - c1, w - 1 - c0))
+    color, alpha = color[:, ::-1], alpha[:, ::-1]
+    x0, y0, x1, y1 = (int(v) for v in crop_box(alpha))
+    rgba = rgba_of(color, alpha)[y0:y1, x0:x1]
+    store = DAGGER_S * VIEW_H / h * k * STORE_CUT
+    img = resize_rgba(rgba, round((x1 - x0) * store), round((y1 - y0) * store))
+    size = save_webp(img, out_dir / 'dagger.webp')
+    fx, fy = fist[0] - arm[0], fist[1] - arm[1]
+    print(f'dagger: {x1 - x0}x{y1 - y0} source px, stored {img.shape[1]}x{img.shape[0]} ({size / 1e3:.0f} kB), forearm at {math.degrees(math.atan2(fy, fx)):.1f} deg')
+    return {
+        'paintH': h, 'w': x1 - x0, 'h': y1 - y0,
+        'fist': [fist[0] - x0, fist[1] - y0], 'tip': [tip[0] - x0, tip[1] - y0],
+    }
+
+
 def resize_rgba(rgba: np.ndarray, w: int, h: int) -> np.ndarray:
     img = Image.fromarray(rgba.round().clip(0, 255).astype(np.uint8), 'RGBA').convert('RGBa').resize((w, h), Image.LANCZOS).convert('RGBA')
     return np.asarray(img).astype(np.float32)
@@ -862,6 +898,9 @@ def weapon(name: str) -> dict:
     if 'sweep' in cfg:
         manifest['swing'] = scourge(cfg, out_dir)
         total += sum((out_dir / f).stat().st_size for f in ('fist.webp', 'chain.webp', 'chain-glow.webp'))
+    if 'dagger' in cfg:
+        manifest['slash'] = dagger(cfg, k, out_dir)
+        total += (out_dir / 'dagger.webp').stat().st_size
     (out_dir / 'weapon.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf8')
     print(f'{name}: frame {frame.w}x{frame.h} view px from column {frame.left}, stored {frame.sw}x{frame.sh}; '
           f'files {", ".join(sorted(p.name for p in out_dir.glob("*.webp")))}: {total / 1e6:.2f} MB')

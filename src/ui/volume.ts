@@ -1,6 +1,10 @@
-/** The Master, Music and SFX sliders on Title and the Pause overlay, in a Settings view (M8 §9.3). */
+/**
+ * The Master, Music and SFX sliders on Title and the Pause overlay, in a Settings view (M8 §9.3), with
+ * the Screen shake toggle (M12 §4.5).
+ */
 import { audio, sfx } from '../audio/audio';
 import { loadVolume, saveVolume, VOLUME_KEYS, VOLUME_LABELS, volumeText, type VolumeKey } from '../audio/volume';
+import { loadShakeSetting, saveShakeSetting } from '../client/shake';
 
 function setVolume(k: VolumeKey, v: number): void {
   const a = audio();
@@ -43,6 +47,30 @@ export function volumeSliders(parent: HTMLElement): HTMLDivElement {
   return box;
 }
 
+/** The Screen shake toggle (M12 §4.5): on by default, saved at once; each shake reads it when it starts. */
+export function shakeToggle(parent: HTMLElement): HTMLLabelElement {
+  const row = document.createElement('label');
+  row.className = 'volume-row toggle-row';
+  const name = document.createElement('span');
+  name.className = 'volume-label';
+  name.textContent = 'Screen shake';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.name = 'screen-shake';
+  input.checked = loadShakeSetting();
+  const value = document.createElement('span');
+  value.className = 'volume-value';
+  value.textContent = input.checked ? 'On' : 'Off';
+  input.addEventListener('change', () => {
+    saveShakeSetting(input.checked);
+    value.textContent = input.checked ? 'On' : 'Off';
+    sfx('buttonClick');
+  });
+  row.append(name, input, value);
+  parent.appendChild(row);
+  return row;
+}
+
 /**
  * A `Settings` button in `buttons` that turns `panel` into the Settings view: its title, the sliders
  * and `Back`. The panel keeps its size meanwhile, so the window doesn't move. The returned function
@@ -62,7 +90,7 @@ export function settingsButton(panel: HTMLElement, buttons: HTMLElement): () => 
   title.className = 'settings-title';
   title.textContent = 'Settings';
   view.appendChild(title);
-  volumeSliders(view);
+  shakeToggle(volumeSliders(view));
   const back = document.createElement('button');
   back.type = 'button';
   back.className = 'button secondary';

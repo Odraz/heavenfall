@@ -119,6 +119,33 @@ export const SFX = {
   },
 
   // ---------------------------------------------------------------- enemies
+  /**
+   * A burst death (M12 §4.3): porcelain cracking, a body blow, a flutter of feathers. Played at
+   * PRIO_ABILITY for your own bursts, PRIO_OTHERS for others'.
+   */
+  burstPop: {
+    priority: PRIO_OTHERS,
+    parts: [
+      part({ wave: 'noise', freq: 14000, attack: 0.001, decay: 0.02, sustain: 0.2, release: 0.06, volume: 0.55, lowpass: 11000, lowpassEnd: 3000 }),
+      part({ wave: 'sine', freq: 3150, decay: 0.02, sustain: 0.25, release: 0.12, volume: 0.1, vibratoRate: 40, vibratoDepth: 1 }),
+      part({ wave: 'sine', freq: 4730, delay: 0.01, decay: 0.02, sustain: 0.2, release: 0.09, volume: 0.08 }),
+      part({ wave: 'sine', freq: 140, freqEnd: 42, decay: 0.07, sustain: 0.35, release: 0.14, volume: 0.75 }),
+      part({ wave: 'square', freq: 220, freqEnd: 70, decay: 0.04, sustain: 0.2, release: 0.08, volume: 0.18, lowpass: 1200, bits: 5 }),
+      part({ wave: 'noise', freq: 7000, delay: 0.03, attack: 0.02, decay: 0.08, sustain: 0.35, hold: 0.08, release: 0.15, volume: 0.22, lowpass: 5000, lowpassEnd: 1500, vibratoRate: 26, vibratoDepth: 10 }),
+    ],
+  },
+  /** Many bursts at once (M12 §4.3): a sub hit, a blast, a flock taking off and a shimmer. */
+  massKill: {
+    priority: PRIO_OTHERS,
+    parts: [
+      part({ wave: 'sine', freq: 75, freqEnd: 28, decay: 0.18, sustain: 0.5, hold: 0.05, release: 0.35, volume: 0.85 }),
+      part({ wave: 'noise', freq: 9000, decay: 0.1, sustain: 0.35, release: 0.35, volume: 0.5, lowpass: 4000, lowpassEnd: 300 }),
+      part({ wave: 'noise', freq: 9000, delay: 0.05, attack: 0.05, hold: 0.15, release: 0.3, volume: 0.25, lowpass: 9000, lowpassEnd: 3000, vibratoRate: 22, vibratoDepth: 12 }),
+      part({ wave: 'sine', freq: 1568, delay: 0.04, release: 0.35, volume: 0.08 }),
+      part({ wave: 'sine', freq: 2093, delay: 0.08, release: 0.35, volume: 0.07 }),
+      part({ wave: 'sine', freq: 2637, delay: 0.12, release: 0.35, volume: 0.06 }),
+    ],
+  },
   /** Blessed death: a soft feathery chirp. */
   blessedDeath: {
     priority: PRIO_ENEMY,
@@ -324,6 +351,25 @@ export const SFX = {
   shadowstep: {
     priority: PRIO_ABILITY,
     parts: [part({ wave: 'noise', freq: 8000, attack: 0.04, decay: 0.12, sustain: 0.3, release: 0.12, volume: 0.45, lowpass: 600, lowpassEnd: 5000 })],
+  },
+  /** Low HP's heartbeat (M12 §6.2): a deep double thump. */
+  heartbeat: {
+    priority: PRIO_OWN,
+    parts: [
+      part({ wave: 'sine', freq: 62, freqEnd: 40, attack: 0.005, decay: 0.06, sustain: 0.4, release: 0.12, volume: 0.85 }),
+      part({ wave: 'noise', freq: 2000, attack: 0.003, decay: 0.03, sustain: 0.2, release: 0.06, volume: 0.25, lowpass: 260, lowpassEnd: 120 }),
+      part({ wave: 'sine', freq: 56, freqEnd: 36, delay: 0.17, attack: 0.005, decay: 0.06, sustain: 0.35, release: 0.14, volume: 0.65 }),
+      part({ wave: 'noise', freq: 2000, delay: 0.17, attack: 0.003, decay: 0.03, sustain: 0.2, release: 0.06, volume: 0.18, lowpass: 240, lowpassEnd: 110 }),
+    ],
+  },
+  /** Shadowstep's dagger (M12 §5.7): a sharp metallic swish, about 0.25 s, rising through the air with a thin ring of steel. */
+  daggerCut: {
+    priority: PRIO_ABILITY,
+    parts: [
+      part({ wave: 'noise', freq: 12000, attack: 0.012, decay: 0.07, sustain: 0.3, release: 0.13, volume: 0.5, lowpass: 2200, lowpassEnd: 11000 }),
+      part({ wave: 'sine', freq: 3400, freqEnd: 2700, delay: 0.03, decay: 0.05, sustain: 0.25, release: 0.15, volume: 0.12, vibratoRate: 45, vibratoDepth: 1 }),
+      part({ wave: 'triangle', freq: 5200, freqEnd: 4800, delay: 0.045, decay: 0.03, sustain: 0.2, release: 0.1, volume: 0.06 }),
+    ],
   },
 
   // ---------------------------------------------------------------- arena

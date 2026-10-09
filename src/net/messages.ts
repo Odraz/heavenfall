@@ -18,6 +18,10 @@ export type GameEvent =
   | { type: 'starLanded'; playerId: number; x: number; y: number; z: number; launched: number[] }
   /** Martyr's Shroud burst (M9 §3.3), where the shielded player stood. */
   | { type: 'shroudBurst'; playerId: number; x: number; y: number; z: number }
+  /** Burst deaths this tick (M12 §4.1): `[slot, angle, playerId, …]`, the angle in degrees, + 360 if heavy. */
+  | { type: 'bursts'; list: number[] }
+  /** Shadowstep cut through its path (M12 §5.7): the path's first and last points. */
+  | { type: 'dashCut'; playerId: number; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number }
   | { type: 'arenaStarted'; arenaIndex: number }
   | { type: 'arenaCleared'; arenaIndex: number }
   | { type: 'bossCast'; phase: 'start' | 'interrupted' | 'completed' }

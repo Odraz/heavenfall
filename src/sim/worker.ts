@@ -10,7 +10,7 @@ import { decodeInput } from '../net/protocol';
 import { PING_MS } from '../net/peerConfig';
 import { MAX_TICKS_PER_LOOP, TICK_MS } from './constants';
 import { Simulation, type SimPlayerInit } from './sim';
-import type { MainToWorker, WorkerToMain } from './workerMessages';
+import { localSnap, type MainToWorker, type WorkerToMain } from './workerMessages';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -64,7 +64,7 @@ function runTick(): void {
   }
   // A tick's measured time includes encoding that tick's snapshots (§2.2).
   const ms = performance.now() - t0;
-  post({ t: 'snap', to: localPlayerId, bufs: parts, simMs: ms }, parts);
+  post(localSnap(sim, localPlayerId, parts, ms), parts);
   for (const [to, bufs] of remote) post({ t: 'snap', to, bufs, simMs: ms }, bufs);
   flushEvents();
   // At the result the host sends one last snapshot and gameOver, then stops simulating (§3). In
@@ -100,10 +100,10 @@ function loop(): void {
   timer = setTimeout(loop, Math.max(1, TICK_MS - acc - 1));
 }
 
-function start(players: SimPlayerInit[], dungeonId: string, seed: number, godMode: boolean, benchArena: number, singleplayer: boolean, localId: number): void {
+function start(players: SimPlayerInit[], dungeonId: string, seed: number, godMode: boolean, benchArena: number, singleplayer: boolean, localId: number, benchBurst = false): void {
   const dungeon = getDungeon(dungeonId);
   if (!dungeon) throw new Error(`Unknown dungeon ${dungeonId}`);
-  sim = new Simulation({ dungeon, players, seed, god: godMode, benchArena, singleplayer });
+  sim = new Simulation({ dungeon, players, seed, god: godMode, benchArena, benchBurst, singleplayer });
   localPlayerId = localId;
   for (const p of sim.players) p.lastAcceptMs = performance.now();
   running = true;
@@ -233,7 +233,7 @@ ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
   const m = e.data;
   switch (m.t) {
     case 'start':
-      start(m.players, m.dungeonId, m.seed, m.god, m.benchArena, m.singleplayer, m.localPlayerId);
+      start(m.players, m.dungeonId, m.seed, m.god, m.benchArena, m.singleplayer, m.localPlayerId, m.benchBurst);
       break;
     case 'host':
       host(m.dungeonId, m.password, m.name, m.god);

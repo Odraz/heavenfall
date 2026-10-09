@@ -48,6 +48,28 @@ export function rayCylinder(
   return best;
 }
 
+/** A burst death's force thresholds, in multiples of the type's max HP (M12 §4.1). */
+export const BURST_LIGHT = 2;
+export const BURST_HEAVY = 4;
+
+/** The death a force summed over one tick causes (M12 §4.1): 0 normal, 1 light burst, 2 heavy burst. */
+export function burstTier(force: number, maxHp: number): 0 | 1 | 2 {
+  if (force >= BURST_HEAVY * maxHp - 1e-9) return 2;
+  if (force >= BURST_LIGHT * maxHp - 1e-9) return 1;
+  return 0;
+}
+
+/**
+ * A burst's angle in whole degrees 0–359, from (fx, fy) to the enemy at (x, y); `slot` picks a fixed
+ * angle when the two coincide, as the knockback does (M12 §4.1).
+ */
+export function burstAngle(fx: number, fy: number, x: number, y: number, slot: number): number {
+  const dx = x - fx;
+  const dy = y - fy;
+  const a = Math.hypot(dx, dy) < 1e-6 ? (slot % 16) * 22.5 : (Math.atan2(dy, dx) * 180) / Math.PI;
+  return ((Math.round(a) % 360) + 360) % 360;
+}
+
 /** Unit aim direction from yaw and pitch (§2.3). */
 export function aimDir(yaw: number, pitch: number): [number, number, number] {
   const cp = Math.cos(pitch);
@@ -70,17 +92,20 @@ export interface BulletTarget {
  * it can't kill, or at the Gatekeeper. Returns the damage to deal to each (before the Bound step) and
  * whether it stopped at the last one. Shared by the host and the client's tracer estimate.
  */
-export function silverBulletHits(targets: readonly BulletTarget[], damage: number): { hits: Array<{ s: number; amount: number }>; stopped: boolean } {
-  const hits: Array<{ s: number; amount: number }> = [];
+export function silverBulletHits(
+  targets: readonly BulletTarget[],
+  damage: number,
+): { hits: Array<{ s: number; amount: number; carried: number }>; stopped: boolean } {
+  const hits: Array<{ s: number; amount: number; carried: number }> = [];
   let remaining = damage;
   for (const t of targets) {
     const m = t.rooted ? 2 : 1;
     if (!t.boss && remaining * m >= t.hp - 1e-9) {
-      hits.push({ s: t.s, amount: t.hp / m });
+      hits.push({ s: t.s, amount: t.hp / m, carried: remaining });
       remaining -= t.hp / m;
       if (remaining <= 1e-9) return { hits, stopped: true };
     } else {
-      hits.push({ s: t.s, amount: remaining });
+      hits.push({ s: t.s, amount: remaining, carried: remaining });
       return { hits, stopped: true };
     }
   }
@@ -90,12 +115,16 @@ export function silverBulletHits(targets: readonly BulletTarget[], damage: numbe
 /**
  * The client's estimate of the Silver Bullet (M9 §5.1): snapshots carry no enemy HP, so each enemy
  * along the line, nearest first, is taken at its type's full HP, doubled for the rooted flag. Returns
- * how many of them it reaches, and whether it stops at the last.
+ * how many of them it reaches, whether it stops at the last, and what the bullet still carried on
+ * reaching each (M12 §4.4).
  */
-export function estimateSilverBullet(line: ReadonlyArray<{ type: number; rooted: boolean }>, damage: number): { reached: number; stopped: boolean } {
+export function estimateSilverBullet(
+  line: ReadonlyArray<{ type: number; rooted: boolean }>,
+  damage: number,
+): { reached: number; stopped: boolean; carried: number[] } {
   const r = silverBulletHits(
     line.map((e, i) => ({ s: i, hp: ENEMIES[e.type].hp, rooted: e.rooted, boss: e.type === GATEKEEPER })),
     damage,
   );
-  return { reached: r.hits.length, stopped: r.stopped };
+  return { reached: r.hits.length, stopped: r.stopped, carried: r.hits.map((h) => h.carried) };
 }

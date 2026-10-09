@@ -34,12 +34,12 @@ export interface SynthPart {
   delay?: number;
 }
 
-/** A sound: up to 3 parts mixed together. */
+/** A sound: up to 6 parts mixed together (M12 §4.3: the burst and mass-kill sounds have 6). */
 export interface SoundDef {
   parts: SynthPart[];
 }
 
-export const MAX_PARTS = 3;
+export const MAX_PARTS = 6;
 
 /** A part's length in seconds, from the sound's start. */
 function partLength(p: SynthPart): number {

@@ -13,6 +13,8 @@
 //   --class <id>   the class the benchmark plays (default: the Betrayer) (M11 §5)
 //   --hud-fire     the HUD fires the class's primary attack every interval for the whole run: only the
 //                  first-person weapon's cosmetic shot, no simulation, tracers or sound (M11 §5)
+//   --burst        every 0.5 s the host deals 40 to the 20 Blessed nearest a point 8 m ahead of the
+//                  player, so they die in light bursts (M12 §10)
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -30,11 +32,13 @@ const runs = Math.max(1, Number(option('--runs') ?? 1) || 1);
 const cooldown = Math.max(0, Number(option('--cooldown') ?? 0) || 0);
 const classId = option('--class');
 const hudFire = process.argv.includes('--hud-fire');
+const burst = process.argv.includes('--burst');
 const query = new URLSearchParams({ bench: '1' });
 if (mapId) query.set('map', mapId);
 if (view) query.set('view', view);
 if (classId) query.set('class', classId);
 if (hudFire) query.set('hudfire', '1');
+if (burst) query.set('burst', '1');
 const BENCH_URL = `http://localhost:${PORT}/?${query}`;
 
 let serverExited = false;

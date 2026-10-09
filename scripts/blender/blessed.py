@@ -4,17 +4,20 @@ Shared code and the commands are in common.py.
 
 Run with Blender 5.2 (headless):
   blender -b --factory-startup -P scripts/blender/blessed.py -- <command> [args]
+
+Besides the shared commands: shreds [out-dir]  the torn pieces of M12 §4.2.1 (default assets/art-src)
 """
 import math
 import os
 import sys
 
+import bmesh
 import bpy
 from mathutils import Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import (PAL, Pose, Spec, add, bind_rigid, bind_skirt, blade_mesh, box, build_armature,  # noqa: E402
-                    face_camera, keys, lerp, main, robe_panel, smooth, sphere, torus, tube)
+from common import (EMISSIVE, PAL, Pose, Spec, add, bind_rigid, bind_skirt, blade_mesh, box, build_armature,  # noqa: E402
+                    face_camera, keys, lerp, main, robe_panel, smooth, sphere, toon, torus, tube)
 
 # ---------------------------------------------------------------- palette
 
@@ -292,5 +295,200 @@ def after_pose(pose):
 # The canvas leaves room for a raised sword and a body lying on the ground in any direction.
 SPEC = Spec(build_model, ANIMS, px_per_m=190, canvas=(-2.0, 2.0, -0.4, 2.6), after_pose=after_pose)
 
+
+# ---------------------------------------------------------------- torn pieces (M12 §4.2.1)
+
+CUT_Z = 0.95  # the cut's height above the feet, just below the sash
+CUT_TEETH = 0.065  # the zigzag's period: about 6 teeth across the hips
+CUT_AMP = 0.06
+CUT_BAND = 0.008  # the white band along the cut edge
+TILT = 35  # degrees, so the cut faces the camera
+SWORD_PARTS = ('grip', 'pommel', 'guard', 'blade')
+ARM_BONES = ('shoulder.', 'upper_arm.', 'forearm.', 'hand.')
+GREEN_PAD = 24  # px of green around each piece; cutout.py reads the background from the corners
+
+PAL.update({'cut': (1.0, 0xd2 / 255, 0x7a / 255), 'cutband': (1.0, 1.0, 1.0)})
+EMISSIVE.update({'cut', 'cutband'})
+
+
+def zigzag(x):
+    """The cut's height at x: teeth of CUT_TEETH, ±CUT_AMP, a tooth's peak at x = 0."""
+    f = (x / CUT_TEETH) % 1.0
+    return CUT_Z + CUT_AMP * (4 * abs(f - 0.5) - 1)
+
+
+def cut_slab(name, lo, hi, arm):
+    """A closed solid between the zigzag raised by `lo` and by `hi`, across the whole body."""
+    half = 0.6
+    n = round(2 * half / (CUT_TEETH / 2))
+    xs = [-half + i * CUT_TEETH / 2 for i in range(n + 1)]
+    bm = bmesh.new()
+    rings = []
+    for y in (-half, half):
+        top = [bm.verts.new((x, y, zigzag(x) + hi)) for x in xs]
+        bottom = [bm.verts.new((x, y, zigzag(x) + lo)) for x in reversed(xs)]
+        rings.append(top + bottom)
+    bm.faces.new(rings[0])
+    bm.faces.new(list(reversed(rings[1])))
+    k = len(rings[0])
+    for i in range(k):
+        j = (i + 1) % k
+        bm.faces.new((rings[0][i], rings[1][i], rings[1][j], rings[0][j]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(cut_mat())
+    obj.hide_render = True
+    obj.parent = arm
+    obj.matrix_parent_inverse = arm.matrix_world.inverted()
+    return obj
+
+
+def cut_mat():
+    """The cut faces: flat gold light; back faces culled so their outline shell doesn't show."""
+    m = toon('cut')
+    m.use_backface_culling = True
+    return m
+
+
+def intersect(obj, cutter):
+    """Keeps the part of `obj` inside `cutter`, after its rig and thickness, before its outline."""
+    mod = obj.modifiers.new('cut', 'BOOLEAN')
+    mod.operation = 'INTERSECT'
+    mod.solver = 'EXACT'
+    mod.material_mode = 'TRANSFER'
+    mod.object = cutter
+    names = [m.name for m in obj.modifiers]
+    if 'outline' in names:
+        obj.modifiers.move(len(names) - 1, names.index('outline'))
+
+
+def band_copy(obj):
+    """A copy of `obj` drawn in the white band's material, without an outline."""
+    band = obj.copy()
+    band.data = obj.data.copy()
+    band.name = obj.name + '_band'
+    bpy.context.collection.objects.link(band)
+    if 'outline' in band.modifiers:
+        band.modifiers.remove(band.modifiers['outline'])
+    for i in range(len(band.data.materials)):
+        band.data.materials[i] = toon('cutband')
+    return band
+
+
+def world_z_range(obj):
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = obj.evaluated_get(dg)
+    zs = [(ev.matrix_world @ Vector(c)).z for c in ev.bound_box]
+    return min(zs), max(zs)
+
+
+def cmd_shreds(spec, out_dir='assets/art-src'):
+    """
+    The Blessed torn in half (M12 §4.2.1): the upper half, the lower half and the sword, each
+    rendered alone in the idle pose with the gold cut toward the camera, composited onto flat
+    green as shred-blessed-<piece>.png, and their heights in shred-blessed.json.
+    """
+    import json
+    import numpy as np
+    from mathutils import Matrix
+    from common import SUPERSAMPLE, apply_pose, crop, ink_frame, render_to_array, reset_scene, save_array, setup_camera
+
+    os.makedirs(out_dir, exist_ok=True)
+    scene = reset_scene()
+    arm = spec.build()
+    pose = pose_idle(0)
+    apply_pose(arm, pose, spec.contact)
+    bpy.data.objects['halo'].hide_render = True
+    cam = setup_camera(scene, spec.canvas, spec.px_per_m * SUPERSAMPLE)
+    bpy.context.view_layer.update()
+
+    # Sort the parts: the sword alone; arms whole to the upper half; the rest by the cut's band.
+    pieces = {'upper': [], 'lower': [], 'sword': []}
+    cut = []
+    for obj in list(bpy.data.objects):
+        if obj.type != 'MESH' or obj.name == 'halo':
+            continue
+        if obj.name in SWORD_PARTS:
+            pieces['sword'].append(obj)
+        elif obj.parent_type == 'BONE' and obj.parent_bone.startswith(ARM_BONES):
+            pieces['upper'].append(obj)
+        else:
+            z0, z1 = world_z_range(obj)
+            if z0 > CUT_Z + CUT_AMP:
+                pieces['upper'].append(obj)
+            elif z1 < CUT_Z - CUT_AMP:
+                pieces['lower'].append(obj)
+            else:
+                cut.append(obj)
+
+    # Each cut part becomes four: the upper and lower halves, each with its white band at the cut.
+    slabs = {
+        'upper': cut_slab('slab_upper', CUT_BAND, 5.0, arm), 'upper_band': cut_slab('slab_upper_band', 0.0, CUT_BAND, arm),
+        'lower': cut_slab('slab_lower', -5.0, -CUT_BAND, arm), 'lower_band': cut_slab('slab_lower_band', -CUT_BAND, 0.0, arm),
+    }
+    for obj in cut:
+        bands = {half: band_copy(obj) for half in ('upper', 'lower')}
+        lower = obj.copy()
+        lower.data = obj.data.copy()
+        lower.name = obj.name + '_lower'
+        bpy.context.collection.objects.link(lower)
+        intersect(obj, slabs['upper'])
+        intersect(lower, slabs['lower'])
+        for half, band in bands.items():
+            intersect(band, slabs[half + '_band'])
+        pieces['upper'] += [obj, bands['upper']]
+        pieces['lower'] += [lower, bands['lower']]
+    print('cut:', ', '.join(o.name for o in cut))
+
+    rest = arm.matrix_world.copy()
+
+    def about(pivot, rot):
+        p = Matrix.Translation(pivot)
+        return p @ rot.to_4x4() @ p.inverted() @ rest
+
+    # The halves tilt about the left-right axis around the cut: the upper's bottom and the lower's
+    # top toward the camera (it looks along +Y).
+    pivot = Vector((0, 0, CUT_Z))
+    tilt = {'upper': Matrix.Rotation(math.radians(-TILT), 3, 'X'), 'lower': Matrix.Rotation(math.radians(TILT), 3, 'X')}
+    # The sword lies diagonally, tip down to the right, its flat toward the camera.
+    blade = bpy.data.objects['blade']
+    rot = blade.matrix_world.to_3x3()
+    d = (rot @ SWORD_DIR).normalized()
+    side = (rot @ SWORD_DIR.cross(Vector((0, 0, 1))).normalized()).normalized()
+    src = Matrix((d, side, d.cross(side))).transposed()
+    a = 1 / math.sqrt(2)
+    dt, st = Vector((a, 0, -a)), Vector((a, 0, a))
+    dst = Matrix((dt, st, dt.cross(st))).transposed()
+    grip = Vector((-0.255, -0.04, 0.79))
+    sword_center = blade.matrix_world @ (grip + SWORD_DIR * 0.4)
+
+    meta = {}
+    for name, objs in pieces.items():
+        shown = set(objs)
+        for obj in bpy.data.objects:
+            if obj.type == 'MESH':
+                obj.hide_render = obj not in shown
+        arm.matrix_world = about(sword_center, dst @ src.transposed()) if name == 'sword' else about(pivot, tilt[name])
+        bpy.context.view_layer.update()
+        arr = render_to_array(scene, os.path.join(out_dir, 'shreds.tmp.png'))
+        img, _, _ = crop(ink_frame(arr, SUPERSAMPLE, spec.px_per_m), 0, 0)
+        rows = np.nonzero((img[..., 3] >= 0.5).any(axis=1))[0]
+        meta[name] = {'heightM': round((rows.max() - rows.min() + 1) / spec.px_per_m, 3)}
+        h, w, _ = img.shape
+        out = np.zeros((h + 2 * GREEN_PAD, w + 2 * GREEN_PAD, 4), dtype=np.float32)
+        out[...] = (0, 1, 0, 1)
+        a_ = img[..., 3:4]
+        out[GREEN_PAD:GREEN_PAD + h, GREEN_PAD:GREEN_PAD + w, :3] = img[..., :3] * a_ + np.array((0, 1, 0)) * (1 - a_)
+        save_array(out, os.path.join(out_dir, f'shred-blessed-{name}.png'))
+        print(f'shred-blessed-{name}: {w}x{h}, {meta[name]["heightM"]} m')
+    os.remove(os.path.join(out_dir, 'shreds.tmp.png'))
+    with open(os.path.join(out_dir, 'shred-blessed.json'), 'w', encoding='utf8', newline='\n') as f:
+        f.write(json.dumps(meta, indent=2) + '\n')
+
+
 if __name__ == '__main__':
-    main(SPEC, __doc__)
+    main(SPEC, __doc__, {'shreds': cmd_shreds})

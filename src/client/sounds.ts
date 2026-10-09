@@ -3,7 +3,7 @@
  * own input, snapshot changes and events.
  */
 import { audio, setMusic, sfx, type SoundPos } from '../audio/audio';
-import { PRIO_OTHERS } from '../audio/sfx';
+import { PRIO_ABILITY, PRIO_OTHERS } from '../audio/sfx';
 import type { ClassId } from '../data/classes';
 import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import type { TrackId } from '../data/music';
@@ -13,6 +13,7 @@ import { ENEMY_SLOTS, TICK_MS } from '../sim/constants';
 import type { GameMap } from '../sim/map';
 import { BOSS_CAST_VOLLEY, PROJ_ARROW, PROJ_ORB } from '../sim/sim';
 import type { SfxName } from '../audio/sfx';
+import type { MassKillPlay } from './massKill';
 
 const WEAPON_SFX: Record<ClassId, SfxName> = { fallen: 'shotgun', heretic: 'censerLaunch', binder: 'chaingun', betrayer: 'revolver' };
 /** Secondary attacks (M9 §5.2); others' Silver Bullets sound from their event instead. */
@@ -26,8 +27,6 @@ const ABILITY_SFX: Record<string, SfxName> = {
   'betrayer:Q': 'fieldOfBlood',
   'betrayer:E': 'shadowstep',
 };
-/** Falling Star lands this long after the press. */
-const LEAP_S = 0.4;
 /** An enemy melee blow: a Blessed attacking within this horizontal distance. */
 const MELEE_REACH = 1.6;
 const NO_STATE = 255;
@@ -57,8 +56,35 @@ export class GameSounds {
     sfx('hitTick');
   }
 
-  kill(): void {
-    sfx('killTick');
+  /** Low HP's heartbeat (M12 §6.2). */
+  heartbeat(): void {
+    sfx('heartbeat');
+  }
+
+  /** Your Falling Star lands, as its leap ends (M12 §5.2). */
+  ownLanding(): void {
+    sfx('fallingStarLand');
+  }
+
+  /** Your Shadowstep's dagger cut, as its streak appears (M12 §5.7). */
+  ownDaggerCut(): void {
+    sfx('daggerCut');
+  }
+
+  /** An own kill; a predicted one climbs the pitch ladder at an exact `rate` (M12 §4.4). */
+  kill(rate?: number): void {
+    sfx('killTick', null, 1, 0, undefined, rate);
+  }
+
+  /** A burst death bursts (M12 §4.3): your own at PRIO_ABILITY, others' at PRIO_OTHERS. */
+  burstPop(at: SoundPos, mine: boolean): void {
+    sfx('burstPop', at, 1, 0, mine ? PRIO_ABILITY : PRIO_OTHERS);
+  }
+
+  /** A mass kill (M12 §4.3): yours without position at PRIO_ABILITY, others' at its position. */
+  massKill(m: MassKillPlay): void {
+    if (m.mine) sfx('massKill', null, m.gain, 0, PRIO_ABILITY, m.rate);
+    else sfx('massKill', { x: m.x, y: m.y }, m.gain, 0, PRIO_OTHERS, m.rate);
   }
 
   /** An enemy disappeared (died), when its feather burst plays. */
@@ -158,15 +184,21 @@ export class GameSounds {
         const key = `${this.classOf(e.playerId)}:${e.slot}`;
         const at = { x: e.x, y: e.y };
         if (key === 'fallen:E') {
-          // The leap from where the Fallen is, the landing at the ally 0.4 s later.
-          const from = pose(e.playerId);
-          sfx('fallingStarLeap', from ?? at);
-          sfx('fallingStarLand', at, 1, LEAP_S);
+          // The leap from where the Fallen is; the landing sounds when it lands (M12 §5.2).
+          sfx('fallingStarLeap', e.playerId === this.localId ? null : (pose(e.playerId) ?? at));
         } else if (ABILITY_SFX[key]) sfx(ABILITY_SFX[key], key === 'betrayer:Q' || key === 'binder:Q' || key === 'binder:E' ? at : (pose(e.playerId) ?? at));
         break;
       }
       case 'shroudBurst':
         sfx('shroudBurst', { x: e.x, y: e.y });
+        break;
+      case 'starLanded':
+        // Others' landings after the render delay, where they land; the own one played as its leap ended.
+        if (e.playerId !== this.localId) sfx('fallingStarLand', { x: e.x, y: e.y }, 1, this.renderDelay);
+        break;
+      case 'dashCut':
+        // Others' dagger cuts at the streak's start, after the render delay (M12 §5.7).
+        if (e.playerId !== this.localId) sfx('daggerCut', { x: e.x0, y: e.y0 }, 1, this.renderDelay);
         break;
       case 'silverBullet':
         if (e.playerId !== this.localId) sfx('silverBullet', { x: e.x, y: e.y }, 1, this.renderDelay, PRIO_OTHERS);

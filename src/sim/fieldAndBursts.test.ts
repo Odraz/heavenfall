@@ -27,8 +27,8 @@ describe('shotgun knockback (M9 §3.1)', () => {
     const c = enemyAt(sim, CHORISTER, 9.5, 5.5);
     sim.eHp[c] = 1000;
     sim.fireWeapon(p, ATTACK_PRIMARY);
-    // All 8 pellets hit it (no spread), but it's knocked back once: 2 m over 6 ticks, away from the Fallen.
-    expect(sim.eHp[c]).toBe(1000 - 96);
+    // All 8 pellets of 20 hit it (no spread, within 6 m), but it's knocked back once: 2 m over 6 ticks, away from the Fallen.
+    expect(sim.eHp[c]).toBe(1000 - 160);
     expect(sim.eKbUntil[c]).toBe(sim.tick + 6);
     sim.root(c, 10); // so it doesn't walk; knockbacks still move rooted enemies (MVP §5.6)
     for (let i = 0; i < 6; i++) sim.step();
@@ -85,16 +85,16 @@ describe("Martyr's Shroud burst (M9 §3.3)", () => {
     return { sim, heretic, binder, ring };
   }
 
-  it('bursts for 50 to the 8 nearest enemies within 5 m when damage breaks it, credited to the caster', () => {
+  it('bursts for 50 to every enemy within 3.5 m when damage breaks it, credited to the caster (M12 §5.4)', () => {
     const { sim, heretic, binder, ring } = setup();
     sim.damagePlayer(binder, 100);
     expect(eventsOf(sim, 'shroudBurst')).toEqual([]);
     sim.damagePlayer(binder, 60);
     expect(binder.shield).toBe(0);
     expect(binder.hp).toBe(190);
-    // Rooted, so bound: 50 × 2 kills a Chorister.
-    expect(ring.map((s) => sim.eAlive[s])).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 1, 1]);
-    expect(heretic.kills).toBe(8);
+    // Rooted, so bound: 50 × 2 kills a Chorister. The 7th's cylinder is 4 m from the Binder.
+    expect(ring.map((s) => sim.eAlive[s])).toEqual([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
+    expect(heretic.kills).toBe(6);
     expect(eventsOf(sim, 'shroudBurst')).toEqual([{ type: 'shroudBurst', playerId: binder.id, x: 15.5, y: 10.5, z: 0 }]);
   });
 
@@ -129,7 +129,7 @@ describe("Martyr's Shroud burst (M9 §3.3)", () => {
     died.sim.damagePlayer(died.heretic, 1000);
     died.sim.damagePlayer(died.binder, 150);
     expect(died.sim.eAlive[died.ring[0]]).toBe(0);
-    expect(died.heretic.kills).toBe(8);
+    expect(died.heretic.kills).toBe(6);
     const left = setup();
     left.sim.removePlayer(left.heretic.id);
     left.sim.damagePlayer(left.binder, 150);
@@ -232,7 +232,7 @@ describe('Field of Blood (M9 §3.4)', () => {
     const line = Array.from({ length: 13 }, (_, i) => enemyAt(sim, BLESSED, 10.5 + i, 6.5));
     betrayer.z = -0.8;
     sim.fireWeapon(betrayer, ATTACK_SECONDARY as AttackSlot);
-    expect(line.filter((s) => !sim.eAlive[s])).toHaveLength(12);
+    expect(line.filter((s) => !sim.eAlive[s])).toHaveLength(10);
   });
 
   it('counts every player within 6 m horizontally, on any level (the review dropped the ±0.5 m band), and the pool covers every level', () => {

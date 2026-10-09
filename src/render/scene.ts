@@ -67,14 +67,18 @@ export class GameScene {
     if (d.exit) d.exit.visible = exit;
   }
 
-  /** Places the camera at a player's eye (simulation coordinates of the feet) with yaw and pitch. */
-  setView(x: number, y: number, feetZ: number, yaw: number, pitch: number, eyeHeight = PLAYER_EYE): void {
+  /**
+   * Places the camera at a player's eye (simulation coordinates of the feet) with yaw and pitch, rolled
+   * by `roll` radians (the screen shake, M12 §4.5).
+   */
+  setView(x: number, y: number, feetZ: number, yaw: number, pitch: number, eyeHeight = PLAYER_EYE, roll = 0): void {
     const ez = feetZ + eyeHeight;
     // three.x = x, three.y = z, three.z = y
     this.camera.position.set(x, ez, y);
     const cp = Math.cos(pitch);
     this.lookTarget.set(x + cp * Math.cos(yaw), ez + Math.sin(pitch), y + cp * Math.sin(yaw));
     this.camera.lookAt(this.lookTarget);
+    if (roll !== 0) this.camera.rotateZ(roll);
     this.camera.updateMatrixWorld();
     this.sky.position.copy(this.camera.position);
   }

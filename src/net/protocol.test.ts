@@ -3,12 +3,18 @@ import { sandbox } from '../data/dungeons/sandbox';
 import { BLESSED } from '../data/enemies';
 import { FIRE_LEFT, FIRE_RIGHT, FIRE_RIGHT_LAST } from '../data/weapons';
 import { Simulation } from '../sim/sim';
+import type { GameEvent } from './messages';
 import {
   decodeInput,
   decodeSnapshot,
   encodeInput,
   encodeSnapshot,
   FLAG_HURT,
+  FLAG_ROOTED,
+  FLAG_SILENCED,
+  FLAG_SLOWED,
+  FLAG_STUNNED,
+  FLAG_TAUNTED,
   HEADER_BYTES,
   PLAYER_BYTES,
   INPUT_BYTES,
@@ -253,5 +259,20 @@ describe('enemy slots and per-recipient flags', () => {
     expect(hurt(1)).toBe(true);
     s.step();
     expect(hurt(1)).toBe(false);
+  });
+});
+
+describe('M12 stage 4 protocol (M12 §9)', () => {
+  it('FLAG_STUNNED is value 2, a bit of its own', () => {
+    expect(FLAG_STUNNED).toBe(2);
+    const flags = [FLAG_HURT, FLAG_STUNNED, FLAG_ROOTED, FLAG_SILENCED, FLAG_SLOWED, FLAG_TAUNTED];
+    expect(new Set(flags).size).toBe(flags.length);
+    expect(flags.reduce((a, f) => a | f, 0)).toBe(flags.reduce((a, f) => a + f, 0));
+  });
+
+  it("`bursts` carries the player and `dashCut` the path's ends", () => {
+    const bursts: GameEvent = { type: 'bursts', list: [3, 400, 1] };
+    const cut: GameEvent = { type: 'dashCut', playerId: 1, x0: 1, y0: 2, z0: 0, x1: 9, y1: 2, z1: 0 };
+    expect(JSON.parse(JSON.stringify([bursts, cut]))).toEqual([bursts, cut]);
   });
 });

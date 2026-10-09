@@ -3,19 +3,36 @@ import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
 import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
-import { ABILITIES, ATTACK_NONE, ATTACK_PRIMARY, ATTACK_SECONDARY, attackDef, BLASPHEMY_RADIUS, chooseAttack, SCOURGE_HALF_ARC, SECONDARIES, type AttackSlot } from '../data/weapons';
+import {
+  ABILITIES,
+  ATTACK_NONE,
+  ATTACK_PRIMARY,
+  ATTACK_SECONDARY,
+  attackDef,
+  BLASPHEMY_RADIUS,
+  chooseAttack,
+  FALLING_STAR_RADIUS,
+  FIRE_RIGHT,
+  FIRE_RIGHT_LAST,
+  SCOURGE_HALF_ARC,
+  SECONDARIES,
+  SHADOWSTEP_TIME,
+  SHOTGUN_KNOCKBACK_RANGE,
+  SHROUD_BURST_RADIUS,
+  type AttackSlot,
+} from '../data/weapons';
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
-import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
+import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_STUNNED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
 import { aimDir, estimateSilverBullet, rayCylinder } from '../sim/combat';
-import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, TICK_DT, TICK_MS } from '../sim/constants';
+import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, PROJECTILE_SLOTS, TICK_DT, TICK_MS } from '../sim/constants';
 import { raycastTerrain } from '../sim/los';
 import { arenaPhaseOf, doorsClosed, overVoid, setArenaDoors, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
-import { BOSS_CAST_JUDGMENT, PROJ_CENSER } from '../sim/sim';
+import { BOSS_CAST_JUDGMENT, PROJ_ARROW, PROJ_CENSER } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
@@ -23,7 +40,7 @@ import { ContactShadows } from '../render/contactShadows';
 import { archStoneHit } from '../render/arches';
 import { gateHit } from '../render/gate';
 import { PLAYER_RADIUS } from '../sim/constants';
-import { Particles } from '../render/particles';
+import { Particles, type Rotations } from '../render/particles';
 import { GameScene } from '../render/scene';
 import type { GameTextures } from '../render/textures';
 import { Vfx } from '../render/vfx';
@@ -35,6 +52,28 @@ import { PauseOverlay } from '../ui/pause';
 import type { ResultsData } from '../ui/results';
 import { BenchRunner } from './bench';
 import { attackKick } from './fpWeapon';
+import {
+  shedsPieces,
+  BLAST_GLOW_FROM,
+  BLAST_GLOW_TO,
+  BLAST_MS,
+  BLAST_SIDE,
+  BURST_RISE,
+  BurstMemory,
+  featherBudget,
+  HEAVY,
+  LIGHT,
+  piecesFor,
+  RecentBursts,
+  ROTATED_SPRITES,
+  towardCamera,
+  uniform,
+  type BurstInfo,
+  type Tier,
+} from './burstDeaths';
+import { Flinches, HIT_FLINCH, KILL_FLINCH, PredictedKills, predictHit, predictPellets, predictSilverBullet, type PelletTarget, type Predicted } from './killPredict';
+import { BurstPops, MassKills } from './massKill';
+import { massKillShake, Shake, SHAKE_BLASPHEMY, SHAKE_LANDING, SHAKE_SHROUD, SHROUD_SHAKE_RANGE } from './shake';
 import { LIGHTMAP_TEXELS } from '../render/lightmap';
 import { Bot, type BotEnemy } from './bot';
 import { corpseFrame, EnemyAnimator, spriteDirection, type Corpse } from './enemyAnim';
@@ -42,6 +81,9 @@ import { FpsCounter } from './fps';
 import type { HostSession } from './hostSession';
 import { Hud } from './hud';
 import { Input, MOUSE_SENSITIVITY } from './input';
+import { WADE_LAUNCH_MS, wadeCount, Wading } from './wading';
+import { ARC_SEGMENTS, arcPoint, StarAim, starLanding, walkableCells, type Landing, type StarAlly } from './fallingStarAim';
+import { HEAL_FADE_MS, HEAL_VIGNETTE, HURT_FADE_MS, hurtVignette, LowHp, SHIELD_EDGE, SHIELD_FADE_MS, SHIELD_GONE_FLASH, SHIELD_UP_FLASH } from './lowHp';
 import { audio, type LoopHandle } from '../audio/audio';
 import { SOUL_HEIGHT, SOUL_RADIUS } from '../sim/souls';
 import { pickAllyTarget } from './allyTarget';
@@ -63,7 +105,12 @@ const GATE_VIEW_PITCH = (10 * Math.PI) / 180;
 /** Contact shadows are this many times a body's radius (M10 §5.4). */
 const SHADOW_SIZE = 1.4;
 const PROJECTILE_SPRITES = ['proj-censer', 'proj-orb', 'proj-arrow'];
-const PROJECTILE_SIZES = [0.4, 0.6, 0.3];
+/** Cherub arrows are drawn at 0.55 m (M12 §6.3; were 0.3, and couldn't be seen to be dodged). */
+const PROJECTILE_SIZES = [0.4, 0.6, 0.55];
+/** Cherub arrows glow a pale holy cyan, which nothing else in the world is, and trail 4 embers 0.25 m apart (M12 §6.3). */
+const GLOW_ARROW: Glow = { r: 0.55, g: 0.9, b: 1, a: 0.6 };
+const ARROW_TRAIL_STEP = 0.25;
+const ARROW_TRAIL_SIZES = [0.3, 0.24, 0.18, 0.12];
 const RESULT_OVERLAY_MS = 3000;
 /**
  * A hurt enemy flashes white, fading out over ENEMY_FLASH_MS, and flashes again no sooner than
@@ -112,12 +159,33 @@ const COIN_MS = 300;
 const POOL_EMBERS_PER_S = 12;
 /** Gold embers rising from each incense cloud per second (M9 §5.1). */
 const INCENSE_EMBERS_PER_S = 4;
+/** Falling Star's landing (M12 §5.2): a ring out to the reach and a glow, gold-orange. */
+const LANDING_COLOR = 0xf08a24;
+const LANDING_MS = 450;
+/**
+ * Shadowstep's streak (M12 §5.7): 1.0 m above the path, fading over 250 ms; a silver core over a dark band
+ * 0.35 m wide (decisions.md: silver alone vanished against the pale marble and stone).
+ */
+const DASH_STREAK = 0xdfe6f0;
+const DASH_STREAK_CORE = 0.14;
+const DASH_SHADOW = 0x2e2a3a;
+const DASH_STREAK_WIDTH = 0.35;
+const DASH_STREAK_HEIGHT = 1;
+const DASH_STREAK_MS = 250;
 /** Falling Star's launched enemies fly an arc LAUNCH_HEIGHT high over 0.4 s (M9 §3.2). */
 const LAUNCH_MS = 400;
 /** At most this many corpses lie around; the oldest vanish first. */
 const MAX_CORPSES = 1000;
+const DEG = Math.PI / 180;
 
 const GLOW_WINDUP: Glow = { r: 1, g: 0.78, b: 0.2, a: 0.5 };
+/** Stunned by Blasphemy (M12 §5.3): tinted red, trembling sideways 0.04 m at 12 Hz. */
+const GLOW_STUNNED: Glow = { r: 1, g: 0.25, b: 0.1, a: 0.35 };
+const STUN_TREMBLE = 0.04;
+const STUN_TREMBLE_HZ = 12;
+/** Blasphemy's shockwave (M12 §5.3): a ground ring out to its radius over 300 ms. */
+const BLASPHEMY_RING = 0xff5a1e;
+const BLASPHEMY_RING_MS = 300;
 const GLOW_ALLY: Glow = { r: 1, g: 0.8, b: 0.2, a: 0.08 };
 /** Judgment: the glow sphere around the Gatekeeper grows from this radius to the next over the cast. */
 const JUDGMENT_GLOW_R0 = 3;
@@ -136,12 +204,44 @@ const SOUL_MARKER_HEIGHT = 2.2;
 const CHEVRON_ABOVE_SOUL_MARKER = 46;
 /** The revive hum plays while a shot hit a soul this recently, or the player's own progress rose. */
 const HUM_HOLD_MS = 300;
-/** The taunt `!` (M8 §3.1): 0.5 m tall, 0.3 m above the head; pops in, holds, then fades. */
+/** The taunt `!` (M8 §3.1): 0.4 m tall, 0.3 m above the head; pops in, holds, then fades. */
 const TAUNT_MARK_HEIGHT = 0.4;
 const TAUNT_MARK_GAP = 0.3;
 const TAUNT_POP_MS = 150;
 const TAUNT_HOLD_MS = 600;
 const TAUNT_FADE_MS = 300;
+
+/** A death or censer break waiting for the render time (M12 §4.2). */
+interface PendingDeath {
+  at: number;
+  censer: boolean;
+  /** The enemy's slot, type and body center; −1 for a censer. */
+  slot: number;
+  type: number;
+  x: number;
+  y: number;
+  z: number;
+  /** The floor under it, its feet (a Cherub's hover height) and its facing, for the corpse or the blast. */
+  ground: number;
+  feet: number;
+  facing: number;
+  /** The ripple's delay was added. */
+  rippled: boolean;
+}
+
+/** A body blasted back before it bursts (M12 §4.2): its start, its offset at the end, lift and swell. */
+interface Blast {
+  start: number;
+  type: number;
+  x: number;
+  y: number;
+  feet: number;
+  facing: number;
+  ex: number;
+  ey: number;
+  lift: number;
+  swell: number;
+}
 
 export interface RosterEntry {
   id: number;
@@ -176,6 +276,9 @@ export interface GameOptions {
   /** Sends a chat message (M8 §7); absent in singleplayer, which has no chat. */
   onChat?: (text: string) => void;
 }
+
+/** A new enemy within this many meters (horizontally) of a spawn point flares it (M12 §2.4). */
+const SPAWN_GLOW_REACH = 2;
 
 export class Game {
   private readonly o: GameOptions;
@@ -254,6 +357,15 @@ export class Game {
   private readonly incense: IncenseClouds;
   /** When each enemy slot's Falling Star launch arc starts (M9 §3.2). */
   private readonly launchAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
+  /** Wading (M12 §3.1): launched enemies don't press until then (ms), and the applied speed factor. */
+  private readonly wadeLaunchedUntil = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
+  private readonly wading = new Wading();
+  /** Low HP (M12 §6.2), from the newest snapshot's own HP. */
+  private readonly lowHp = new LowHp();
+  private ownHp = 0;
+  /** Each projectile slot's drawn position last frame and the frame it was drawn, for the arrows' trails (M12 §6.3). */
+  private readonly projLast = new Float32Array(PROJECTILE_SLOTS * 3);
+  private readonly projLastFrame = new Uint32Array(PROJECTILE_SLOTS);
   /** Others' attack effects waiting for the render delay (M9 §5.1). */
   private readonly pendingFx: Array<{ at: number; run: (now: number) => void }> = [];
   private fireAcc = 0;
@@ -288,12 +400,43 @@ export class Game {
   private readonly zScratch = new Float32Array(ENEMY_SLOTS);
   /** performance.now() when each enemy's last white flash started. */
   private readonly flashAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
+  /** Scratch: the slots of the previous snapshot, for the spawn glow (M12 §2.4). */
+  private readonly prevSlots = new Uint8Array(ENEMY_SLOTS);
   private readonly flashGlow: Glow = { r: 1, g: 1, b: 1, a: 0 };
   /** performance.now() when each enemy was seen taunted, or -1 while it isn't (M8 §3.1). */
   private readonly tauntAt = new Float64Array(ENEMY_SLOTS).fill(-1);
   private readonly botEnemies: BotEnemy[] = [];
-  /** Delayed bursts, played when the render time reaches them. */
-  private readonly pendingBursts: Array<{ at: number; censer: boolean; type: number; x: number; y: number; z: number }> = [];
+  /**
+   * Deaths and censer breaks waiting for the render time. An enemy's death carries its slot and its
+   * corpse, created when the death plays unless the slot bursts instead (M12 §4.2).
+   */
+  private readonly pendingBursts: PendingDeath[] = [];
+  /** Burst deaths (M12 §4.2): the host's `bursts` by slot, the bodies being blasted back, the lately played. */
+  private readonly burstMemory = new BurstMemory();
+  private readonly blasts: Blast[] = [];
+  private readonly recentBursts = new RecentBursts();
+  private readonly massKills = new MassKills();
+  private readonly pops = new BurstPops();
+  /** Each enemy slot's position in the newest snapshot that had it, for the ripple's distances. */
+  private readonly lastEnemyX = new Float32Array(ENEMY_SLOTS);
+  private readonly lastEnemyY = new Float32Array(ENEMY_SLOTS);
+  /** The burst and the torn pieces in their 4 rotations. */
+  private readonly rotations: Record<string, Rotations>;
+  /** Your kills, at once (M12 §4.4), and the screen shake (§4.5). */
+  private readonly predicted = new PredictedKills();
+  private readonly flinches = new Flinches();
+  private readonly shake = new Shake();
+  private wasLeaping = false;
+  /** Falling Star aimed anywhere (M12 §5.2): the hold, the walkable cells (once per map), this frame's preview, the ally leapt to. */
+  private readonly starAim = new StarAim();
+  private walkable: Uint8Array | null = null;
+  private starPreview: Landing | null = null;
+  private leapAlly = ALLY_NONE;
+  /** Shadowstep (M12 §5.7): when the local slash began, and where the dash started. */
+  private slashAt = -Infinity;
+  private dashFrom: [number, number, number] | null = null;
+  private wasDashing = false;
+  private readonly flinchGlow: Glow = { r: 1, g: 1, b: 1, a: 0 };
   private readonly sounds: GameSounds;
   /** Shadowstep afterimages: the Betrayer's idle frame where it started, facing its yaw then. */
   private readonly afterimages: Array<{ start: number; x: number; y: number; z: number; facing: number }> = [];
@@ -350,7 +493,8 @@ export class Game {
     this.judgmentGlow.visible = false;
     this.scene.scene.add(this.judgmentGlow);
     this.frames = o.atlas.frames;
-    this.particles = new Particles([o.atlas.frames.feather, o.atlas.frames.spark, o.atlas.frames.ember]);
+    this.particles = new Particles([o.atlas.frames.feather, o.atlas.frames.spark, o.atlas.frames.ember], this.pieceFloor);
+    this.rotations = Object.fromEntries(ROTATED_SPRITES.map((n) => [n, [0, 1, 2, 3].map((r) => o.atlas.frames[`${n}-r${r}`]) as unknown as Rotations]));
     this.hud = new Hud(o.root, this.classId, !o.singleplayer);
     this.hud.onChatSend = (text) => o.onChat?.(text);
     this.hud.setHp(this.maxHp, 0, this.maxHp);
@@ -359,7 +503,7 @@ export class Game {
     this.party = o.singleplayer ? null : new PartyFrames(this.hud.leftColumn, this.hud.ownFrame);
     this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id));
     this.hud.onReady = () => this.sounds.abilityReady();
-    this.overlay = new DebugOverlay(o.root);
+    this.overlay = new DebugOverlay(o.root, this.params.dev);
     this.pause = new PauseOverlay(o.root, () => this.resume(), () => this.leave());
 
     this.input = new Input(this.canvas);
@@ -377,6 +521,7 @@ export class Game {
     o.transport.onSnapshot = (buf) => this.snaps.addPart(buf, performance.now());
 
     this.bot = this.params.bot ? new Bot(this.map) : null;
+    if (this.params.dev) window.__heavenfallTeleport = (x, y) => this.player.teleport(x, y, this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)]);
     this.bench = this.params.benchArena >= 0 && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString(), () => this.scene.renderStats()) : null;
 
     debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0, primaryShots: 0, secondaryShots: 0 }));
@@ -429,28 +574,98 @@ export class Game {
     if (this.dead || this.over) return;
     if (slot === 'Q') {
       this.qPresses = (this.qPresses + 1) & 0xff;
+      // Your Blasphemy shakes the screen on its press (M12 §4.5).
+      if (this.classId === 'fallen' && this.displayedCooldown('Q', now) <= 0) this.shake.add(now, SHAKE_BLASPHEMY);
       return;
     }
-    this.ePresses = (this.ePresses + 1) & 0xff;
     const def = ABILITIES[this.classId].E;
-    if (!def.movement || this.displayedCooldown('E', now) > 0) return;
+    // The Heretic and the Binder count every E key-down; the Fallen and the Betrayer only the leaps and
+    // dashes they execute (M12 §5.2).
+    if (!def.movement) {
+      this.ePresses = (this.ePresses + 1) & 0xff;
+      return;
+    }
+    const ready = this.displayedCooldown('E', now) <= 0;
     const p = this.player;
     if (this.classId === 'fallen') {
-      // Falling Star: no ally target, nothing happens and there's no cooldown.
-      const ally = this.snaps.playersOut.find((q) => q.id === this.allyTargetId);
-      if (!ally) return;
-      p.startLeap(ally.x, ally.y, ally.z);
-    } else {
-      // Shadowstep: the movement direction (WASD relative to yaw), forward if not moving.
-      let dir: [number, number] | null = this.botDir;
+      // Falling Star: held to aim, released to leap (M12 §5.2). The bot leaps at once, only to an ally target.
       if (!this.bot) {
-        const axes = this.input.moveAxes();
-        dir = axes.forward !== 0 || axes.right !== 0 ? wasdDirection(p.yaw, axes.forward, axes.right) : null;
+        this.starAim.keyDown(ready, !this.dead);
+        return;
       }
-      const [dx, dy] = dir ?? [Math.cos(p.yaw), Math.sin(p.yaw)];
-      p.startDash(dx, dy);
+      const ally = ready ? this.snaps.playersOut.find((q) => q.id === this.allyTargetId) : undefined;
+      if (ally) this.leap(now, ally.x, ally.y, ally.z, ally.id);
+      return;
     }
+    if (!ready) return;
+    // Shadowstep: the movement direction (WASD relative to yaw), forward if not moving.
+    let dir: [number, number] | null = this.botDir;
+    if (!this.bot) {
+      const axes = this.input.moveAxes();
+      dir = axes.forward !== 0 || axes.right !== 0 ? wasdDirection(p.yaw, axes.forward, axes.right) : null;
+    }
+    const [dx, dy] = dir ?? [Math.cos(p.yaw), Math.sin(p.yaw)];
+    p.startDash(dx, dy);
+    this.ePresses = (this.ePresses + 1) & 0xff;
     this.localEReadyAt = now + def.cooldown * 1000;
+    // The dagger cuts across the view for the dash's 200 ms (M12 §5.7).
+    this.slashAt = now;
+    debugState.slashAt = now;
+    this.hud.slash(now);
+    this.dashFrom = [p.body.x, p.body.y, p.body.z];
+  }
+
+  /** Falling Star's leap to a landing point (feet) starts: counted for the host, cooling down locally (M12 §5.2). */
+  private leap(now: number, x: number, y: number, z: number, ally: number): void {
+    this.player.startLeap(x, y, z);
+    this.leapAlly = ally;
+    this.ePresses = (this.ePresses + 1) & 0xff;
+    this.localEReadyAt = now + ABILITIES.fallen.E.cooldown * 1000;
+  }
+
+  /**
+   * The local Fallen's aim this frame (M12 §5.2): the preview while E is held, the leap on its release
+   * if the landing is valid. The ally target is the snapped ally while aiming, the one leapt to while
+   * leaping. Returns the fire bits, without the right button after a cancel until it's let go.
+   */
+  private updateStarAim(now: number, fire: number): number {
+    const p = this.player;
+    const step = this.starAim.frame(this.input.isDown('KeyE'), this.input.rightHeld, this.input.releases);
+    let landing: Landing | null = null;
+    if (this.starAim.aiming || step === 'release') {
+      this.walkable ??= walkableCells(this.map);
+      landing = starLanding(this.map, this.walkable, p.body.x, p.body.y, p.body.z, p.yaw, p.pitch, this.starAllies());
+    }
+    if (step === 'release' && landing?.valid) this.leap(now, landing.x, landing.y, landing.z, landing.ally >= 0 ? landing.ally : ALLY_NONE);
+    this.starPreview = this.starAim.aiming ? landing : null;
+    this.allyTargetId = this.starPreview && this.starPreview.ally >= 0 ? this.starPreview.ally : p.leaping ? this.leapAlly : ALLY_NONE;
+    return this.starAim.rightBlocked ? fire & ~(FIRE_RIGHT | FIRE_RIGHT_LAST) : fire;
+  }
+
+  /** The teammates a leap can snap to: their interpolated feet. */
+  private starAllies(): StarAlly[] {
+    return this.snaps.playersOut.filter((q) => q.id !== this.localId).map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, dead: q.dead }));
+  }
+
+  /** Falling Star's preview: its arc from the feet and its rings, gold-orange when valid, red when not. */
+  private drawStarPreview(): void {
+    const l = this.starPreview;
+    const b = this.player.body;
+    const pts = l ? Array.from({ length: ARC_SEGMENTS + 1 }, (_, i) => arcPoint(b.x, b.y, b.z, l.x, l.y, l.z, i / ARC_SEGMENTS)) : null;
+    this.vfx.setStarPreview(pts, l ? [l.x, l.y, l.z] : null, l?.valid ?? false, this.scene.camera.position);
+  }
+
+  /** Falling Star's landing (M12 §5.2): the ring out to the 6 m reach and the glow, where it lands. */
+  private landingFx(now: number, x: number, y: number, z: number): void {
+    this.vfx.ring(now, x, y, z, LANDING_COLOR, 0.5, FALLING_STAR_RADIUS, LANDING_MS);
+    this.vfx.glow(now, x, y, z + 0.5, LANDING_COLOR, 1, 2.5, LANDING_MS);
+  }
+
+  /** Shadowstep's silver streak along a dash (M12 §5.7), 1 m above its path, with the dagger's cut. */
+  private dashStreak(now: number, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): void {
+    const pts: Array<[number, number, number]> = [[x0, y0, z0 + DASH_STREAK_HEIGHT], [x1, y1, z1 + DASH_STREAK_HEIGHT]];
+    this.vfx.beam(now, pts, DASH_SHADOW, DASH_STREAK_WIDTH, DASH_STREAK_MS);
+    this.vfx.beam(now, pts, DASH_STREAK, DASH_STREAK_CORE, DASH_STREAK_MS);
   }
 
   /** Pause opens when pointer lock is lost, before the result (§3). */
@@ -609,13 +824,34 @@ export class Game {
         this.hud.judgmentEvent(e.phase, now);
         break;
       case 'starLanded':
+        // Others' landings show after the render delay; the own one showed when its leap ended (M12 §5.2).
+        if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.landingFx(t, e.x, e.y, e.z) });
         // Launched enemies fly their arc after the render delay, like other effects (M9 §3.2).
-        for (const s of e.launched) this.launchAt[s] = now + this.snaps.delayTicks * TICK_MS;
+        for (const s of e.launched) {
+          this.launchAt[s] = now + this.snaps.delayTicks * TICK_MS;
+          // They don't hold a wading player for 0.4 s from the event's arrival (M12 §3.1).
+          this.wadeLaunchedUntil[s] = now + WADE_LAUNCH_MS;
+        }
         break;
       case 'shroudBurst':
-        // A blue ring expanding from 1 m to 5 m over 0.3 s, and 24 embers bursting outward (M9 §5.1).
-        this.vfx.ring(now, e.x, e.y, e.z, 0x4aa3e8, 1, 5, 300);
+        // A blue ring expanding from 1 m to the burst's 3.5 m over 0.3 s (M12 §5.4), and 24 embers bursting outward (M9 §5.1).
+        this.vfx.ring(now, e.x, e.y, e.z, 0x4aa3e8, 1, SHROUD_BURST_RADIUS, 300);
         this.particles.shroudBurst(e.x, e.y, e.z + PLAYER_HEIGHT / 2);
+        // It shakes the screen of a player within 6 m, after the render delay (M12 §4.5).
+        this.pendingFx.push({
+          at: now + this.snaps.delayTicks * TICK_MS,
+          run: (t) => {
+            const b = this.player.body;
+            if (!this.dead && Math.hypot(e.x - b.x, e.y - b.y) <= SHROUD_SHAKE_RANGE) this.shake.add(t, SHAKE_SHROUD);
+          },
+        });
+        break;
+      case 'bursts':
+        this.burstMemory.remember(e.list, now, (slot, id) => this.distToPlayer(slot, id));
+        break;
+      case 'dashCut':
+        // Others' Shadowstep streaks after the render delay; the own one was drawn when its dash ended (M12 §5.7).
+        if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.dashStreak(t, e.x0, e.y0, e.z0, e.x1, e.y1, e.z1) });
         break;
       case 'silverBullet':
         // Others' Silver Bullets after the render delay; the own one was drawn at once (M9 §5.1).
@@ -665,12 +901,9 @@ export class Game {
     const key = `${cls}:${e.slot}`;
     const user = this.playerPose(e.playerId);
     switch (key) {
-      case 'fallen:Q': // taunt sphere, growing to Blasphemy's radius (M8 §3.1)
-        this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0xe0301e, 1, BLASPHEMY_RADIUS, 400, 0.3);
-        break;
-      case 'fallen:E': // landing shockwave, when the leap lands
-        this.vfx.ring(now, e.x, e.y, e.z, 0xf08a24, 0.5, 5, 450, 400);
-        this.vfx.glow(now, e.x, e.y, e.z + 0.5, 0xf08a24, 1, 2.5, 450, 400);
+      case 'fallen:Q': // taunt sphere, growing to Blasphemy's radius (M8 §3.1), and its shockwave (M12 §5.3)
+        this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0xe0301e, 1, BLASPHEMY_RADIUS, 400, 0.45);
+        this.vfx.ring(now, e.x, e.y, e.z, BLASPHEMY_RING, 0.5, BLASPHEMY_RADIUS, BLASPHEMY_RING_MS);
         break;
       case 'heretic:Q': {
         // Heal ring, and a heal column on every player it healed, even at full HP (M8 §3.1).
@@ -678,7 +911,7 @@ export class Game {
         for (const id of e.targets) {
           const t = this.playerPose(id);
           if (t) this.particles.healColumn(t.x, t.y, t.z);
-          if (id === this.localId) this.hud.vignette('green', 0.3, now);
+          if (id === this.localId) this.hud.vignette('green', HEAL_VIGNETTE, now, HEAL_FADE_MS);
           else this.party?.flash(id, 'green');
         }
         break;
@@ -844,14 +1077,20 @@ export class Game {
         this.hud.setOwnRevive(progress);
       } else this.ownRevive = 0;
       this.hud.setHp(me.hp, me.shield, this.maxHp);
+      this.ownHp = me.hp;
+      // The steady blue edge while the own shield is up (M12 §6.1).
+      this.hud.setShieldEdge(me.shield > 0 && !me.dead ? SHIELD_EDGE : 0);
       if (was) {
         const lost = was.hp + was.shield - (me.hp + me.shield);
         if (lost > 0 && !me.dead) {
-          this.hud.vignette('red', Math.min(0.8, Math.max(0.2, (lost / this.maxHp) * 3)), now);
+          this.hud.vignette('red', hurtVignette(lost, this.maxHp), now, HURT_FADE_MS);
           this.hud.shakeHp(now);
-        } else if (me.hp > was.hp && !was.dead && !beamed) this.hud.vignette('green', 0.3, now);
-        if ((me.shield > 0 && me.shield > was.shield) || (was.shield > 0 && me.shield === 0)) this.hud.vignette('blue', 0.5, now);
-        if (me.kills > was.kills) {
+        } else if (me.hp > was.hp && !was.dead && !beamed) this.hud.vignette('green', HEAL_VIGNETTE, now, HEAL_FADE_MS);
+        // The shield going up flashes the fading blue at 0.6, its going 0.7 (M12 §6.1).
+        if (me.shield > 0 && me.shield > was.shield) this.hud.vignette('blue', SHIELD_UP_FLASH, now, SHIELD_FADE_MS);
+        else if (was.shield > 0 && me.shield === 0) this.hud.vignette('blue', SHIELD_GONE_FLASH, now, SHIELD_FADE_MS);
+        // A kill the local player predicted already showed its marker (M12 §4.4).
+        if (me.kills > was.kills && !this.predicted.holdsMarker(now)) {
           this.hud.kill(now);
           this.sounds.kill();
         }
@@ -871,24 +1110,41 @@ export class Game {
         const type = prev.enemyType[i];
         const def = ENEMIES[type];
         const g = groundHeight(this.map, prev.enemyX[i], prev.enemyY[i], def.radius, Infinity, false, true);
-        const z = (g === -Infinity ? 0 : g) + (type === CHERUB ? CHERUB_HOVER : 0) + def.height / 2;
-        this.pendingBursts.push({ at: now + delay, censer: false, type, x: prev.enemyX[i], y: prev.enemyY[i], z });
-        if (this.o.enemyAnims[type]?.anims.death) {
-          const ground = g === -Infinity ? 0 : g;
-          // A Cherub falls from its hover height to the ground while it dies (§11.1).
-          const fallFrom = type === CHERUB ? ground + CHERUB_HOVER : undefined;
-          this.corpses.push({ start: now + delay, x: prev.enemyX[i], y: prev.enemyY[i], z: ground, facing: this.animator.facing[slot], type, fallFrom });
-          if (this.corpses.length > MAX_CORPSES) this.corpses.shift();
-        }
+        const ground = g === -Infinity ? 0 : g;
+        // A Cherub falls from its hover height to the ground while it dies (§11.1).
+        const feet = ground + (type === CHERUB ? CHERUB_HOVER : 0);
+        this.pendingBursts.push({
+          at: now + delay,
+          censer: false,
+          slot,
+          type,
+          x: prev.enemyX[i],
+          y: prev.enemyY[i],
+          z: feet + def.height / 2,
+          ground,
+          feet,
+          facing: this.animator.facing[slot],
+          rippled: false,
+        });
       }
       const alive = new Set(s.projSlot.subarray(0, s.projectileCount));
       for (let i = 0; i < prev.projectileCount; i++) {
         if (prev.projKind[i] !== PROJ_CENSER || alive.has(prev.projSlot[i])) continue;
         // A censer that vanished over the void didn't break (M10 §3.4).
         if (overVoid(this.map, prev.projX[i], prev.projY[i])) continue;
-        this.pendingBursts.push({ at: now + delay, censer: true, type: -1, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i] });
+        this.pendingBursts.push({ at: now + delay, censer: true, slot: -1, type: -1, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i], ground: 0, feet: 0, facing: 0, rippled: false });
       }
     }
+    if (prev) this.spawnGlows(s, prev, now + this.snaps.delayTicks * TICK_MS);
+    // Where each enemy was last seen, and burst slots reused by new enemies forgotten (M12 §4.2).
+    if (prev) for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 1;
+    for (let i = 0; i < s.enemyCount; i++) {
+      const slot = s.enemySlot[i];
+      this.lastEnemyX[slot] = s.enemyX[i];
+      this.lastEnemyY[slot] = s.enemyY[i];
+      if (prev && !this.prevSlots[slot]) this.burstMemory.forget(slot);
+    }
+    if (prev) for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 0;
     // Others' Scourge swings, after the render delay, spread over the time to the next snapshot (M9 §5.1).
     if (prev) {
       const delay = this.snaps.delayTicks * TICK_MS;
@@ -943,6 +1199,39 @@ export class Game {
     this.sounds.snapshot(s, prev, beamed);
   }
 
+  /**
+   * The spawn glow (M12 §2.4): an enemy slot that wasn't in the previous snapshot, within 2 m
+   * horizontally of a spawn point of the snapshot's arena, flares that point when it appears on
+   * screen (`at`, after the render delay). Gatekeeper summons glow the same way.
+   */
+  private spawnGlows(s: Snapshot, prev: Snapshot, at: number): void {
+    const points = this.map.arenaSpawnPoints[s.arenaIndex];
+    if (!points?.length) return;
+    for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 1;
+    const flared = new Set<number>();
+    for (let i = 0; i < s.enemyCount; i++) {
+      if (this.prevSlots[s.enemySlot[i]]) continue;
+      let best = -1;
+      let bestD2 = SPAWN_GLOW_REACH * SPAWN_GLOW_REACH;
+      for (let k = 0; k < points.length; k++) {
+        const dx = points[k][0] + 0.5 - s.enemyX[i];
+        const dy = points[k][1] + 0.5 - s.enemyY[i];
+        const d2 = dx * dx + dy * dy;
+        if (d2 <= bestD2) {
+          bestD2 = d2;
+          best = k;
+        }
+      }
+      if (best >= 0) flared.add(best);
+    }
+    for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 0;
+    for (const k of flared) {
+      const [c, r] = points[k];
+      const z = this.map.floor[r * this.map.w + c];
+      this.pendingFx.push({ at, run: (t) => this.vfx.flareSpawn(t, c + 0.5, r + 0.5, z) });
+    }
+  }
+
   /** Unwraps each player's `shots` and `shots2` counters into totals, for the debug object (M9 §10). */
   private countShots(s: Snapshot): void {
     for (const p of s.players) {
@@ -984,6 +1273,11 @@ export class Game {
    */
   private computeAllyTarget(now: number): void {
     const range = ABILITIES[this.classId].E.allyRange;
+    // The Fallen's own player snaps its leap to an ally instead (M12 §5.2); its bot keeps the cone.
+    if (this.classId === 'fallen' && !this.bot) {
+      this.allyOutOfRange = ALLY_NONE;
+      return;
+    }
     if (range <= 0 || this.dead) {
       this.allyTargetId = ALLY_NONE;
       this.allyOutOfRange = ALLY_NONE;
@@ -1099,9 +1393,15 @@ export class Game {
         this.hud.swing(now);
         this.sounds.ownShot(this.classId, true);
         this.vfx.scourgeArc(now, p.body.x, p.body.y, p.body.z, p.yaw);
-        if (this.scourgeHits(ents, enemyZ)) {
+        const hits = this.scourgeHits(ents, enemyZ);
+        if (hits.length) {
           this.hud.hit(now);
           this.sounds.hit();
+        }
+        // Every Scourge kill bursts; each hit flinches away from the Binder (M12 §4.4).
+        for (const i of hits) {
+          const r = predictHit(ents.type[i], w.damage, (ents.flags[i] & FLAG_ROOTED) !== 0, true);
+          this.predictedHit(now, ents.slot[i], ents.x[i] - p.body.x, ents.y[i] - p.body.y, r);
         }
         return;
       }
@@ -1120,18 +1420,29 @@ export class Game {
     const [mx, my, mz] = this.unproject(msx, msy, OWN_BEAM_DEPTH);
     const pts: Array<[number, number, number]> = [];
     let hit = false;
-    for (let k = 0; k < w.pellets; k++) {
+    const shotgun = this.classId === 'fallen' && slot === ATTACK_PRIMARY;
+    const chainGun = this.classId === 'binder' && slot === ATTACK_PRIMARY;
+    // Each pellet's ray and the enemies along it, nearest first; the shotgun's within 6 m of the
+    // Fallen's body center deal 20 and burst what they kill (M12 §5.1, §4.1).
+    const rays = Array.from({ length: w.pellets }, () => {
       const yaw = p.yaw + (Math.random() * 2 - 1) * w.spreadYaw;
       const pitch = p.pitch + (Math.random() * 2 - 1) * w.spreadPitch;
       const [dx, dy, dz] = aimDir(yaw, pitch);
       const stop = raycastTerrain(this.map, ex, ey, ez, dx, dy, dz, w.range);
-      const ts: Array<{ t: number; i: number }> = [];
+      const ts: PelletTarget[] = [];
       for (let i = 0; i < ents.count; i++) {
         const def = ENEMIES[ents.type[i]];
         const t = rayCylinder(ex, ey, ez, dx, dy, dz, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height);
-        if (t <= stop) ts.push({ t, i });
+        if (t > stop) continue;
+        const close = shotgun && distToCylinder(ex, ey, p.body.z + PLAYER_HEIGHT / 2, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height) <= SHOTGUN_KNOCKBACK_RANGE;
+        ts.push({ i, t, type: ents.type[i], rooted: (ents.flags[i] & FLAG_ROOTED) !== 0, close });
       }
       ts.sort((a, b) => a.t - b.t);
+      return { dx, dy, dz, stop, ts };
+    });
+    // Enemies an earlier pellet of this shot is predicted to kill: later pellets pass them, as on the host.
+    const predicted = w.kind === 'silverBullet' ? null : predictPellets(rays.map((r) => r.ts), w.damage, w.maxHits, shotgun ? 'shotgun' : chainGun ? 'chainGun' : 'other');
+    rays.forEach(({ dx, dy, dz, stop, ts }, k) => {
       // A shot that meets a wall ends on its drawn surface: a relief's front, or a window's glass (M10 §5.3).
       let end = stop < w.range ? this.scene.terrain.relief.adjust(ex, ey, ez, dx, dy, dz, stop) : stop;
       // A shot crossing an arch's painted stone flies on in the simulation; its tracer ends there (M10 §6.1).
@@ -1141,14 +1452,17 @@ export class Game {
       if (gate) end = Math.min(end, gateHit(gate.layout, ex, ey, ez, dx, dy, dz, stop));
       if (ts.length > 0) {
         hit = true;
-        if (w.kind === 'silverBullet') {
+        if (!predicted) {
           // An estimate (M9 §5.1): every enemy at its type's full HP, doubled for the rooted flag.
-          const r = estimateSilverBullet(
-            ts.map(({ i }) => ({ type: ents.type[i], rooted: (ents.flags[i] & FLAG_ROOTED) !== 0 })),
-            w.damage,
-          );
+          const line = ts.map(({ type, rooted }) => ({ type, rooted }));
+          const r = estimateSilverBullet(line, w.damage);
           if (r.stopped) end = ts[r.reached - 1].t;
-        } else if (ts.length >= w.maxHits) end = ts[w.maxHits - 1].t;
+          predictSilverBullet(line.slice(0, r.reached), r.carried).forEach((res, n) => this.predictedHit(now, ents.slot[ts[n].i], dx, dy, res));
+        } else {
+          const hits = predicted[k];
+          if (hits.length >= w.maxHits) end = hits[hits.length - 1].target.t;
+          for (const h of hits) this.predictedHit(now, ents.slot[h.target.i], dx, dy, h.result);
+        }
       }
       // A shot through a teammate's soul (for the revive hum).
       for (const q of this.snaps.playersOut) {
@@ -1159,7 +1473,7 @@ export class Game {
         }
       }
       pts.push([mx, my, mz], [ex + dx * end, ey + dy * end, ez + dz * end]);
-    }
+    });
     if (w.kind === 'silverBullet') this.silverTracer(now, pts[0], pts[1], this.inFieldNow ? BLOOD_TRACER : SILVER_EMBER);
     else this.vfx.beam(now, pts, this.inFieldNow ? BLOOD_TRACER : TRACER_COLOR, secondary ? SLUG_TRACER_WIDTH : TRACER_WIDTH, TRACER_MS);
     if (hit) {
@@ -1168,21 +1482,126 @@ export class Game {
     }
   }
 
-  /** Whether a local Scourge swing would hit an interpolated enemy: within 3 m and the 120° arc (M9 §2.6). */
-  private scourgeHits(ents: InterpolatedEnemies, enemyZ: Float32Array): boolean {
+  /**
+   * The interpolated enemies a local Scourge swing would hit, as on the host: every one within 3 m and
+   * the 120° arc (M12 §5.5).
+   */
+  private scourgeHits(ents: InterpolatedEnemies, enemyZ: Float32Array): number[] {
     const p = this.player;
     const w = SECONDARIES.binder;
     const cz = p.body.z + PLAYER_HEIGHT / 2;
     const cosMax = Math.cos(SCOURGE_HALF_ARC);
+    const hits: Array<{ i: number; d: number }> = [];
     for (let i = 0; i < ents.count; i++) {
       const def = ENEMIES[ents.type[i]];
-      if (distToCylinder(p.body.x, p.body.y, cz, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height) > w.range) continue;
+      const d = distToCylinder(p.body.x, p.body.y, cz, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height);
+      if (d > w.range) continue;
       const hx = ents.x[i] - p.body.x;
       const hy = ents.y[i] - p.body.y;
       const len = Math.hypot(hx, hy);
-      if (len < 1e-9 || (hx * Math.cos(p.yaw) + hy * Math.sin(p.yaw)) / len >= cosMax - 1e-9) return true;
+      if (len < 1e-9 || (hx * Math.cos(p.yaw) + hy * Math.sin(p.yaw)) / len >= cosMax - 1e-9) hits.push({ i, d });
     }
-    return false;
+    hits.sort((a, b) => a.d - b.d);
+    return hits.slice(0, w.maxHits).map((h) => h.i);
+  }
+
+  /**
+   * A predicted hit of the local player's on an enemy slot, along the horizontal (dx, dy) (M12 §4.4):
+   * it flinches, and a predicted kill plays the kill marker (or the burst marker) and `killTick` now.
+   */
+  private predictedHit(now: number, slot: number, dx: number, dy: number, r: Predicted): void {
+    this.flinches.add(slot, now, dx, dy, r ? KILL_FLINCH : HIT_FLINCH);
+    if (!r) return;
+    this.sounds.kill(this.predicted.kill(now));
+    if (r === 2) this.hud.burst(now);
+    else this.hud.kill(now);
+  }
+
+  /** An enemy slot's distance from a player, for the ripple: the local one's own position, others' interpolated. */
+  private distToPlayer(slot: number, playerId: number): number {
+    const q = playerId === this.localId ? this.player.body : this.snaps.playersOut.find((o) => o.id === playerId);
+    return q ? Math.hypot(this.lastEnemyX[slot] - q.x, this.lastEnemyY[slot] - q.y) : 0;
+  }
+
+  /** The floor a torn piece lands on (M12 §4.2.1): none over a wall, outside the map or over the void. */
+  private readonly pieceFloor = (x: number, y: number): number => (overVoid(this.map, x, y) ? -Infinity : this.floorAt(x, y));
+
+  /**
+   * An enemy's death plays (M12 §4.2): a burst death if the host burst its slot, otherwise the normal
+   * death with its feathers, chirp and corpse.
+   */
+  private playDeath(b: PendingDeath, now: number): void {
+    const info = this.burstMemory.take(b.slot, now);
+    if (info && this.o.enemyAnims[b.type]?.anims.pain) {
+      this.startBurstDeath(b, info, now);
+      return;
+    }
+    this.particles.featherBurst(b.x, b.y, b.z);
+    this.sounds.enemyDeath(b.type, b);
+    if (this.o.enemyAnims[b.type]?.anims.death) {
+      const fallFrom = b.type === CHERUB ? b.feet : undefined;
+      this.corpses.push({ start: now, x: b.x, y: b.y, z: b.ground, facing: b.facing, type: b.type, fallFrom });
+      if (this.corpses.length > MAX_CORPSES) this.corpses.shift();
+    }
+  }
+
+  /** A burst death's first 80 ms: the body blasted back along the angle, turning white-gold; then it bursts. */
+  private startBurstDeath(b: PendingDeath, info: BurstInfo, now: number): void {
+    const tier = info.heavy ? HEAVY : LIGHT;
+    const a = info.angle * DEG;
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
+    // The camera's right, horizontally: yaw + 90°.
+    const yaw = this.player.yaw;
+    const side = (Math.random() < 0.5 ? -1 : 1) * BLAST_SIDE;
+    const rx = -Math.sin(yaw) * side;
+    const ry = Math.cos(yaw) * side;
+    // A Cherub stays at its hover height and flies level.
+    const lift = b.type === CHERUB ? 0 : tier.lift;
+    const blast: Blast = { start: now, type: b.type, x: b.x, y: b.y, feet: b.feet, facing: b.facing, ex: dx * tier.blast + rx, ey: dy * tier.blast + ry, lift, swell: tier.swell };
+    this.blasts.push(blast);
+    const mine = info.playerId === this.localId;
+    const half = ENEMIES[b.type].height / 2;
+    this.pendingFx.push({ at: now + BLAST_MS, run: (t) => this.burst(t, b.type, b.x + blast.ex, b.y + blast.ey, b.feet + half + lift, dx, dy, tier, mine) });
+  }
+
+  /**
+   * The burst (M12 §4.2 step 2) at the end of the blast, moved toward the camera and up: the burst
+   * sprite, the torn pieces, feathers and sparks within the budget, and `burstPop`.
+   */
+  private burst(now: number, type: number, x: number, y: number, z: number, dx: number, dy: number, tier: Tier, mine: boolean): void {
+    const cam = this.scene.camera.position;
+    const tx = cam.x - x;
+    const ty = cam.z - y;
+    const camDist = Math.hypot(tx, ty);
+    if (camDist > 1e-6) {
+      const k = towardCamera(camDist) / camDist;
+      x += tx * k;
+      y += ty * k;
+    }
+    z += BURST_RISE;
+    // p: perpendicular to the angle, a random one of the two.
+    const ps = Math.random() < 0.5 ? -1 : 1;
+    const px = -dy * ps;
+    const py = dx * ps;
+    this.particles.burstSprite(this.rotations['fx-burst'], x, y, z, tier.sprite0, tier.sprite1);
+    this.recentBursts.add(now);
+    const n = this.recentBursts.count(now);
+    // Beyond 8 bursts in 0.5 s, only the budget's share of them shed pieces (decisions.md, M12 §10).
+    if (shedsPieces(n, Math.random())) {
+      for (const piece of piecesFor(type)) {
+        const along = uniform(piece.along) * tier.pieceSpeed;
+        const sideways = uniform(piece.side) * tier.pieceSpeed * (piece.sideSign || (Math.random() < 0.5 ? -1 : 1));
+        const vz = uniform(piece.vz) * tier.pieceSpeed;
+        this.particles.piece(this.rotations[piece.sprite], x, y, z + piece.dz, dx * along + px * sideways, dy * along + py * sideways, vz, piece.size, piece.turnMs, piece.half);
+      }
+    }
+    const budget = featherBudget(tier.feathers, tier.sparks, n, Math.hypot(x - cam.x, y - cam.z));
+    this.particles.burstFeathers(x, y, z, dx, dy, px, py, budget.feathers, budget.sparks);
+    if (this.pops.play(now)) this.sounds.burstPop({ x, y }, mine);
+    this.massKills.burst(now, mine, x, y);
+    if (tier === HEAVY) debugState.bursts.heavy++;
+    else debugState.bursts.light++;
   }
 
   /**
@@ -1271,6 +1690,11 @@ export class Game {
     let my = 0;
     let wantJump = false;
     let fire = 0;
+    this.starPreview = null;
+    if (this.over || this.paused || this.dead || this.bot || this.bench) {
+      this.starAim.reset();
+      if (this.classId === 'fallen' && !this.bot) this.allyTargetId = this.player.leaping ? this.leapAlly : ALLY_NONE;
+    }
     if (this.over || this.paused) {
       // The result overlay or Pause: the game keeps rendering without input.
     } else if (this.bench) {
@@ -1335,6 +1759,7 @@ export class Game {
       [mx, my] = wasdDirection(p.yaw, axes.forward, axes.right);
       wantJump = this.input.jumpQueued || this.input.isDown('Space');
       fire = this.input.fireBits();
+      if (this.classId === 'fallen') fire = this.updateStarAim(now, fire);
     } else {
       // Dead: the camera can only rotate.
       const { dx, dy } = this.input.takeMouse();
@@ -1342,8 +1767,17 @@ export class Game {
     }
     this.input.jumpQueued = false;
     this.fire = this.dead || this.over ? 0 : fire;
+    // Neither attack fires during Shadowstep's slash; held buttons resume afterwards (M12 §5.7).
+    if (now - this.slashAt < SHADOWSTEP_TIME * 1000) this.fire = 0;
     const bx = p.body.x;
     const by = p.body.y;
+    // Wading (M12 §3.1): the ground enemies of the newest snapshot pressing against the player slow
+    // it. Counted every frame, in the benchmark too, which doesn't move the player.
+    const newest = this.snaps.newest;
+    const pressing = newest && !this.dead ? wadeCount(this.map, p.body.x, p.body.y, p.body.z, newest, this.wadeLaunchedUntil, now) : 0;
+    p.wade = this.wading.update(pressing, Math.min(dt, MAX_FRAME_DT));
+    debugState.wade.count = pressing;
+    debugState.wade.factor = p.wade;
     if (!this.dead && !this.bench && !this.over) p.update(this.map, dt, mx, my, wantJump);
     const moved = Math.hypot(p.body.x - bx, p.body.y - by);
     this.bob.update(Math.min(dt, MAX_FRAME_DT), moved, p.speed, p.body.grounded && !p.leaping, this.dead);
@@ -1381,7 +1815,11 @@ export class Game {
       this.sendInput();
     }
 
-    // Bursts whose time has come.
+    // Particles move before this frame's new ones spawn, so each is first drawn at age 0 (a burst
+    // sprite lives only 220 ms).
+    this.particles.update(dt);
+    // Deaths and censer breaks whose time has come.
+    this.burstMemory.expire(now);
     for (let i = this.pendingBursts.length - 1; i >= 0; i--) {
       const b = this.pendingBursts[i];
       if (now < b.at) continue;
@@ -1392,11 +1830,24 @@ export class Game {
         this.sounds.censerBreak(b);
         this.incense.add(now, b.x, b.y, (x, y) => this.cloudBase(x, y, b.z));
       } else {
-        this.particles.featherBurst(b.x, b.y, b.z);
-        this.sounds.enemyDeath(b.type, b);
+        // A burst's ripple delays it once (M12 §4.2).
+        const ripple = this.burstMemory.peek(b.slot, now)?.ripple ?? 0;
+        if (ripple > 0 && !b.rippled) {
+          b.rippled = true;
+          b.at += ripple;
+          if (now < b.at) continue;
+        }
+        this.playDeath(b, now);
       }
       this.pendingBursts.splice(i, 1);
     }
+    const mass = this.massKills.update(now);
+    if (mass) {
+      this.sounds.massKill(mass);
+      debugState.bursts.massKills++;
+      if (mass.mine) this.shake.add(now, massKillShake(mass.count));
+    }
+    this.flinches.expire(now);
     for (let i = this.pendingFx.length - 1; i >= 0; i--) {
       if (now < this.pendingFx[i].at) continue;
       const fx = this.pendingFx[i];
@@ -1409,21 +1860,40 @@ export class Game {
       const at = this.incense.randomPoint();
       if (at) this.particles.incenseEmber(at[0], at[1], at[2]);
     }
-    this.particles.update(dt);
+    // Before the effects update, so the new ones are placed and faced on their first frame.
+    // Your Falling Star lands as the leap ends: its ring and glow, its sound and the shake (M12 §5.2, §4.5).
+    if (this.wasLeaping && !p.leaping) {
+      this.shake.add(now, SHAKE_LANDING);
+      this.landingFx(now, p.body.x, p.body.y, p.body.z);
+      this.sounds.ownLanding();
+    }
+    this.wasLeaping = p.leaping;
+    // Your Shadowstep's streak, from where it started to where it ended, as the dash ends (M12 §5.7).
+    if (this.wasDashing && !p.dashing && this.dashFrom) {
+      this.dashStreak(now, ...this.dashFrom, p.body.x, p.body.y, p.body.z);
+      this.sounds.ownDaggerCut();
+      debugState.streakAt = now;
+      this.dashFrom = null;
+    }
+    this.wasDashing = p.dashing;
     this.vfx.update(now, this.scene.camera.position);
     this.incense.update(now, this.scene.camera.position);
 
     const b = p.body;
     audio()?.setListener(b.x, b.y, p.yaw);
     // The bob only lowers the drawn view; aiming and input use the unbobbed eye (M8 §3.4). While dead,
-    // the camera rises with the soul: 1.6 m above its base (M8 §4.3).
-    if (this.dead) this.scene.setView(b.x, b.y, this.ownGround, p.yaw, p.pitch, PLAYER_EYE + this.souls.rise(this.localId, now));
-    else this.scene.setView(b.x, b.y, b.z, p.yaw, p.pitch, PLAYER_EYE - this.bob.eyeDrop);
+    // the camera rises with the soul: 1.6 m above its base (M8 §4.3). The shake offsets the view only (M12 §4.5).
+    const sh = this.shake.sample(now);
+    const vyaw = p.yaw + sh.yaw * DEG;
+    const vpitch = p.pitch + sh.pitch * DEG;
+    if (this.dead) this.scene.setView(b.x, b.y, this.ownGround, vyaw, vpitch, PLAYER_EYE + this.souls.rise(this.localId, now), sh.roll * DEG);
+    else this.scene.setView(b.x, b.y, b.z, vyaw, vpitch, PLAYER_EYE - this.bob.eyeDrop, sh.roll * DEG);
     const cam = this.params.cam;
     if (cam) {
       const ci = Math.floor(cam.y) * this.map.w + Math.floor(cam.x);
       this.scene.setView(cam.x, cam.y, cam.z ?? (this.map.floor[ci] ?? 0) + PLAYER_EYE, cam.yaw, cam.pitch, 0);
     }
+    this.drawStarPreview();
     this.drawBillboards(now, ents, enemyZ);
     const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
     this.hud.setHealing(this.ownBeamOn, now);
@@ -1434,12 +1904,33 @@ export class Game {
     this.placeSoulMarkers(now);
     this.updateReviveHum(now);
 
+    // Low HP (M12 §6.2): the heartbeat and the crimson edge.
+    if (this.lowHp.update(now, this.seenSelf && !this.dead && !this.over, this.ownHp, this.maxHp)) this.sounds.heartbeat();
+    this.hud.setLowEdge(this.lowHp.edge(now));
     this.hud.setCooldowns(this.displayedCooldown('Q', simNow), ABILITIES[this.classId].Q.cooldown, this.displayedCooldown('E', simNow), ABILITIES[this.classId].E.cooldown);
     this.hud.update(now);
     debugState.fps = this.fps.frame(now);
     debugState.simMs = this.o.host ? this.o.host.simMs(now) : 0;
+    debugState.director = this.o.host?.director ?? null;
     debugState.netInKBps = this.o.net ? this.o.net.inKBps(now) : 0;
     debugState.netOutKBps = this.o.net ? this.o.net.outKBps(now) : 0;
+    if (this.params.dev) {
+      Object.assign(debugState.self, { x: b.x, y: b.y, z: b.z, yaw: p.yaw, pitch: p.pitch });
+      let near = 0;
+      let sx = 0;
+      let sy = 0;
+      for (let i = 0; i < ents.count; i++) {
+        if ((ents.x[i] - b.x) ** 2 + (ents.y[i] - b.y) ** 2 > 64) continue;
+        near++;
+        sx += ents.x[i] - b.x;
+        sy += ents.y[i] - b.y;
+      }
+      debugState.near = near;
+      debugState.nearYaw = Math.atan2(sy, sx);
+      // Set by updateStarAim during this frame (the reset above it would narrow it to null).
+      const l = this.starPreview as Landing | null;
+      debugState.star = l ? { x: l.x, y: l.y, z: l.z, valid: l.valid, ally: l.ally } : null;
+    }
     this.overlay.position.x = b.x;
     this.overlay.position.y = b.y;
     this.overlay.position.z = b.z;
@@ -1492,6 +1983,8 @@ export class Game {
       const y = ents.y[i];
       const t = this.nearestPlayer(x, y);
       this.animator.update(slot, x, y, ents.state[i], now, dt, t.x, t.y, type);
+      const stunned = (ents.flags[i] & FLAG_STUNNED) !== 0;
+      this.animator.setStunned(slot, stunned, now);
       const pick = this.animator.pick(slot, now, this.bossCast);
       const f = set.anims[pick.anim][spriteDirection(this.animator.facing[slot], eye.x - x, eye.y - y)][pick.frame];
       const height = f.height;
@@ -1501,8 +1994,28 @@ export class Game {
       // Launched by a Falling Star: the billboard flies an arc, peaking 1 m up halfway (M9 §3.2). A
       // flying Cherub is knocked back level, so nothing rises above the headroom (M10 §3.1).
       const lu = def.flying ? 1 : (now - this.launchAt[slot]) / LAUNCH_MS;
-      const z = enemyZ[i] + (lu >= 0 && lu < 1 ? 4 * LAUNCH_HEIGHT * lu * (1 - lu) : 0);
-      // Status (§10): hurt flash, wind-up gold glow, silenced grey tint.
+      let z = enemyZ[i] + (lu >= 0 && lu < 1 ? 4 * LAUNCH_HEIGHT * lu * (1 - lu) : 0);
+      // A local hit's flinch (M12 §4.4): pushed along the shot and the camera's right, squashed, glowing.
+      let fx = ents.x[i];
+      let fy = ents.y[i];
+      let wide = 1;
+      let tall = 1;
+      const fl = this.flinches.at(slot, now);
+      if (fl) {
+        fx += fl.dx - Math.sin(this.player.yaw) * fl.right;
+        fy += fl.dy + Math.cos(this.player.yaw) * fl.right;
+        z += fl.dz;
+        wide = fl.wide;
+        tall = fl.tall;
+      }
+      // Stunned: it trembles along the camera's right (M12 §5.3).
+      if (stunned) {
+        const off = STUN_TREMBLE * Math.sin(2 * Math.PI * STUN_TREMBLE_HZ * (now / 1000) + slot);
+        fx -= Math.sin(this.player.yaw) * off;
+        fy += Math.cos(this.player.yaw) * off;
+      }
+      // Status (§10): the local flinch, the hurt flash, the stun's red (M12 §5.3), Judgment, the wind-up's
+      // gold glow, in that order; the silenced grey tint.
       let glow = NO_GLOW;
       let judgment: Glow | null = null;
       if (type === GATEKEEPER && this.bossCast === BOSS_CAST_JUDGMENT) {
@@ -1523,13 +2036,21 @@ export class Game {
         this.judgmentGlow.material.opacity = 0.25 + 0.5 * t;
       }
       const flashT = now - this.flashAt[ents.slot[i]];
-      if (flashT < ENEMY_FLASH_MS) {
+      if (fl && fl.glow > 0) {
+        const g = this.flinchGlow;
+        g.r = fl.kind.r;
+        g.g = fl.kind.g;
+        g.b = fl.kind.b;
+        g.a = fl.glow;
+        glow = g;
+      } else if (flashT < ENEMY_FLASH_MS) {
         this.flashGlow.a = ENEMY_FLASH_PEAK * (1 - flashT / ENEMY_FLASH_MS);
         glow = this.flashGlow;
-      } else if (judgment) glow = judgment;
+      } else if (stunned) glow = GLOW_STUNNED;
+      else if (judgment) glow = judgment;
       else if (ents.state[i] === ST_WINDUP) glow = GLOW_WINDUP;
       const grey = (flags & FLAG_SILENCED) !== 0;
-      target.add(f, ents.x[i], ents.y[i], z, height, false, grey ? 0.55 : 1, grey ? 0.55 : 1, grey ? 0.6 : 1, glow);
+      target.add(f, fx, fy, z, height * tall, false, grey ? 0.55 : 1, grey ? 0.55 : 1, grey ? 0.6 : 1, glow, 1, wide);
       // Contact shadows only under the players and the Gatekeeper, not the swarm: cut for the
       // performance gate (M10 §2.3 cut 3, decisions).
       if (type === GATEKEEPER) shadows.add(x, y, this.floorAt(x, y), def.radius * SHADOW_SIZE);
@@ -1563,6 +2084,7 @@ export class Game {
       this.enemyBillboards.get(c.type)!.add(af, c.x, c.y, c.z - cf.sink, af.height, false);
     }
     if (gone) this.corpses.splice(0, gone);
+    this.drawBlasts(now, eye);
     const proj = this.snaps.projOut;
     const seen = this.projSeen;
     seen.clear();
@@ -1589,7 +2111,28 @@ export class Game {
           z += own.dz * f;
         }
       }
-      bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true);
+      if (k !== PROJ_ARROW) {
+        bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true);
+        continue;
+      }
+      // A Cherub arrow (M12 §6.3): glowing cyan, its embers trailing behind it along its flight, from
+      // where it was drawn last frame.
+      bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true, 1, 1, 1, GLOW_ARROW);
+      const o = slot * 3;
+      const last = this.projLastFrame[slot] === this.frameNo - 1;
+      const dx = x - this.projLast[o];
+      const dy = y - this.projLast[o + 1];
+      const dz = z - this.projLast[o + 2];
+      const len = Math.hypot(dx, dy, dz);
+      this.projLast[o] = x;
+      this.projLast[o + 1] = y;
+      this.projLast[o + 2] = z;
+      this.projLastFrame[slot] = this.frameNo;
+      if (!last || len < 1e-6) continue;
+      ARROW_TRAIL_SIZES.forEach((size, i) => {
+        const back = (ARROW_TRAIL_STEP * (i + 1)) / len;
+        bb.add(this.frames.ember, x - dx * back, y - dy * back, z - dz * back, size, true, 1, 1, 1, GLOW_ARROW);
+      });
     }
     for (const slot of this.ownCensers.keys()) if (!seen.has(slot)) this.ownCensers.delete(slot);
     this.projSeen = this.projPrev;
@@ -1657,11 +2200,37 @@ export class Game {
       bb.add(this.frames.coin, x, y, cz, COIN_SIZE, true);
     }
     this.vfx.setTethers(tethers);
-    this.particles.draw(bb);
+    this.particles.draw(bb, this.scene.camera.position.x, this.scene.camera.position.z);
     bb.end(this.scene.camera);
     shadows.end();
     for (const b of this.enemyBillboards.values()) b.end(this.scene.camera);
     for (const b of this.playerBillboards.values()) b.end(this.scene.camera);
+  }
+
+  private readonly blastGlow: Glow = { r: 1, g: 0.78, b: 0.32, a: 0 };
+
+  /**
+   * Bodies being blasted back (M12 §4.2 step 1): the first pain frame, flying along the angle and
+   * sideways, lifted and swelling with an ease-out, turning white-gold, for 80 ms.
+   */
+  private drawBlasts(now: number, eye: { x: number; y: number }): void {
+    for (let i = this.blasts.length - 1; i >= 0; i--) {
+      const b = this.blasts[i];
+      const u = (now - b.start) / BLAST_MS;
+      if (u >= 1) {
+        this.blasts.splice(i, 1);
+        continue;
+      }
+      const set = this.o.enemyAnims[b.type];
+      if (!set || u < 0) continue;
+      const e = 1 - (1 - u) * (1 - u);
+      const x = b.x + b.ex * e;
+      const y = b.y + b.ey * e;
+      const f = set.anims.pain[spriteDirection(b.facing, eye.x - x, eye.y - y)][0];
+      this.blastGlow.a = BLAST_GLOW_FROM + (BLAST_GLOW_TO - BLAST_GLOW_FROM) * u;
+      const s = 1 + (b.swell - 1) * e;
+      this.enemyBillboards.get(b.type)!.add(f, x, y, b.feet + b.lift * e, f.height * s, false, 1, 1, 1, this.blastGlow, 1, s);
+    }
   }
 
   private lastAnimAt = 0;
@@ -1714,6 +2283,7 @@ export class Game {
 
   dispose(): void {
     this.disposed = true;
+    window.__heavenfallTeleport = undefined;
     cancelAnimationFrame(this.raf);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     document.removeEventListener('visibilitychange', this.onVisibility);

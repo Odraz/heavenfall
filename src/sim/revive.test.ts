@@ -126,9 +126,9 @@ describe('souls and reviving (M8 §4)', () => {
     const before = dead.revive;
     for (let i = 0; i < 15; i++) sim.step();
     expect(sim.projectiles.length).toBe(0);
-    // 2 × 1.0 s ÷ 3, less the decay over the flight.
-    expect(dead.revive).toBeGreaterThan(before + (2 / 3) * 0.95);
-    expect(dead.revive).toBeLessThanOrEqual(2 / 3);
+    // 2 × 0.85 s ÷ 3, less the decay over the flight.
+    expect(dead.revive).toBeGreaterThan(before + ((2 * 0.85) / 3) * 0.95);
+    expect(dead.revive).toBeLessThanOrEqual((2 * 0.85) / 3);
   });
 
   it('a censer exploding within 2.5 m of a soul counts one hit on it', () => {
@@ -143,7 +143,8 @@ describe('souls and reviving (M8 §4)', () => {
     heretic.pitch = 0;
     sim.fireWeapon(heretic);
     for (let i = 0; i < 15; i++) sim.step();
-    expect(dead.revive).toBeGreaterThan(0.6);
+    // One Heretic hit, 2 × 0.85 s ÷ 3, less a little decay.
+    expect(dead.revive).toBeGreaterThan(0.55);
   });
 
   it("the censer's incense cloud doesn't revive (M9 §2.8): after the break, progress only decays", () => {

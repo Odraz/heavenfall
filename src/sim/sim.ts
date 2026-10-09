@@ -19,6 +19,7 @@ import {
   ABILITIES,
   BLASPHEMY_DURATION,
   BLASPHEMY_RADIUS,
+  BLASPHEMY_STUN,
   CLOUD_DAMAGE,
   CLOUD_MAX,
   CLOUD_PULSE_TICKS,
@@ -36,19 +37,23 @@ import {
   DISCORD_RADIUS,
   DISCORD_RANGE,
   DISCORD_SILENCE,
+  FALLING_STAR_CRATER,
   FALLING_STAR_DAMAGE,
+  FALLING_STAR_LANDING_TICKS,
   FALLING_STAR_RADIUS,
-  FALLING_STAR_TIME,
+  FALLING_STAR_REACH_DAMAGE,
   FALLING_STAR_KNOCKBACK_TIME,
   KNOCKBACK_DIST,
   KNOCKBACK_TIME,
+  SHOTGUN_CLOSE_DAMAGE,
   SHOTGUN_KNOCKBACK_DIST,
   SHOTGUN_KNOCKBACK_RANGE,
   SHROUD_BURST_DAMAGE,
-  SHROUD_BURST_MAX,
   SHROUD_BURST_RADIUS,
   MOVEMENT_GRACE,
   MOVEMENT_SPEED_CHECK_SKIP,
+  SHADOWSTEP_CUT_DAMAGE,
+  SHADOWSTEP_CUT_REACH,
   SHADOWSTEP_INVULN,
   SHROUD_AMOUNT,
   SHROUD_DURATION,
@@ -70,6 +75,7 @@ import {
   FLAG_ROOTED,
   FLAG_SILENCED,
   FLAG_SLOWED,
+  FLAG_STUNNED,
   FLAG_TAUNTED,
   PHASE_CLEARED,
   PHASE_COMBAT,
@@ -94,7 +100,8 @@ import {
   TICK_MS,
   WALL_TOP,
 } from './constants';
-import { aimDir, rayCylinder, silverBulletHits } from './combat';
+import { aimDir, burstAngle, burstTier, rayCylinder, silverBulletHits } from './combat';
+import { Director, ENGAGED_HIT_TICKS, ENGAGED_RADIUS, KILL_NEAR_RADIUS, type DirectorInfo } from './director';
 import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } from './field';
 import { FlowField, UNREACHABLE } from './flowfield';
 import { lineOfSight, raycastTerrain } from './los';
@@ -133,6 +140,8 @@ export interface SimOptions {
   god?: boolean;
   /** The benchmark's arena (§2.5, M10 gate §4); absent or -1 when not benchmarking. */
   benchArena?: number;
+  /** With `benchArena`: every 0.5 s, 40 damage to the 20 Blessed nearest a point 8 m ahead of player 0 (M12 §10). */
+  benchBurst?: boolean;
   /** Singleplayer: enables health regeneration (§5.7). */
   singleplayer?: boolean;
   /** Arena waves are disabled (tests). */
@@ -210,14 +219,37 @@ export interface SimPlayer {
   cdE: number;
   /** Tick of the last hit that did damage after invulnerability (for regeneration). */
   lastDamageTick: number;
+  /** Tick of the last `damagePlayer` hit that removed HP or shield; unlike `lastDamageTick`, revive and respawn don't set it (M12 §2.3). */
+  lastHurtTick: number;
   /** Highest accepted input sequence number, or -1. */
   lastSeq: number;
   /** Host time (ms) when the previous accepted input arrived, or the latest teleport. */
   lastAcceptMs: number;
+  /** The Betrayer's Shadowstep being recorded and cut along (M12 §5.7), or null. */
+  dash: DashRecord | null;
   /** The host's latest teleport ID for this player. */
   teleportId: number;
   /** Speed check skipped until this host time (ms). */
   speedCheckSkipUntil: number;
+}
+
+/**
+ * A Shadowstep's path (M12 §5.7): from the press on, each accepted position is appended; once the host
+ * accepts the press, the path's new segments cut each tick until the window closes.
+ */
+interface DashRecord {
+  /** The `seq` of the input whose `ePresses` changed. */
+  pressSeq: number;
+  /** x, y, z triples: the accepted position before the press input, then each accepted input's up to `pressSeq + 9`. */
+  pts: number[];
+  /** Points whose segment from the previous point has been cut along (the first has none). */
+  done: number;
+  /** The tick `useE` accepted the press, or -1 before. */
+  acceptTick: number;
+  /** An input with `seq ≥ pressSeq + 9` was accepted: nothing more is appended. */
+  full: boolean;
+  /** Enemies this dash already cut. */
+  cut: Set<number>;
 }
 
 interface SpawnBatch {
@@ -231,7 +263,6 @@ interface ArenaState {
   phase: number;
   /** Index of the latest started wave, or -1. */
   wave: number;
-  waveStartTick: number;
   queue: SpawnBatch[];
   /** Round-robin position over the spawn points. */
   rr: number;
@@ -245,6 +276,10 @@ interface ArenaState {
   sealTick: number;
   /** Players in the game when it sealed, for party-size scaling (M8 §6.3); 0 before. */
   partySize: number;
+  /** A combat arena's director (M12 §2.3), made at the seal; null otherwise. */
+  director: Director | null;
+  /** A combat arena's placements left this tick: a wave arrives over 10 s (M12 §2.2). */
+  pace: number;
 }
 
 /** Projectile kinds, as encoded in snapshots (§9.4). */
@@ -257,12 +292,19 @@ const PROJECTILE_RANGE = 60;
 /** Enemy type order for spawning ties: Blessed, Choristers, Cherubs. */
 const SPAWN_TYPES = [BLESSED, CHORISTER, CHERUB];
 const SPAWN_ELIGIBLE_DIST = 8;
+/** Combat arenas place a wave only on spawn points this far from every living player, when any are (M12 §2.2). */
+const SPAWN_FAR_DIST = 15;
+/** A combat arena's wave arrives over this many ticks (M12 §2.2). */
+const WAVE_ARRIVAL_TICKS = 10 * TICK_HZ;
 /** Enemies per second each spawn point can place (§8.2 says 50; lowered after playtesting, see decisions.md). */
 export const SPAWN_RATE = 10;
+/** The benchmark's bursts (M12 §10). */
+const BENCH_BURST_TICKS = TICK_HZ / 2;
+const BENCH_BURST_AHEAD = 8;
+const BENCH_BURST_COUNT = 20;
+const BENCH_BURST_DAMAGE = 40;
 const BUDGET_PER_TICK = SPAWN_RATE / TICK_HZ;
 const BUDGET_MAX = 2;
-const WAVE_NEXT_FRACTION = 0.2;
-const WAVE_NEXT_TICKS = 20 * TICK_HZ;
 const RETARGET_TICKS = TICK_HZ;
 /** Line of sight is checked at most twice per second per enemy. */
 const LOS_TICKS = TICK_HZ / 2;
@@ -273,7 +315,8 @@ const BLESSED_STOP = 1.0;
 const MELEE_RANGE = 1.2;
 const MELEE_HEIGHT = 1.5;
 const MELEE_DAMAGE = 5;
-const MELEE_FIRST = 0.5;
+/** M12 §3.2 (was 0.5): with the per-tick countdown, the first strike lands on the 8th tick in range (0.267 s). */
+const MELEE_FIRST = 0.25;
 const MELEE_INTERVAL = 1.0;
 const CHORISTER_RANGE = 20;
 const CHERUB_RANGE = 25;
@@ -323,10 +366,19 @@ const COUNTDOWN_ALL_IN = 5;
 
 const REGEN_DELAY_TICKS = 8 * TICK_HZ;
 const REGEN_FRACTION = 0.015;
+/** A breath in single player (M12 §2.5): in a combat arena's fight, only while its director relaxes. */
+const BREATH_DELAY_TICKS = 3 * TICK_HZ;
+const BREATH_FRACTION = 0.05;
 /** Bound enemies take this much damage (M8 §8). */
 const BOUND_FACTOR = 2;
 /** Sacrament's `beam` stays on this long after its last firing (M9 §2.5). */
 const BEAM_HOLD_TICKS = Math.round(0.6 * TICK_HZ);
+
+/** A dash's path holds the inputs up to this many after the press; its window closes this long after acceptance (M12 §5.7). */
+const DASH_INPUTS = 9;
+const DASH_WINDOW_TICKS = 15;
+/** A path segment longer than this is a teleport, not a dash, and cuts nothing. */
+const DASH_MAX_SEGMENT = 12;
 
 const ticks = (seconds: number) => Math.round(seconds * TICK_HZ);
 
@@ -338,6 +390,7 @@ export class Simulation {
   readonly slots: Array<SimPlayer | undefined> = new Array(PLAYER_SLOTS).fill(undefined);
   /** The benchmark's arena, or -1 when not benchmarking. */
   readonly benchArena: number;
+  private readonly benchBurst: boolean;
   readonly noWaves: boolean;
   readonly singleplayer: boolean;
   /** Every player is invulnerable (`god=1`). */
@@ -379,6 +432,10 @@ export class Simulation {
   readonly eRootUntil = new Int32Array(ENEMY_SLOTS);
   readonly eSilenceUntil = new Int32Array(ENEMY_SLOTS);
   readonly eTauntUntil = new Int32Array(ENEMY_SLOTS);
+  /** Stunned by Blasphemy (M12 §5.3): no steering, striking or casting. */
+  readonly eStunUntil = new Int32Array(ENEMY_SLOTS);
+  /** The last tick incense hurt the enemy: at most once per 15 ticks (M12 §5.4). */
+  private readonly eIncenseTick = new Int32Array(ENEMY_SLOTS).fill(-CLOUD_PULSE_TICKS);
   /** Knocked back on ticks kbFrom < tick ≤ kbUntil. */
   readonly eKbUntil = new Int32Array(ENEMY_SLOTS);
   private readonly eKbFrom = new Int32Array(ENEMY_SLOTS);
@@ -387,6 +444,11 @@ export class Simulation {
   /** Chains pull: start tick (-1 = none), from and to. */
   readonly ePullStart = new Int32Array(ENEMY_SLOTS).fill(-1);
   private readonly ePull = new Float64Array(ENEMY_SLOTS * 6);
+  /** Burst deaths (M12 §4.1): the force summed over the hits of tick `eForceTick`. */
+  private readonly eForce = new Float64Array(ENEMY_SLOTS);
+  private readonly eForceTick = new Int32Array(ENEMY_SLOTS).fill(-1);
+  /** This tick's burst deaths: [slot, angle (+360 if heavy), playerId, …], sent as one `bursts` event. */
+  private readonly tickBursts: number[] = [];
   // Casts and melee (§7.1).
   /** 1 while winding up a cast. */
   readonly eCast = new Uint8Array(ENEMY_SLOTS);
@@ -464,6 +526,10 @@ export class Simulation {
   private readonly hashItems: [Int32Array, Int32Array];
   private readonly hashFill: Int32Array;
 
+  /** Scratch for the director (M12 §2.3), by player index. */
+  private readonly livingScratch: boolean[] = new Array(PLAYER_SLOTS).fill(false);
+  private readonly engagedScratch: boolean[] = new Array(PLAYER_SLOTS).fill(false);
+
   private readonly body: Body = { x: 0, y: 0, z: 0, vz: 0, grounded: true, radius: 0, flying: false };
   private readonly moveResult: MoveResult = { blocked: false };
 
@@ -489,13 +555,13 @@ export class Simulation {
   constructor(opts: SimOptions) {
     this.map = loadMap(opts.dungeon);
     this.benchArena = opts.benchArena ?? -1;
+    this.benchBurst = !!opts.benchBurst && this.benchArena >= 0;
     this.noWaves = !!opts.noWaves;
     this.singleplayer = !!opts.singleplayer;
     this.random = mulberry32(opts.seed);
     this.arenas = this.map.arenas.map((a, i) => ({
       phase: PHASE_IDLE,
       wave: -1,
-      waveStartTick: 0,
       queue: [],
       rr: 0,
       budgets: new Float64Array(this.map.arenaSpawnPoints[i].length),
@@ -505,6 +571,8 @@ export class Simulation {
       alive: 0,
       sealTick: 0,
       partySize: 0,
+      director: null,
+      pace: 0,
     }));
     // Idle arenas keep their exit doors closed.
     this.map.arenas.forEach((_, ai) => setArenaDoors(this.map, ai, PHASE_IDLE));
@@ -579,9 +647,19 @@ export class Simulation {
     let z = m.z;
     const g = groundHeight(this.map, x, y, PLAYER_RADIUS, Infinity, false, true);
     if (g !== -Infinity && z < g) z = g;
+    // A Shadowstep press starts its path where the Betrayer stood before this input (M12 §5.7).
+    if (ePressed && p.classId === 'betrayer') {
+      if (p.dash) this.endDash(p);
+      p.dash = { pressSeq: m.seq, pts: [p.x, p.y, p.z], done: 1, acceptTick: -1, full: false, cut: new Set() };
+    }
     p.x = x;
     p.y = y;
     p.z = z;
+    const dash = p.dash;
+    if (dash && !dash.full) {
+      if (m.seq <= dash.pressSeq + DASH_INPUTS) dash.pts.push(x, y, z);
+      if (m.seq >= dash.pressSeq + DASH_INPUTS) dash.full = true;
+    }
     p.lastAcceptMs = nowMs;
     p.fire = m.fire;
     p.allyTargetId = m.allyTargetId;
@@ -650,12 +728,15 @@ export class Simulation {
       cdQ: 0,
       cdE: 0,
       lastDamageTick: this.tick,
+      lastHurtTick: -ENGAGED_HIT_TICKS,
       lastSeq: -1,
       lastAcceptMs: this.nowMs,
+      dash: null,
       teleportId: 0,
       speedCheckSkipUntil: 0,
     };
     this.slots[p.index] = p;
+    this.activeDirector()?.clear(p.index);
     this.players.push(p);
     this.players.sort((a, b) => a.id - b.id);
     this.groundFields[p.index] ??= new FlowField(this.map, false);
@@ -702,6 +783,7 @@ export class Simulation {
     const p = this.playerById(playerId);
     if (!p) return;
     p.connected = false;
+    this.activeDirector()?.clear(p.index);
     this.players.splice(this.players.indexOf(p), 1);
     this.slots[p.index] = undefined;
     // Enemies that targeted them retarget at once (§7.2).
@@ -738,12 +820,36 @@ export class Simulation {
     this.checkVictory();
     this.checkArenaClears();
     this.checkDefeat();
+    if (this.benchBurst && this.tick % BENCH_BURST_TICKS === 0) this.benchBurstHit();
+    this.flushBursts();
+  }
+
+  /** The benchmark's bursts (M12 §10): 40 damage, credited to player 0, to the 20 Blessed nearest a point 8 m ahead of it. */
+  private benchBurstHit(): void {
+    const p = this.slots[0];
+    if (!p) return;
+    const ax = p.x + Math.cos(p.yaw) * BENCH_BURST_AHEAD;
+    const ay = p.y + Math.sin(p.yaw) * BENCH_BURST_AHEAD;
+    const near: Array<{ s: number; d: number }> = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      if (this.eType[s] === BLESSED) near.push({ s, d: Math.hypot(this.eX[s] - ax, this.eY[s] - ay) });
+    }
+    near.sort((a, b) => a.d - b.d);
+    for (let i = 0; i < near.length && i < BENCH_BURST_COUNT; i++) this.damageEnemy(near[i].s, BENCH_BURST_DAMAGE, p.index);
+  }
+
+  /** Sends this tick's burst deaths as one `bursts` event, if there were any (M12 §4.1). */
+  flushBursts(): void {
+    if (this.tickBursts.length === 0) return;
+    this.events.push({ to: 'all', event: { type: 'bursts', list: this.tickBursts.slice() } });
+    this.tickBursts.length = 0;
   }
 
   /** Victory: when the Gatekeeper dies, every remaining enemy bursts without kill credit (§8.2). */
   private checkVictory(): void {
     if (!this.bossKilled || this.result) return;
-    while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1]);
+    while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1], true);
     this.finish('victory');
   }
 
@@ -806,8 +912,52 @@ export class Simulation {
         this.teleport(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
       }
     }
+    if (this.isCombatArena(ai)) {
+      // The director (M12 §2.3): every intensity starts at 0; it can't start a wave while more than
+      // the largest wave is alive.
+      const cap = Math.max(...a.waves.map((w) => scaleCount(w.blessed, st.partySize) + scaleCount(w.choristers, st.partySize) + scaleCount(w.cherubs, st.partySize)));
+      st.director = new Director(a.waves.length, cap);
+    }
     if (this.benchArena < 0 && !this.noWaves && a.waves.length > 0) this.startWave(ai, 0);
     if (a.boss && this.map.boss) this.placeBoss(ai);
+  }
+
+  /**
+   * One of the combat arenas, whose waves the director paces and which arrive from far away over
+   * 10 s (M12 §2): an arena with more than one wave, outside the benchmark, with waves enabled. The
+   * boss arena and the sandbox's single wave keep the MVP's rules.
+   */
+  private isCombatArena(ai: number): boolean {
+    const a = this.map.arenas[ai];
+    return !a.boss && a.waves.length > 1 && ai !== this.benchArena && !this.noWaves;
+  }
+
+  /** The director of the arena in combat, if it has one (M12 §2.3). */
+  private activeDirector(): Director | null {
+    for (const st of this.arenas) if (st.phase === PHASE_COMBAT && st.director) return st.director;
+    return null;
+  }
+
+  /** The director's state for the F3 overlay (M12 §2.3), or null when no combat arena is in combat. */
+  directorInfo(): DirectorInfo | null {
+    const st = this.arenas.find((a) => a.phase === PHASE_COMBAT && a.director);
+    if (!st || !st.director) return null;
+    const d = st.director;
+    return {
+      phase: d.phase,
+      phaseTime: d.phaseTicks / TICK_HZ,
+      intensity: d.party(this.livingMask()),
+      wave: st.wave,
+      alive: st.alive,
+      waveTotal: st.wave >= 0 ? st.waveTotals[st.wave] : 0,
+    };
+  }
+
+  /** Which player slots hold a living, connected player. */
+  private livingMask(): boolean[] {
+    const m = this.livingScratch;
+    for (let i = 0; i < PLAYER_SLOTS; i++) m[i] = this.livingTargetable(this.slots[i]);
+    return m;
   }
 
   /** Places the Gatekeeper on `B` when the boss arena enters combat; all its timers start now (§7.4). */
@@ -832,11 +982,12 @@ export class Simulation {
     const w = this.map.arenas[ai].waves[n];
     const counts = [scaleCount(w.blessed, st.partySize), scaleCount(w.choristers, st.partySize), scaleCount(w.cherubs, st.partySize)];
     st.wave = n;
-    st.waveStartTick = this.tick;
     st.waveTotals[n] = counts[0] + counts[1] + counts[2];
     st.waveAlive[n] = 0;
     st.waveFullySpawned[n] = st.waveTotals[n] === 0;
+    st.pace = 0;
     if (st.waveTotals[n] > 0) st.queue.push({ counts, spawned: [0, 0, 0], wave: n });
+    st.director?.waveStarted(n);
   }
 
   private checkArenaClears(): void {
@@ -936,14 +1087,46 @@ export class Simulation {
       if (need > 0) st.queue.push({ counts: [need, 0, 0], spawned: [0, 0, 0], wave: -1 });
     }
 
-    const waves = this.map.arenas[ai].waves;
-    const n = st.wave;
-    if (n >= 0 && n < waves.length - 1 && st.waveFullySpawned[n]) {
-      const fewLeft = st.waveAlive[n] <= WAVE_NEXT_FRACTION * st.waveTotals[n] + 1e-9;
-      if (fewLeft || this.tick - st.waveStartTick >= WAVE_NEXT_TICKS) this.startWave(ai, n + 1);
+    const d = st.director;
+    if (d) {
+      this.updateIntensity(d);
+      const n = st.wave;
+      if (d.step(d.party(this.livingMask()), st.waveFullySpawned[n], st.alive, st.waveTotals[n])) this.startWave(ai, n + 1);
+      // A wave arrives at an even pace over 10 s (M12 §2.2).
+      if (st.queue.length > 0) st.pace += st.waveTotals[st.wave] / WAVE_ARRIVAL_TICKS;
     }
 
     this.placeQueued(ai);
+  }
+
+  /**
+   * Intensity decay (M12 §2.3), once per tick: −20 per second for each living player who isn't
+   * engaged, that is with no living enemy within 8 m horizontally and no hit in the last 30 ticks.
+   */
+  private updateIntensity(d: Director): void {
+    const engaged = this.engagedScratch;
+    let left = 0;
+    for (let i = 0; i < PLAYER_SLOTS; i++) {
+      const p = this.slots[i];
+      engaged[i] = !this.livingTargetable(p) || this.tick - p.lastHurtTick < ENGAGED_HIT_TICKS;
+      if (!engaged[i]) left++;
+    }
+    const r2 = ENGAGED_RADIUS * ENGAGED_RADIUS;
+    for (let k = 0; k < this.activeCount && left > 0; k++) {
+      const s = this.active[k];
+      if (this.eType[s] === GATEKEEPER) continue;
+      for (let i = 0; i < PLAYER_SLOTS; i++) {
+        if (engaged[i]) continue;
+        const p = this.slots[i]!;
+        const dx = this.eX[s] - p.x;
+        const dy = this.eY[s] - p.y;
+        if (dx * dx + dy * dy <= r2) {
+          engaged[i] = true;
+          left--;
+        }
+      }
+    }
+    for (let i = 0; i < PLAYER_SLOTS; i++) if (!engaged[i]) d.decay(i);
   }
 
   private placeQueued(ai: number): void {
@@ -952,28 +1135,16 @@ export class Simulation {
     const points = this.map.arenaSpawnPoints[ai];
     const np = points.length;
     if (np === 0) return;
+    // Eligible: more than 15 m from every living player in a combat arena (M12 §2.2), else more
+    // than 8 m; if no point is, every point.
+    const paced = st.director !== null;
     const eligible = new Uint8Array(np);
-    let any = false;
-    for (let i = 0; i < np; i++) {
-      const [c, r] = points[i];
-      const px = c + 0.5;
-      const py = r + 0.5;
-      const pz = this.map.floor[r * this.map.w + c];
-      let ok = true;
-      for (const p of this.players) {
-        if (!this.livingTargetable(p)) continue;
-        if (distToCylinder(px, py, pz, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) <= SPAWN_ELIGIBLE_DIST) {
-          ok = false;
-          break;
-        }
-      }
-      eligible[i] = ok ? 1 : 0;
-      if (ok) any = true;
-    }
-    if (!any) eligible.fill(1);
+    const far = paced && this.markEligible(points, SPAWN_FAR_DIST, eligible);
+    if (!far && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible)) eligible.fill(1);
 
     while (st.queue.length > 0) {
       if (this.living >= MAX_LIVING_ENEMIES) return;
+      if (paced && st.pace < 1 - 1e-9) return;
       let found = -1;
       for (let k = 0; k < np; k++) {
         const i = (st.rr + k) % np;
@@ -995,7 +1166,31 @@ export class Simulation {
       this.spawnAt(slot, type, c, r, ai, batch.wave);
       st.budgets[found] -= 1;
       st.rr = (found + 1) % np;
+      // Budget left when the wave is fully placed is dropped.
+      if (paced) st.pace = st.queue.length > 0 ? st.pace - 1 : 0;
     }
+  }
+
+  /** Marks the spawn points farther than `dist` from every living player; returns whether any is. */
+  private markEligible(points: Array<[number, number]>, dist: number, eligible: Uint8Array): boolean {
+    let any = false;
+    for (let i = 0; i < points.length; i++) {
+      const [c, r] = points[i];
+      const px = c + 0.5;
+      const py = r + 0.5;
+      const pz = this.map.floor[r * this.map.w + c];
+      let ok = true;
+      for (const p of this.players) {
+        if (!this.livingTargetable(p)) continue;
+        if (distToCylinder(px, py, pz, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) <= dist) {
+          ok = false;
+          break;
+        }
+      }
+      eligible[i] = ok ? 1 : 0;
+      if (ok) any = true;
+    }
+    return any;
   }
 
   /** The type with the lowest (spawned + 0.5) / count among types with enemies left (§8.2). */
@@ -1058,6 +1253,8 @@ export class Simulation {
     this.eRootUntil[slot] = 0;
     this.eSilenceUntil[slot] = 0;
     this.eTauntUntil[slot] = 0;
+    this.eStunUntil[slot] = 0;
+    this.eIncenseTick[slot] = -CLOUD_PULSE_TICKS;
     this.eKbUntil[slot] = 0;
     this.ePullStart[slot] = -1;
     this.eCast[slot] = 0;
@@ -1075,11 +1272,20 @@ export class Simulation {
     this.retarget(slot);
   }
 
-  /** Removes an enemy and frees its slot (reusable after 1 s). */
-  removeEnemy(slot: number): void {
+  /**
+   * Removes an enemy and frees its slot (reusable after 1 s). Except in the victory sweep (`sweep`), it
+   * adds 1 to the intensity of each living player within 5 m horizontally (M12 §2.3).
+   */
+  removeEnemy(slot: number, sweep = false): void {
     if (!this.eAlive[slot]) return;
     this.eAlive[slot] = 0;
     const type = this.eType[slot];
+    const d = sweep || type === GATEKEEPER ? null : this.activeDirector();
+    if (d) {
+      for (const p of this.players) {
+        if (this.livingTargetable(p) && Math.hypot(this.eX[slot] - p.x, this.eY[slot] - p.y) <= KILL_NEAR_RADIUS) d.killNear(p.index);
+      }
+    }
     if (type !== GATEKEEPER) this.living--;
     const arena = this.eArena[slot];
     if (arena >= 0) {
@@ -1115,11 +1321,23 @@ export class Simulation {
 
   // ------------------------------------------------------------------ damage (§5.5)
 
-  /** A hit on an enemy. `source` is the player index that gets the kill credit, or -1. */
-  damageEnemy(slot: number, amount: number, source: number): void {
+  /**
+   * A hit on an enemy. `source` is the player index that gets the kill credit, or -1. `force` decides a
+   * burst death (M12 §4.1), summed over the tick; a burst is blasted away from (fromX, fromY), by
+   * default the credited player.
+   */
+  damageEnemy(slot: number, amount: number, source: number, force = amount, fromX = NaN, fromY = NaN): void {
     if (!this.eAlive[slot] || amount <= 0) return;
-    // 1. Bound (M9 §3.6): a rooted enemy, during the pull too, takes double damage.
-    if (this.isRooted(slot)) amount *= BOUND_FACTOR;
+    // 1. Bound (M9 §3.6): a rooted enemy, during the pull too, takes double damage, and double force.
+    if (this.isRooted(slot)) {
+      amount *= BOUND_FACTOR;
+      force *= BOUND_FACTOR;
+    }
+    if (this.eForceTick[slot] !== this.tick) {
+      this.eForceTick[slot] = this.tick;
+      this.eForce[slot] = 0;
+    }
+    this.eForce[slot] += force;
     // Judgment is interrupted by the boss taking 1 300 damage during it, counted after step 1.
     if (slot === this.bossSlot && this.bossCast === BOSS_CAST_JUDGMENT) {
       this.judgmentDamage += amount;
@@ -1131,9 +1349,24 @@ export class Simulation {
     this.eHurtTick[slot] = this.tick;
     // 5. Death and kill credit.
     if (this.eHp[slot] <= 0) {
-      if (shooter) shooter.kills++;
+      if (shooter) {
+        shooter.kills++;
+        this.noteBurst(slot, shooter, fromX, fromY);
+      }
       this.removeEnemy(slot);
     }
+  }
+
+  /** A credited kill bursts when its tick's force reaches 2× the type's max HP, heavy at 4× (M12 §4.1). */
+  private noteBurst(slot: number, shooter: SimPlayer, fromX: number, fromY: number): void {
+    const type = this.eType[slot];
+    if (type === GATEKEEPER) return;
+    const tier = burstTier(this.eForce[slot], ENEMIES[type].hp);
+    if (tier === 0) return;
+    const fx = Number.isNaN(fromX) ? shooter.x : fromX;
+    const fy = Number.isNaN(fromY) ? shooter.y : fromY;
+    const angle = burstAngle(fx, fy, this.eX[slot], this.eY[slot], slot);
+    this.tickBursts.push(slot, tier === 2 ? angle + 360 : angle, shooter.id);
   }
 
   /** A hit on a player. */
@@ -1145,15 +1378,19 @@ export class Simulation {
     if (this.isInvulnerable(p)) amount = 0;
     if (amount <= 0) return;
     p.lastDamageTick = this.tick;
+    p.lastHurtTick = this.tick;
     // 4. Shield; one taken to 0 bursts (M9 §3.3).
     let burst = false;
+    let absorbed = 0;
     if (p.shield > 0) {
-      const absorbed = Math.min(p.shield, amount);
+      absorbed = Math.min(p.shield, amount);
       p.shield -= absorbed;
       amount -= absorbed;
       burst = p.shield <= 0;
     }
     const [x, y, z] = [p.x, p.y, p.z];
+    // Intensity (M12 §2.3): the shield absorbed plus the HP lost, counted down to 0 only.
+    this.activeDirector()?.hurt(p.index, absorbed + Math.min(amount, p.hp), p.maxHp);
     p.hp -= amount;
     // 5. Death.
     if (p.hp <= 0) this.killPlayer(p);
@@ -1162,28 +1399,29 @@ export class Simulation {
   }
 
   /**
-   * Martyr's Shroud bursts (M9 §3.3): 50 damage to the 8 nearest enemies within 5 m of the shielded
-   * player's body center, credited to the caster, or to no one if the caster has left.
+   * Martyr's Shroud bursts (M9 §3.3): 50 damage to every enemy within 3.5 m of the shielded player's body
+   * center (M12 §5.4), credited to the caster, or to no one if the caster has left. Its force is
+   * Infinity: what it kills bursts heavy, blasted away from its center (M12 §4.1).
    */
   private shroudBurst(p: SimPlayer, x: number, y: number, z: number): void {
     const caster = p.shieldCaster;
     p.shieldCaster = null;
     const source = caster && caster.connected ? caster.index : -1;
     const cz = z + PLAYER_HEIGHT / 2;
-    const hit: Array<{ s: number; d: number }> = [];
+    const hit: number[] = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
       const def = ENEMIES[this.eType[s]];
-      const d = distToCylinder(x, y, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height);
-      if (d <= SHROUD_BURST_RADIUS) hit.push({ s, d });
+      if (distToCylinder(x, y, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= SHROUD_BURST_RADIUS) hit.push(s);
     }
-    // Stable sort: equal distances keep active-list order, so the result is deterministic.
-    hit.sort((a, b) => a.d - b.d);
-    for (let i = 0; i < hit.length && i < SHROUD_BURST_MAX; i++) this.damageEnemy(hit[i].s, SHROUD_BURST_DAMAGE, source);
+    // Applied after the scan: a kill removes the enemy from the active list.
+    for (const s of hit) this.damageEnemy(s, SHROUD_BURST_DAMAGE, source, Infinity, x, y);
     this.events.push({ to: 'all', event: { type: 'shroudBurst', playerId: p.id, x, y, z } });
   }
 
   private killPlayer(p: SimPlayer): void {
+    // A death is a peak (M12 §2.3), and the player's intensity is 0.
+    this.activeDirector()?.died(p.index);
     p.dead = true;
     p.deaths++;
     p.hp = 0;
@@ -1199,6 +1437,7 @@ export class Simulation {
     p.pendingQ = false;
     p.pendingE = false;
     p.landingTick = -1;
+    p.dash = null;
     this.events.push({ to: 'all', event: { type: 'playerDied', playerId: p.id } });
     // Blasphemy ends when the Fallen dies (§7.2).
     if (p.classId === 'fallen') for (let k = 0; k < this.activeCount; k++) this.eTauntUntil[this.active[k]] = 0;
@@ -1238,6 +1477,18 @@ export class Simulation {
   /** Rooted: by Chains, including the 0.3 s pull. The Gatekeeper can't be rooted. */
   isRooted(slot: number): boolean {
     return this.tick < this.eRootUntil[slot] || this.ePullStart[slot] >= 0;
+  }
+
+  /** Stun (M12 §5.3): a new stun takes the later end; a cast in progress is cancelled. The Gatekeeper can't be stunned. */
+  stun(slot: number, seconds: number): void {
+    if (this.immune(slot)) return;
+    this.eStunUntil[slot] = Math.max(this.eStunUntil[slot], this.tick + ticks(seconds));
+    this.eCast[slot] = 0;
+    this.eCastT[slot] = 0;
+  }
+
+  isStunned(slot: number): boolean {
+    return this.tick < this.eStunUntil[slot];
   }
 
   /** Silence: a cast in progress is cancelled. */
@@ -1291,6 +1542,18 @@ export class Simulation {
 
   // ------------------------------------------------------------------ players
 
+  /**
+   * Singleplayer regeneration (§5.7): 1.5% of max HP per second after 8 s without damage, except in a
+   * combat arena's fight (M12 §2.5), where it's 5% after 3 s, and only while its director relaxes.
+   */
+  private regenerate(p: SimPlayer): void {
+    const d = this.activeDirector();
+    const [delay, fraction] = d ? [BREATH_DELAY_TICKS, BREATH_FRACTION] : [REGEN_DELAY_TICKS, REGEN_FRACTION];
+    if (d && d.phase !== 'relax') return;
+    if (this.tick - p.lastDamageTick < delay) return;
+    p.hp = Math.min(p.maxHp, p.hp + fraction * p.maxHp * TICK_DT);
+  }
+
   private updatePlayers(): void {
     for (const p of this.players) {
       p.cdQ = Math.max(0, p.cdQ - TICK_DT);
@@ -1300,9 +1563,7 @@ export class Simulation {
         p.fireTimer = Math.max(0, p.fireTimer - TICK_DT);
         continue;
       }
-      if (this.singleplayer && this.tick - p.lastDamageTick >= REGEN_DELAY_TICKS) {
-        p.hp = Math.min(p.maxHp, p.hp + REGEN_FRACTION * p.maxHp * TICK_DT);
-      }
+      if (this.singleplayer) this.regenerate(p);
       if (p.landingTick >= 0 && this.tick >= p.landingTick) {
         p.landingTick = -1;
         this.fallingStarLanding(p);
@@ -1315,6 +1576,7 @@ export class Simulation {
         p.pendingE = false;
         this.useE(p, p.pendingEAlly);
       }
+      if (p.dash) this.updateDash(p);
       this.updateWeapon(p);
     }
   }
@@ -1394,6 +1656,7 @@ export class Simulation {
     // Souls this trigger pull hit: all pellets together count one hit per soul (M8 §4.2).
     const souls = new Set<SimPlayer>();
     const knock = p.classId === 'fallen' && slot === ATTACK_PRIMARY ? new Set<number>() : null;
+    const bodyZ = p.z + PLAYER_HEIGHT / 2;
     for (let i = 0; i < w.pellets; i++) {
       const yaw = w.spreadYaw > 0 ? p.yaw + (this.random() * 2 - 1) * w.spreadYaw : p.yaw;
       const pitch = w.spreadPitch > 0 ? p.pitch + (this.random() * 2 - 1) * w.spreadPitch : p.pitch;
@@ -1404,7 +1667,12 @@ export class Simulation {
       if (hits.length >= w.maxHits) stop = this.rayT(hits[hits.length - 1], ex, ey, ez, dx, dy, dz);
       this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
       for (const s of hits) {
-        this.damageEnemy(s, w.damage, p.index);
+        // A shotgun pellet within 6 m deals 20, a Blessed's HP, and always bursts what it kills; beyond, 10
+        // (M12 §5.1, §4.1).
+        const def = ENEMIES[this.eType[s]];
+        const close = knock !== null && distToCylinder(p.x, p.y, bodyZ, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= SHOTGUN_KNOCKBACK_RANGE;
+        const damage = close ? SHOTGUN_CLOSE_DAMAGE : w.damage;
+        this.damageEnemy(s, damage, p.index, close ? Infinity : damage);
         if (w.slow > 0 && this.eAlive[s]) this.slow(s, w.slow);
         knock?.add(s);
       }
@@ -1412,11 +1680,10 @@ export class Simulation {
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, p.classId === 'heretic'), p);
     // The shotgun knocks back each survivor within 6 m once per shot, except rooted ones (M9 §3.1).
     if (knock) {
-      const cz = p.z + PLAYER_HEIGHT / 2;
       for (const s of knock) {
         if (!this.eAlive[s] || this.isRooted(s)) continue;
         const def = ENEMIES[this.eType[s]];
-        if (distToCylinder(p.x, p.y, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > SHOTGUN_KNOCKBACK_RANGE) continue;
+        if (distToCylinder(p.x, p.y, bodyZ, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > SHOTGUN_KNOCKBACK_RANGE) continue;
         this.knockAway(s, p.x, p.y, SHOTGUN_KNOCKBACK_DIST, KNOCKBACK_TIME);
       }
     }
@@ -1437,8 +1704,9 @@ export class Simulation {
   }
 
   /**
-   * The Scourge (M9 §2.6): 25 damage to the 6 nearest living enemies within 3 m of the body center
-   * and within 60° of the horizontal aim, slowing the survivors for 1 s. No line of sight is needed.
+   * The Scourge (M9 §2.6): 25 damage to every living enemy within 3 m of the body center and within 60°
+   * of the horizontal aim (M12 §5.5), slowing the survivors for 1 s. No line of sight is needed. Its
+   * force is Infinity: what it kills bursts heavy (M12 §4.1).
    */
   scourge(p: SimPlayer): void {
     const w = SECONDARIES.binder;
@@ -1465,13 +1733,13 @@ export class Simulation {
     hit.sort((a, b) => a.d - b.d);
     for (let i = 0; i < hit.length && i < w.maxHits; i++) {
       const s = hit[i].s;
-      this.damageEnemy(s, w.damage, p.index);
+      this.damageEnemy(s, w.damage, p.index, Infinity);
       if (this.eAlive[s]) this.slow(s, w.slow);
     }
   }
 
   /**
-   * The Silver Bullet (M9 §2.4): 300 damage carried through the line, nearest first. A rooted enemy
+   * The Silver Bullet (M9 §2.4): 200 damage (M12 §5.6) carried through the line, nearest first. A rooted enemy
    * costs half its HP, since the Bound step doubles its hit; the Gatekeeper takes whatever is left.
    * Sends `silverBullet` with where the ray stopped.
    */
@@ -1489,7 +1757,8 @@ export class Simulation {
     if (dealt.stopped) stop = this.rayT(dealt.hits[dealt.hits.length - 1].s, ex, ey, ez, dx, dy, dz);
     const souls = new Set<SimPlayer>();
     this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
-    for (const h of dealt.hits) this.damageEnemy(h.s, h.amount, p.index);
+    // Its force is what the bullet still carried on reaching the enemy (M12 §4.1).
+    for (const h of dealt.hits) this.damageEnemy(h.s, h.amount, p.index, h.carried);
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, false), p);
     this.events.push({ to: 'all', event: { type: 'silverBullet', playerId: p.id, x: ex, y: ey, z: ez, ex: ex + dx * stop, ey: ey + dy * stop, ez: ez + dz * stop } });
   }
@@ -1593,13 +1862,15 @@ export class Simulation {
     const bz = p.z + PLAYER_HEIGHT / 2;
     switch (p.classId) {
       case 'fallen': {
-        // Blasphemy: every enemy within 15 m, including the Gatekeeper, targets the Fallen for 5 s.
+        // Blasphemy: every enemy within 12 m, including the Gatekeeper, targets the Fallen for 5 s, and
+        // every one but the Gatekeeper is stunned for 1 s (M12 §5.3).
         for (let k = 0; k < this.activeCount; k++) {
           const s = this.active[k];
           const def = ENEMIES[this.eType[s]];
           if (distToCylinder(bx, by, bz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > BLASPHEMY_RADIUS) continue;
           this.eTauntUntil[s] = this.tick + ticks(BLASPHEMY_DURATION);
           this.eTarget[s] = p.index;
+          this.stun(s, BLASPHEMY_STUN);
         }
         break;
       }
@@ -1648,20 +1919,27 @@ export class Simulation {
   private useE(p: SimPlayer, allyId: number): void {
     const def = ABILITIES[p.classId].E;
     if (def.movement) {
-      // Movement abilities run on the client; the host accepts within 0.25 s of ready (§9.3).
-      if (p.cdE > MOVEMENT_GRACE + 1e-6) return;
+      // Movement abilities run on the client; the host accepts within 0.25 s of ready (§9.3). A
+      // Shadowstep that isn't accepted cuts nothing (M12 §5.7).
+      if (p.cdE > MOVEMENT_GRACE + 1e-6) {
+        p.dash = null;
+        return;
+      }
       if (p.classId === 'fallen') {
+        // Falling Star (M12 §5.2): the leap goes wherever the Fallen aimed, so no ally is needed; it
+        // lands 15 ticks later, invulnerable until then. `targets` is the ally it went to, if valid.
         const ally = allyId === ALLY_NONE ? undefined : this.playerById(allyId);
-        if (!ally || ally === p || !this.livingTargetable(ally)) return;
-        p.landingTick = this.tick + ticks(FALLING_STAR_TIME);
-        p.invulUntil = Math.max(p.invulUntil, this.tick + ticks(FALLING_STAR_TIME));
+        const toAlly = !!ally && ally !== p && this.livingTargetable(ally);
+        p.landingTick = this.tick + FALLING_STAR_LANDING_TICKS;
+        p.invulUntil = Math.max(p.invulUntil, p.landingTick);
         p.cdE = def.cooldown;
         p.speedCheckSkipUntil = this.nowMs + MOVEMENT_SPEED_CHECK_SKIP * 1000;
-        this.abilityEvent(p, 'E', ally.x, ally.y, ally.z, [ally.id]);
+        this.abilityEvent(p, 'E', p.x, p.y, p.z, toAlly ? [ally.id] : []);
       } else {
         p.invulUntil = Math.max(p.invulUntil, this.tick + ticks(SHADOWSTEP_INVULN));
         p.cdE = def.cooldown;
         p.speedCheckSkipUntil = this.nowMs + MOVEMENT_SPEED_CHECK_SKIP * 1000;
+        if (p.dash) p.dash.acceptTick = this.tick;
         this.abilityEvent(p, 'E', p.x, p.y, p.z);
       }
       return;
@@ -1692,28 +1970,91 @@ export class Simulation {
   }
 
   /**
-   * Falling Star landing (M9 §3.2): 10 damage within 5 m, then the survivors are knocked back 4 m over
-   * 0.4 s away from the landing point, except rooted ones (their piles hold). `starLanded` lists the
-   * enemies launched.
+   * Falling Star landing (M12 §5.2), at the Fallen's latest accepted position on the floor under it, so
+   * a late input caught mid-arc still puts the crater on the ground: 40 damage within 3.5 m (the crater,
+   * whose kills always burst, §4.1) and 10 out to 6 m; then the survivors within 6 m are knocked back 4 m
+   * over 0.4 s away from the landing point, except rooted ones (their piles hold). `starLanded` lists
+   * the enemies launched.
    */
   private fallingStarLanding(p: SimPlayer): void {
     const cx = p.x;
     const cy = p.y;
-    const cz = p.z + PLAYER_HEIGHT / 2;
-    const hit: number[] = [];
+    const g = groundHeight(this.map, cx, cy, PLAYER_RADIUS, Infinity, false, true);
+    const floor = g === -Infinity ? p.z : g;
+    const cz = floor + PLAYER_HEIGHT / 2;
+    const hit: Array<{ s: number; d: number }> = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
       const def = ENEMIES[this.eType[s]];
-      if (distToCylinder(cx, cy, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= FALLING_STAR_RADIUS) hit.push(s);
+      const d = distToCylinder(cx, cy, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height);
+      if (d <= FALLING_STAR_RADIUS) hit.push({ s, d });
     }
     const launched: number[] = [];
-    for (const s of hit) {
-      this.damageEnemy(s, FALLING_STAR_DAMAGE, p.index);
+    for (const { s, d } of hit) {
+      if (d <= FALLING_STAR_CRATER) this.damageEnemy(s, FALLING_STAR_DAMAGE, p.index, Infinity, cx, cy);
+      else this.damageEnemy(s, FALLING_STAR_REACH_DAMAGE, p.index, FALLING_STAR_REACH_DAMAGE, cx, cy);
       if (!this.eAlive[s] || this.isRooted(s) || this.immune(s)) continue;
       this.knockAway(s, cx, cy, KNOCKBACK_DIST, FALLING_STAR_KNOCKBACK_TIME);
       launched.push(s);
     }
-    this.events.push({ to: 'all', event: { type: 'starLanded', playerId: p.id, x: p.x, y: p.y, z: p.z, launched } });
+    this.events.push({ to: 'all', event: { type: 'starLanded', playerId: p.id, x: cx, y: cy, z: floor, launched } });
+  }
+
+  /**
+   * Shadowstep's cut (M12 §5.7), each tick after `useE` while the window is open: every living enemy
+   * whose cylinder is within 0.5 m of a new path segment (from the closest point of the segment, raised
+   * to the body center) takes 40, once per dash, credited to the Betrayer and blasted along the segment.
+   * A segment longer than 12 m is a teleport and cuts nothing. The window closes once an input with
+   * `seq ≥ pressSeq + 9` was accepted, or 15 ticks after acceptance; then `dashCut` is sent.
+   */
+  private updateDash(p: SimPlayer): void {
+    const dash = p.dash!;
+    if (dash.acceptTick < 0) return;
+    this.cutNewSegments(p, dash);
+    if (dash.full || this.tick >= dash.acceptTick + DASH_WINDOW_TICKS) this.endDash(p);
+  }
+
+  private cutNewSegments(p: SimPlayer, dash: DashRecord): void {
+    const q = dash.pts;
+    const n = q.length / 3;
+    for (let i = dash.done; i < n; i++) this.cutSegment(p, dash, q[i * 3 - 3], q[i * 3 - 2], q[i * 3 - 1], q[i * 3], q[i * 3 + 1], q[i * 3 + 2]);
+    dash.done = n;
+  }
+
+  private cutSegment(p: SimPlayer, dash: DashRecord, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): void {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len2 = dx * dx + dy * dy;
+    if (len2 > DASH_MAX_SEGMENT * DASH_MAX_SEGMENT) return;
+    const len = Math.sqrt(len2);
+    const ux = len > 1e-9 ? dx / len : 0;
+    const uy = len > 1e-9 ? dy / len : 0;
+    const hit: number[] = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      if (dash.cut.has(s)) continue;
+      const def = ENEMIES[this.eType[s]];
+      const t = len2 > 1e-12 ? Math.max(0, Math.min(1, ((this.eX[s] - x0) * dx + (this.eY[s] - y0) * dy) / len2)) : 0;
+      const cz = z0 + (z1 - z0) * t + PLAYER_HEIGHT / 2;
+      if (distToCylinder(x0 + dx * t, y0 + dy * t, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= SHADOWSTEP_CUT_REACH) hit.push(s);
+    }
+    // Applied after the scan: a kill removes the enemy from the active list. A burst flies along the
+    // dash, from a point behind the enemy on the segment's direction (M12 §4.1).
+    for (const s of hit) {
+      dash.cut.add(s);
+      this.damageEnemy(s, SHADOWSTEP_CUT_DAMAGE, p.index, SHADOWSTEP_CUT_DAMAGE, this.eX[s] - ux, this.eY[s] - uy);
+    }
+  }
+
+  /** Closes a dash's window, cutting along what's left of its path; `dashCut` carries the path's ends. A press never accepted sends nothing. */
+  private endDash(p: SimPlayer): void {
+    const dash = p.dash;
+    p.dash = null;
+    if (!dash || dash.acceptTick < 0) return;
+    this.cutNewSegments(p, dash);
+    const q = dash.pts;
+    const l = q.length - 3;
+    this.events.push({ to: 'all', event: { type: 'dashCut', playerId: p.id, x0: q[0], y0: q[1], z0: q[2], x1: q[l], y1: q[l + 1], z1: q[l + 2] } });
   }
 
   /**
@@ -1890,23 +2231,26 @@ export class Simulation {
   }
 
   /**
-   * Incense clouds (M9 §2.8): every 15th tick each living enemy within 2.5 m of any cloud takes 2.5
-   * damage once, however many clouds cover it, credited to the newest one's Heretic (no one if it left).
-   * A cloud pulses on the ticks after it appears, up to its 4 s.
+   * Incense clouds (M9 §2.8, M12 §5.4): each cloud pulses on the tick it appears and every 15 ticks
+   * after, while before its end (8 pulses). A pulse deals 5 to each living enemy within 2.5 m that
+   * incense hasn't hurt in the last 15 ticks, so clouds don't stack; the credit goes to the newest
+   * pulsing cloud's Heretic (no one if it left).
    */
   private updateClouds(): void {
-    while (this.clouds.length && this.tick > this.clouds[0].until) this.clouds.shift();
-    if (this.clouds.length === 0 || this.tick % CLOUD_PULSE_TICKS !== 0) return;
+    while (this.clouds.length && this.tick >= this.clouds[0].until) this.clouds.shift();
+    const pulsing = this.clouds.filter((c) => this.tick >= c.from && (this.tick - c.from) % CLOUD_PULSE_TICKS === 0);
+    if (pulsing.length === 0) return;
     const hits: Array<[number, number]> = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
+      if (this.tick - this.eIncenseTick[s] < CLOUD_PULSE_TICKS) continue;
       const def = ENEMIES[this.eType[s]];
       // Newest first, so the credit goes to the newest cloud covering the enemy.
-      for (let i = this.clouds.length - 1; i >= 0; i--) {
-        const c = this.clouds[i];
-        if (this.tick <= c.from || this.tick > c.until) continue;
+      for (let i = pulsing.length - 1; i >= 0; i--) {
+        const c = pulsing[i];
         if (distToCylinder(c.x, c.y, c.z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > CLOUD_RADIUS) continue;
         hits.push([s, c.owner.connected ? c.owner.index : -1]);
+        this.eIncenseTick[s] = this.tick;
         break;
       }
     }
@@ -2031,10 +2375,19 @@ export class Simulation {
         continue;
       }
       if (type !== BLESSED) this.updateLos(slot);
+      // Stunned (M12 §5.3): it moves with zero intent (gravity, hovering and knockback still apply),
+      // doesn't strike or cast, and is idle.
+      const stunned = this.isStunned(slot);
       if (tick > this.eKbFrom[slot] && tick <= this.eKbUntil[slot]) this.updateKnockback(slot);
-      else if (type === CHERUB) this.updateCherub(slot);
-      else this.updateWalker(slot);
-      if (type === BLESSED) this.updateMelee(slot);
+      else if (type === CHERUB) this.updateCherub(slot, stunned);
+      else this.updateWalker(slot, stunned);
+      if (stunned) {
+        this.eMeleeNext[slot] = -1;
+        this.eCast[slot] = 0;
+        this.eCastT[slot] = 0;
+        if (this.eCastCd[slot] > 0) this.eCastCd[slot] = Math.max(0, this.eCastCd[slot] - TICK_DT);
+        this.eState[slot] = ST_IDLE;
+      } else if (type === BLESSED) this.updateMelee(slot);
       else this.updateCast(slot);
     }
   }
@@ -2240,8 +2593,8 @@ export class Simulation {
 
   private readonly steerOut = { dx: 0, dy: 0, dist: 0, direct: false };
 
-  /** Blessed and Choristers: follow the ground field; Choristers stop to cast in range. */
-  private updateWalker(slot: number): void {
+  /** Blessed and Choristers: follow the ground field; Choristers stop to cast in range. A stunned one doesn't steer. */
+  private updateWalker(slot: number, stunned: boolean): void {
     const type = this.eType[slot];
     const b = this.loadBody(slot);
     const t = this.eTarget[slot];
@@ -2250,7 +2603,7 @@ export class Simulation {
     const rooted = this.tick < this.eRootUntil[slot];
     const holds = type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot));
     const p = t >= 0 ? this.slots[t] : undefined;
-    if (p && !rooted && !holds) {
+    if (p && !rooted && !holds && !stunned) {
       const s = this.steerOut;
       if (this.steer(slot, this.groundFields[t], p, s)) {
         let step = this.speedOf(slot) * TICK_DT;
@@ -2267,7 +2620,7 @@ export class Simulation {
     this.eState[slot] = !b.grounded ? ST_FALLING : mx !== 0 || my !== 0 ? ST_MOVING : ST_IDLE;
   }
 
-  private updateCherub(slot: number): void {
+  private updateCherub(slot: number, stunned: boolean): void {
     const b = this.loadBody(slot);
     const t = this.eTarget[slot];
     let mx = 0;
@@ -2275,7 +2628,7 @@ export class Simulation {
     let strafing = false;
     const rooted = this.tick < this.eRootUntil[slot];
     const p = t >= 0 ? this.slots[t] : undefined;
-    if (p && !rooted) {
+    if (p && !rooted && !stunned) {
       if (this.casterInRange(slot)) {
         strafing = true;
         const base = Math.atan2(p.y - b.y, p.x - b.x);
@@ -2315,7 +2668,7 @@ export class Simulation {
 
   /**
    * Blessed melee (§7.1): while within 1.2 m horizontally and less than 1.5 m apart in height, 5 damage
-   * 0.5 s after entering range, then every 1 s. Leaving range resets the timer.
+   * on the 8th tick in range (0.267 s, M12 §3.2), then every 1 s. Leaving range resets the timer.
    */
   private updateMelee(slot: number): void {
     const t = this.eTarget[slot];
@@ -2536,6 +2889,7 @@ export class Simulation {
       if (tick < this.eSilenceUntil[s]) f |= FLAG_SILENCED;
       if (tick < this.eSlowUntil[s]) f |= FLAG_SLOWED;
       if (tick < this.eTauntUntil[s]) f |= FLAG_TAUNTED;
+      if (tick < this.eStunUntil[s]) f |= FLAG_STUNNED;
       this.baseFlags[k] = f;
     }
     e.projectileCount = this.projectiles.length;

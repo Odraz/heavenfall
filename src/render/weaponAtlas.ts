@@ -44,10 +44,12 @@ export interface WeaponManifest {
     chain: { frames: number; left: number; top: number; w: number; h: number };
     hands: Array<[number, number, number]>;
   };
+  /** Shadowstep's dagger (the Betrayer, M12 §5.7), in its image's pixels: the painting's height, its size, the fist's center and the blade's tip. */
+  slash?: { paintH: number; w: number; h: number; fist: [number, number]; tip: [number, number] };
 }
 
 /** The layer images a class has; the manifest says which. */
-export type WeaponLayer = 'idle' | 'idle-glow' | 'alt' | 'alt-glow' | 'hammer' | 'cylinder' | 'censer-green' | 'censer-green-glow' | 'fist' | 'chain' | 'chain-glow';
+export type WeaponLayer = 'idle' | 'idle-glow' | 'alt' | 'alt-glow' | 'hammer' | 'cylinder' | 'censer-green' | 'censer-green-glow' | 'fist' | 'chain' | 'chain-glow' | 'dagger';
 
 export interface WeaponArt {
   manifest: WeaponManifest;

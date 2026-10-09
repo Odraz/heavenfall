@@ -2,8 +2,8 @@
  * Client-side animation of 8-direction enemy sprites (§11.1). Snapshots carry no facing or
  * animation time, so both are derived here: facing from the interpolated movement (or the nearest
  * player while winding up or attacking), the walk cycle from distance walked, the Blessed attack
- * cycle from when the `attacking` state began, matching the melee timing (first hit 0.5 s in, then
- * every 1 s), and casts from when the wind-up began and when the shot fired. Cherubs flap their
+ * cycle from when the `attacking` state began, matching the melee timing (first hit 267 ms in, on
+ * the 8th tick in range, then every 1 s: M12 §3.2), and casts from when the wind-up began and when the shot fired. Cherubs flap their
  * wings on a clock instead of walking; the Gatekeeper's casts follow the boss cast in the snapshot.
  */
 import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, ST_ATTACKING, ST_FALLING, ST_MOVING, ST_WINDUP } from '../data/enemies';
@@ -48,6 +48,11 @@ export const WALK_FRAMES = 8;
 /** The attack cycle: 8 frames over 1 s, the blow landing on frame 4. */
 export const ATTACK_FRAMES = 8;
 export const ATTACK_CYCLE_MS = 1000;
+/**
+ * The cycle starts this far in when `attacking` begins (M12 §3.2), so the blow (frame 4, 500–625 ms
+ * into the cycle) is on screen when the first strike lands, 267 ms after.
+ */
+export const ATTACK_LEAD_MS = 267;
 export const PAIN_FRAMES = 3;
 export const PAIN_MS = 250;
 /** A new flinch can't start sooner than this after the previous one, so steady fire doesn't freeze the swarm in pain. */
@@ -94,6 +99,8 @@ export class EnemyAnimator {
   private readonly state = new Uint8Array(ENEMY_SLOTS);
   private readonly stateSince = new Float64Array(ENEMY_SLOTS);
   private readonly painStart = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
+  /** Stunned in the snapshot (M12 §5.3): the pain animation holds its last frame. */
+  private readonly stunned = new Uint8Array(ENEMY_SLOTS);
   /** When a casting enemy last fired (its state became `attacking`). */
   private readonly firedAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
   private readonly type = new Uint8Array(ENEMY_SLOTS);
@@ -126,6 +133,7 @@ export class EnemyAnimator {
       this.state[slot] = state;
       this.stateSince[slot] = now;
       this.painStart[slot] = -Infinity;
+      this.stunned[slot] = 0;
       this.facing[slot] = Math.atan2(targetY - y, targetX - x);
       return;
     }
@@ -155,9 +163,19 @@ export class EnemyAnimator {
     if (now - this.painStart[slot] >= PAIN_COOLDOWN_MS) this.painStart[slot] = now;
   }
 
+  /**
+   * The snapshot's stun flag for a slot, after `update` (M12 §5.3): on its rising edge the pain
+   * animation starts, whatever the cooldown, and it holds its last frame while the flag is set.
+   */
+  setStunned(slot: number, on: boolean, now: number): void {
+    if (on && !this.stunned[slot]) this.painStart[slot] = now;
+    this.stunned[slot] = on ? 1 : 0;
+  }
+
   /** The animation and frame to show for a slot at `now`; `bossCast` is the snapshot's (BOSS_CAST_*). */
   pick(slot: number, now: number, bossCast = 0): AnimPick {
     const sincePain = now - this.painStart[slot];
+    if (this.stunned[slot]) return { anim: 'pain', frame: Math.min(PAIN_FRAMES - 1, Math.floor((Math.max(0, sincePain) / PAIN_MS) * PAIN_FRAMES)) };
     if (sincePain >= 0 && sincePain < PAIN_MS) return { anim: 'pain', frame: Math.min(PAIN_FRAMES - 1, Math.floor((sincePain / PAIN_MS) * PAIN_FRAMES)) };
     const state = this.state[slot];
     const type = this.type[slot];
@@ -174,7 +192,7 @@ export class EnemyAnimator {
         return { anim: 'cast', frame: Math.min(cast.windupFrames - 1, Math.floor((t / cast.windupMs) * cast.windupFrames)) };
       }
     } else if (state === ST_ATTACKING) {
-      const t = (((now - this.stateSince[slot]) % ATTACK_CYCLE_MS) + ATTACK_CYCLE_MS) % ATTACK_CYCLE_MS;
+      const t = (((now - this.stateSince[slot] + ATTACK_LEAD_MS) % ATTACK_CYCLE_MS) + ATTACK_CYCLE_MS) % ATTACK_CYCLE_MS;
       return { anim: 'attack', frame: Math.floor((t / ATTACK_CYCLE_MS) * ATTACK_FRAMES) };
     }
     if (type === CHERUB) {

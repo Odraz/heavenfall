@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHERUB, CHORISTER, GATEKEEPER, ST_ATTACKING, ST_IDLE, ST_MOVING, ST_WINDUP } from '../data/enemies';
 import { BOSS_CAST_JUDGMENT, BOSS_CAST_NONE, BOSS_CAST_VOLLEY } from '../sim/sim';
-import { CORPSE_FALL_G, corpseFrame, CORPSE_MS, DEATH_MS, EnemyAnimator, PAIN_COOLDOWN_MS, spriteDirection, WALK_CYCLE_M } from './enemyAnim';
+import { CORPSE_FALL_G, corpseFrame, CORPSE_MS, DEATH_MS, EnemyAnimator, PAIN_COOLDOWN_MS, PAIN_FRAMES, PAIN_MS, spriteDirection, WALK_CYCLE_M } from './enemyAnim';
 
 describe('spriteDirection', () => {
   it('shows the front to a viewer the enemy faces, and the back to one behind it', () => {
@@ -64,14 +64,15 @@ describe('EnemyAnimator', () => {
     expect(a.pick(1, s.t).anim).toBe('idle');
   });
 
-  it('the attack cycle starts when attacking begins: the blow (frame 4) lands 0.5 s in, then every 1 s', () => {
+  it('the attack cycle starts 267 ms in when attacking begins (M12 §3.2): the blow (frame 4) is up at the first strike, 267 ms in, then every 1 s', () => {
     const a = new EnemyAnimator();
     let s = run(a, 2, { x: 0, y: 0, t: 0 }, 10, 0, 4, ST_MOVING);
     s = run(a, 2, s, 1, 0, 0, ST_ATTACKING);
     const start = s.t;
-    expect(a.pick(2, start)).toEqual({ anim: 'attack', frame: 0 });
-    expect(a.pick(2, start + 500)).toEqual({ anim: 'attack', frame: 4 });
-    expect(a.pick(2, start + 1500)).toEqual({ anim: 'attack', frame: 4 });
+    expect(a.pick(2, start)).toEqual({ anim: 'attack', frame: 2 });
+    expect(a.pick(2, start + 232)).toEqual({ anim: 'attack', frame: 3 });
+    expect(a.pick(2, start + 267)).toEqual({ anim: 'attack', frame: 4 });
+    expect(a.pick(2, start + 1267)).toEqual({ anim: 'attack', frame: 4 });
     // Attacking enemies face their target (the nearest player at x = 100).
     expect(a.facing[2]).toBeCloseTo(0, 1);
   });
@@ -217,5 +218,30 @@ describe('corpseFrame', () => {
     expect(corpseFrame(c, 500)!.sink).toBeCloseTo(-(4 - 0.5 * CORPSE_FALL_G * 0.25));
     // It lands after √(2 · 4 / 20) ≈ 0.63 s, before the death animation ends.
     expect(corpseFrame(c, 700)!.sink).toBe(0);
+  });
+});
+
+describe('stunned enemies recoil (M12 §5.3)', () => {
+  it("the pain animation plays from the flag's rising edge, ignoring the cooldown, and holds its last frame while it's set", () => {
+    const a = new EnemyAnimator();
+    a.begin();
+    a.update(1, 0, 0, ST_IDLE, 0, 0.016, 5, 0);
+    // Hurt just before: the cooldown would block a new flinch.
+    a.hurt(1, 0);
+    a.begin();
+    a.update(1, 0, 0, ST_IDLE, 100, 0.016, 5, 0);
+    a.setStunned(1, true, 100);
+    expect(a.pick(1, 100)).toEqual({ anim: 'pain', frame: 0 });
+    expect(100).toBeLessThan(PAIN_COOLDOWN_MS);
+    for (const t of [100 + PAIN_MS, 100 + 900]) {
+      a.begin();
+      a.update(1, 0, 0, ST_IDLE, t, 0.016, 5, 0);
+      a.setStunned(1, true, t);
+      expect(a.pick(1, t)).toEqual({ anim: 'pain', frame: PAIN_FRAMES - 1 });
+    }
+    a.begin();
+    a.update(1, 0, 0, ST_IDLE, 1100, 0.016, 5, 0);
+    a.setStunned(1, false, 1100);
+    expect(a.pick(1, 1100).anim).toBe('idle');
   });
 });
