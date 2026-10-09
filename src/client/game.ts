@@ -525,7 +525,7 @@ export class Game {
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('visibilitychange', this.onVisibility);
 
-    const [sc, sr] = this.params.benchArena >= 0 ? this.map.arenas[this.params.benchArena].entryCells[0] : this.map.spawns[index];
+    const [sc, sr] = this.params.benchArena >= 0 ? this.map.arenas[this.params.benchArena].entryCells[0] : this.params.startArena > 0 ? this.map.arenas[this.params.startArena].entryCells[index] : this.map.spawns[index];
     this.player = new LocalPlayer(sc + 0.5, sr + 0.5, this.map.floor[sr * this.map.w + sc], CLASSES[me.classId].speed);
     this.doorPhase = this.map.arenas.map(() => -1);
 

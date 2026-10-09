@@ -159,6 +159,8 @@ export interface SimOptions {
   singleplayer?: boolean;
   /** Arena waves are disabled (tests). */
   noWaves?: boolean;
+  /** Dev `arena=N`: the arenas before N start cleared, and the players on N's entry cells. */
+  startArena?: number;
 }
 
 export interface SimEvent {
@@ -669,9 +671,15 @@ export class Simulation {
     }));
     // Idle arenas keep their exit doors closed.
     this.map.arenas.forEach((_, ai) => setArenaDoors(this.map, ai, PHASE_IDLE));
+    // Dev `arena=N`: the arenas before it are cleared, their doors open.
+    const startArena = this.benchArena >= 0 ? 0 : Math.max(0, Math.min(opts.startArena ?? 0, this.arenas.length - 1));
+    for (let ai = 0; ai < startArena; ai++) {
+      this.arenas[ai].phase = PHASE_CLEARED;
+      setArenaDoors(this.map, ai, PHASE_CLEARED);
+    }
     this.god = !!opts.god;
     for (const p of opts.players) {
-      const [c, r] = this.benchArena >= 0 ? this.map.arenas[this.benchArena].entryCells[0] : this.map.spawns[p.id];
+      const [c, r] = this.benchArena >= 0 ? this.map.arenas[this.benchArena].entryCells[0] : startArena > 0 ? this.map.arenas[startArena].entryCells[p.id] : this.map.spawns[p.id];
       this.insertPlayer(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
     }
     const cells = this.map.w * this.map.h;

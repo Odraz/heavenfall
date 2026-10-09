@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { pearlyGates } from '../data/dungeons/pearly-gates';
 import type { WaveDef } from '../data/dungeons/types';
 import { BLESSED, CHERUB, CHORISTER } from '../data/enemies';
-import { PHASE_COMBAT } from '../net/protocol';
+import { PHASE_CLEARED, PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
 import { scaleCount, Simulation } from './sim';
 import { arenaDungeon, arenaSim, EAST, MIDDLE, sealAt, WEST } from './testutil/arenas';
 import { sealNow } from './testutil/sims';
@@ -224,5 +224,16 @@ describe('squads (M12 follow-up §4.2)', () => {
     const sim = arenaSim([squadWave([[EAST, 5]]), w(20)], { players: 1, god: true });
     sealAt(sim);
     expect(sim.arenas[0].waveTotals[0]).toBe(8 + 4);
+  });
+});
+
+describe('dev arena=N', () => {
+  it('starts on arena N’s entry cells with the arenas before it cleared, and N seals as usual', () => {
+    const sim = new Simulation({ dungeon: pearlyGates, players: [{ id: 0, name: 'P0', classId: 'binder' }], seed: 1, god: true, singleplayer: true, startArena: 2 });
+    expect(sim.arenas.map((a) => a.phase)).toEqual([PHASE_CLEARED, PHASE_CLEARED, PHASE_IDLE, PHASE_IDLE]);
+    const [c, r] = pearlyGates.arenas[2].entryCells[0];
+    expect([sim.players[0].x, sim.players[0].y]).toEqual([c + 0.5, r + 0.5]);
+    for (let i = 0; i < 10 * 30 && sim.arenas[2].phase !== PHASE_COMBAT; i++) sim.step();
+    expect(sim.arenas[2].phase).toBe(PHASE_COMBAT);
   });
 });

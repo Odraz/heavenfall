@@ -100,10 +100,10 @@ function loop(): void {
   timer = setTimeout(loop, Math.max(1, TICK_MS - acc - 1));
 }
 
-function start(players: SimPlayerInit[], dungeonId: string, seed: number, godMode: boolean, benchArena: number, singleplayer: boolean, localId: number, benchBurst = false): void {
+function start(players: SimPlayerInit[], dungeonId: string, seed: number, godMode: boolean, benchArena: number, singleplayer: boolean, localId: number, benchBurst = false, startArena = 0): void {
   const dungeon = getDungeon(dungeonId);
   if (!dungeon) throw new Error(`Unknown dungeon ${dungeonId}`);
-  sim = new Simulation({ dungeon, players, seed, god: godMode, benchArena, benchBurst, singleplayer });
+  sim = new Simulation({ dungeon, players, seed, god: godMode, benchArena, benchBurst, singleplayer, startArena });
   localPlayerId = localId;
   for (const p of sim.players) p.lastAcceptMs = performance.now();
   running = true;
@@ -233,7 +233,7 @@ ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
   const m = e.data;
   switch (m.t) {
     case 'start':
-      start(m.players, m.dungeonId, m.seed, m.god, m.benchArena, m.singleplayer, m.localPlayerId, m.benchBurst);
+      start(m.players, m.dungeonId, m.seed, m.god, m.benchArena, m.singleplayer, m.localPlayerId, m.benchBurst, m.startArena ?? 0);
       break;
     case 'host':
       host(m.dungeonId, m.password, m.name, m.god);

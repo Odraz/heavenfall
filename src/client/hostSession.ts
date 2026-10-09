@@ -34,8 +34,8 @@ export class HostSession {
   }
 
   /** Singleplayer: starts the game at once. */
-  start(dungeonId: string, players: SimPlayerInit[], seed: number, god: boolean, benchArena: number, singleplayer: boolean, benchBurst = false): void {
-    this.post({ t: 'start', dungeonId, players, seed, god, benchArena, benchBurst, singleplayer, localPlayerId: this.localPlayerId });
+  start(dungeonId: string, players: SimPlayerInit[], seed: number, god: boolean, benchArena: number, singleplayer: boolean, benchBurst = false, startArena = 0): void {
+    this.post({ t: 'start', dungeonId, players, seed, god, benchArena, benchBurst, singleplayer, localPlayerId: this.localPlayerId, startArena });
   }
 
   /** Multiplayer: opens the lobby in the worker and connects the clients' connections to it. */
