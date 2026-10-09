@@ -112,7 +112,7 @@ Arena 1's 1 m ledge (x 26–35, y 33–39) has stairs only on its east side, so 
 A wave may have a **squad**: a few enemies of one type placed only on the squad's own points.
 
 - **`WaveDef.squad?: { type: 'cherubs' | 'choristers'; count: number; at: Array<[number, number]> }`**, count for 4 players, scaled by `scaleCount`.
-- **Placement:** starting **5 s** after the wave starts, one squad enemy every **0.5 s**, round-robin over the squad's points that are more than **8 m** from every living player (`distToCylinder`, the 8 m rule); when none is, it waits. Not affected by the wave's 15 m rule or its pace budget. Squad enemies count in the wave's total, its living count and enemies remaining, and the wave is fully placed only when its squad is too.
+- **Placement:** starting **5 s** after the wave starts, one squad enemy every **0.5 s**, round-robin over the squad's points that are more than **8 m** from every living player (`distToCylinder`, the 8 m rule); when none is (a player stands among them), it comes from the arena's spawn points by the wave's rule (15 m, else 8 m, else any), so a player can't hold the wave back. Not affected by the wave's 15 m rule or its pace budget. Squad enemies count in the wave's total, its living count and enemies remaining, and the wave is fully placed only when its squad is too.
 - **Spawn rays** (M12 §2.4) flare on squad points as on spawn points (the map exposes each arena's squad points beside its spawn points).
 
 | Arena | Wave 3 | Wave 4 | Points (cell) |
@@ -135,7 +135,7 @@ Solo, that's 3 and 4 Cherubs, and 2 and 3 Choristers. The regular waves of M12 �
 | Breath | Single player: the 30% rule in build up enters relax, not the next wave; relax never starts a wave before 6 s; 8% per second after 2 s, only in relax. Multiplayer: the 30% rule starts the next wave at once, as now. |
 | Clear | On a clear, a living player at 30% HP is at full; in single player and with 2 players. |
 | Boss | Solo Gatekeeper 8 700 HP, interrupt 390; with 2 players unchanged. |
-| Squads | Arena 1's waves 3 and 4 place 6 and 10 Cherubs (3 and 4 solo) only on the terrace points, from 5 s after the wave starts, one per 0.5 s, never within 8 m of a player (they wait); they count in the wave's total; the wave isn't fully placed until they are. Same for Arena 2's Choristers. |
+| Squads | Arena 1's waves 3 and 4 place 6 and 10 Cherubs (3 and 4 solo) only on the terrace points, from 5 s after the wave starts, one per 0.5 s, never within 8 m of a player (with every squad point that close, they come from the spawn points); they count in the wave's total; the wave isn't fully placed until they are. Same for Arena 2's Choristers. |
 | Ledge | Cells (26, 32) and (27, 32) are 0.5 m; the ledge is reachable on foot from both stairs (the flow field reaches the ledge's west end through them). |
 
 The full solo end-to-end run must still clear every arena within its limits (each wave now waits at least 6 s in relax); record its time.

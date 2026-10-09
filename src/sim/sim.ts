@@ -1192,17 +1192,27 @@ export class Simulation {
 
   /**
    * A wave's squad (M12 follow-up §4.2): from 5 s after the wave starts, one every 0.5 s, round-robin
-   * over its points more than 8 m from every living player; when none is, it waits.
+   * over its points more than 8 m from every living player. When none is (a player stands among
+   * them), it comes from the arena's spawn points instead, by the wave's rule (more than 15 m, else
+   * 8 m, else any), so the wave still arrives in full.
    */
   private placeSquad(ai: number): void {
     const st = this.arenas[ai];
     const q = st.squad;
     if (!q || q.left <= 0 || this.tick < q.next || this.living >= MAX_LIVING_ENEMIES) return;
-    const eligible = new Uint8Array(q.at.length);
-    if (!this.markEligible(q.at, SPAWN_ELIGIBLE_DIST, eligible)) return;
+    let points = q.at;
+    let eligible = new Uint8Array(points.length);
+    const own = this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible);
+    if (!own) {
+      points = this.map.arenaSpawnPoints[ai];
+      if (points.length === 0) return;
+      eligible = new Uint8Array(points.length);
+      if (!this.markEligible(points, SPAWN_FAR_DIST, eligible) && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible)) eligible.fill(1);
+    }
     let found = -1;
-    for (let k = 0; k < q.at.length; k++) {
-      const i = (q.rr + k) % q.at.length;
+    const rr = own ? q.rr : st.rr;
+    for (let k = 0; k < points.length; k++) {
+      const i = (rr + k) % points.length;
       if (eligible[i]) {
         found = i;
         break;
@@ -1210,9 +1220,10 @@ export class Simulation {
     }
     const slot = this.allocSlot();
     if (slot < 0) return;
-    const [c, r] = q.at[found];
+    const [c, r] = points[found];
     this.spawnAt(slot, q.type, c, r, ai, q.wave);
-    q.rr = (found + 1) % q.at.length;
+    if (own) q.rr = (found + 1) % points.length;
+    else st.rr = (found + 1) % points.length;
     q.left--;
     q.next = this.tick + SQUAD_EVERY_TICKS;
     if (q.left === 0) {

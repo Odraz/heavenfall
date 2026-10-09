@@ -188,29 +188,36 @@ describe('squads (M12 follow-up §4.2)', () => {
     expect(sim.tick).toBe(Math.max(...log.map((e) => e.tick)));
   });
 
-  it('a wave whose Blessed are all placed is fully placed only when its squad is', () => {
-    // The squad's point is within 8 m of the party, so it waits while the Blessed arrive.
-    const sim = arenaSim([{ blessed: 4, choristers: 0, cherubs: 0, squad: { type: 'choristers', count: 2, at: [[WEST, 5]] } }, w(20)], { god: true });
+  it('a wave is fully placed only when both its Blessed and its squad are', () => {
+    // A squad of 2 every 0.5 s from 5 s, while the Blessed arrive over 10 s: the Blessed finish last.
+    const sim = arenaSim([{ blessed: 4, choristers: 0, cherubs: 0, squad: { type: 'choristers', count: 2, at: [[EAST, 5]] } }, w(20)], { god: true });
     const log = logTypes(sim);
     sealAt(sim);
-    for (let i = 0; i < 330; i++) sim.step();
-    expect(log.filter((e) => e.type === BLESSED)).toHaveLength(4);
+    for (let i = 0; i < 160; i++) sim.step();
+    expect(log.filter((e) => e.type === CHORISTER)).toHaveLength(1);
     expect(sim.arenas[0].waveFullySpawned[0]).toBe(false);
-    for (const p of sim.players) p.x = MIDDLE + 0.5;
-    for (let i = 0; i < 20 && !sim.arenas[0].waveFullySpawned[0]; i++) sim.step();
-    expect(log.filter((e) => e.type === CHORISTER).map((e) => e.tick)).toEqual([sim.tick - 15, sim.tick]);
+    for (let i = 0; i < 20 && log.filter((e) => e.type === CHORISTER).length < 2; i++) sim.step();
+    expect(sim.arenas[0].waveFullySpawned[0]).toBe(log.filter((e) => e.type === BLESSED).length === 4);
+    for (let i = 0; i < 300 && !sim.arenas[0].waveFullySpawned[0]; i++) sim.step();
+    // Fully placed on its last Blessed's tick, not before.
+    expect(sim.tick).toBe(log.filter((e) => e.type === BLESSED)[3].tick);
   });
 
-  it('never within 8 m of a player: they wait, and come once a point is clear', () => {
-    const sim = arenaSim([squadWave([[MIDDLE, 5]]), w(20)], { god: true });
+  it('never within 8 m of a player: with every squad point that close, they come from the spawn points instead', () => {
+    const sim = arenaSim([squadWave([[MIDDLE, 5], [MIDDLE, 2]]), w(20)], { god: true });
     const log = logTypes(sim);
     sealAt(sim, MIDDLE + 0.5, 5.5);
-    for (let i = 0; i < 300; i++) sim.step();
-    expect(log.filter((e) => e.type === CHERUB)).toHaveLength(0);
-    expect(sim.arenas[0].waveFullySpawned[0]).toBe(false);
-    for (const p of sim.players) p.x = 8.5;
-    sim.step();
-    expect(log.filter((e) => e.type === CHERUB)).toHaveLength(1);
+    for (let i = 0; i < 600 && !sim.arenas[0].waveFullySpawned[0]; i++) sim.step();
+    const squad = log.filter((e) => e.type === CHERUB);
+    expect(squad).toHaveLength(10);
+    // From the spawn points more than 8 m from the party in the middle: the west and east columns.
+    expect(squad.every((e) => e.c === WEST || e.c === EAST)).toBe(true);
+    // One squad point clear again: they use it.
+    const sim2 = arenaSim([squadWave([[MIDDLE, 5], [EAST, 5]]), w(20)], { god: true });
+    const log2 = logTypes(sim2);
+    sealAt(sim2, MIDDLE + 0.5, 5.5);
+    for (let i = 0; i < 600 && !sim2.arenas[0].waveFullySpawned[0]; i++) sim2.step();
+    expect(log2.filter((e) => e.type === CHERUB).every((e) => e.c === EAST && e.r === 5)).toBe(true);
   });
 
   it('are scaled for the party size', () => {

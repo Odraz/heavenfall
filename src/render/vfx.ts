@@ -119,6 +119,17 @@ const rayShader = {
     }`,
 };
 
+/** The bound pile's chains (M12 follow-up §2.2). */
+const CHAIN_CONE_COUNT = 6;
+const CHAIN_CONE_TOP_R = 5;
+const CHAIN_CONE_BOTTOM_R = 1.2;
+const CHAIN_CONE_HEIGHT = 8;
+const CHAIN_CONE_WIDTH = 0.22;
+const CHAIN_CONE_MS = 1200;
+const CHAIN_CONE_DROP_MS = 120;
+const CHAIN_CONE_FADE_MS = 400;
+const CHAIN_CONE_RING = 0xff5a1e;
+
 /** Line segments drawn as strips that face the camera, the texture repeating along each one. */
 class Ribbon {
   readonly mesh: THREE.Mesh;
@@ -206,6 +217,8 @@ export class Vfx {
   private readonly columns = new Set<THREE.Mesh>();
   /** Sacrament's beams (M9 §5.1), reused frame to frame. */
   private readonly liveBeams: Ribbon[] = [];
+  /** Each Binder's latest chain cone (M12 follow-up §2.2), so a new one replaces it. */
+  private readonly chainCones = new Map<number, THREE.Object3D>();
   /** Spawn rays (M12 §2.4) by spawn point, reused; `since` is when the ray last appeared. */
   private readonly spawnRays = new Map<
     string,
@@ -468,6 +481,42 @@ export class Vfx {
     this.addRibbon(new Ribbon(points, width, this.material(this.tex.chain, 0xffffff), tile), now, duration);
   }
 
+  /**
+   * The bound pile's chains (M12 follow-up §2.2): 6 red-hot chains from a 5 m circle 8 m above the pile's
+   * floor at (x, y, z) down to a 1.2 m circle on it, an inverted cone. They come down from the top over
+   * 120 ms, hold, and fade over the last 0.4 s of 1.2 s, with a red ring where they land. A new cone
+   * under the same `key` (the Binder) replaces the old one.
+   */
+  chainCone(now: number, x: number, y: number, z: number, key: number): void {
+    const old = this.chainCones.get(key);
+    if (old) for (const e of this.effects) if (e.obj === old) e.duration = 1e-6;
+    const turn = Math.random() * Math.PI * 2;
+    const tops: Array<[number, number, number]> = [];
+    const bottoms: Array<[number, number, number]> = [];
+    for (let i = 0; i < CHAIN_CONE_COUNT; i++) {
+      const a = turn + (i * 2 * Math.PI) / CHAIN_CONE_COUNT;
+      tops.push([x + Math.cos(a) * CHAIN_CONE_TOP_R, y + Math.sin(a) * CHAIN_CONE_TOP_R, z + CHAIN_CONE_HEIGHT]);
+      bottoms.push([x + Math.cos(a) * CHAIN_CONE_BOTTOM_R, y + Math.sin(a) * CHAIN_CONE_BOTTOM_R, z]);
+    }
+    const pts = (drop: number): Array<[number, number, number]> =>
+      tops.flatMap((t, i) => {
+        const b = bottoms[i];
+        return [t, [t[0] + (b[0] - t[0]) * drop, t[1] + (b[1] - t[1]) * drop, t[2] + (b[2] - t[2]) * drop] as [number, number, number]];
+      });
+    const img = this.tex.chain.image as { width: number; height: number };
+    const ribbon = new Ribbon(pts(1e-3), CHAIN_CONE_WIDTH, this.material(this.tex.chain, 0xffffff), (CHAIN_CONE_WIDTH * img.width) / img.height);
+    const material = ribbon.mesh.material as THREE.MeshBasicMaterial;
+    const update = (f: number): void => {
+      const t = f * CHAIN_CONE_MS;
+      const drop = Math.min(1, t / CHAIN_CONE_DROP_MS);
+      ribbon.setPoints(pts(Math.max(1e-3, 1 - (1 - drop) ** 3)));
+      material.opacity = Math.min(1, (CHAIN_CONE_MS - t) / CHAIN_CONE_FADE_MS);
+    };
+    this.add({ obj: ribbon.mesh, material, duration: CHAIN_CONE_MS, update, ribbon }, now, 0);
+    this.chainCones.set(key, ribbon.mesh);
+    this.ring(now, x, y, z, CHAIN_CONE_RING, 0.5, 1.6, 300, CHAIN_CONE_DROP_MS);
+  }
+
   private addRibbon(ribbon: Ribbon, now: number, duration: number): void {
     const material = ribbon.mesh.material as THREE.MeshBasicMaterial;
     this.add({ obj: ribbon.mesh, material, duration, update: (f) => (material.opacity = 1 - f), ribbon }, now, 0);
@@ -538,8 +587,9 @@ export class Vfx {
         continue;
       }
       e.obj.visible = true;
-      e.ribbon?.face(camera);
+      // Update first: a chain cone moves its ends as it comes down.
       e.update(f);
+      e.ribbon?.face(camera);
     }
   }
 }

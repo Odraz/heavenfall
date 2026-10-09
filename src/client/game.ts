@@ -10,6 +10,7 @@ import {
   ATTACK_SECONDARY,
   attackDef,
   BLASPHEMY_RADIUS,
+  CHAINS_PULL_TIME,
   chooseAttack,
   FALLING_STAR_RADIUS,
   FIRE_RIGHT,
@@ -110,6 +111,8 @@ const PROJECTILE_SPRITES = ['proj-censer', 'proj-orb', 'proj-arrow'];
 const PROJECTILE_SIZES = [0.4, 0.78, 0.55];
 /** Cherub arrows glow a pale holy cyan, which nothing else in the world is, and trail 4 embers 0.25 m apart (M12 §6.3). */
 const GLOW_ARROW: Glow = { r: 0.55, g: 0.9, b: 1, a: 0.6 };
+/** The chains show over a pile with a bound enemy this close to the pile point (M12 follow-up §2.2). */
+const PILE_REACH = 3;
 /** A globe is gold (M12 follow-up §1.3). */
 const GLOW_GLOBE: Glow = { r: 1, g: 0.82, b: 0.4, a: 0.55 };
 /** A globe's shatter (M12 follow-up §1.3): a soft gold flash and a thin ring out to the blast's reach. */
@@ -883,6 +886,18 @@ export class Game {
     }
   }
 
+  /** The chains over a Binder's pile (M12 follow-up §2.2), when a bound enemy is within 3 m of the pile point. */
+  private pileChains(now: number, x: number, y: number, z: number, playerId: number): void {
+    const ents = this.snaps.out;
+    for (let i = 0; i < ents.count; i++) {
+      if (!(ents.flags[i] & FLAG_ROOTED)) continue;
+      if ((ents.x[i] - x) ** 2 + (ents.y[i] - y) ** 2 > PILE_REACH * PILE_REACH) continue;
+      this.vfx.chainCone(now, x, y, z, playerId);
+      debugState.chainsAt = now;
+      return;
+    }
+  }
+
   /** A globe shatters (M12 follow-up §1.3): a subtle gold burst sized to its 1.5 m blast; brighter shot down. */
   private globeFx(now: number, x: number, y: number, z: number, shotDown: boolean): void {
     this.vfx.glow(now, x, y, z, GLOBE_FLASH, 0.3, shotDown ? 1.3 : 1.0, 180, 0, shotDown ? 0.7 : 0.5);
@@ -962,6 +977,10 @@ export class Game {
           pts.push([e.x, e.y, e.z + 0.8], [user.x + Math.cos(a) * d, user.y + Math.sin(a) * d, e.z + 0.8]);
         }
         this.vfx.chain(now, pts, 0.3, 500);
+        // When the pull ends, red-hot chains come down onto the pile, if anything was bound there (M12
+        // follow-up §2.2); others' after the render delay.
+        const delay = CHAINS_PULL_TIME * 1000 + (e.playerId === this.localId ? 0 : this.snaps.delayTicks * TICK_MS);
+        this.pendingFx.push({ at: now + delay, run: (t) => this.pileChains(t, e.x, e.y, e.z, e.playerId) });
         break;
       }
       case 'binder:E': // grey burst
