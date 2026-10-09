@@ -122,9 +122,6 @@ const GLOW_GLOBE: Glow = { r: 1, g: 0.82, b: 0.4, a: 0.55 };
 /** A globe's shatter (M12 follow-up §1.3): a soft gold flash and a thin ring out to the blast's reach. */
 const GLOBE_FLASH = 0xffe08a;
 const GLOBE_SPHERE = 0xffc24a;
-/** Discord's wave (M12 follow-up §2.4): the old burst's grey, out to 30 m in 0.3 s. */
-const DISCORD_GREY = 0x8a8f97;
-const DISCORD_WAVE_MS = 300;
 /** Its gust of air leaves this far below the eye (M12 follow-up §2.4). */
 const GUST_BELOW_EYE = 0.25;
 const GLOBE_CORE = 0xfff4d0;
@@ -1038,10 +1035,9 @@ export class Game {
         if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.pileChains(t, e.x, e.y, e.z, e.playerId) });
         break;
       case 'binder:E':
-        // Discord's shout (M12 follow-up §2.4): a grey wave fanning out over its cone on the floor, and
-        // others' gust of air from their chest along their facing (the own one left on the key press).
+        // Discord's shout (M12 follow-up §2.4): others' gust of air from their chest along their facing;
+        // the own one left on the key press.
         if (!user) break;
-        this.vfx.shoutCone(now, e.x, e.y, e.z, user.yaw, DISCORD_HALF_ANGLE, DISCORD_RANGE, DISCORD_GREY, DISCORD_WAVE_MS);
         if (e.playerId !== this.localId) this.vfx.gust(now, [user.x, user.y, user.z + PLAYER_EYE - GUST_BELOW_EYE], [Math.cos(user.yaw), Math.sin(user.yaw), 0], DISCORD_HALF_ANGLE, DISCORD_RANGE);
         break;
       case 'betrayer:Q':
