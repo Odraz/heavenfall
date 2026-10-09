@@ -53,6 +53,7 @@ import type { ResultsData } from '../ui/results';
 import { BenchRunner } from './bench';
 import { attackKick } from './fpWeapon';
 import {
+  shedsPieces,
   BLAST_GLOW_FROM,
   BLAST_GLOW_TO,
   BLAST_MS,
@@ -1584,14 +1585,17 @@ export class Game {
     const px = -dy * ps;
     const py = dx * ps;
     this.particles.burstSprite(this.rotations['fx-burst'], x, y, z, tier.sprite0, tier.sprite1);
-    for (const piece of piecesFor(type)) {
-      const along = uniform(piece.along) * tier.pieceSpeed;
-      const sideways = uniform(piece.side) * tier.pieceSpeed * (piece.sideSign || (Math.random() < 0.5 ? -1 : 1));
-      const vz = uniform(piece.vz) * tier.pieceSpeed;
-      this.particles.piece(this.rotations[piece.sprite], x, y, z + piece.dz, dx * along + px * sideways, dy * along + py * sideways, vz, piece.size, piece.turnMs, piece.half);
-    }
     this.recentBursts.add(now);
     const n = this.recentBursts.count(now);
+    // Beyond 8 bursts in 0.5 s, only the budget's share of them shed pieces (decisions.md, M12 §10).
+    if (shedsPieces(n, Math.random())) {
+      for (const piece of piecesFor(type)) {
+        const along = uniform(piece.along) * tier.pieceSpeed;
+        const sideways = uniform(piece.side) * tier.pieceSpeed * (piece.sideSign || (Math.random() < 0.5 ? -1 : 1));
+        const vz = uniform(piece.vz) * tier.pieceSpeed;
+        this.particles.piece(this.rotations[piece.sprite], x, y, z + piece.dz, dx * along + px * sideways, dy * along + py * sideways, vz, piece.size, piece.turnMs, piece.half);
+      }
+    }
     const budget = featherBudget(tier.feathers, tier.sparks, n, Math.hypot(x - cam.x, y - cam.z));
     this.particles.burstFeathers(x, y, z, dx, dy, px, py, budget.feathers, budget.sparks);
     if (this.pops.play(now)) this.sounds.burstPop({ x, y }, mine);

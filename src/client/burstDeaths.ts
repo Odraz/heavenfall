@@ -102,8 +102,9 @@ export interface Tier {
   pieceSpeed: number;
 }
 
-export const LIGHT: Tier = { blast: 0.6, lift: 0.25, swell: 1.15, sprite0: 0.9, sprite1: 1.3, feathers: 16, sparks: 6, pieceSpeed: 0.7 };
-export const HEAVY: Tier = { blast: 1.0, lift: 0.45, swell: 1.3, sprite0: 1.2, sprite1: 1.9, feathers: 30, sparks: 14, pieceSpeed: 1 };
+/** The feathers and sparks are half the spec's (16 and 6, 30 and 14): the performance gate's burst run missed with them (M12 §10, decisions.md). */
+export const LIGHT: Tier = { blast: 0.6, lift: 0.25, swell: 1.15, sprite0: 0.9, sprite1: 1.3, feathers: 8, sparks: 3, pieceSpeed: 0.7 };
+export const HEAVY: Tier = { blast: 1.0, lift: 0.45, swell: 1.3, sprite0: 1.2, sprite1: 1.9, feathers: 15, sparks: 7, pieceSpeed: 1 };
 
 /** The body is blasted back for this long, then bursts. */
 export const BLAST_MS = 80;
@@ -152,9 +153,23 @@ export const BUDGET_FAR = 20;
  * feathers and 2 sparks.
  */
 export function featherBudget(feathers: number, sparks: number, n: number, camDist: number): { feathers: number; sparks: number } {
-  let m = n <= 8 ? 1 : n <= 24 ? 0.5 : 0.25;
+  let m = budgetShare(n);
   if (camDist > BUDGET_FAR) m *= 0.5;
   return { feathers: Math.max(4, Math.round(feathers * m)), sparks: Math.max(2, Math.round(sparks * m)) };
+}
+
+/** The budget's share for n burst deaths played in the last 0.5 s: 1 up to 8, 0.5 for 9–24, 0.25 above. */
+export function budgetShare(n: number): number {
+  return n <= 8 ? 1 : n <= 24 ? 0.5 : 0.25;
+}
+
+/**
+ * Whether a burst sheds its torn pieces (decisions.md, M12 §10): always with up to 8 burst deaths in the
+ * last 0.5 s, then by chance, 1 in 4 for 9–24 and 1 in 8 above, since hundreds of pieces at once missed
+ * the performance gate. A crater of 40 still sheds about 14 bursts' pieces. `roll` is uniform in 0–1.
+ */
+export function shedsPieces(n: number, roll: number): boolean {
+  return roll < (n <= 8 ? 1 : n <= 24 ? 0.25 : 0.125);
 }
 
 /** The times of the burst deaths played lately, for the feather budget. */

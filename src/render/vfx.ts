@@ -193,6 +193,12 @@ class Ribbon {
 export class Vfx {
   readonly group = new THREE.Group();
   private readonly effects: Effect[] = [];
+  /**
+   * The effects' materials, pooled by kind and texture when an effect ends, never disposed: disposing
+   * the last material of a shader program deletes the program, and the next effect then compiled it
+   * again, a frame of 100 ms or more (M12 §10, decisions.md).
+   */
+  private readonly pool = new Map<string, THREE.Material[]>();
   /** Soul tethers (M8 §4.1), reused frame to frame. */
   private readonly tethers: THREE.Mesh[] = [];
   private readonly tetherMaterial: THREE.MeshBasicMaterial;
@@ -331,8 +337,37 @@ export class Vfx {
     this.add({ obj: mesh, material, duration: 1000, update: (f) => (material.opacity = 1 - f) }, now, 0);
   }
 
-  private material(map: THREE.Texture, color: number): THREE.MeshBasicMaterial {
-    return new THREE.MeshBasicMaterial({ map, color, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false });
+  /** A pooled two-sided, transparent basic material, textured with `map` (or none). */
+  private material(map: THREE.Texture | null, color: number): THREE.MeshBasicMaterial {
+    const key = `basic:${map?.uuid ?? ''}`;
+    const m = (this.pool.get(key)?.pop() as THREE.MeshBasicMaterial | undefined) ?? new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    m.userData.pool = key;
+    m.color.setHex(color);
+    m.opacity = 1;
+    return m;
+  }
+
+  /** A pooled transparent sprite material, textured with `map`. */
+  private spriteMaterial(map: THREE.Texture, color: number): THREE.SpriteMaterial {
+    const key = `sprite:${map.uuid}`;
+    const m = (this.pool.get(key)?.pop() as THREE.SpriteMaterial | undefined) ?? new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false, fog: false });
+    m.userData.pool = key;
+    m.color.setHex(color);
+    m.opacity = 1;
+    m.rotation = 0;
+    return m;
+  }
+
+  /** An ended effect's material goes back to its pool. */
+  private release(m: THREE.Material): void {
+    const key = m.userData.pool as string | undefined;
+    if (!key) {
+      m.dispose();
+      return;
+    }
+    let list = this.pool.get(key);
+    if (!list) this.pool.set(key, (list = []));
+    list.push(m);
   }
 
   private add(effect: Omit<Effect, 'start'>, now: number, delay: number): void {
@@ -356,7 +391,7 @@ export class Vfx {
 
   /** A soft round glow facing the camera at (x, y, z), from radius r0 to r1, fading. */
   glow(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number, delay = 0): void {
-    const material = new THREE.SpriteMaterial({ map: this.tex.glow, color, transparent: true, depthWrite: false, fog: false });
+    const material = this.spriteMaterial(this.tex.glow, color);
     const sprite = new THREE.Sprite(material);
     sprite.position.set(x, z, y);
     const update = (f: number): void => {
@@ -369,7 +404,7 @@ export class Vfx {
   /** A translucent sphere at (x, y, z), from radius r0 to r1, fading from `opacity` to 0. */
   sphere(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number, opacity = 0.45, delay = 0): void {
     // Both sides, so a bubble around the camera (a shield on yourself) is visible from inside.
-    const material = new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide });
+    const material = this.material(null, color);
     const mesh = new THREE.Mesh(sphereGeo, material);
     mesh.position.set(x, z, y);
     const update = (f: number): void => {
@@ -384,7 +419,7 @@ export class Vfx {
    * to `to` over `duration`.
    */
   mote(now: number, from: [number, number, number], to: [number, number, number], color: number, size: number, duration: number): void {
-    const material = new THREE.SpriteMaterial({ map: this.tex.glow, color, transparent: true, depthWrite: false, fog: false });
+    const material = this.spriteMaterial(this.tex.glow, color);
     const group = new THREE.Group();
     // The head and its trail: each trail sprite lags behind and is smaller.
     const sprites = Array.from({ length: MOTE_TRAIL + 1 }, () => new THREE.Sprite(material));
@@ -401,7 +436,7 @@ export class Vfx {
 
   /** A ring of smoke puffs facing the camera around (x, y, z), spreading from radius r0 to r1, turning and fading. */
   smoke(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number): void {
-    const material = new THREE.SpriteMaterial({ map: this.tex.smoke, color, transparent: true, depthWrite: false, fog: false });
+    const material = this.spriteMaterial(this.tex.smoke, color);
     const group = new THREE.Group();
     group.position.set(x, z, y);
     const puffs = Array.from({ length: SMOKE_PUFFS }, () => new THREE.Sprite(material));
@@ -497,7 +532,7 @@ export class Vfx {
       if (f >= 1) {
         this.columns.delete(e.obj as THREE.Mesh);
         this.group.remove(e.obj);
-        e.material.dispose();
+        this.release(e.material);
         e.ribbon?.mesh.geometry.dispose();
         this.effects.splice(i, 1);
         continue;

@@ -43,6 +43,8 @@ export class IncenseClouds {
   readonly group = new THREE.Group();
   private readonly clouds: Cloud[] = [];
   private readonly scratch = new THREE.Vector3();
+  /** Puff materials, reused rather than disposed: disposing the last one deleted its shader program, which the next cloud compiled again (M12 §10). */
+  private readonly free: THREE.SpriteMaterial[] = [];
 
   constructor(private readonly texture: THREE.Texture) {}
 
@@ -55,7 +57,8 @@ export class IncenseClouds {
     const puffs: Puff[] = [];
     const base: number[] = [];
     for (let i = 0; i < PUFFS; i++) {
-      const material = new THREE.SpriteMaterial({ map: this.texture, color: TINT, transparent: true, depthWrite: false, fog: false, opacity: 0 });
+      const material = this.free.pop() ?? new THREE.SpriteMaterial({ map: this.texture, color: TINT, transparent: true, depthWrite: false, fog: false });
+      material.opacity = 0;
       const sprite = new THREE.Sprite(material);
       const size = 1.4 + Math.random() * 0.6;
       sprite.scale.set(i % 2 ? -size : size, size, 1);
@@ -107,13 +110,14 @@ export class IncenseClouds {
   private remove(i: number): void {
     for (const p of this.clouds[i].puffs) {
       this.group.remove(p.sprite);
-      p.material.dispose();
+      this.free.push(p.material);
     }
     this.clouds.splice(i, 1);
   }
 
   dispose(): void {
     while (this.clouds.length) this.remove(0);
+    for (const m of this.free) m.dispose();
     this.group.removeFromParent();
   }
 }

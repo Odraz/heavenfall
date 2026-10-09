@@ -8,6 +8,7 @@ import {
   burstSpriteAlpha,
   burstSpriteHeight,
   featherBudget,
+  shedsPieces,
   piecesFor,
   rippleDelays,
   towardCamera,
@@ -48,6 +49,14 @@ describe('the burst memory (M12 §4.2)', () => {
     // Slots 1 and 2 are player 0's, 3 and 4 player 1's: each ripples on its own.
     m.remember([1, 0, 0, 2, 0, 0, 3, 0, 1, 4, 0, 1], 0, (s) => dist[s]);
     expect([1, 2, 3, 4].map((s) => m.peek(s, 0)!.ripple)).toEqual([0, 90, 0, 90]);
+  });
+});
+
+describe('the torn pieces under load (decisions.md, M12 §10)', () => {
+  it('every burst sheds its pieces up to 8 bursts in 0.5 s; beyond, 1 in 4, and 1 in 8 above 24', () => {
+    expect([0, 0.5, 0.999].every((r) => shedsPieces(8, r))).toBe(true);
+    expect([shedsPieces(9, 0.24), shedsPieces(9, 0.25)]).toEqual([true, false]);
+    expect([shedsPieces(25, 0.124), shedsPieces(25, 0.125)]).toEqual([true, false]);
   });
 });
 
