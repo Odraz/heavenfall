@@ -40,6 +40,8 @@ export interface GameMap {
   spawns: Array<[number, number]>;
   /** Enemy spawn cells (`x`) inside each arena's rect, per arena, in reading order. */
   arenaSpawnPoints: Array<Array<[number, number]>>;
+  /** Each arena's squad points (M12 follow-up §4.2), every wave's together, without repeats. */
+  arenaSquadPoints: Array<Array<[number, number]>>;
   /** Gatekeeper cell (`B`), if any. */
   boss: [number, number] | null;
   /** Decorations in reading order; drawn only (§8.1). */
@@ -145,12 +147,23 @@ export function loadMap(def: DungeonDef): GameMap {
     xCells.filter(([c, r]) => c >= a.rect.x0 && c <= a.rect.x1 && r >= a.rect.y0 && r <= a.rect.y1),
   );
 
+  const arenaSquadPoints = def.arenas.map((a) => {
+    const out: Array<[number, number]> = [];
+    for (const wv of a.waves) {
+      for (const [c, r] of wv.squad?.at ?? []) {
+        if (c < a.rect.x0 || c > a.rect.x1 || r < a.rect.y0 || r > a.rect.y1 || wall[r * w + c]) throw new MapError(r, c, `a squad point of ${a.id} isn't a floor cell in it`);
+        if (!out.some(([x, y]) => x === c && y === r)) out.push([c, r]);
+      }
+    }
+    return out;
+  });
+
   const solid = new Uint8Array(wall);
   const walls = computeHeights({ w, h, floor, wall, doorArena, boss, arenas: def.arenas });
   const top = new Float32Array(n);
   for (let i = 0; i < n; i++) top[i] = wall[i] ? walls.height[i] : floor[i];
 
-  return { id: def.id, name: def.name, w, h, floor, wall, doorArena, solid, top, heights: walls, spawns, arenaSpawnPoints, boss, decorations, arenas: def.arenas, gate: def.gate ?? null };
+  return { id: def.id, name: def.name, w, h, floor, wall, doorArena, solid, top, heights: walls, spawns, arenaSpawnPoints, arenaSquadPoints, boss, decorations, arenas: def.arenas, gate: def.gate ?? null };
 }
 
 /** Opens or closes the doors of one arena. */

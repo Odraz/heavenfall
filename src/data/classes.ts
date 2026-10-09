@@ -58,14 +58,14 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     id: 'binder',
     name: 'The Binder',
     role: 'Support',
-    hp: 200,
+    hp: 240,
     speed: 6,
     passive: { name: 'Fetters', description: 'Every Chain Gun and Scourge hit slows the enemy for 1 s.' },
     hints: [
       { key: 'LMB', text: 'Every bullet slows its target.' },
       { key: 'RMB', text: 'Swing your chain when the swarm reaches you.' },
       { key: 'Q', text: 'Q: pull a crowd together, then call the Fallen down on it. Bound enemies take double damage.' },
-      { key: 'E', text: "E: silence Choristers, Cherubs and the Gatekeeper's Judgment." },
+      { key: 'E', text: "E: shout to silence everything in front of you: Choristers, Cherubs and the Gatekeeper's Judgment." },
     ],
   },
   betrayer: {

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, ST_WINDUP } from '../data/enemies';
 import { SHOTGUN_CLOSE_DAMAGE, WEAPONS } from '../data/weapons';
-import { PROJ_ORB } from './sim';
+import { PROJ_GLOBE } from './sim';
 import { aimAt, enemyAt, makeSim, put, room } from './testutil/sims';
 
 describe('damage pipeline (M9 §3.6)', () => {
@@ -135,9 +135,9 @@ describe('status effects (§5.6)', () => {
     for (let i = 0; i < 16; i++) sim.step();
     expect(sim.eX[a]).toBe(11.5);
     // 5 damage 0.5 s after entering range.
-    expect(p.hp).toBe(195);
+    expect(p.hp).toBe(235);
     for (let i = 0; i < 30; i++) sim.step();
-    expect(p.hp).toBe(190);
+    expect(p.hp).toBe(230);
   });
 
   it('silence cancels a wind-up, and a cast due during silence starts when it ends', () => {
@@ -165,7 +165,7 @@ describe('status effects (§5.6)', () => {
     expect(sim.projectiles.length).toBe(0);
     sim.step();
     expect(sim.projectiles.length).toBe(1);
-    expect(sim.pKind[sim.projectiles[0]]).toBe(PROJ_ORB);
+    expect(sim.pKind[sim.projectiles[0]]).toBe(PROJ_GLOBE);
   });
 
   it('the Gatekeeper is immune to slow, root, pull and knockback, but can be silenced', () => {
@@ -267,35 +267,35 @@ describe('combat (§5.3, §5.4, §6)', () => {
     put(sim, p, 20.5, 3.5);
     p.devGod = false;
     // 300 m/s: 10 m per tick, and the player is only 0.8 m wide.
-    sim.spawnProjectile(PROJ_ORB, 2.5, 3.5, 1, 1, 0, 0, 300, 0.3, 12, 60, -1);
+    sim.spawnProjectile(PROJ_GLOBE, 2.5, 3.5, 1, 1, 0, 0, 300, 0.3, 12, 60, -1);
     sim.step();
     sim.step();
     expect(sim.projectiles.length).toBe(0);
-    expect(p.hp).toBe(188);
+    expect(p.hp).toBe(228);
   });
 
   it('projectiles are removed after 60 m and outside the grid', () => {
     const sim = makeSim(room(80, 5), ['binder']);
     put(sim, sim.players[0], 2.5, 1.5);
-    const orb = sim.spawnProjectile(PROJ_ORB, 5.5, 4.5, 1, 1, 0, 0, 12, 0.3, 12, 60, -1);
+    const orb = sim.spawnProjectile(PROJ_GLOBE, 5.5, 4.5, 1, 1, 0, 0, 12, 0.3, 12, 60, -1);
     for (let i = 0; i < 149; i++) sim.step();
     expect(sim.pAlive[orb]).toBe(1);
     sim.step(); // 150 ticks × 0.4 m = 60 m
     expect(sim.pAlive[orb]).toBe(0);
-    const high = sim.spawnProjectile(PROJ_ORB, 40.5, 3.5, 15.9, 0, 0, 1, 12, 0.3, 12, 60, -1);
+    const high = sim.spawnProjectile(PROJ_GLOBE, 40.5, 3.5, 15.9, 0, 0, 1, 12, 0.3, 12, 60, -1);
     sim.step();
     expect(sim.pAlive[high]).toBe(0);
-    const outside = sim.spawnProjectile(PROJ_ORB, -3, 3.5, 20, -1, 0, 0, 12, 0.3, 12, 60, -1);
+    const outside = sim.spawnProjectile(PROJ_GLOBE, -3, 3.5, 20, -1, 0, 0, 12, 0.3, 12, 60, -1);
     sim.step();
     expect(sim.pAlive[outside]).toBe(0);
   });
 
   it('at most 400 projectiles: one more removes the oldest', () => {
     const sim = makeSim(room(30, 5), ['binder']);
-    const first = sim.spawnProjectile(PROJ_ORB, 2.5, 2.5, 1, 1, 0, 0, 0, 0.3, 12, 60, -1);
-    for (let i = 0; i < 399; i++) sim.spawnProjectile(PROJ_ORB, 2.5, 2.5, 1, 1, 0, 0, 0, 0.3, 12, 60, -1);
+    const first = sim.spawnProjectile(PROJ_GLOBE, 2.5, 2.5, 1, 1, 0, 0, 0, 0.3, 12, 60, -1);
+    for (let i = 0; i < 399; i++) sim.spawnProjectile(PROJ_GLOBE, 2.5, 2.5, 1, 1, 0, 0, 0, 0.3, 12, 60, -1);
     expect(sim.projectiles.length).toBe(400);
-    sim.spawnProjectile(PROJ_ORB, 2.5, 2.5, 1, 1, 0, 0, 0, 0.3, 12, 60, -1);
+    sim.spawnProjectile(PROJ_GLOBE, 2.5, 2.5, 1, 1, 0, 0, 0, 0.3, 12, 60, -1);
     expect(sim.projectiles.length).toBe(400);
     expect(sim.pAlive[first]).toBe(0);
   });
@@ -324,14 +324,14 @@ describe('combat (§5.3, §5.4, §6)', () => {
     return sim.tick;
   }
 
-  it('the censer breaks on the first enemy: 40 to it and nothing to the others but its cloud, which bites at once (M9 §2.8, M12 §5.4)', () => {
+  it('the censer breaks on the first enemy: 60 to it (M12 follow-up) and nothing to the others but its cloud, which bites at once (M9 §2.8, M12 §5.4)', () => {
     const sim = makeSim(room(30, 5), ['heretic']);
     const p = sim.players[0];
     put(sim, p, 2.5, 3.5);
     const a = enemyAt(sim, CHORISTER, 10.5, 3.5);
-    // The break point is about 0.65 m in front of a's center; b is 1.5 m from it, far 2.9 m.
+    // The break point is about 0.65 m in front of a's center; b is 1.5 m from it, far 3.2 m.
     const b = enemyAt(sim, CHORISTER, 12, 3.5);
-    const far = enemyAt(sim, CHORISTER, 13.2, 3.5);
+    const far = enemyAt(sim, CHORISTER, 13.5, 3.5);
     // Rooted, so they hold still, and bound: they take double damage.
     for (const s of [a, b, far]) sim.root(s, 10);
     aimAt(sim, p, a);
@@ -339,7 +339,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     untilBroken(sim);
     expect(sim.eAlive[a]).toBe(0);
     expect(sim.clouds).toHaveLength(1);
-    // The cloud's first pulse, on the tick it appears: 5, doubled while bound; far is outside its 2.5 m.
+    // The cloud's first pulse, on the tick it appears: 5, doubled while bound; far is outside its 3 m (M12 follow-up).
     expect(sim.eHp[b]).toBe(50);
     expect(sim.eHp[far]).toBe(60);
   });
@@ -366,7 +366,7 @@ describe('combat (§5.3, §5.4, §6)', () => {
     const from = pulses[0];
     expect(pulses).toEqual([0, 1, 2, 3, 4, 5, 6, 7].map((k) => from + 15 * k));
     expect(sim.eHp[b]).toBe(20);
-    // a took the impact's 40, then died to the cloud's 4th pulse, credited to the Heretic.
+    // a died to the impact's 60 (M12 follow-up), credited to the Heretic.
     expect(sim.eAlive[a]).toBe(0);
     expect(p.kills).toBe(1);
     expect(sim.clouds).toHaveLength(0);
@@ -442,13 +442,13 @@ describe('enemy attacks (§7.1)', () => {
     const a = enemyAt(sim, BLESSED, 11.5, 5.5);
     sim.root(a, 10);
     for (let i = 0; i < 7; i++) sim.step();
-    expect(p.hp).toBe(200);
+    expect(p.hp).toBe(240);
     sim.step();
-    expect(p.hp).toBe(195);
+    expect(p.hp).toBe(235);
     for (let i = 0; i < 29; i++) sim.step();
-    expect(p.hp).toBe(195);
+    expect(p.hp).toBe(235);
     sim.step();
-    expect(p.hp).toBe(190);
+    expect(p.hp).toBe(230);
   });
 
   it('Blessed melee resets when the target leaves range', () => {
@@ -463,9 +463,9 @@ describe('enemy attacks (§7.1)', () => {
     sim.step();
     put(sim, p, 10.5, 5.5);
     for (let i = 0; i < 7; i++) sim.step();
-    expect(p.hp).toBe(200);
+    expect(p.hp).toBe(240);
     sim.step();
-    expect(p.hp).toBe(195);
+    expect(p.hp).toBe(235);
   });
 });
 

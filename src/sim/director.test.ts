@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WaveDef } from '../data/dungeons/types';
 import { BLESSED } from '../data/enemies';
 import { PHASE_CLEARED } from '../net/protocol';
-import { Director, PEAK_TICKS, QUIET_TICKS, RELAX_LIMIT_TICKS } from './director';
+import { Director, PEAK_TICKS, QUIET_TICKS, RELAX_LIMIT_TICKS, SOLO_RELAX_MIN_TICKS } from './director';
 import { arenaSim, sealAt } from './testutil/arenas';
 import { enemyAt, sealNow } from './testutil/sims';
 import { localSnap } from './workerMessages';
@@ -54,6 +54,26 @@ describe('the director, phases (M12 §2.3)', () => {
     const both = fresh();
     expect(both.step(90, true, 30, 100)).toBe(true);
     expect(both.phase).toBe('build');
+  });
+
+  it('in single player, the 30% rule leads to a breath of at least 6 s before the next wave (M12 follow-up §3.1)', () => {
+    const d = new Director(3, 100, true);
+    d.waveStarted(0);
+    expect(d.step(0, true, 30, 100)).toBe(false);
+    expect(d.phase).toBe('relax');
+    // Quiet all along, but no wave before 6 s.
+    expect(run(d, SOLO_RELAX_MIN_TICKS - 1, 0, true, 30)).toBe(0);
+    expect(d.step(0, true, 30, 100)).toBe(true);
+    // Also after a peak: relax waits its 6 s.
+    const p = new Director(3, 100, true);
+    p.waveStarted(0);
+    run(p, 1, 80, true, 90);
+    expect(p.phase).toBe('peak');
+    run(p, PEAK_TICKS, 0, true, 90);
+    expect(p.phase).toBe('relax');
+    expect(run(p, SOLO_RELAX_MIN_TICKS - 1, 0, true, 30)).toBe(0);
+    expect(p.step(0, true, 30, 100)).toBe(true);
+    expect(SOLO_RELAX_MIN_TICKS).toBe(180);
   });
 
   it('peak lasts 4 s with no wave, then relaxes', () => {
@@ -326,7 +346,7 @@ describe('a breath in single player (M12 §2.5)', () => {
     return { sim, p, d: sim.arenas[0].director! };
   };
 
-  it('regenerates 5% of max HP per second after 3 s without damage, only in relax', () => {
+  it('regenerates 8% of max HP per second after 2 s without damage, only in relax (M12 follow-up §3.1)', () => {
     const { sim, p, d } = solo();
     for (let i = 0; i < 30; i++) sim.step();
     expect(p.hp).toBe(p.maxHp / 2);
@@ -336,12 +356,26 @@ describe('a breath in single player (M12 §2.5)', () => {
     expect(p.hp).toBe(p.maxHp / 2);
     d.phase = 'relax';
     for (let i = 0; i < 30; i++) sim.step();
-    expect(p.hp).toBeCloseTo(p.maxHp * 0.55, 6);
-    // Not within 3 s of damage.
-    p.lastDamageTick = sim.tick - 60;
+    expect(p.hp).toBeCloseTo(p.maxHp * 0.58, 6);
+    // Not within 2 s of damage.
+    p.lastDamageTick = sim.tick - 30;
     const hp = p.hp;
     for (let i = 0; i < 30; i++) sim.step();
-    expect(p.hp).toBeCloseTo(hp + (p.maxHp * 0.05) / 30, 6);
+    expect(p.hp).toBeCloseTo(hp + (p.maxHp * 0.08) / 30, 6);
+  });
+
+  it('a clear heals every living player to full, in single player and with 2 players (M12 follow-up §3.2)', () => {
+    for (const players of [1, 2]) {
+      const sim = arenaSim([w(5)], { players, singleplayer: players === 1 });
+      sealAt(sim);
+      for (const p of sim.players) p.hp = p.maxHp * 0.3;
+      for (let i = 0; i < 400 && sim.arenas[0].phase !== PHASE_CLEARED; i++) {
+        for (const s of sim.active.slice(0, sim.activeCount)) sim.damageEnemy(s, 1000, -1);
+        sim.step();
+      }
+      expect(sim.arenas[0].phase).toBe(PHASE_CLEARED);
+      for (const p of sim.players) expect(p.hp).toBe(p.maxHp);
+    }
   });
 
   it('none after the last wave starts; as before once the arena is cleared', () => {

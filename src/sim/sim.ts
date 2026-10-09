@@ -1,6 +1,6 @@
 /** The host simulation: pure TypeScript, no three.js or DOM (§2.2). */
 import { CLASSES, type ClassId } from '../data/classes';
-import type { DungeonDef } from '../data/dungeons/types';
+import type { DungeonDef, WaveDef } from '../data/dungeons/types';
 import {
   BLESSED,
   CHERUB,
@@ -34,7 +34,7 @@ import {
   CHAINS_ROOT,
   COMMUNION_HEAL,
   COMMUNION_RADIUS,
-  DISCORD_RADIUS,
+  DISCORD_HALF_ANGLE,
   DISCORD_RANGE,
   DISCORD_SILENCE,
   FALLING_STAR_CRATER,
@@ -118,6 +118,19 @@ export function partyMultiplier(partySize: number): number {
   return MULT10[Math.max(1, Math.min(4, partySize))] / 10;
 }
 
+/**
+ * The Gatekeeper's HP and Judgment's interrupt multiplier: 0.3 for a solo game (M12 follow-up §3.3,
+ * was 0.4), the party-size multiplier otherwise.
+ */
+export function bossMultiplier(partySize: number): number {
+  return partySize <= 1 ? 0.3 : partyMultiplier(partySize);
+}
+
+/** A wave's enemies for the party size, each type and its squad (M12 follow-up §4.2) scaled. */
+export function waveSize(w: WaveDef, partySize: number): number {
+  return scaleCount(w.blessed, partySize) + scaleCount(w.choristers, partySize) + scaleCount(w.cherubs, partySize) + (w.squad ? scaleCount(w.squad.count, partySize) : 0);
+}
+
 /** Scales one enemy count for the party size, rounding up (§7.5). */
 export function scaleCount(count: number, partySize: number): number {
   const m = MULT10[Math.max(1, Math.min(4, partySize))];
@@ -146,6 +159,8 @@ export interface SimOptions {
   singleplayer?: boolean;
   /** Arena waves are disabled (tests). */
   noWaves?: boolean;
+  /** Dev `arena=N`: the arenas before N start cleared, and the players on N's entry cells. */
+  startArena?: number;
 }
 
 export interface SimEvent {
@@ -280,11 +295,30 @@ interface ArenaState {
   director: Director | null;
   /** A combat arena's placements left this tick: a wave arrives over 10 s (M12 §2.2). */
   pace: number;
+  /** ...gained per tick: the latest wave's total without its squad, over 10 s. */
+  paceRate: number;
+  /** The latest wave's squad still to place (M12 follow-up §4.2), or null. */
+  squad: Squad | null;
 }
+
+/** A wave's squad being placed: `left` more of `type` on `at`, the next on tick `next` or later. */
+interface Squad {
+  type: number;
+  at: Array<[number, number]>;
+  left: number;
+  next: number;
+  rr: number;
+  wave: number;
+}
+
+/** Globes fly at this speed, a Chorister's from this high above its feet (M12 follow-up §1.3). */
+export const GLOBE_SPEED = 6;
+export const GLOBE_CAST_Z = 2.3;
 
 /** Projectile kinds, as encoded in snapshots (§9.4). */
 export const PROJ_CENSER = 0;
-export const PROJ_ORB = 1;
+/** A Chorister's or the Orb Volley's globe (M12 follow-up §1.3; was the orb, the same value). */
+export const PROJ_GLOBE = 1;
 export const PROJ_ARROW = 2;
 const MAX_PROJECTILES = 400;
 const PROJECTILE_RANGE = 60;
@@ -296,6 +330,9 @@ const SPAWN_ELIGIBLE_DIST = 8;
 const SPAWN_FAR_DIST = 15;
 /** A combat arena's wave arrives over this many ticks (M12 §2.2). */
 const WAVE_ARRIVAL_TICKS = 10 * TICK_HZ;
+/** A wave's squad starts this long after the wave, one every SQUAD_EVERY_TICKS (M12 follow-up §4.2). */
+const SQUAD_DELAY_TICKS = 5 * TICK_HZ;
+const SQUAD_EVERY_TICKS = TICK_HZ / 2;
 /** Enemies per second each spawn point can place (§8.2 says 50; lowered after playtesting, see decisions.md). */
 export const SPAWN_RATE = 10;
 /** The benchmark's bursts (M12 §10). */
@@ -324,6 +361,8 @@ const CHERUB_STRAFE_SPEED = 2;
 const CHERUB_STRAFE_SWITCH = 2;
 
 interface CasterDef {
+  /** Where its projectile starts, above its feet; half its height when not given. */
+  castZ?: number;
   range: number;
   windup: number;
   recovery: number;
@@ -334,8 +373,10 @@ interface CasterDef {
 }
 
 const CASTERS: Record<number, CasterDef> = {
-  [CHORISTER]: { range: CHORISTER_RANGE, windup: 1.0, recovery: 1.5, kind: PROJ_ORB, speed: 12, damage: 12, radius: 0.3 },
-  [CHERUB]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 25, damage: 8, radius: 0.15 },
+  // The globe leaves from the orb the Chorister holds above its head (2.3 m, as drawn) and flies at
+  // 6 m/s, so it's seen coming and can be shot (M12 follow-up §1.3, after playtesting stage 9).
+  [CHORISTER]: { castZ: GLOBE_CAST_Z, range: CHORISTER_RANGE, windup: 1.0, recovery: 1.5, kind: PROJ_GLOBE, speed: GLOBE_SPEED, damage: 12, radius: 0.3 },
+  [CHERUB]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 18, damage: 8, radius: 0.15 },
 };
 
 // The Gatekeeper (§7.4).
@@ -345,7 +386,23 @@ const VOLLEY_INTERVAL = 4;
 const VOLLEY_WINDUP = 0.5;
 const VOLLEY_ORBS = 8;
 const VOLLEY_SPREAD = (25 * Math.PI) / 180;
-const VOLLEY_ORB = { speed: 12, damage: 15, radius: 0.3 };
+const VOLLEY_ORB = { speed: GLOBE_SPEED, damage: 15, radius: 0.3 };
+
+// The globe (M12 follow-up §1.3).
+/** A shattering globe hurts the players within this many meters of it, in its line of sight. */
+export const GLOBE_BLAST = 1.5;
+/** A player's ray or censer passing this close to a globe's path shatters it... */
+export const GLOBE_SHOT_REACH = 0.5;
+/**
+ * ...over the path it flew in the last this many seconds, as far back as the client sees it drawn
+ * (other players' render delay plus their input's way to the host), so it hits what was aimed at.
+ */
+export const GLOBE_SHOT_TRAIL = 0.25;
+/** Shot down, it deals this to every enemy within GLOBE_SHOT_BLAST, in its line of sight, credited to the shooter. */
+export const GLOBE_SHOT_DAMAGE = 40;
+export const GLOBE_SHOT_BLAST = 3;
+/** The shatter point is moved back along the flight this far for line of sight, out of the wall it hit. */
+const GLOBE_LOS_BACK = 0.1;
 const JUDGMENT_FIRST = 20;
 const JUDGMENT_INTERVAL = 25;
 const JUDGMENT_CAST = 3;
@@ -366,9 +423,9 @@ const COUNTDOWN_ALL_IN = 5;
 
 const REGEN_DELAY_TICKS = 8 * TICK_HZ;
 const REGEN_FRACTION = 0.015;
-/** A breath in single player (M12 §2.5): in a combat arena's fight, only while its director relaxes. */
-const BREATH_DELAY_TICKS = 3 * TICK_HZ;
-const BREATH_FRACTION = 0.05;
+/** A breath in single player (M12 §2.5, follow-up §3.1): in a combat arena's fight, only while its director relaxes. */
+const BREATH_DELAY_TICKS = 2 * TICK_HZ;
+const BREATH_FRACTION = 0.08;
 /** Bound enemies take this much damage (M8 §8). */
 const BOUND_FACTOR = 2;
 /** Sacrament's `beam` stays on this long after its last firing (M9 §2.5). */
@@ -381,6 +438,42 @@ const DASH_WINDOW_TICKS = 15;
 const DASH_MAX_SEGMENT = 12;
 
 const ticks = (seconds: number) => Math.round(seconds * TICK_HZ);
+
+/** The shortest distance between segments p0–p1 and q0–q1 (Ericson, Real-Time Collision Detection 5.1.9). */
+export function segmentDistance(
+  p0x: number, p0y: number, p0z: number, p1x: number, p1y: number, p1z: number,
+  q0x: number, q0y: number, q0z: number, q1x: number, q1y: number, q1z: number,
+): number {
+  const d1x = p1x - p0x, d1y = p1y - p0y, d1z = p1z - p0z;
+  const d2x = q1x - q0x, d2y = q1y - q0y, d2z = q1z - q0z;
+  const rx = p0x - q0x, ry = p0y - q0y, rz = p0z - q0z;
+  const a = d1x * d1x + d1y * d1y + d1z * d1z;
+  const e = d2x * d2x + d2y * d2y + d2z * d2z;
+  const f = d2x * rx + d2y * ry + d2z * rz;
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+  let s = 0;
+  let t = 0;
+  if (a <= 1e-12) {
+    if (e > 1e-12) t = clamp(f / e);
+  } else {
+    const c = d1x * rx + d1y * ry + d1z * rz;
+    if (e <= 1e-12) s = clamp(-c / a);
+    else {
+      const b = d1x * d2x + d1y * d2y + d1z * d2z;
+      const denom = a * e - b * b;
+      s = denom > 1e-12 ? clamp((b * f - c * e) / denom) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) {
+        t = 0;
+        s = clamp(-c / a);
+      } else if (t > 1) {
+        t = 1;
+        s = clamp((b - c) / a);
+      }
+    }
+  }
+  return Math.hypot(p0x + d1x * s - (q0x + d2x * t), p0y + d1y * s - (q0y + d2y * t), p0z + d1z * s - (q0z + d2z * t));
+}
 
 export class Simulation {
   readonly map: GameMap;
@@ -573,12 +666,20 @@ export class Simulation {
       partySize: 0,
       director: null,
       pace: 0,
+      paceRate: 0,
+      squad: null,
     }));
     // Idle arenas keep their exit doors closed.
     this.map.arenas.forEach((_, ai) => setArenaDoors(this.map, ai, PHASE_IDLE));
+    // Dev `arena=N`: the arenas before it are cleared, their doors open.
+    const startArena = this.benchArena >= 0 ? 0 : Math.max(0, Math.min(opts.startArena ?? 0, this.arenas.length - 1));
+    for (let ai = 0; ai < startArena; ai++) {
+      this.arenas[ai].phase = PHASE_CLEARED;
+      setArenaDoors(this.map, ai, PHASE_CLEARED);
+    }
     this.god = !!opts.god;
     for (const p of opts.players) {
-      const [c, r] = this.benchArena >= 0 ? this.map.arenas[this.benchArena].entryCells[0] : this.map.spawns[p.id];
+      const [c, r] = this.benchArena >= 0 ? this.map.arenas[this.benchArena].entryCells[0] : startArena > 0 ? this.map.arenas[startArena].entryCells[p.id] : this.map.spawns[p.id];
       this.insertPlayer(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
     }
     const cells = this.map.w * this.map.h;
@@ -915,8 +1016,8 @@ export class Simulation {
     if (this.isCombatArena(ai)) {
       // The director (M12 §2.3): every intensity starts at 0; it can't start a wave while more than
       // the largest wave is alive.
-      const cap = Math.max(...a.waves.map((w) => scaleCount(w.blessed, st.partySize) + scaleCount(w.choristers, st.partySize) + scaleCount(w.cherubs, st.partySize)));
-      st.director = new Director(a.waves.length, cap);
+      const cap = Math.max(...a.waves.map((w) => waveSize(w, st.partySize)));
+      st.director = new Director(a.waves.length, cap, this.singleplayer);
     }
     if (this.benchArena < 0 && !this.noWaves && a.waves.length > 0) this.startWave(ai, 0);
     if (a.boss && this.map.boss) this.placeBoss(ai);
@@ -966,7 +1067,7 @@ export class Simulation {
     const slot = this.allocSlot();
     if (slot < 0) return;
     this.bossParty = this.arenas[ai].partySize;
-    this.bossMaxHp = ENEMIES[GATEKEEPER].hp * partyMultiplier(this.bossParty);
+    this.bossMaxHp = ENEMIES[GATEKEEPER].hp * bossMultiplier(this.bossParty);
     this.bossCast = BOSS_CAST_NONE;
     this.bossCastTicks = 0;
     this.volleyDue = this.tick + ticks(VOLLEY_FIRST);
@@ -981,12 +1082,16 @@ export class Simulation {
     const st = this.arenas[ai];
     const w = this.map.arenas[ai].waves[n];
     const counts = [scaleCount(w.blessed, st.partySize), scaleCount(w.choristers, st.partySize), scaleCount(w.cherubs, st.partySize)];
+    const squad = w.squad ? scaleCount(w.squad.count, st.partySize) : 0;
     st.wave = n;
-    st.waveTotals[n] = counts[0] + counts[1] + counts[2];
+    const queued = counts[0] + counts[1] + counts[2];
+    st.waveTotals[n] = queued + squad;
     st.waveAlive[n] = 0;
     st.waveFullySpawned[n] = st.waveTotals[n] === 0;
     st.pace = 0;
-    if (st.waveTotals[n] > 0) st.queue.push({ counts, spawned: [0, 0, 0], wave: n });
+    st.paceRate = queued / WAVE_ARRIVAL_TICKS;
+    if (queued > 0) st.queue.push({ counts, spawned: [0, 0, 0], wave: n });
+    st.squad = squad > 0 ? { type: w.squad!.type === 'cherubs' ? CHERUB : CHORISTER, at: w.squad!.at, left: squad, next: this.tick + SQUAD_DELAY_TICKS, rr: 0, wave: n } : null;
     st.director?.waveStarted(n);
   }
 
@@ -1000,6 +1105,8 @@ export class Simulation {
       setArenaDoors(this.map, ai, PHASE_CLEARED);
       this.invalidateFields();
       this.events.push({ to: 'all', event: { type: 'arenaCleared', arenaIndex: ai } });
+      // The living are healed to full, as the fallen come back at full (M12 follow-up §3.2).
+      for (const p of this.players) if (p.connected && !p.dead) p.hp = p.maxHp;
       for (const p of this.players) {
         if (!p.connected || !p.dead) continue;
         p.dead = false;
@@ -1092,11 +1199,54 @@ export class Simulation {
       this.updateIntensity(d);
       const n = st.wave;
       if (d.step(d.party(this.livingMask()), st.waveFullySpawned[n], st.alive, st.waveTotals[n])) this.startWave(ai, n + 1);
-      // A wave arrives at an even pace over 10 s (M12 §2.2).
-      if (st.queue.length > 0) st.pace += st.waveTotals[st.wave] / WAVE_ARRIVAL_TICKS;
+      // A wave arrives at an even pace over 10 s (M12 §2.2); its squad doesn't count (M12 follow-up §4.2).
+      if (st.queue.length > 0) st.pace += st.paceRate;
     }
 
     this.placeQueued(ai);
+    this.placeSquad(ai);
+  }
+
+  /**
+   * A wave's squad (M12 follow-up §4.2): from 5 s after the wave starts, one every 0.5 s, round-robin
+   * over its points more than 8 m from every living player. When none is (a player stands among
+   * them), it comes from the arena's spawn points instead, by the wave's rule (more than 15 m, else
+   * 8 m, else any), so the wave still arrives in full.
+   */
+  private placeSquad(ai: number): void {
+    const st = this.arenas[ai];
+    const q = st.squad;
+    if (!q || q.left <= 0 || this.tick < q.next || this.living >= MAX_LIVING_ENEMIES) return;
+    let points = q.at;
+    let eligible = new Uint8Array(points.length);
+    const own = this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible);
+    if (!own) {
+      points = this.map.arenaSpawnPoints[ai];
+      if (points.length === 0) return;
+      eligible = new Uint8Array(points.length);
+      if (!this.markEligible(points, SPAWN_FAR_DIST, eligible) && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible)) eligible.fill(1);
+    }
+    let found = -1;
+    const rr = own ? q.rr : st.rr;
+    for (let k = 0; k < points.length; k++) {
+      const i = (rr + k) % points.length;
+      if (eligible[i]) {
+        found = i;
+        break;
+      }
+    }
+    const slot = this.allocSlot();
+    if (slot < 0) return;
+    const [c, r] = points[found];
+    this.spawnAt(slot, q.type, c, r, ai, q.wave);
+    if (own) q.rr = (found + 1) % points.length;
+    else st.rr = (found + 1) % points.length;
+    q.left--;
+    q.next = this.tick + SQUAD_EVERY_TICKS;
+    if (q.left === 0) {
+      st.squad = null;
+      if (!st.queue.some((b) => b.wave === q.wave)) st.waveFullySpawned[q.wave] = true;
+    }
   }
 
   /**
@@ -1160,7 +1310,8 @@ export class Simulation {
       const type = this.takeNextType(batch);
       if (batch.spawned.every((s, t) => s >= batch.counts[t])) {
         st.queue.shift();
-        if (batch.wave >= 0) st.waveFullySpawned[batch.wave] = true;
+        // Fully placed once its squad is too (M12 follow-up §4.2).
+        if (batch.wave >= 0 && st.squad?.wave !== batch.wave) st.waveFullySpawned[batch.wave] = true;
       }
       const [c, r] = points[found];
       this.spawnAt(slot, type, c, r, ai, batch.wave);
@@ -1310,8 +1461,12 @@ export class Simulation {
   }
 
   /** Dev key K: kills every living enemy, including the Gatekeeper, without kill credit. */
-  killAll(): void {
-    while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1]);
+  killAll(blessedOnly = false): void {
+    if (!blessedOnly) {
+      while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1]);
+      return;
+    }
+    for (let k = this.activeCount - 1; k >= 0; k--) if (this.eType[this.active[k]] === BLESSED) this.removeEnemy(this.active[k]);
   }
 
   /** Marks an enemy as hurt this tick (sets the per-recipient `hurt` flag). */
@@ -1341,7 +1496,7 @@ export class Simulation {
     // Judgment is interrupted by the boss taking 1 300 damage during it, counted after step 1.
     if (slot === this.bossSlot && this.bossCast === BOSS_CAST_JUDGMENT) {
       this.judgmentDamage += amount;
-      if (this.judgmentDamage >= JUDGMENT_INTERRUPT * partyMultiplier(this.bossParty) - 1e-9) this.interruptJudgment();
+      if (this.judgmentDamage >= JUDGMENT_INTERRUPT * bossMultiplier(this.bossParty) - 1e-9) this.interruptJudgment();
     }
     const shooter = source >= 0 ? this.slots[source] : undefined;
     if (shooter) shooter.damage += Math.min(amount, this.eHp[slot]);
@@ -1544,7 +1699,8 @@ export class Simulation {
 
   /**
    * Singleplayer regeneration (§5.7): 1.5% of max HP per second after 8 s without damage, except in a
-   * combat arena's fight (M12 §2.5), where it's 5% after 3 s, and only while its director relaxes.
+   * combat arena's fight (M12 §2.5), where it's 8% after 2 s (M12 follow-up §3.1), and only while its
+   * director relaxes.
    */
   private regenerate(p: SimPlayer): void {
     const d = this.activeDirector();
@@ -1666,6 +1822,7 @@ export class Simulation {
       let stop = raycastTerrain(this.map, ex, ey, ez, dx, dy, dz, w.range);
       if (hits.length >= w.maxHits) stop = this.rayT(hits[hits.length - 1], ex, ey, ez, dx, dy, dz);
       this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
+      this.globesOnRay(p, ex, ey, ez, dx, dy, dz, stop);
       for (const s of hits) {
         // A shotgun pellet within 6 m deals 20, a Blessed's HP, and always bursts what it kills; beyond, 10
         // (M12 §5.1, §4.1).
@@ -1701,6 +1858,65 @@ export class Simulation {
       if (o === p || !this.hasSoul(o) || out.has(o)) continue;
       if (rayCylinder(ox, oy, oz, dx, dy, dz, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= stop) out.add(o);
     }
+  }
+
+  /**
+   * Shoots down every globe whose path in the last 0.25 s passes within 0.3 m of a player's ray from
+   * (ox, oy, oz) along the unit (dx, dy, dz) up to `stop` (M12 follow-up §1.3). The ray carries on.
+   */
+  private globesOnRay(p: SimPlayer, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, stop: number): void {
+    let hit: number[] | null = null;
+    for (const g of this.projectiles) {
+      if (this.pKind[g] !== PROJ_GLOBE || this.pOwner[g] >= 0) continue;
+      const back = Math.min(this.pTraveled[g], this.pSpeed[g] * GLOBE_SHOT_TRAIL);
+      const gx = this.pX[g];
+      const gy = this.pY[g];
+      const gz = this.pZ[g];
+      const d = segmentDistance(ox, oy, oz, ox + dx * stop, oy + dy * stop, oz + dz * stop, gx - this.pDx[g] * back, gy - this.pDy[g] * back, gz - this.pDz[g] * back, gx, gy, gz);
+      if (d <= GLOBE_SHOT_REACH + 1e-9) {
+        if (!hit) hit = [];
+        hit.push(g);
+      }
+    }
+    if (hit) for (const g of hit) this.shootDownGlobe(g, p);
+  }
+
+  /** A globe shot down by player `p`: 40 to every enemy within 3 m in its line of sight, credited, and nothing to players. */
+  private shootDownGlobe(slot: number, p: SimPlayer): void {
+    if (!this.pAlive[slot]) return;
+    const x = this.pX[slot];
+    const y = this.pY[slot];
+    const z = this.pZ[slot];
+    this.removeProjectile(slot);
+    for (let k = this.activeCount - 1; k >= 0; k--) {
+      const s = this.active[k];
+      const def = ENEMIES[this.eType[s]];
+      if (distToCylinder(x, y, z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > GLOBE_SHOT_BLAST + 1e-9) continue;
+      if (!lineOfSight(this.map, x, y, z, this.eX[s], this.eY[s], this.eZ[s] + def.height / 2)) continue;
+      this.damageEnemy(s, GLOBE_SHOT_DAMAGE, p.index, GLOBE_SHOT_DAMAGE, x, y);
+    }
+    this.events.push({ to: 'all', event: { type: 'globeShatter', x, y, z, by: p.id } });
+  }
+
+  /**
+   * A globe shatters on what it touched at (x, y, z) (M12 follow-up §1.3): its damage to the player it hit
+   * (`direct`, or none) and to every other living targetable player within 1.5 m in its line of sight.
+   */
+  private shatterGlobe(slot: number, x: number, y: number, z: number, direct: SimPlayer | null): void {
+    const damage = this.pDamage[slot];
+    const lx = x - this.pDx[slot] * GLOBE_LOS_BACK;
+    const ly = y - this.pDy[slot] * GLOBE_LOS_BACK;
+    const lz = z - this.pDz[slot] * GLOBE_LOS_BACK;
+    this.removeProjectile(slot);
+    for (const p of this.players) {
+      if (!this.livingTargetable(p)) continue;
+      if (p !== direct) {
+        if (distToCylinder(x, y, z, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) > GLOBE_BLAST + 1e-9) continue;
+        if (!lineOfSight(this.map, lx, ly, lz, p.x, p.y, p.z + PLAYER_HEIGHT / 2)) continue;
+      }
+      this.damagePlayer(p, damage);
+    }
+    this.events.push({ to: 'all', event: { type: 'globeShatter', x, y, z, by: -1 } });
   }
 
   /**
@@ -1757,6 +1973,7 @@ export class Simulation {
     if (dealt.stopped) stop = this.rayT(dealt.hits[dealt.hits.length - 1].s, ex, ey, ez, dx, dy, dz);
     const souls = new Set<SimPlayer>();
     this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
+    this.globesOnRay(p, ex, ey, ez, dx, dy, dz, stop);
     // Its force is what the bullet still carried on reaching the enemy (M12 §4.1).
     for (const h of dealt.hits) this.damageEnemy(h.s, h.amount, p.index, h.carried);
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, false), p);
@@ -1953,19 +2170,10 @@ export class Simulation {
       p.cdE = def.cooldown;
       this.abilityEvent(p, 'E', target.x, target.y, target.z, [target.id]);
     } else if (p.classId === 'binder') {
-      // Discord: silences every enemy within 8 m of the impact point.
-      const hit = this.crosshair(p, DISCORD_RANGE);
-      const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
-      const ix = p.x + dx * hit.t;
-      const iy = p.y + dy * hit.t;
-      const iz = p.z + PLAYER_EYE + dz * hit.t;
-      for (let k = 0; k < this.activeCount; k++) {
-        const s = this.active[k];
-        const ed = ENEMIES[this.eType[s]];
-        if (distToCylinder(ix, iy, iz, this.eX[s], this.eY[s], this.eZ[s], ed.radius, ed.height) <= DISCORD_RADIUS) this.silence(s, DISCORD_SILENCE);
-      }
+      for (const s of this.discordTargets(p)) this.silence(s, DISCORD_SILENCE);
       p.cdE = def.cooldown;
-      this.abilityEvent(p, 'E', ix, iy, iz);
+      // At the Binder's feet; clients fan the shout out along its yaw.
+      this.abilityEvent(p, 'E', p.x, p.y, p.z);
     }
   }
 
@@ -2066,6 +2274,33 @@ export class Simulation {
     return [x, y];
   }
 
+  /**
+   * Discord's shout (M12 follow-up §2.4): every living enemy, the Gatekeeper included, within 30 m of the
+   * eye (to its cylinder), within 35° either side of the Binder's yaw horizontally (any height, so flyers
+   * overhead too; one on the Binder's own axis counts), and in line of sight of its body center.
+   */
+  discordTargets(p: SimPlayer): number[] {
+    const ex = p.x;
+    const ey = p.y;
+    const ez = p.z + PLAYER_EYE;
+    const ax = Math.cos(p.yaw);
+    const ay = Math.sin(p.yaw);
+    const cosMax = Math.cos(DISCORD_HALF_ANGLE);
+    const out: number[] = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      const def = ENEMIES[this.eType[s]];
+      if (distToCylinder(ex, ey, ez, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > DISCORD_RANGE) continue;
+      const bx = this.eX[s] - ex;
+      const by = this.eY[s] - ey;
+      const len = Math.hypot(bx, by);
+      if (len > 1e-9 && (bx * ax + by * ay) / len < cosMax - 1e-9) continue;
+      if (!lineOfSight(this.map, ex, ey, ez, this.eX[s], this.eY[s], this.eZ[s] + def.height / 2)) continue;
+      out.push(s);
+    }
+    return out;
+  }
+
   /** Non-boss enemies within 20 m, in line of sight, with the body center within 30° of the aim. */
   chainsTargets(p: SimPlayer): number[] {
     const [ax, ay, az] = aimDir(p.yaw, p.pitch);
@@ -2162,6 +2397,9 @@ export class Simulation {
         const t = rayCylinder(x, y, z, dx, dy, dz, o.x, o.y, this.soulBase(o) - pr, SOUL_RADIUS + pr, SOUL_HEIGHT + 2 * pr);
         if (t <= terrainT) soulT = Math.min(soulT, t);
       }
+      // A censer passing a globe shatters it and flies on (M12 follow-up §1.3).
+      const shooter = this.slots[owner];
+      if (shooter) this.globesOnRay(shooter, x, y, z, dx, dy, dz, Math.min(len, terrainT, hitT, soulT));
       if (soulT < hitT) {
         this.explodeCenser(slot, x + dx * soulT, y + dy * soulT, z + dz * soulT, -1);
         return;
@@ -2178,6 +2416,7 @@ export class Simulation {
     }
     if (hitSlot >= 0) {
       if (owner >= 0) this.explodeCenser(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT, hitSlot);
+      else if (this.pKind[slot] === PROJ_GLOBE) this.shatterGlobe(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT, this.slots[hitSlot]!);
       else {
         this.damagePlayer(this.slots[hitSlot]!, this.pDamage[slot]);
         this.removeProjectile(slot);
@@ -2186,6 +2425,7 @@ export class Simulation {
     }
     if (terrainT < len) {
       if (owner >= 0) this.explodeCenser(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT, -1);
+      else if (this.pKind[slot] === PROJ_GLOBE) this.shatterGlobe(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT, null);
       else this.removeProjectile(slot);
       return;
     }
@@ -2199,6 +2439,7 @@ export class Simulation {
     if (this.pTraveled[slot] >= this.pMaxDist[slot] - 1e-9) {
       // Beyond an open edge a censer vanishes without breaking (M10 §3.4): its cloud would hurt nothing.
       if (owner >= 0 && !overVoid(this.map, nx, ny)) this.explodeCenser(slot, nx, ny, nz, -1);
+      else if (owner < 0 && this.pKind[slot] === PROJ_GLOBE) this.shatterGlobe(slot, nx, ny, nz, null);
       else this.removeProjectile(slot);
       return;
     }
@@ -2483,7 +2724,7 @@ export class Simulation {
       const sa = Math.sin(a);
       const rx = dx * ca - dy * sa;
       const ry = dx * sa + dy * ca;
-      this.spawnProjectile(PROJ_ORB, ox, oy, oz, rx / len, ry / len, dz / len, VOLLEY_ORB.speed, VOLLEY_ORB.radius, VOLLEY_ORB.damage, PROJECTILE_RANGE, -1);
+      this.spawnProjectile(PROJ_GLOBE, ox, oy, oz, rx / len, ry / len, dz / len, VOLLEY_ORB.speed, VOLLEY_ORB.radius, VOLLEY_ORB.damage, PROJECTILE_RANGE, -1);
     }
   }
 
@@ -2730,7 +2971,7 @@ export class Simulation {
     const def = ENEMIES[this.eType[slot]];
     const ox = this.eX[slot];
     const oy = this.eY[slot];
-    const oz = this.eZ[slot] + def.height / 2;
+    const oz = this.eZ[slot] + (c.castZ ?? def.height / 2);
     let dx = p.x - ox;
     let dy = p.y - oy;
     let dz = p.z + PLAYER_HEIGHT / 2 - oz;
@@ -2853,12 +3094,10 @@ export class Simulation {
     if (this.map.arenas[arenaIndex].boss) return st.alive;
     let n = st.alive;
     for (const q of st.queue) for (let t = 0; t < 3; t++) n += q.counts[t] - q.spawned[t];
+    n += st.squad?.left ?? 0;
     const waves = this.map.arenas[arenaIndex].waves;
     if (!this.noWaves && this.benchArena < 0) {
-      for (let i = st.wave + 1; i < waves.length; i++) {
-        const w = waves[i];
-        n += scaleCount(w.blessed, st.partySize) + scaleCount(w.choristers, st.partySize) + scaleCount(w.cherubs, st.partySize);
-      }
+      for (let i = st.wave + 1; i < waves.length; i++) n += waveSize(waves[i], st.partySize);
     }
     return n;
   }

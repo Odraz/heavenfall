@@ -38,6 +38,11 @@ export interface Params {
    * in map meters (z: height above the map's zero; empty: eye height above the floor there) and angles in degrees.
    */
   cam: DevCamera | null;
+  /**
+   * With dev=1, a single-player game starts in this arena (`arena=N`, 0-based): the ones before it are
+   * cleared and the player stands on its entry cells. 0 starts as usual.
+   */
+  startArena: number;
 }
 
 export type BenchView = 'turn' | 'arcade' | 'gate';
@@ -75,7 +80,7 @@ export function parseParams(search: string): Params {
     const classId: ClassId = isClassId(cls) ? cls : 'betrayer';
     const benchHudFire = q.get('hudfire') === '1';
     const benchBurst = q.get('burst') === '1';
-    return { dev: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')) };
+    return { dev: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0 };
   }
   // Without dev=1 (or bench=1) the page opens the menus.
   const dev = q.get('dev') === '1';
@@ -85,6 +90,9 @@ export function parseParams(search: string): Params {
   let seed: number | null = null;
   if (dev && seedParam !== null && /^\d+$/.test(seedParam)) seed = Number(BigInt(seedParam) % 4294967296n);
   const bot = q.get('bot') === '1';
+  const arenaParam = q.get('arena');
+  const arenas = getDungeon(mapId)!.arenas.length;
+  const startArena = dev && arenaParam !== null && /^\d+$/.test(arenaParam) ? Math.min(Number(arenaParam), arenas - 1) : 0;
   const join = parseJoinId(q.get('join'));
   return {
     dev,
@@ -102,5 +110,6 @@ export function parseParams(search: string): Params {
     benchHudFire: false,
     benchBurst: false,
     cam: dev ? parseCam(q.get('cam')) : null,
+    startArena,
   };
 }

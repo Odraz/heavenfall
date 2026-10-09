@@ -1,0 +1,212 @@
+// M12 follow-up screenshots (docs/m12-followup.md §6), in the sandbox: Choristers and Cherubs beside the
+// Blessed at their new sizes (`sizes`), globes in flight and shattering (`globe`), and globes shot down
+// by the Binder's Chain Gun aimed at a Chorister (`shotdown`); in the Pearly Gates, Arena 1's ledge
+// with its new step (`ledge`) and the Cherub squad over its terrace (`squad`). Saved as
+// screenshots/m12/fu-*.png; and the Binder's chains over its pile (`chains` from its eyes, `chains-far`
+// from a fixed camera behind it). Needs a running server (npm run dev or npm run preview).
+// Usage: node scripts/fu-shots.mjs [sizes|globe|shotdown|ledge|squad|chains|chains-far] [base URL, default http://localhost:5173]
+import { chromium } from '@playwright/test';
+import { mkdirSync } from 'node:fs';
+
+const [what = 'sizes', base = 'http://localhost:5173'] = process.argv.slice(2);
+const OUT = 'screenshots/m12';
+mkdirSync(OUT, { recursive: true });
+
+const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+page.on('pageerror', (e) => console.log(`[pageerror] ${e.message}`));
+
+if (what === 'ledge' || what === 'squad') {
+  await pearlyGates(what);
+  await browser.close();
+  process.exit(0);
+}
+
+/** Arena 1 from a fixed camera: the ledge's step, or the bot fighting until the Cherub squad comes. */
+async function pearlyGates(kind) {
+  const cam = kind === 'ledge' ? '31,26.5,3.2,125,-18' : '29,21.5,4.5,0,4';
+  await page.goto(`${base}/?dev=1&map=pearly-gates&class=fallen&bot=1&god=1&seed=1&cam=${cam}`);
+  await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame', null, { timeout: 60_000 });
+  if (kind === 'ledge') {
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: `${OUT}/fu-ledge.png` });
+    console.log('saved fu-ledge.png');
+    return;
+  }
+  // Dev key K clears each wave until wave 3 starts; its squad comes 5 s later, one every 0.5 s.
+  const t0 = Date.now();
+  for (;;) {
+    const d = await page.evaluate(() => window.__heavenfall.director);
+    if (d && d.wave >= 2) break;
+    if (Date.now() - t0 > 400_000) throw new Error('wave 3 never started');
+    await page.keyboard.press('KeyK');
+    await page.waitForTimeout(1000);
+  }
+  console.log('wave 3 started');
+  for (let n = 0; n < 10; n++) {
+    await page.waitForTimeout(1000);
+    if (n >= 4) await page.screenshot({ path: `${OUT}/fu-squad-cand-${n}.png` });
+  }
+  console.log('saved fu-squad-cand-4..9.png');
+}
+
+const cls = what === 'shotdown' || what.startsWith('chains') || what === 'shout' || what === 'gust' ? 'binder' : 'fallen';
+// `sizes` looks from a fixed camera behind and above the player, east across the arena, so the crowd
+// shows as it comes (a crowd at the player's feet hides everyone's size); `chains-far` from farther
+// back and higher, onto the pile 5 m ahead of the Binder.
+const cam = what === 'sizes' ? '&cam=19,7.5,3.2,0,-4' : what === 'chains-far' ? '&cam=16.5,7.5,6,0,-22' : what === 'shout' ? '&cam=16,7.5,10,0,-38' : '';
+await page.goto(`${base}/?dev=1&map=sandbox&class=${cls}&god=1&seed=1${cam}`);
+await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame', null, { timeout: 60_000 });
+const canvas = (await page.locator('canvas').first().boundingBox()) ?? { x: 0, y: 0, width: 1280, height: 720 };
+const cx = canvas.x + canvas.width / 2;
+const cy = canvas.y + canvas.height / 2;
+for (let i = 0; i < 5; i++) {
+  await page.mouse.click(cx, cy);
+  if (await page.evaluate(() => document.pointerLockElement !== null)) break;
+  await page.waitForTimeout(500);
+}
+let mouseX = cx;
+let mouseY = cy;
+// Into the sandbox's arena, facing east across it, which seals it.
+await page.evaluate(() => window.__heavenfallTeleport?.(22.5, 7.5));
+await page.waitForFunction(() => window.__heavenfall.arenaPhase === 'combat', null, { timeout: 90_000 });
+
+/** Turns the view to an absolute yaw and pitch (degrees, simulation angles), by mouse movement (0.0022 rad per px). */
+async function lookAt(yawDeg, pitchDeg) {
+  for (let i = 0; i < 3; i++) {
+    const v = await page.evaluate(() => window.__heavenfall.self);
+    const dyaw = ((yawDeg - (v.yaw * 180) / Math.PI + 540) % 360) - 180;
+    const dpitch = pitchDeg - (v.pitch * 180) / Math.PI;
+    if (Math.abs(dyaw) < 0.3 && Math.abs(dpitch) < 0.3) return;
+    mouseX += ((dyaw * Math.PI) / 180) / 0.0022;
+    mouseY -= ((dpitch * Math.PI) / 180) / 0.0022;
+    await page.mouse.move(mouseX, mouseY, { steps: 4 });
+    await page.waitForTimeout(80);
+  }
+}
+
+/** Holds the game loop while the screenshot is taken. */
+async function frozenShot(path) {
+  await page.evaluate(() => {
+    window.__origRaf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (cb) => {
+      window.__pendingFrame = cb;
+      return 0;
+    };
+  });
+  await page.waitForTimeout(60);
+  await page.screenshot({ path });
+  await page.evaluate(() => {
+    window.requestAnimationFrame = window.__origRaf;
+    const cb = window.__pendingFrame;
+    window.__pendingFrame = undefined;
+    if (cb) window.requestAnimationFrame(cb);
+  });
+}
+
+/** Dev key J: removes the Blessed, leaving the casters. */
+const clearBlessed = () => page.keyboard.press('KeyJ');
+
+if (what === 'gust') {
+  // Discord's gust (M12 follow-up §2.4) from the Binder's eyes, in the arena before the crowd comes: the
+  // game loop is held and stepped to exact times after the press, so a slow renderer doesn't matter.
+  await page.evaluate(() => window.__heavenfallTeleport?.(17.5, 26.5));
+  await lookAt(0, 2);
+  await page.waitForTimeout(800);
+  await page.evaluate(() => {
+    window.__origRaf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (cb) => {
+      window.__pendingFrame = cb;
+      return 0;
+    };
+  });
+  await page.waitForTimeout(200);
+  await page.keyboard.press('KeyE');
+  // The gust started on the press; frames from here.
+  const t0 = await page.evaluate(() => performance.now());
+  for (const ms of [60, 150, 250, 380, 500]) {
+    await page.evaluate((t) => {
+      const cb = window.__pendingFrame;
+      window.__pendingFrame = undefined;
+      if (cb) cb(t);
+    }, t0 + ms);
+    await page.waitForTimeout(150);
+    await page.screenshot({ path: `${OUT}/fu-gust-${ms}.png` });
+  }
+  console.log('saved fu-gust-60..500.png');
+} else if (what === 'shout') {
+  // Discord's shout (M12 follow-up §2.4) from above and behind the Binder, facing east: frames 80 and
+  // 180 ms after the press.
+  await lookAt(0, 0);
+  await page.waitForTimeout(1200);
+  await page.keyboard.press('KeyE');
+  await page.waitForTimeout(80);
+  await frozenShot(`${OUT}/fu-shout-a.png`);
+  await page.waitForTimeout(100);
+  await frozenShot(`${OUT}/fu-shout-b.png`);
+  console.log('saved fu-shout-a.png, fu-shout-b.png');
+} else if (what.startsWith('chains')) {
+  // Chains of Tartarus east into the crowd as it comes; the chains come down 0.3 s later. Frames
+  // mid-descent (60 ms) and holding (600 ms), three casts.
+  await lookAt(0, -4);
+  const tag = what === 'chains' ? 'chains' : 'chains-far';
+  for (let n = 0; n < 3; n++) {
+    await page.waitForTimeout(n === 0 ? 2500 : 8200);
+    const before = await page.evaluate(() => window.__heavenfall.chainsAt);
+    await page.keyboard.press('KeyQ');
+    await page.waitForFunction((b) => window.__heavenfall.chainsAt !== b, before, { timeout: 3000, polling: 10 }).catch(() => null);
+    const at = await page.evaluate(() => window.__heavenfall.chainsAt);
+    if (at === before) {
+      console.log(`cast ${n}: no chains (nothing bound)`);
+      continue;
+    }
+    await page.waitForTimeout(40);
+    await frozenShot(`${OUT}/fu-${tag}-cand-${n}-a.png`);
+    await page.waitForTimeout(500);
+    await frozenShot(`${OUT}/fu-${tag}-cand-${n}-b.png`);
+  }
+  console.log(`saved fu-${tag}-cand-*.png`);
+} else if (what === 'sizes') {
+  // The crowd comes across the arena; the Blessed are cleared now and then, so the Choristers and
+  // Cherubs placed among them aren't buried. Candidate frames.
+  for (let n = 0; n < 16; n++) {
+    if (n % 4 === 0) await clearBlessed();
+    await page.waitForTimeout(700);
+    await frozenShot(`${OUT}/fu-sizes-cand-${n}.png`);
+  }
+  console.log('saved fu-sizes-cand-0..15.png');
+} else {
+  // The whole wave is placed in 10 s; then the Blessed are cleared every second, so only the casters remain.
+  await page.waitForTimeout(10_500);
+  // Globes: turned toward the nearest Chorister. For `shotdown`, the Chain Gun fires at it, so the
+  // globes it sends are shot down on their way out; for `globe`, the Fallen only watches them come.
+  const key = what === 'shotdown' ? 'shotDown' : 'shattered';
+  if (what === 'shotdown') await page.mouse.down();
+  let saved = 0;
+  let flight = 0;
+  const t0 = Date.now();
+  let last = await page.evaluate((k) => window.__heavenfall.globes[k], key);
+  let cleared = 0;
+  while (saved < 6 && Date.now() - t0 < 180_000) {
+    if (Date.now() - cleared > 1000) {
+      await clearBlessed();
+      cleared = Date.now();
+    }
+    const aim = await page.evaluate(() => window.__heavenfall.casterAim);
+    if (aim) await lookAt((aim.yaw * 180) / Math.PI, (aim.pitch * 180) / Math.PI);
+    const n = await page.evaluate((k) => window.__heavenfall.globes[k], key);
+    if (n > last) {
+      await frozenShot(`${OUT}/fu-${what}-cand-${saved}.png`);
+      saved++;
+      last = n;
+    } else if (what === 'globe' && flight < 6 && (await page.evaluate(() => window.__heavenfall.projectiles)) > 0) {
+      await frozenShot(`${OUT}/fu-globe-flight-cand-${flight}.png`);
+      flight++;
+    }
+    await page.waitForTimeout(40);
+  }
+  if (what === 'shotdown') await page.mouse.up();
+  const g = await page.evaluate(() => window.__heavenfall.globes);
+  console.log(`saved ${saved} shatter frames, ${flight} flight frames; globes ${JSON.stringify(g)}`);
+}
+await browser.close();

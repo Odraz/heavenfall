@@ -4,7 +4,7 @@ import { GridBuilder } from '../data/dungeons/build';
 import type { DungeonDef } from '../data/dungeons/types';
 import { BLESSED, CHERUB, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import { decodeSnapshot } from '../net/protocol';
-import { BOSS_CAST_JUDGMENT, BOSS_CAST_NONE, BOSS_CAST_VOLLEY, PHASE_COMBAT, PROJ_ORB, Simulation, type SimPlayer } from './sim';
+import { BOSS_CAST_JUDGMENT, BOSS_CAST_NONE, BOSS_CAST_VOLLEY, bossMultiplier, partyMultiplier, PHASE_COMBAT, PROJ_GLOBE, Simulation, type SimPlayer } from './sim';
 import { sealNow } from './testutil/sims';
 
 // A lobby (x 1–4) open to a boss arena (x 6–30). The Gatekeeper's dais is 3 m high around B (25, 10).
@@ -69,7 +69,7 @@ function runTo(sim: Simulation, tick: number): void {
   while (sim.tick < tick) sim.step();
 }
 
-const orbs = (sim: Simulation) => sim.projectiles.filter((s) => sim.pKind[s] === PROJ_ORB).length;
+const orbs = (sim: Simulation) => sim.projectiles.filter((s) => sim.pKind[s] === PROJ_GLOBE).length;
 const castEvents = (sim: Simulation) => sim.events.flatMap((e) => (e.event.type === 'bossCast' ? [e.event.phase] : []));
 
 describe('the Gatekeeper (§7.4)', () => {
@@ -123,6 +123,11 @@ describe('the Gatekeeper (§7.4)', () => {
     sim.step();
     expect(orbs(sim)).toBe(8);
     expect(sim.eState[sim.bossSlot]).toBe(ST_ATTACKING);
+    // Globes at 6 m/s, like a Chorister's (M12 follow-up §1.3).
+    const g = sim.projectiles[0];
+    const before = sim.pTraveled[g];
+    sim.step();
+    expect(sim.pTraveled[g] - before).toBeCloseTo(6 / 30, 9);
     // The next one is due 4 s after firing.
     expect(sim.volleyDue).toBe(t0 + 75 + 120);
   });
@@ -209,7 +214,7 @@ describe('the Gatekeeper (§7.4)', () => {
     expect(sim.judgmentDue).toBe(sim.tick + 750);
   });
 
-  it('is interrupted by taking 1 300 damage (scaled) during the cast (M9 §4)', () => {
+  it('is interrupted by taking 1 300 damage (scaled; solo × 0.3, M12 follow-up §3.3) during the cast (M9 §4)', () => {
     const sim = makeSim(['binder']);
     const t0 = startFight(sim, [VISIBLE]);
     sim.players[0].god = true;
@@ -217,13 +222,37 @@ describe('the Gatekeeper (§7.4)', () => {
     sim.volleyDue = Infinity;
     runTo(sim, t0 + 10);
     const b = sim.bossSlot;
-    // One player: the threshold is 1 300 × 0.4 = 520; 519 isn't enough, 1 more is.
-    sim.damageEnemy(b, 519, 0);
+    // One player: the threshold is 1 300 × 0.3 = 390; 389 isn't enough, 1 more is.
+    sim.damageEnemy(b, 389, 0);
     expect(sim.bossCast).toBe(BOSS_CAST_JUDGMENT);
     sim.events.length = 0;
     sim.damageEnemy(b, 1, 0);
     expect(sim.bossCast).toBe(BOSS_CAST_NONE);
     expect(castEvents(sim)).toEqual(['interrupted']);
+  });
+
+  it("is interrupted by a Binder's shout facing it, not by one facing away (M12 follow-up §2.4)", () => {
+    for (const facing of [true, false]) {
+      const sim = makeSim(['binder']);
+      const t0 = startFight(sim, [VISIBLE]);
+      const p = sim.players[0];
+      p.god = true;
+      sim.judgmentDue = t0 + 10;
+      sim.volleyDue = Infinity;
+      runTo(sim, t0 + 10);
+      expect(sim.bossCast).toBe(BOSS_CAST_JUDGMENT);
+      const b = sim.bossSlot;
+      p.yaw = Math.atan2(sim.eY[b] - p.y, sim.eX[b] - p.x) + (facing ? 0 : Math.PI);
+      p.pendingE = true;
+      sim.step();
+      sim.step();
+      expect(sim.bossCast).toBe(facing ? BOSS_CAST_NONE : BOSS_CAST_JUDGMENT);
+    }
+  });
+
+  it('has 0.3 of its HP solo, and the party multiplier with more players (M12 follow-up §3.3)', () => {
+    expect(bossMultiplier(1)).toBe(0.3);
+    for (const n of [2, 3, 4]) expect(bossMultiplier(n)).toBe(partyMultiplier(n));
   });
 
   it('starts a cast that was due during silence when the silence ends', () => {
@@ -292,8 +321,8 @@ describe('the Gatekeeper (§7.4)', () => {
     sim.volleyDue = Infinity;
     runTo(sim, t0 + 10 + 45);
     snap = decodeSnapshot(sim.encodeFor(0)[0])!;
-    expect(snap.bossHp).toBe(11600);
-    expect(snap.bossMaxHp).toBe(11600);
+    expect(snap.bossHp).toBe(8700);
+    expect(snap.bossMaxHp).toBe(8700);
     expect(snap.bossCast).toBe(BOSS_CAST_JUDGMENT);
     expect(snap.bossCastProgress).toBe(128);
   });

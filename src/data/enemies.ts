@@ -18,17 +18,22 @@ export interface EnemyDef {
   /** m/s */
   speed: number;
   flying: boolean;
+  /** The sprite is drawn this many times its atlas size, from its feet (M12 follow-up §1.2). */
+  draw: number;
 }
 
 /** Indexed by enemy type ID. */
 export const ENEMIES: readonly EnemyDef[] = [
   // Blessed: §7.1 says 6 m/s; lowered to 4 after playtesting so every class can outrun them (decisions.md).
-  { hp: 20, radius: 0.35, height: 1.6, speed: 4, flying: false },
-  { hp: 60, radius: 0.45, height: 2.0, speed: 3, flying: false },
-  { hp: 30, radius: 0.4, height: 0.8, speed: 7, flying: true },
+  { hp: 20, radius: 0.35, height: 1.6, speed: 4, flying: false, draw: 1 },
+  // Choristers and Cherubs are drawn bigger, to stand out in a crowd (M12 follow-up §1.2): the
+  // Chorister 2.4 m tall (was 2.0). The radius stays under half a cell for movement, and the Cherub
+  // keeps its 0.8 m, which sets the levels' headroom (heights.ts), so the walls don't change.
+  { hp: 60, radius: 0.45, height: 2.4, speed: 3, flying: false, draw: 1.2 },
+  { hp: 30, radius: 0.4, height: 0.8, speed: 7, flying: true, draw: 1.15 },
   // The Gatekeeper: 29 000 HP (M9 §4; M8's 45 000): Field of Blood replaced Kiss, and party damage on
   // one target fell to about 64% of M8's.
-  { hp: 29000, radius: 2.0, height: 6.0, speed: 0, flying: false },
+  { hp: 29000, radius: 2.0, height: 6.0, speed: 0, flying: false, draw: 1 },
 ];
 
 /** Falling Star's launched walking enemies fly an arc this high (M9 §3.2); drawn only. */

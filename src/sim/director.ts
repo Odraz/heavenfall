@@ -44,6 +44,8 @@ export const PEAK_TICKS = 4 * TICK_HZ;
 export const RELAX_LIMIT_TICKS = 10 * TICK_HZ;
 /** "Few left": the arena's living enemies at most this fraction of the latest wave's total. */
 export const FEW_LEFT = 0.3;
+/** In single player, relax lasts at least this long before it can start the next wave (M12 follow-up §3.1). */
+export const SOLO_RELAX_MIN_TICKS = 6 * TICK_HZ;
 
 const DECAY_PER_TICK = DECAY_PER_S / TICK_HZ;
 
@@ -58,11 +60,13 @@ export class Director {
 
   /**
    * `waves`: the arena's wave count. `cap`: the arena's largest wave (each type scaled, then summed);
-   * no wave starts while more than that are alive.
+   * no wave starts while more than that are alive. `solo`: single player, where the 30% rule leads to
+   * a breath of at least 6 s instead of the next wave (M12 follow-up §3.1).
    */
   constructor(
     readonly waves: number,
     readonly cap: number,
+    readonly solo = false,
   ) {}
 
   /** Wave `n` was queued: build up, or the director stops after the last one. */
@@ -116,9 +120,10 @@ export class Director {
     switch (this.phase) {
       case 'build':
         if (!fullySpawned) return false;
-        // Both on one tick: the 30% rule wins.
+        // Both on one tick: the 30% rule wins. In single player it leads to a breath first.
         if (fewLeft) {
-          if (room) return true;
+          if (this.solo) this.setPhase('relax');
+          else if (room) return true;
         } else if (party >= PEAK_INTENSITY - 1e-9) this.setPhase('peak');
         return false;
       case 'peak':
@@ -126,7 +131,7 @@ export class Director {
         return false;
       case 'relax':
         this.quietTicks = party < QUIET_INTENSITY ? this.quietTicks + 1 : 0;
-        if (!fullySpawned || !room) return false;
+        if (!fullySpawned || !room || (this.solo && this.phaseTicks < SOLO_RELAX_MIN_TICKS)) return false;
         return this.quietTicks >= QUIET_TICKS || (this.phaseTicks >= RELAX_LIMIT_TICKS && fewLeft);
     }
   }

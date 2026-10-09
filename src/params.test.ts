@@ -16,6 +16,14 @@ describe('URL parameters (§2.5)', () => {
     expect(parseParams('?dev=1&map=pearly-gates&class=binder')).toMatchObject({ mapId: 'pearly-gates', classId: 'binder' });
   });
 
+  it('starts in arena N with dev=1 (`arena=N`), clamped to the map; 0 otherwise', () => {
+    expect(parseParams('?dev=1&map=pearly-gates&arena=2').startArena).toBe(2);
+    expect(parseParams('?dev=1&map=pearly-gates&arena=9').startArena).toBe(3);
+    expect(parseParams('?dev=1&map=pearly-gates&arena=x').startArena).toBe(0);
+    expect(parseParams('?map=pearly-gates&arena=2').startArena).toBe(0);
+    expect(parseParams('?dev=1&map=pearly-gates').startArena).toBe(0);
+  });
+
   it('honors seed only together with dev=1', () => {
     expect(parseParams('?dev=1&seed=7').seed).toBe(7);
     expect(parseParams('?seed=7').seed).toBeNull();

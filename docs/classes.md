@@ -46,7 +46,7 @@ Kill rates may now go well above 9 per second where a class does its job on a st
 | Slot | Name | Rule |
 |---|---|---|
 | Primary | Brimstone Shotgun | 8 pellets, range 20 m. **M12:** 20 dmg per pellet within 6 m, 10 beyond (was 12), spread ±11° (was ±8°), 0.9 s between shots (was 0.8): up close every pellet kills a Blessed and bursts it; backing away, a Blessed needs two pellets. M9: each enemy hit within 6 m that survives is knocked back 2 m away from the Fallen, once per shot however many pellets hit it. Bound enemies aren't knocked back, so the Binder's piles hold. |
-| Secondary | Brimstone Slug | One hitscan slug: 60 dmg to the first enemy hit, range 50 m, 1.0 s between shots. Kills a Chorister in one hit. |
+| Secondary | Brimstone Slug | One hitscan slug: 60 dmg to the first enemy hit, range 50 m, 0.85 s between shots (**M12 follow-up:** was 1.0; the shotgun stays at 0.9 s). Kills a Chorister in one hit. |
 | Passives | Brimstone Hide, Sinful | As now. |
 | Q | Blasphemy | As before: every enemy within 12 m targets the Fallen for 5 s, cooldown 12 s. **M12:** it also stuns them for 1 s (not the Gatekeeper), mainly as a visual beat: the crowd recoils ("what was that?!"), trembling and red, sees the Fallen and comes for it. Stunned enemies don't slow anyone wading, so a swarmed ally walks out. |
 | E | Falling Star | The leap and the knockback. M9: the landing launches the enemies it knocks back. Each flies in an arc up to about 1 m high, out and back down, over 0.4 s; the distance is 4 m. Bound enemies aren't knocked back, like the shotgun's, so the Binder's piles hold. **M12:** it leaps anywhere within 30 m, not only to an ally: hold E to see the arc and the landing rings, release to leap. Aimed within 2.5 m of an ally, it lands on them; aimed at its own feet, it slams in place. Red, and no leap, where the arc hits a wall or the landing isn't a place enemies can walk to (the Gatekeeper's dais). The landing deals 40 dmg within 3.5 m, which bursts the Blessed under it heavily, and 10 dmg out to 6 m. Cooldown 10 s (was 15): it's the Fallen's main crowd tool, kept for rescues only by choice. Landing on the Binder's pile kills it whole (bound enemies take double and stay). |
@@ -61,11 +61,11 @@ Kill rates may now go well above 9 per second where a class does its job on a st
 
 | Slot | Name | Rule |
 |---|---|---|
-| Primary | Censer Launcher | Breaks on the enemy it hits for 40, with no splash, and leaves a rusty-gold cloud of incense for 4 s. Clouds don't stack, and at most 6 exist, so spamming one spot doesn't help and can't cover the map. (Added after review: the old splash made the healer a grenade launcher.) **M12:** 0.85 s between shots (was 1.0 s); the cloud deals 5 per pulse (was 2.5), pulsing the moment it lands and every 0.5 s, so a Blessed that stays in it dies in 1.5 s; an enemy in two clouds still takes one pulse. |
+| Primary | Censer Launcher | Breaks on the enemy it hits for 60 (**M12 follow-up:** was 40, for the boss fight), with no splash, and leaves a rusty-gold cloud of incense for 4 s. Clouds don't stack, and at most 6 exist, so spamming one spot doesn't help and can't cover the map. (Added after review: the old splash made the healer a grenade launcher.) **M12:** 0.85 s between shots (was 1.0 s); the cloud deals 5 per pulse (was 2.5), pulsing the moment it lands and every 0.5 s, so a Blessed that stays in it dies in 1.5 s; an enemy in two clouds still takes one pulse. **M12 follow-up:** the cloud's radius is 3 m (was 2.5). |
 | Secondary | Sacrament | While held, heals the ally target 15 HP every 0.5 s (range 40 m, the same ally target as Martyr's Shroud). That's 1.5 times the rate Communion gives everyone nearby. Aimed at a soul, it revives it instead, at the Heretic's double revive rate (about 1.5 s). With no ally target it does nothing. Never heals the Heretic. |
-| Q | Unholy Communion | Heals everyone within 15 m, the Heretic included. **M12:** 120 HP every 8 s (was 80 every 4 s): less healing overall, but a timing decision ("after the wave hits") instead of a button pressed whenever ready. |
+| Q | Unholy Communion | Heals everyone within 15 m, the Heretic included. **M12:** 120 HP every 8 s (was 80 every 4 s): less healing overall, but a timing decision ("after the wave hits") instead of a button pressed whenever ready. **M12 follow-up:** cooldown 10 s: the Heretic's own sustain from Communion and the Shroud, not its HP, made it nearly unkillable. |
 | Passive | Last Rites | Revives fallen teammates twice as fast (the existing rule, now named). |
-| E | Martyr's Shroud | When damage breaks it, it explodes for 50 dmg to every enemy within 3.5 m of the shielded player (**M12:** was the 8 nearest within 5 m; uncapped over 5 m it would have out-killed the Fallen's crater). It doesn't explode when it expires or is replaced. It still explodes if the Heretic has died or left, or if the hit that breaks it kills the shielded player. |
+| E | Martyr's Shroud | When damage breaks it, it explodes for 50 dmg to every enemy within 3.5 m of the shielded player (**M12:** was the 8 nearest within 5 m; uncapped over 5 m it would have out-killed the Fallen's crater). It doesn't explode when it expires or is replaced. It still explodes if the Heretic has died or left, or if the hit that breaks it kills the shielded player. **M12 follow-up:** cooldown 12 s (was 10). |
 
 - **Where the censer goes:** a cloud is worth most on enemies that stay in it: the crowd hugging the taunting Fallen, or the Binder's pile, where bound enemies take double and often die before the pile breaks. A crowd running through it only loses a few HP.
 - **Censer or Sacrament:** the censer while the party holds; Sacrament when one teammate is in trouble, even far away. Every second spent healing is a second not killing, which is the Heretic's real decision.
@@ -77,15 +77,15 @@ Kill rates may now go well above 9 per second where a class does its job on a st
 ## The Binder (Support)
 
 - **Verb:** control. **Big moment:** "I dragged a whole crowd into one pile and we shredded it."
-- **Weakness:** must stand in the crowd to kill fast, with 200 HP and no escape; needs others to cash in its piles.
+- **Weakness:** must stand in the crowd to kill fast, with 240 HP (**M12 follow-up:** was 200) and no escape; needs others to cash in its piles.
 - **Speed:** 6 m/s (was 8). It still outruns the Blessed, but it has no escape ability, so it must stay near the Fallen.
 
 | Slot | Name | Rule |
 |---|---|---|
 | Primary | Chain Gun | As now: fast, accurate, slows. |
 | Secondary | Scourge | Swings a heavy chain in front of the Binder: 25 dmg to every enemy within 3 m and 120° of the aim (**M12:** was the 6 nearest, so the swing passed visibly through enemies it didn't hurt), 0.8 s between swings. Like every Binder hit, it slows them for 1 s. |
-| Q | Chains of Tartarus | As now: pull a crowd and bind it. |
-| E | Discord | As now: silence. |
+| Q | Chains of Tartarus | As now: pull a crowd and bind it. **M12 follow-up:** bound for 2.5 s (was 1.5), so the Binder reaches the pile with the Scourge; red-hot chains come down onto the pile so everyone sees it's bound. |
+| E | Discord | **M12 follow-up:** a shout. It silences (4 s) every enemy within 30 m and 35° either side of the Binder's facing, at any height and in line of sight, the Gatekeeper's Judgment included; cooldown 12 s. It was an 8 m silence where the crosshair ray stopped, which in a crowd landed at the Binder's feet and on a Cherub missed by a hair landed in the sky. |
 | Passive | Fetters | Every Chain Gun and Scourge hit slows for 1 s (the existing trait, now named). |
 
 - **Chain Gun or Scourge:** the Chain Gun at range, one enemy at a time; the Scourge when the swarm reaches the Binder. Each swing kills every Blessed in its arc (M12), so a swing is how the Binder breaks free when the crowd holds it.

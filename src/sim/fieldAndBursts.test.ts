@@ -91,7 +91,7 @@ describe("Martyr's Shroud burst (M9 §3.3)", () => {
     expect(eventsOf(sim, 'shroudBurst')).toEqual([]);
     sim.damagePlayer(binder, 60);
     expect(binder.shield).toBe(0);
-    expect(binder.hp).toBe(190);
+    expect(binder.hp).toBe(230);
     // Rooted, so bound: 50 × 2 kills a Chorister. The 7th's cylinder is 4 m from the Binder.
     expect(ring.map((s) => sim.eAlive[s])).toEqual([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
     expect(heretic.kills).toBe(6);

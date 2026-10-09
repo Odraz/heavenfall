@@ -17,6 +17,8 @@ export type MainToWorker =
       benchBurst: boolean;
       singleplayer: boolean;
       localPlayerId: number;
+      /** Dev `arena=N`: start in arena N with the ones before it cleared; 0 as usual. */
+      startArena?: number;
     }
   /** Multiplayer: the host clicked `Create`; the worker opens the lobby with the host as player 0. */
   | { t: 'host'; dungeonId: string; password: string; name: string; god: boolean }
@@ -30,7 +32,7 @@ export type MainToWorker =
   | { t: 'connClosed'; conn: number }
   | { t: 'input'; playerId: number; buf: ArrayBuffer }
   | { t: 'pause'; paused: boolean }
-  | { t: 'killAll' }
+  | { t: 'killAll'; blessedOnly?: boolean }
   | { t: 'toggleGod'; playerId: number }
   | { t: 'stop' };
 

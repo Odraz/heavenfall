@@ -2,7 +2,7 @@
 import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
-import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
+import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, CHORISTER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
 import {
   ABILITIES,
   ATTACK_NONE,
@@ -10,7 +10,12 @@ import {
   ATTACK_SECONDARY,
   attackDef,
   BLASPHEMY_RADIUS,
+  CHAINS_ANGLE,
+  CHAINS_MAX,
+  CHAINS_RANGE,
   chooseAttack,
+  DISCORD_HALF_ANGLE,
+  DISCORD_RANGE,
   FALLING_STAR_RADIUS,
   FIRE_RIGHT,
   FIRE_RIGHT_LAST,
@@ -32,7 +37,7 @@ import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, PROJECTILE_SLOTS, TICK_DT, TICK
 import { raycastTerrain } from '../sim/los';
 import { arenaPhaseOf, doorsClosed, overVoid, setArenaDoors, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
-import { BOSS_CAST_JUDGMENT, PROJ_ARROW, PROJ_CENSER } from '../sim/sim';
+import { BOSS_CAST_JUDGMENT, GLOBE_BLAST, GLOBE_SHOT_BLAST, PROJ_ARROW, PROJ_CENSER, PROJ_GLOBE } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
@@ -46,7 +51,7 @@ import type { GameTextures } from '../render/textures';
 import { Vfx } from '../render/vfx';
 import { BloodPool, POOL_LIFT } from '../render/bloodPool';
 import { IncenseClouds } from '../render/incense';
-import { FIELD_FIRE_RATE, FIELD_TIME, inField } from '../sim/field';
+import { FIELD_FIRE_RATE, FIELD_TIME, inField, walkDestination } from '../sim/field';
 import { DebugOverlay } from '../ui/debugOverlay';
 import { PauseOverlay } from '../ui/pause';
 import type { ResultsData } from '../ui/results';
@@ -106,9 +111,21 @@ const GATE_VIEW_PITCH = (10 * Math.PI) / 180;
 const SHADOW_SIZE = 1.4;
 const PROJECTILE_SPRITES = ['proj-censer', 'proj-orb', 'proj-arrow'];
 /** Cherub arrows are drawn at 0.55 m (M12 §6.3; were 0.3, and couldn't be seen to be dodged). */
-const PROJECTILE_SIZES = [0.4, 0.6, 0.55];
+// The globe is 1.3× the orb it replaced (M12 follow-up §1.3).
+const PROJECTILE_SIZES = [0.4, 0.78, 0.55];
 /** Cherub arrows glow a pale holy cyan, which nothing else in the world is, and trail 4 embers 0.25 m apart (M12 §6.3). */
 const GLOW_ARROW: Glow = { r: 0.55, g: 0.9, b: 1, a: 0.6 };
+/** Others' chains show when an enemy being pulled or bound is this close to the pile point (M12 follow-up §2.2): Chains' reach. */
+const PILE_REACH = 22;
+/** A globe is gold (M12 follow-up §1.3). */
+const GLOW_GLOBE: Glow = { r: 1, g: 0.82, b: 0.4, a: 0.55 };
+/** A globe's shatter (M12 follow-up §1.3): a soft gold flash and a thin ring out to the blast's reach. */
+const GLOBE_FLASH = 0xffe08a;
+const GLOBE_SPHERE = 0xffc24a;
+/** Its gust of air leaves this far below the eye (M12 follow-up §2.4). */
+const GUST_BELOW_EYE = 0.25;
+const GLOBE_CORE = 0xfff4d0;
+const GLOBE_RING = 0xffd27a;
 const ARROW_TRAIL_STEP = 0.25;
 const ARROW_TRAIL_SIZES = [0.3, 0.24, 0.18, 0.12];
 const RESULT_OVERLAY_MS = 3000;
@@ -512,7 +529,7 @@ export class Game {
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('visibilitychange', this.onVisibility);
 
-    const [sc, sr] = this.params.benchArena >= 0 ? this.map.arenas[this.params.benchArena].entryCells[0] : this.map.spawns[index];
+    const [sc, sr] = this.params.benchArena >= 0 ? this.map.arenas[this.params.benchArena].entryCells[0] : this.params.startArena > 0 ? this.map.arenas[this.params.startArena].entryCells[index] : this.map.spawns[index];
     this.player = new LocalPlayer(sc + 0.5, sr + 0.5, this.map.floor[sr * this.map.w + sc], CLASSES[me.classId].speed);
     this.doorPhase = this.map.arenas.map(() => -1);
 
@@ -560,6 +577,8 @@ export class Game {
     }
     // Dev keys work with the bot too: the full solo run test presses K (§13.2).
     if (code === 'KeyK' && this.params.dev && this.o.host) this.o.host.killAll();
+    // Dev key J removes only the Blessed, leaving the casters in view (M12 follow-up screenshots).
+    else if (code === 'KeyJ' && this.params.dev && this.o.host) this.o.host.killAll(true);
     else if (code === 'KeyG' && this.params.dev && this.o.host) this.o.host.toggleGod();
     else if (this.params.bot) return;
     else if (code === 'KeyQ') this.pressAbility('Q', performance.now());
@@ -576,6 +595,8 @@ export class Game {
       this.qPresses = (this.qPresses + 1) & 0xff;
       // Your Blasphemy shakes the screen on its press (M12 §4.5).
       if (this.classId === 'fallen' && this.displayedCooldown('Q', now) <= 0) this.shake.add(now, SHAKE_BLASPHEMY);
+      // Your Chains come down at once (M12 follow-up §2.2).
+      if (this.classId === 'binder' && this.displayedCooldown('Q', now) <= 0) this.ownChains(now);
       return;
     }
     const def = ABILITIES[this.classId].E;
@@ -583,6 +604,12 @@ export class Game {
     // dashes they execute (M12 §5.2).
     if (!def.movement) {
       this.ePresses = (this.ePresses + 1) & 0xff;
+      // Your Discord's gust leaves at once, along your view (M12 follow-up §2.4).
+      if (this.classId === 'binder' && this.displayedCooldown('E', now) <= 0) {
+        const b = this.player.body;
+        const [dx, dy, dz] = aimDir(this.player.yaw, this.player.pitch);
+        this.vfx.gust(now, [b.x, b.y, b.z + PLAYER_EYE - GUST_BELOW_EYE], [dx, dy, dz], DISCORD_HALF_ANGLE, DISCORD_RANGE);
+      }
       return;
     }
     const ready = this.displayedCooldown('E', now) <= 0;
@@ -853,6 +880,10 @@ export class Game {
         // Others' Shadowstep streaks after the render delay; the own one was drawn when its dash ended (M12 §5.7).
         if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.dashStreak(t, e.x0, e.y0, e.z0, e.x1, e.y1, e.z1) });
         break;
+      case 'globeShatter':
+        // After the render delay, where the globe is drawn breaking (M12 follow-up §1.3).
+        this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.globeFx(t, e.x, e.y, e.z, e.by >= 0) });
+        break;
       case 'silverBullet':
         // Others' Silver Bullets after the render delay; the own one was drawn at once (M9 §5.1).
         if (e.playerId !== this.localId) {
@@ -869,6 +900,74 @@ export class Game {
         this.onGameOver(e, now);
         break;
     }
+  }
+
+  /**
+   * Another Binder's chains over its pile (M12 follow-up §2.2), when an enemy is being pulled or bound
+   * within Chains' reach of the pile point.
+   */
+  private pileChains(now: number, x: number, y: number, z: number, playerId: number): void {
+    const ents = this.snaps.out;
+    for (let i = 0; i < ents.count; i++) {
+      if (!(ents.flags[i] & FLAG_ROOTED)) continue;
+      if ((ents.x[i] - x) ** 2 + (ents.y[i] - y) ** 2 > PILE_REACH * PILE_REACH) continue;
+      this.chainsDown(now, x, y, z, playerId);
+      return;
+    }
+  }
+
+  private chainsDown(now: number, x: number, y: number, z: number, playerId: number): void {
+    this.vfx.chainCone(now, x, y, z, playerId);
+    debugState.chainsAt = now;
+  }
+
+  /**
+   * The own Chains of Tartarus on its key press (M12 follow-up §2.2): when it's ready and an enemy other
+   * than the Gatekeeper is within 20 m and 30° of the aim, the chains come down at once onto the pile
+   * point, found as the host does. Line of sight isn't checked: a guess the host's pull confirms.
+   */
+  private ownChains(now: number): void {
+    const b = this.player.body;
+    const [px, py] = walkDestination(this.map, b.x, b.y, this.player.yaw, CHAINS_MAX);
+    const ents = this.snaps.out;
+    const ex = b.x;
+    const ey = b.y;
+    const ez = b.z + PLAYER_EYE;
+    const [ax, ay, az] = aimDir(this.player.yaw, this.player.pitch);
+    const cosMax = Math.cos(CHAINS_ANGLE);
+    for (let i = 0; i < ents.count; i++) {
+      if (ents.type[i] === GATEKEEPER) continue;
+      const def = ENEMIES[ents.type[i]];
+      const dx = ents.x[i] - ex;
+      const dy = ents.y[i] - ey;
+      const dz = this.zScratch[i] + def.height / 2 - ez;
+      const len = Math.hypot(dx, dy, dz);
+      if (len - def.radius > CHAINS_RANGE) continue;
+      if (len > 1e-9 && (dx * ax + dy * ay + dz * az) / len < cosMax) continue;
+      this.chainsDown(now, px, py, this.map.floor[Math.floor(py) * this.map.w + Math.floor(px)], this.localId);
+      return;
+    }
+  }
+
+  /**
+   * A globe shatters (M12 follow-up §1.3): a golden sphere bursting out to its blast's reach around a hot
+   * core, a flash, a ring on the floor and glass shards; 1.5 m on players, and shot down, brighter and
+   * out to its 3 m on enemies.
+   */
+  private globeFx(now: number, x: number, y: number, z: number, shotDown: boolean): void {
+    const reach = shotDown ? GLOBE_SHOT_BLAST : GLOBE_BLAST;
+    // Faint when it bursts around the camera (a globe hitting you), so it doesn't flood the view.
+    const b = this.player.body;
+    const inside = Math.hypot(x - b.x, y - b.y, z - (b.z + PLAYER_EYE)) < reach + 0.3 ? 0.25 : 1;
+    this.vfx.burstSphere(now, x, y, z, GLOBE_SPHERE, 0.2, reach, shotDown ? 420 : 320, (shotDown ? 0.55 : 0.45) * inside);
+    this.vfx.burstSphere(now, x, y, z, GLOBE_CORE, 0.1, reach * 0.45, shotDown ? 200 : 160, 0.9 * inside);
+    this.vfx.glow(now, x, y, z, GLOBE_FLASH, 0.3, shotDown ? 1.8 : 1.0, shotDown ? 260 : 180, 0, shotDown ? 0.75 : 0.5);
+    const floor = this.floorAt(x, y);
+    if (floor > -Infinity && z - floor < 4) this.vfx.ring(now, x, y, floor, GLOBE_RING, 0.3, shotDown ? GLOBE_SHOT_BLAST : GLOBE_BLAST, shotDown ? 350 : 250);
+    this.particles.globeShards(x, y, z, shotDown ? 24 : 10);
+    debugState.globes.shattered++;
+    if (shotDown) debugState.globes.shotDown++;
+    debugState.globes.at = now;
   }
 
   private classOf(playerId: number): ClassId | undefined {
@@ -929,20 +1028,17 @@ export class Game {
         if (target !== undefined && target !== this.localId) this.party?.flash(target, 'blue');
         break;
       }
-      case 'binder:Q': {
-        // Chain lines from the cone in front of the Binder to the destination.
-        if (!user) break;
-        const pts: Array<[number, number, number]> = [];
-        for (let i = -3; i <= 3; i++) {
-          const a = user.yaw + (i / 3) * (Math.PI / 6);
-          const d = 6 + Math.abs(i) * 2;
-          pts.push([e.x, e.y, e.z + 0.8], [user.x + Math.cos(a) * d, user.y + Math.sin(a) * d, e.z + 0.8]);
-        }
-        this.vfx.chain(now, pts, 0.3, 500);
+      case 'binder:Q':
+        // Red-hot chains come down onto the pile point as the cast begins (M12 follow-up §2.2), in place of
+        // the old chain lines across the cone: the own ones came on the key press; others' after the
+        // render delay, when something is being pulled.
+        if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.pileChains(t, e.x, e.y, e.z, e.playerId) });
         break;
-      }
-      case 'binder:E': // grey burst
-        this.vfx.smoke(now, e.x, e.y, e.z, 0x8a8f97, 0.5, 8, 700);
+      case 'binder:E':
+        // Discord's shout (M12 follow-up §2.4): others' gust of air from their chest along their facing;
+        // the own one left on the key press.
+        if (!user) break;
+        if (e.playerId !== this.localId) this.vfx.gust(now, [user.x, user.y, user.z + PLAYER_EYE - GUST_BELOW_EYE], [Math.cos(user.yaw), Math.sin(user.yaw), 0], DISCORD_HALF_ANGLE, DISCORD_RANGE);
         break;
       case 'betrayer:Q':
         this.startField(e, user, now);
@@ -1201,11 +1297,12 @@ export class Game {
 
   /**
    * The spawn glow (M12 §2.4): an enemy slot that wasn't in the previous snapshot, within 2 m
-   * horizontally of a spawn point of the snapshot's arena, flares that point when it appears on
+   * horizontally of a spawn or squad point of the snapshot's arena, flares that point when it appears on
    * screen (`at`, after the render delay). Gatekeeper summons glow the same way.
    */
   private spawnGlows(s: Snapshot, prev: Snapshot, at: number): void {
-    const points = this.map.arenaSpawnPoints[s.arenaIndex];
+    // Squad points flare too (M12 follow-up §4.2).
+    const points = this.map.arenaSpawnPoints[s.arenaIndex]?.concat(this.map.arenaSquadPoints[s.arenaIndex]);
     if (!points?.length) return;
     for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 1;
     const flared = new Set<number>();
@@ -1927,6 +2024,18 @@ export class Game {
       }
       debugState.near = near;
       debugState.nearYaw = Math.atan2(sy, sx);
+      let best = 30 * 30;
+      debugState.casterAim = null;
+      for (let i = 0; i < ents.count; i++) {
+        if (ents.type[i] !== CHORISTER) continue;
+        const dx = ents.x[i] - b.x;
+        const dy = ents.y[i] - b.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > best) continue;
+        best = d2;
+        const dz = enemyZ[i] + ENEMIES[CHORISTER].height / 2 - (b.z + PLAYER_EYE);
+        debugState.casterAim = { yaw: Math.atan2(dy, dx), pitch: Math.atan2(dz, Math.sqrt(d2)) };
+      }
       // Set by updateStarAim during this frame (the reset above it would narrow it to null).
       const l = this.starPreview as Landing | null;
       debugState.star = l ? { x: l.x, y: l.y, z: l.z, valid: l.valid, ally: l.ally } : null;
@@ -1987,7 +2096,7 @@ export class Game {
       this.animator.setStunned(slot, stunned, now);
       const pick = this.animator.pick(slot, now, this.bossCast);
       const f = set.anims[pick.anim][spriteDirection(this.animator.facing[slot], eye.x - x, eye.y - y)][pick.frame];
-      const height = f.height;
+      const height = f.height * ENEMIES[type].draw;
       const target = this.enemyBillboards.get(type)!;
       const def = ENEMIES[type];
       const flags = ents.flags[i];
@@ -2081,7 +2190,7 @@ export class Game {
       }
       leading = false;
       const af = this.o.enemyAnims[c.type]!.anims.death[spriteDirection(c.facing, eye.x - c.x, eye.y - c.y)][cf.frame];
-      this.enemyBillboards.get(c.type)!.add(af, c.x, c.y, c.z - cf.sink, af.height, false);
+      this.enemyBillboards.get(c.type)!.add(af, c.x, c.y, c.z - cf.sink, af.height * ENEMIES[c.type].draw, false);
     }
     if (gone) this.corpses.splice(0, gone);
     this.drawBlasts(now, eye);
@@ -2112,7 +2221,7 @@ export class Game {
         }
       }
       if (k !== PROJ_ARROW) {
-        bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true);
+        bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true, 1, 1, 1, k === PROJ_GLOBE ? GLOW_GLOBE : NO_GLOW);
         continue;
       }
       // A Cherub arrow (M12 §6.3): glowing cyan, its embers trailing behind it along its flight, from
@@ -2229,7 +2338,7 @@ export class Game {
       const f = set.anims.pain[spriteDirection(b.facing, eye.x - x, eye.y - y)][0];
       this.blastGlow.a = BLAST_GLOW_FROM + (BLAST_GLOW_TO - BLAST_GLOW_FROM) * u;
       const s = 1 + (b.swell - 1) * e;
-      this.enemyBillboards.get(b.type)!.add(f, x, y, b.feet + b.lift * e, f.height * s, false, 1, 1, 1, this.blastGlow, 1, s);
+      this.enemyBillboards.get(b.type)!.add(f, x, y, b.feet + b.lift * e, f.height * s * ENEMIES[b.type].draw, false, 1, 1, 1, this.blastGlow, 1, s);
     }
   }
 

@@ -119,6 +119,29 @@ const rayShader = {
     }`,
 };
 
+/** Discord's gust (M12 follow-up §2.4): soft puffs of blue-grey mist, started within 40 ms of each other. */
+const GUST_PUFFS = 18;
+const GUST_MS = 400;
+const GUST_SPREAD_MS = 40;
+/** They start this far in front of the eye, so none fills the view. */
+const GUST_START = 1.5;
+/** A puff's size where it starts; it grows with the cone. */
+const GUST_SIZE = 0.8;
+/** A slate blue-grey: pale mist vanished against the white marble and the sky. */
+const GUST_COLOR = 0x7189ad;
+const GUST_OPACITY = 0.4;
+
+/** The bound pile's chains (M12 follow-up §2.2). */
+const CHAIN_CONE_COUNT = 6;
+const CHAIN_CONE_TOP_R = 5;
+const CHAIN_CONE_BOTTOM_R = 1.2;
+const CHAIN_CONE_HEIGHT = 8;
+const CHAIN_CONE_WIDTH = 0.22;
+const CHAIN_CONE_MS = 1500;
+const CHAIN_CONE_DROP_MS = 120;
+const CHAIN_CONE_FADE_MS = 400;
+const CHAIN_CONE_RING = 0xff5a1e;
+
 /** Line segments drawn as strips that face the camera, the texture repeating along each one. */
 class Ribbon {
   readonly mesh: THREE.Mesh;
@@ -206,6 +229,8 @@ export class Vfx {
   private readonly columns = new Set<THREE.Mesh>();
   /** Sacrament's beams (M9 §5.1), reused frame to frame. */
   private readonly liveBeams: Ribbon[] = [];
+  /** Each Binder's latest chain cone (M12 follow-up §2.2), so a new one replaces it. */
+  private readonly chainCones = new Map<number, THREE.Object3D>();
   /** Spawn rays (M12 §2.4) by spawn point, reused; `since` is when the ray last appeared. */
   private readonly spawnRays = new Map<
     string,
@@ -389,16 +414,70 @@ export class Vfx {
     this.add({ obj: mesh, material, duration, update }, now, delay);
   }
 
-  /** A soft round glow facing the camera at (x, y, z), from radius r0 to r1, fading. */
-  glow(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number, delay = 0): void {
+  /** A soft round glow facing the camera at (x, y, z), from radius r0 to r1, fading from `opacity` to 0. */
+  glow(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number, delay = 0, opacity = 1): void {
     const material = this.spriteMaterial(this.tex.glow, color);
     const sprite = new THREE.Sprite(material);
     sprite.position.set(x, z, y);
     const update = (f: number): void => {
       sprite.scale.setScalar(2 * (r0 + (r1 - r0) * f));
-      material.opacity = 1 - f;
+      material.opacity = opacity * (1 - f);
     };
     this.add({ obj: sprite, material, duration, update }, now, delay);
+  }
+
+  /**
+   * An explosion's sphere (M12 follow-up §1.3): it bursts out from r0 to r1 with a cubic ease-out, most of
+   * its growth in the first third, and fades as (1 − f)², so it reads as a blast, not a bubble.
+   */
+  burstSphere(now: number, x: number, y: number, z: number, color: number, r0: number, r1: number, duration: number, opacity: number): void {
+    const material = this.material(null, color);
+    const mesh = new THREE.Mesh(sphereGeo, material);
+    mesh.position.set(x, z, y);
+    const update = (f: number): void => {
+      mesh.scale.setScalar(r0 + (r1 - r0) * (1 - (1 - f) ** 3));
+      material.opacity = opacity * (1 - f) ** 2;
+    };
+    this.add({ obj: mesh, material, duration, update }, now, 0);
+  }
+
+  /**
+   * A shout's gust of air (Discord, M12 follow-up §2.4), like Skyrim's Unrelenting Force: from `from`
+   * along the unit `dir` (simulation coordinates), soft puffs of pale mist burst forward through the cone
+   * of `halfAngle`, spreading and swelling to fill it as they fly out toward `range`, and fade. Soft
+   * sprites only, no hard edges; each puff has its own direction, pace and spin.
+   */
+  gust(now: number, from: readonly [number, number, number], dir: readonly [number, number, number], halfAngle: number, range: number): void {
+    const o = new THREE.Vector3(from[0], from[2], from[1]);
+    const d = new THREE.Vector3(dir[0], dir[2], dir[1]).normalize();
+    const tan = Math.tan(halfAngle);
+    const side = new THREE.Vector3().crossVectors(d, Math.abs(d.y) < 0.95 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize();
+    const up = new THREE.Vector3().crossVectors(side, d);
+    for (let i = 0; i < GUST_PUFFS; i++) {
+      // Most puffs toward the middle of the cone; a few near its rim.
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(Math.random()) * tan * 0.85;
+      const k = d.clone().addScaledVector(side, Math.cos(a) * r).addScaledVector(up, Math.sin(a) * r).normalize();
+      // They fly most of the way out, 18–28 m of the silence's 30 m.
+      const reach = range * (0.6 + 0.35 * Math.random());
+      const duration = GUST_MS * (0.8 + 0.4 * Math.random());
+      const spin = (Math.random() - 0.5) * 2;
+      const turn = Math.random() * Math.PI * 2;
+      const material = this.spriteMaterial(this.tex.smoke, GUST_COLOR);
+      const sprite = new THREE.Sprite(material);
+      const update = (f: number): void => {
+        const e = 1 - (1 - f) ** 2;
+        const dist = GUST_START + (reach - GUST_START) * e;
+        sprite.position.copy(o).addScaledVector(k, dist);
+        // Swelling with the cone as it flies, so together they fill it without one veil hiding the view.
+        const size = GUST_SIZE + dist * tan * 0.6;
+        sprite.scale.set(i % 2 ? -size : size, size, 1);
+        material.rotation = turn + spin * f;
+        // Fades in over the first 6%, out over the rest.
+        material.opacity = GUST_OPACITY * Math.min(1, f / 0.06) * (1 - f) ** 1.3;
+      };
+      this.add({ obj: sprite, material, duration, update }, now, Math.random() * GUST_SPREAD_MS);
+    }
   }
 
   /** A translucent sphere at (x, y, z), from radius r0 to r1, fading from `opacity` to 0. */
@@ -461,11 +540,41 @@ export class Vfx {
     this.addRibbon(new Ribbon(points, width, this.material(this.tex.beam, color), BEAM_TILE), now, duration);
   }
 
-  /** Red-hot chains between pairs of points, `width` meters wide, fading. */
-  chain(now: number, points: Array<[number, number, number]>, width: number, duration: number): void {
+  /**
+   * The bound pile's chains (M12 follow-up §2.2): 6 red-hot chains from a 5 m circle 8 m above the pile's
+   * floor at (x, y, z) down to a 1.2 m circle on it, an inverted cone. They come down from the top over
+   * 120 ms, hold while the pull drags the crowd in, and fade over the last 0.4 s of 1.5 s, with a red
+   * ring where they land. A new cone
+   * under the same `key` (the Binder) replaces the old one.
+   */
+  chainCone(now: number, x: number, y: number, z: number, key: number): void {
+    const old = this.chainCones.get(key);
+    if (old) for (const e of this.effects) if (e.obj === old) e.duration = 1e-6;
+    const turn = Math.random() * Math.PI * 2;
+    const tops: Array<[number, number, number]> = [];
+    const bottoms: Array<[number, number, number]> = [];
+    for (let i = 0; i < CHAIN_CONE_COUNT; i++) {
+      const a = turn + (i * 2 * Math.PI) / CHAIN_CONE_COUNT;
+      tops.push([x + Math.cos(a) * CHAIN_CONE_TOP_R, y + Math.sin(a) * CHAIN_CONE_TOP_R, z + CHAIN_CONE_HEIGHT]);
+      bottoms.push([x + Math.cos(a) * CHAIN_CONE_BOTTOM_R, y + Math.sin(a) * CHAIN_CONE_BOTTOM_R, z]);
+    }
+    const pts = (drop: number): Array<[number, number, number]> =>
+      tops.flatMap((t, i) => {
+        const b = bottoms[i];
+        return [t, [t[0] + (b[0] - t[0]) * drop, t[1] + (b[1] - t[1]) * drop, t[2] + (b[2] - t[2]) * drop] as [number, number, number]];
+      });
     const img = this.tex.chain.image as { width: number; height: number };
-    const tile = (width * img.width) / img.height;
-    this.addRibbon(new Ribbon(points, width, this.material(this.tex.chain, 0xffffff), tile), now, duration);
+    const ribbon = new Ribbon(pts(1e-3), CHAIN_CONE_WIDTH, this.material(this.tex.chain, 0xffffff), (CHAIN_CONE_WIDTH * img.width) / img.height);
+    const material = ribbon.mesh.material as THREE.MeshBasicMaterial;
+    const update = (f: number): void => {
+      const t = f * CHAIN_CONE_MS;
+      const drop = Math.min(1, t / CHAIN_CONE_DROP_MS);
+      ribbon.setPoints(pts(Math.max(1e-3, 1 - (1 - drop) ** 3)));
+      material.opacity = Math.min(1, (CHAIN_CONE_MS - t) / CHAIN_CONE_FADE_MS);
+    };
+    this.add({ obj: ribbon.mesh, material, duration: CHAIN_CONE_MS, update, ribbon }, now, 0);
+    this.chainCones.set(key, ribbon.mesh);
+    this.ring(now, x, y, z, CHAIN_CONE_RING, 0.5, 1.6, 300, CHAIN_CONE_DROP_MS);
   }
 
   private addRibbon(ribbon: Ribbon, now: number, duration: number): void {
@@ -538,8 +647,9 @@ export class Vfx {
         continue;
       }
       e.obj.visible = true;
-      e.ribbon?.face(camera);
+      // Update first: a chain cone moves its ends as it comes down.
       e.update(f);
+      e.ribbon?.face(camera);
     }
   }
 }
