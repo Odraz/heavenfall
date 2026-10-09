@@ -99,13 +99,17 @@ export class Lobby {
   }
 
   /**
-   * Picks a class; returns false (and changes nothing) if it's taken, unknown, or the player can't
-   * pick now: only in the Lobby, or in the in-progress Lobby during the game.
+   * Picks a class, or clears the pick when it's the player's own class already (clicked again);
+   * returns false (and changes nothing) if it's taken, unknown, or the player can't pick now: only in
+   * the Lobby, or in the in-progress Lobby during the game.
    */
   pickClass(id: number, classId: unknown): boolean {
     const p = this.players.get(id);
     if (!p || p.state !== 'lobby' || this.phase === 'loading' || !isClassId(classId)) return false;
-    if (p.classId === classId) return false;
+    if (p.classId === classId) {
+      p.classId = null;
+      return true;
+    }
     for (const q of this.players.values()) if (q.classId === classId) return false;
     p.classId = classId;
     return true;

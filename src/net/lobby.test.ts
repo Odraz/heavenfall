@@ -131,9 +131,14 @@ describe('lobby', () => {
     expect(l.pickClass(0, 'heretic')).toBe(true);
     expect(l.pickClass(1, 'nonsense')).toBe(false);
     expect(l.lobbyMessage().players.map((p) => p.classId)).toEqual(['heretic', 'binder']);
+    // Picking your own class again clears the pick and frees the class.
+    expect(l.pickClass(1, 'binder')).toBe(true);
+    expect(l.lobbyMessage().players.map((p) => p.classId)).toEqual(['heretic', null]);
+    expect(l.canStart()).toBe(false);
+    expect(l.pickClass(0, 'binder')).toBe(true);
     l.remove(1);
     l.join('C', 'pw', V);
-    expect(l.pickClass(1, 'binder')).toBe(true);
+    expect(l.pickClass(1, 'heretic')).toBe(true);
   });
 
   it('enables Start only when every connected player has picked a class', () => {

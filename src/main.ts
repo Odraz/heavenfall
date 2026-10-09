@@ -239,6 +239,8 @@ interface Session {
 
 /** The session keeps this many chat messages (M8 §7). */
 const CHAT_LOG = 50;
+/** Bot auto-join stays on Results this long before pressing `Back to lobby` (M8 §6.4). */
+const BOT_RESULTS_MS = 2000;
 
 /**
  * A multiplayer session from the Lobby on: class picks, then `start` → Loading → `ready` → `go` →
@@ -349,19 +351,22 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
     game.start();
   };
 
-  /** Results stay up until `Back to lobby`; the host keeps the session open meanwhile. */
+  /**
+   * Results stay up until `Back to lobby`; the host keeps the session open meanwhile. Bot auto-join
+   * presses it after `BOT_RESULTS_MS`, unless the host left (M8 §6.4).
+   */
   const showGameResults = (data: ResultsData): void => {
     nextRound();
-    results = showResults(data, {
-      onLeave: () => (ended ? toTitle() : end('', true)),
-      onBackToLobby: () => {
-        s.transport.sendCtrl({ type: 'backToLobby' });
-        resetGameDebug();
-        debugState.chat = chat.map(({ playerId, text }) => ({ playerId, text }));
-        showLobby(false);
-      },
-    });
-    show('results', results.el);
+    const backToLobby = (): void => {
+      s.transport.sendCtrl({ type: 'backToLobby' });
+      resetGameDebug();
+      debugState.chat = chat.map(({ playerId, text }) => ({ playerId, text }));
+      showLobby(false);
+    };
+    const view = showResults(data, { onLeave: () => (ended ? toTitle() : end('', true)), onBackToLobby: backToLobby });
+    results = view;
+    show('results', view.el);
+    if (auto) setTimeout(() => results === view && !ended && backToLobby(), BOT_RESULTS_MS);
   };
 
   const load = async (msg: Extract<CtrlMessage, { type: 'start' }>): Promise<void> => {
