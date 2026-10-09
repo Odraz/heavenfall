@@ -213,6 +213,7 @@ Title ──► Singleplayer Setup ──► Loading ──► In Game ──►
 - There are 4 slots, and the host occupies one of them and picks a class too.
 - **Player IDs:** the host is 0. Each joining client gets the lowest free ID from 1 to 3.
 - Each class can be taken by **only one player**. A taken class is greyed out and shows who took it.
+- Clicking your own class again clears the pick, which frees the class.
 - The host's `Start` button is enabled only when every connected player has picked a class and is back from Results. Starting with 1 to 4 players is allowed.
 - A player leaving the lobby frees their slot and class.
 

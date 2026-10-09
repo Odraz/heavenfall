@@ -71,6 +71,13 @@ test('multiplayer', async ({ page: a, browser }) => {
   await c.getByRole('button', { name: /The Binder/ }).click();
   const start = a.getByRole('button', { name: 'Start' });
   await expect(start).toBeEnabled();
+  // B clicks its class again: the pick clears, the Heretic is free on A's screen and Start waits.
+  const hereticOnB = b.getByRole('button', { name: /The Heretic Saint/ });
+  await hereticOnB.click();
+  await expect(a.getByRole('button', { name: /The Heretic Saint/ })).toBeEnabled();
+  await expect(start).toBeDisabled();
+  await hereticOnB.click();
+  await expect(start).toBeEnabled();
   await start.click();
 
   // (4) Everyone reaches inGame within 30 s, and A's arenaPhase becomes combat within 60 s.

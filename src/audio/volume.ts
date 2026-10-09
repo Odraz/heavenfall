@@ -4,7 +4,7 @@ export type VolumeKey = 'master' | 'music' | 'sfx';
 
 export const VOLUME_KEYS: readonly VolumeKey[] = ['master', 'music', 'sfx'];
 export const VOLUME_LABELS: Record<VolumeKey, string> = { master: 'Master', music: 'Music', sfx: 'SFX' };
-export const VOLUME_DEFAULTS: Record<VolumeKey, number> = { master: 0.8, music: 0.5, sfx: 0.7 };
+export const VOLUME_DEFAULTS: Record<VolumeKey, number> = { master: 0.5, music: 0.5, sfx: 0.7 };
 
 const storageKey = (k: VolumeKey) => `heavenfall.volume.${k}`;
 
