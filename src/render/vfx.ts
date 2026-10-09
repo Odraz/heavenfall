@@ -123,7 +123,7 @@ const rayShader = {
 
 /** Discord's gust (M12 follow-up §2.4): soft puffs of blue-grey mist, started within 40 ms of each other. */
 const GUST_PUFFS = 18;
-const GUST_MS = 700;
+const GUST_MS = 400;
 const GUST_SPREAD_MS = 40;
 /** They start this far in front of the eye, so none fills the view. */
 const GUST_START = 1.5;
@@ -131,7 +131,7 @@ const GUST_START = 1.5;
 const GUST_SIZE = 0.8;
 /** A slate blue-grey: pale mist vanished against the white marble and the sky. */
 const GUST_COLOR = 0x7189ad;
-const GUST_OPACITY = 0.7;
+const GUST_OPACITY = 0.4;
 
 /** The bound pile's chains (M12 follow-up §2.2). */
 const CHAIN_CONE_COUNT = 6;
@@ -494,15 +494,15 @@ export class Vfx {
       const a = Math.random() * Math.PI * 2;
       const r = Math.sqrt(Math.random()) * tan * 0.85;
       const k = d.clone().addScaledVector(side, Math.cos(a) * r).addScaledVector(up, Math.sin(a) * r).normalize();
-      // Most roll out 8–15 m, the swell of the gust; the silence itself reaches 30 m.
-      const reach = range * (0.25 + 0.25 * Math.random());
+      // They fly most of the way out, 18–28 m of the silence's 30 m.
+      const reach = range * (0.6 + 0.35 * Math.random());
       const duration = GUST_MS * (0.8 + 0.4 * Math.random());
       const spin = (Math.random() - 0.5) * 2;
       const turn = Math.random() * Math.PI * 2;
       const material = this.spriteMaterial(this.tex.smoke, GUST_COLOR);
       const sprite = new THREE.Sprite(material);
       const update = (f: number): void => {
-        const e = 1 - (1 - f) ** 1.6;
+        const e = 1 - (1 - f) ** 2;
         const dist = GUST_START + (reach - GUST_START) * e;
         sprite.position.copy(o).addScaledVector(k, dist);
         // Swelling with the cone as it flies, so together they fill it without one veil hiding the view.
