@@ -11,8 +11,8 @@
 | `origin/main` | `c5d74e456f9932953d432eaa7e679f427ec8d937` (*Merge m12: playtest 4 fixes*); `main` is ahead of it by the `sfx-samples` merge. No `origin/master`. |
 | Prior playable checkpoint | `fa9e3f5`: M12 with the playtest-4 fixes and the recorded S1 combat sounds (F8 compares them with the synthesized cues). It stays the reference build on `main` until the slice is accepted. |
 | Baseline commit | `e46dd8fb4b454109c91975f3e3d796c0ceba308`: *R0: preserve the rogue specification (revision 9)* |
-| Records commit | the commit that adds this file (a commit can't contain its own hash; see `git log -- docs/rogue/r00-report.md`) |
-| R1 preparation commit | follows the records commit; reported in the session summary |
+| Records commit | `2d0be8d87c4392d12a3ff3aa06414daca8634525`: *R0: execution records (report, decision register, asset manifest)* |
+| R1 preparation commit | the commit that adds this line together with the prepared [r01.md](r01.md) (a commit can't contain its own hash) |
 
 ## What the baseline commit contains (72 files, all additions except one)
 
