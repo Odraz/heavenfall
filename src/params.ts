@@ -43,6 +43,8 @@ export interface Params {
    * cleared and the player stands on its entry cells. 0 starts as usual.
    */
   startArena: number;
+  /** With dev=1 on a generated floor, start on room N's first entry; clamped after generation. */
+  startRoom: number | null;
 }
 
 export type BenchView = 'turn' | 'arcade' | 'gate';
@@ -69,7 +71,7 @@ export function parseParams(search: string): Params {
   const q = new URLSearchParams(search);
   const bench = q.get('bench') === '1';
   const mapParam = q.get('map');
-  const mapId = getDungeon(mapParam) ? (mapParam as string) : 'sandbox';
+  const mapId = !bench && mapParam === 'rogue' ? 'rogue' : getDungeon(mapParam) ? (mapParam as string) : 'sandbox';
   if (bench) {
     const view = q.get('view');
     const benchView: BenchView = view === 'arcade' || view === 'gate' ? view : 'turn';
@@ -80,7 +82,7 @@ export function parseParams(search: string): Params {
     const classId: ClassId = isClassId(cls) ? cls : 'betrayer';
     const benchHudFire = q.get('hudfire') === '1';
     const benchBurst = q.get('burst') === '1';
-    return { dev: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0 };
+    return { dev: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0, startRoom: null };
   }
   // Without dev=1 (or bench=1) the page opens the menus.
   const dev = q.get('dev') === '1';
@@ -91,8 +93,10 @@ export function parseParams(search: string): Params {
   if (dev && seedParam !== null && /^\d+$/.test(seedParam)) seed = Number(BigInt(seedParam) % 4294967296n);
   const bot = q.get('bot') === '1';
   const arenaParam = q.get('arena');
-  const arenas = getDungeon(mapId)!.rooms.length;
-  const startArena = dev && arenaParam !== null && /^\d+$/.test(arenaParam) ? Math.min(Number(arenaParam), arenas - 1) : 0;
+  const fixture = getDungeon(mapId);
+  const startArena = dev && fixture && arenaParam !== null && /^\d+$/.test(arenaParam) ? Math.min(Number(arenaParam), fixture.rooms.length - 1) : 0;
+  const roomParam = q.get('room');
+  const startRoom = dev && mapId === 'rogue' && roomParam !== null && /^\d+$/.test(roomParam) ? Math.min(Number(roomParam), 31) : null;
   const join = parseJoinId(q.get('join'));
   return {
     dev,
@@ -111,5 +115,6 @@ export function parseParams(search: string): Params {
     benchBurst: false,
     cam: dev ? parseCam(q.get('cam')) : null,
     startArena,
+    startRoom,
   };
 }

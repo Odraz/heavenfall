@@ -18,7 +18,7 @@ const NAME_KEY = 'heavenfall.name';
 export const NAME_MAX = 16;
 
 /** The dungeons offered in the menus; the sandbox isn't selectable (§2.5). */
-export const MENU_DUNGEONS: ReadonlyArray<{ id: string; name: string }> = [{ id: 'pearly-gates', name: 'The Pearly Gates' }];
+export const MENU_DUNGEONS: ReadonlyArray<{ id: string; name: string }> = [{ id: 'rogue', name: 'The Pearly Gates' }];
 
 /** The trimmed player name if it's valid (1–16 characters after trimming), otherwise null. */
 export function validName(raw: string): string | null {

@@ -244,9 +244,14 @@ export class GameSounds {
     setMusic('calm', next >= 0 && next < this.map.rooms.length ? this.track(next) : null);
   }
 
-  /** Room i's track: 1–3 by order, the boss room's own; the sandbox uses Arena 1's. */
+  /** Generated rooms use shape; fixtures keep their authored arena order. */
   private track(i: number): TrackId {
-    if (this.map.rooms[i]?.boss) return 'boss';
+    const room = this.map.rooms[i];
+    if (room?.boss) return 'boss';
+    if (room?.shape) {
+      if (room.kind !== 'combat') return 'calm';
+      return room.shape === '2x2' ? 'arena-1' : room.shape === '1x1' ? 'arena-3' : 'arena-2';
+    }
     if (this.map.id === 'sandbox') return 'arena-1';
     return (['arena-1', 'arena-2', 'arena-3'] as const)[Math.min(i, 2)];
   }

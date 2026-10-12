@@ -34,6 +34,13 @@ export interface DebugState {
   enemies: number;
   enemyCountsByTick: Record<number, number>;
   projectiles: number;
+  seed: number | null;
+  simSeed: number | null;
+  runId: string | null;
+  attempts: number;
+  fallbackUsed: boolean;
+  genMs: number;
+  floorHash: string | null;
   /** The room in countdown or combat, 255 for none (rogue game.md §14.3). */
   activeRoom: number;
   activePhase: 'idle' | 'countdown' | 'combat';
@@ -81,6 +88,13 @@ export const debugState: DebugState = {
   enemies: 0,
   enemyCountsByTick: {},
   projectiles: 0,
+  seed: null,
+  simSeed: null,
+  runId: null,
+  attempts: 0,
+  fallbackUsed: false,
+  genMs: 0,
+  floorHash: null,
   activeRoom: 255,
   activePhase: 'idle',
   clearedMask: 0,
@@ -114,6 +128,13 @@ export function resetGameDebug(): void {
     enemies: 0,
     enemyCountsByTick: {},
     projectiles: 0,
+    seed: null,
+    simSeed: null,
+    runId: null,
+    attempts: 0,
+    fallbackUsed: false,
+    genMs: 0,
+    floorHash: null,
     activeRoom: 255,
     activePhase: 'idle',
     clearedMask: 0,

@@ -4,7 +4,8 @@
  * simulation worker owns one and sends the messages it produces.
  */
 import { isClassId, type ClassId } from '../data/classes';
-import type { CtrlMessage, LobbyPlayer, RejectReason } from './messages';
+import type { CtrlMessage, LobbyPlayer, RejectReason, RunConfig } from './messages';
+import { newRunIdentity } from './version';
 
 export const MAX_PLAYERS = 4;
 export const NAME_MAX = 16;
@@ -17,13 +18,13 @@ export const LOAD_TIMEOUT_MS = 20000;
 /** The whole lobby: before `start` (and again after the game), Loading (everyone loads at once), then the game. */
 export type LobbyPhase = 'lobby' | 'loading' | 'game';
 
-export interface LobbyOptions {
-  dungeonId: string;
+export type LobbyOptions = ({ heaven: 1; fixture: string | null } | { dungeonId: string }) & {
   /** Empty means an open game. */
   password: string;
   version: string;
   hostName: string;
-}
+  hostBot?: boolean;
+};
 
 export type JoinResult = { ok: true; playerId: number; inProgress: boolean } | { ok: false; reason: RejectReason };
 
@@ -36,6 +37,7 @@ export type StartPlayer = Extract<CtrlMessage, { type: 'start' }>['players'][num
 type MemberState = 'lobby' | 'loading' | 'game' | 'results';
 
 interface Member extends LobbyPlayer {
+  bot: boolean;
   state: MemberState;
   /** Host time (ms) of this player's `start`. */
   startedAt: number;
@@ -55,7 +57,10 @@ export function cleanChat(raw: unknown): string | null {
 
 export class Lobby {
   phase: LobbyPhase = 'lobby';
-  readonly dungeonId: string;
+  readonly heaven: 1 = 1;
+  readonly fixture: string | null;
+  /** Created at Start, retained through Loading and late admission. */
+  private runConfig: RunConfig | null = null;
   private readonly password: string;
   private readonly version: string;
   /** Connected players by id; the host is 0. */
@@ -63,10 +68,11 @@ export class Lobby {
   private readonly readyIds = new Set<number>();
 
   constructor(o: LobbyOptions) {
-    this.dungeonId = o.dungeonId;
+    // Keep the fixture constructor used by the inherited lobby fixtures; the wire uses heaven/fixture.
+    this.fixture = 'dungeonId' in o ? o.dungeonId : o.fixture;
     this.password = o.password;
     this.version = o.version;
-    this.players.set(0, { id: 0, name: cleanName(o.hostName), classId: null, isHost: true, inResults: false, state: 'lobby', startedAt: 0 });
+    this.players.set(0, { id: 0, name: cleanName(o.hostName), classId: null, bot: !!o.hostBot, isHost: true, inResults: false, state: 'lobby', startedAt: 0 });
   }
 
   /**
@@ -74,13 +80,13 @@ export class Lobby {
    * password, full (M8 §6.2). An accepted client gets the lowest free id from 1 to 3; during the game
    * it waits in the in-progress Lobby.
    */
-  join(name: unknown, password: unknown, version: unknown): JoinResult {
+  join(name: unknown, password: unknown, version: unknown, bot: unknown = false): JoinResult {
     if (version !== this.version) return { ok: false, reason: 'version' };
     if (this.phase === 'loading') return { ok: false, reason: 'in_progress' };
     if (password !== this.password) return { ok: false, reason: 'bad_password' };
     for (let id = 1; id < MAX_PLAYERS; id++) {
       if (this.players.has(id)) continue;
-      this.players.set(id, { id, name: cleanName(name), classId: null, isHost: false, inResults: false, state: 'lobby', startedAt: 0 });
+      this.players.set(id, { id, name: cleanName(name), classId: null, bot: bot === true, isHost: false, inResults: false, state: 'lobby', startedAt: 0 });
       return { ok: true, playerId: id, inProgress: this.phase === 'game' };
     }
     return { ok: false, reason: 'full' };
@@ -95,7 +101,7 @@ export class Lobby {
     const players = [...this.players.values()]
       .sort((a, b) => a.id - b.id)
       .map(({ id, name, classId, isHost, state }) => ({ id, name, classId, isHost, inResults: state === 'results' }));
-    return { type: 'lobby', dungeonId: this.dungeonId, players };
+    return { type: 'lobby', heaven: this.heaven, fixture: this.fixture, players };
   }
 
   /**
@@ -137,18 +143,27 @@ export class Lobby {
     return [...this.players.values()]
       .filter((p) => p.state !== 'lobby' && p.classId)
       .sort((a, b) => a.id - b.id)
-      .map((p) => ({ id: p.id, name: p.name, classId: p.classId as ClassId }));
+      .map((p) => ({ id: p.id, name: p.name, classId: p.classId as ClassId, bot: p.bot }));
+  }
+
+  get run(): RunConfig | null {
+    return this.runConfig;
+  }
+
+  private startMessage(): Extract<CtrlMessage, { type: 'start' }> {
+    return { type: 'start', ...this.runConfig!, players: this.startPlayers() };
   }
 
   /** Starts Loading: returns the `start` message, or null if the lobby can't start. */
   start(nowMs: number): Extract<CtrlMessage, { type: 'start' }> | null {
     if (!this.canStart()) return null;
+    this.runConfig = { ...newRunIdentity(), heaven: this.heaven, floor: 1, edicts: 0, progressionEnabled: false, fixture: this.fixture };
     this.phase = 'loading';
     for (const p of this.players.values()) {
       p.state = 'loading';
       p.startedAt = nowMs;
     }
-    return { type: 'start', dungeonId: this.dungeonId, players: this.startPlayers() };
+    return this.startMessage();
   }
 
   /**
@@ -161,7 +176,7 @@ export class Lobby {
     if (this.phase !== 'game' || !p || p.state !== 'lobby' || !p.classId) return null;
     p.state = 'loading';
     p.startedAt = nowMs;
-    return { type: 'start', dungeonId: this.dungeonId, players: this.startPlayers() };
+    return this.startMessage();
   }
 
   /**
@@ -177,7 +192,7 @@ export class Lobby {
       return null;
     }
     p.state = 'game';
-    return { id: p.id, name: p.name, classId: p.classId as ClassId };
+    return { id: p.id, name: p.name, classId: p.classId as ClassId, bot: p.bot };
   }
 
   /** Players still loading (between their `start` and their `ready`). */

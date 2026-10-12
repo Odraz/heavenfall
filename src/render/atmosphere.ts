@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { K_DOOR, K_FLOOR } from '../sim/heights';
 import type { GameMap } from '../sim/map';
+import { gateFloor, gatePoint, gateVector } from '../sim/gate';
 import { inOpening, OPENING, type Arches } from './arches';
 import { FOG_GLSL } from './fog';
 import { SKY_FOG_GLSL, skyUniforms } from './sky';
@@ -174,14 +175,16 @@ export function placeCards(map: GameMap): Card[] {
   place('spire', 6, [60, 120], [30, 80], (_base, s) => lowest - range(20, 30) + s / 2, false);
   // Banks of cloud behind the Heavenly Gate (M10 gate §3), after the others and without the seeded
   // random, so every other card stays where it is.
-  const gate = map.gate ? { x: map.gate.plane, yCenter: map.gate.uCenter } : null;
+  const gate = map.gate;
   if (gate) {
-    const F = map.floor[gate.yCenter * w + gate.x];
+    const F = gateFloor(map);
+    const [dx, dy] = gateVector(gate, 0, 1);
     GATE_BANKS.forEach((d, k) => {
+      const [x, y] = gatePoint(gate, -GATE_BANK_BEHIND, d);
       cards.push({
-        kind: 'bank', x: gate.x - GATE_BANK_BEHIND, y: gate.yCenter + d, z: F + GATE_BANK_Z, size: GATE_BANK_SIZE,
+        kind: 'bank', x, y, z: F + GATE_BANK_Z, size: GATE_BANK_SIZE,
         cell: k % 3, mirror: k % 2 === 1,
-        drift: GATE_BANK_DRIFT, dx: 0, dy: 1, period: GATE_BANK_PERIOD, phase: k,
+        drift: GATE_BANK_DRIFT, dx, dy, period: GATE_BANK_PERIOD, phase: k,
       });
     });
   }
@@ -388,12 +391,13 @@ export class Atmosphere {
     // radiance over them, then the arena's own effects, so the light never washes over an effect.
     this.cards.renderOrder = -2;
     this.radiance = null;
-    const gate = map.gate ? { x: map.gate.plane, yCenter: map.gate.uCenter } : null;
+    const gate = map.gate;
     if (gate && RADIANCE) {
       // One quad facing the arena, fx-glow tinted warm gold, with normal alpha blending (decisions §11.1).
-      const F = map.floor[gate.yCenter * map.w + gate.x];
+      const F = gateFloor(map);
       const geo = new THREE.PlaneGeometry(2 * RADIANCE_HALF, RADIANCE_Z[1] - RADIANCE_Z[0]);
-      geo.rotateY(Math.PI / 2);
+      const [nx, ny] = gateVector(gate, 1, 0);
+      geo.rotateY(Math.atan2(nx, ny));
       const mat = new THREE.ShaderMaterial({
         uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), map: { value: glow }, tint: { value: RADIANCE_TINT }, opacity: { value: RADIANCE_OPACITY } },
         vertexShader: radianceVertex,
@@ -404,7 +408,8 @@ export class Atmosphere {
       });
       const m = new THREE.Mesh(geo, mat);
       // three.js: x = x, y = z, z = y.
-      m.position.set(gate.x - RADIANCE_BEHIND, F + (RADIANCE_Z[0] + RADIANCE_Z[1]) / 2, gate.yCenter);
+      const [x, y] = gatePoint(gate, -RADIANCE_BEHIND, 0);
+      m.position.set(x, F + (RADIANCE_Z[0] + RADIANCE_Z[1]) / 2, y);
       m.renderOrder = -1;
       this.radiance = m;
     }

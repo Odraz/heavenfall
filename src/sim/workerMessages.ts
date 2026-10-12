@@ -1,27 +1,24 @@
 /** Internal messages between the main thread and the simulation worker (not part of §9.2). */
-import type { CtrlMessage } from '../net/messages';
+import type { CtrlMessage, RunConfig } from '../net/messages';
 import type { DirectorInfo } from './director';
 import type { Simulation, SimPlayerInit } from './sim';
 
 export type MainToWorker =
   /** Singleplayer (and dev and bench modes): starts the game at once. */
-  | {
+  | ({
       t: 'start';
-      dungeonId: string;
       players: SimPlayerInit[];
-      seed: number;
       god: boolean;
       /** The benchmark's arena, or -1 when not benchmarking (M10 gate §4). */
       benchArena: number;
       /** The benchmark's bursts (M12 §10). */
       benchBurst: boolean;
-      singleplayer: boolean;
       localPlayerId: number;
-      /** Dev `arena=N`: start in arena N with the ones before it cleared; 0 as usual. */
-      startArena?: number;
-    }
+      /** Dev room/arena override, resolved after loading the generated floor or fixture. */
+      startRoom?: number;
+    } & RunConfig)
   /** Multiplayer: the host clicked `Create`; the worker opens the lobby with the host as player 0. */
-  | { t: 'host'; dungeonId: string; password: string; name: string; god: boolean }
+  | { t: 'host'; heaven: 1; fixture: string | null; password: string; name: string; god: boolean; bot: boolean }
   /** The host clicked `Start` in the Lobby. */
   | { t: 'startGame' }
   /** A `ctrl` message from the host's own player, through `LocalTransport`. */

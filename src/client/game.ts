@@ -282,6 +282,8 @@ export interface GameOptions {
   localPlayerId: number;
   /** Players at `start`, sorted by id; `setRoster` keeps it current (M8 §6.2). */
   roster: RosterEntry[];
+  /** Resolved dev start room; multiplayer always waits for the host's placement. */
+  startRoom?: number;
   /** Singleplayer pauses the simulation while the Pause overlay is open (§3); multiplayer shows party frames. */
   singleplayer: boolean;
   /** Payload bytes over PeerJS, in multiplayer (§2.5). */
@@ -529,7 +531,7 @@ export class Game {
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('visibilitychange', this.onVisibility);
 
-    const [sc, sr] = this.params.benchArena >= 0 ? this.map.rooms[this.params.benchArena].entry[0].cells[0] : this.params.startArena > 0 ? this.map.rooms[this.params.startArena].entry[0].cells[index] : this.map.spawns[index];
+    const [sc, sr] = this.params.benchArena >= 0 ? this.map.rooms[this.params.benchArena].entry[0].cells[0] : o.startRoom !== undefined ? this.map.rooms[o.startRoom].entry[0].cells[index] : this.map.spawns[index];
     this.player = new LocalPlayer(sc + 0.5, sr + 0.5, this.map.floor[sr * this.map.w + sc], CLASSES[me.classId].speed);
     this.leafDrawn = new Int8Array(this.map.rooms.reduce((n, a) => n + a.leaves.length, 0)).fill(-1);
 

@@ -36,6 +36,7 @@ export class DebugOverlay {
       `sim ${d.simMs.toFixed(2)} ms/tick`,
       `enemies ${d.enemies}`,
       `projectiles ${d.projectiles}`,
+      ...(d.floorHash ? [`Seed ${d.seed} · attempts ${d.attempts}${d.fallbackUsed ? ' (fallback)' : ''} · generation ${d.genMs.toFixed(1)} ms`] : []),
       `net in ${d.netInKBps.toFixed(1)} KB/s  out ${d.netOutKBps.toFixed(1)} KB/s`,
       `pos ${this.position.x.toFixed(2)} ${this.position.y.toFixed(2)} ${this.position.z.toFixed(2)} yaw ${this.position.yaw.toFixed(3)}`,
       ...(this.dev ? [`Wading: ${d.wade.count} · ×${d.wade.factor.toFixed(2)}`] : []),

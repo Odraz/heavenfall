@@ -3,13 +3,13 @@
  * Web Worker entry that runs the host simulation (§2.2). In multiplayer it also owns the lobby
  * (§3): every `ctrl` message to or from the host is handled here.
  */
-import { getDungeon } from '../data/dungeons/index';
 import { cleanChat, Lobby } from '../net/lobby';
 import type { CtrlMessage } from '../net/messages';
 import { decodeInput } from '../net/protocol';
 import { PING_MS } from '../net/peerConfig';
 import { MAX_TICKS_PER_LOOP, TICK_MS } from './constants';
-import { Simulation, type SimPlayerInit } from './sim';
+import { Simulation } from './sim';
+import { loadRunMap } from './runMap';
 import { localSnap, type MainToWorker, type WorkerToMain } from './workerMessages';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
@@ -100,11 +100,14 @@ function loop(): void {
   timer = setTimeout(loop, Math.max(1, TICK_MS - acc - 1));
 }
 
-function start(players: SimPlayerInit[], dungeonId: string, seed: number, godMode: boolean, benchArena: number, singleplayer: boolean, localId: number, benchBurst = false, startArena = 0): void {
-  const dungeon = getDungeon(dungeonId);
-  if (!dungeon) throw new Error(`Unknown dungeon ${dungeonId}`);
-  sim = new Simulation({ dungeon, players, seed, god: godMode, benchRoom: benchArena, benchBurst, singleplayer, startRoom: startArena });
-  localPlayerId = localId;
+function start(m: Extract<MainToWorker, { t: 'start' }>): void {
+  const { def, map } = loadRunMap(m);
+  sim = new Simulation({
+    dungeon: def, map, players: m.players, seed: m.simSeed, god: m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
+    singleplayer: m.players.length === 1 && !m.players[0].bot, startRoom: m.startRoom, walkOnly: m.fixture === null,
+  });
+  localPlayerId = m.localPlayerId;
+  paused = false;
   for (const p of sim.players) p.lastAcceptMs = performance.now();
   running = true;
   last = performance.now();
@@ -114,9 +117,9 @@ function start(players: SimPlayerInit[], dungeonId: string, seed: number, godMod
 
 // ------------------------------------------------------------------ multiplayer lobby (§3)
 
-function host(dungeonId: string, password: string, name: string, godMode: boolean): void {
-  lobby = new Lobby({ dungeonId, password, version: __BUILD_VERSION__, hostName: name });
-  god = godMode;
+function host(m: Extract<MainToWorker, { t: 'host' }>): void {
+  lobby = new Lobby({ heaven: m.heaven, fixture: m.fixture, password: m.password, version: __BUILD_VERSION__, hostName: m.name, hostBot: m.bot });
+  god = m.god;
   localPlayerId = 0;
   send(0, lobby.lobbyMessage());
   heartbeatTimer = setInterval(() => post({ t: 'heartbeat', loading: lobby?.loadingIds() ?? [] }), PING_MS);
@@ -131,7 +134,7 @@ function broadcastLobby(): void {
 /** A `hello` from a connection that has no player yet. */
 function hello(conn: number, msg: Extract<CtrlMessage, { type: 'hello' }>): void {
   if (!lobby) return;
-  const r = lobby.join(msg.name, msg.password, msg.version);
+  const r = lobby.join(msg.name, msg.password, msg.version, msg.bot);
   if (!r.ok) {
     post({ t: 'connCtrl', conn, msg: { type: 'reject', reason: r.reason } });
     post({ t: 'drop', conn });
@@ -140,8 +143,8 @@ function hello(conn: number, msg: Extract<CtrlMessage, { type: 'hello' }>): void
   connPlayer.set(conn, r.playerId);
   playerConn.set(r.playerId, conn);
   post({ t: 'bind', conn, playerId: r.playerId });
-  const { dungeonId, players } = lobby.lobbyMessage();
-  send(r.playerId, { type: 'welcome', playerId: r.playerId, lobby: { dungeonId, players }, inProgress: r.inProgress });
+  const { heaven, fixture, players } = lobby.lobbyMessage();
+  send(r.playerId, { type: 'welcome', playerId: r.playerId, lobby: { heaven, fixture, players }, inProgress: r.inProgress });
   broadcastLobby();
 }
 
@@ -226,17 +229,17 @@ function maybeGo(): void {
   if (!lobby?.allReady()) return;
   const players = lobby.go();
   send('all', { type: 'go' });
-  start(players, lobby.dungeonId, (Math.random() * 2 ** 32) >>> 0, god, -1, false, 0);
+  start({ ...lobby.run!, t: 'start', players, god, benchArena: -1, benchBurst: false, localPlayerId: 0 });
 }
 
 ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
   const m = e.data;
   switch (m.t) {
     case 'start':
-      start(m.players, m.dungeonId, m.seed, m.god, m.benchArena, m.singleplayer, m.localPlayerId, m.benchBurst, m.startArena ?? 0);
+      start(m);
       break;
     case 'host':
-      host(m.dungeonId, m.password, m.name, m.god);
+      host(m);
       break;
     case 'startGame':
       startGame();

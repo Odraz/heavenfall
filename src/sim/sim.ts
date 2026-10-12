@@ -142,10 +142,14 @@ export interface SimPlayerInit {
   id: number;
   name: string;
   classId: ClassId;
+  /** Absent in inherited simulation fixtures; real sessions always carry it from admission. */
+  bot?: boolean;
 }
 
 export interface SimOptions {
   dungeon: DungeonDef;
+  /** Reuse the map already generated and validated during Loading. */
+  map?: GameMap;
   /** Players at `go`; each one's index is its ID (M8 §6.2). */
   players: SimPlayerInit[];
   seed: number;
@@ -161,6 +165,8 @@ export interface SimOptions {
   noWaves?: boolean;
   /** Dev `arena=N`: the rooms before N start cleared, and the players on N's entry cells. */
   startRoom?: number;
+  /** R1.3 generated floors: all doors open, room encounters deferred to R1.4. */
+  walkOnly?: boolean;
 }
 
 export interface SimEvent {
@@ -174,6 +180,7 @@ export interface SimPlayer {
   index: number;
   name: string;
   classId: ClassId;
+  bot: boolean;
   speed: number;
   maxHp: number;
   hp: number;
@@ -489,6 +496,7 @@ export class Simulation {
   private readonly benchBurst: boolean;
   readonly noWaves: boolean;
   readonly singleplayer: boolean;
+  private readonly walkOnly: boolean;
   /** Every player is invulnerable (`god=1`). */
   private readonly god: boolean;
   /** Seeded PRNG for all simulation randomness (§2.2); tests may replace it. */
@@ -651,11 +659,12 @@ export class Simulation {
   private readonly lastSentTick = new Map<number, number>();
 
   constructor(opts: SimOptions) {
-    this.map = loadMap(opts.dungeon);
+    this.map = opts.map ?? loadMap(opts.dungeon);
     this.benchRoom = opts.benchRoom ?? -1;
     this.benchBurst = !!opts.benchBurst && this.benchRoom >= 0;
     this.noWaves = !!opts.noWaves;
     this.singleplayer = !!opts.singleplayer;
+    this.walkOnly = !!opts.walkOnly;
     this.random = mulberry32(opts.seed);
     this.rooms = this.map.rooms.map((a, i) => ({
       phase: PHASE_IDLE,
@@ -677,10 +686,13 @@ export class Simulation {
     // Dev `arena=N`: the rooms before it are cleared, their doors open.
     const startRoom = this.benchRoom >= 0 ? 0 : Math.max(0, Math.min(opts.startRoom ?? 0, this.rooms.length - 1));
     for (let ai = 0; ai < startRoom; ai++) this.rooms[ai].phase = PHASE_CLEARED;
+    // This checkpoint is for walking the generated geometry; the fixture still runs its fights.
+    if (this.walkOnly) for (const st of this.rooms) st.phase = PHASE_CLEARED;
     this.updateLeaves();
     this.god = !!opts.god;
+    const useEntry = startRoom > 0 || (this.walkOnly && opts.startRoom !== undefined);
     for (const p of opts.players) {
-      const [c, r] = this.benchRoom >= 0 ? this.map.rooms[this.benchRoom].entry[0].cells[0] : startRoom > 0 ? this.map.rooms[startRoom].entry[0].cells[p.id] : this.map.spawns[p.id];
+      const [c, r] = this.benchRoom >= 0 ? this.map.rooms[this.benchRoom].entry[0].cells[0] : useEntry ? this.map.rooms[startRoom].entry[0].cells[p.id] : this.map.spawns[p.id];
       this.insertPlayer(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
     }
     const cells = this.map.w * this.map.h;
@@ -800,6 +812,7 @@ export class Simulation {
       index: init.id,
       name: init.name,
       classId: init.classId,
+      bot: !!init.bot,
       speed: cls.speed,
       maxHp: cls.hp,
       hp: cls.hp,
@@ -975,6 +988,7 @@ export class Simulation {
    * without waiting for earlier rooms to be cleared.
    */
   private checkRoomStarts(): void {
+    if (this.walkOnly) return;
     this.map.rooms.forEach((a, ai) => {
       const st = this.rooms[ai];
       if (st.phase === PHASE_IDLE) {

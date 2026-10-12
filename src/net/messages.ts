@@ -1,5 +1,22 @@
 /** `ctrl` messages and game events (§9.2). */
 import type { ClassId } from '../data/classes';
+import type { RunIdentity } from './version';
+
+/** The host's choice, carried by both welcome and lobby. Fixed maps are development fixtures. */
+export interface LobbyState {
+  heaven: 1;
+  fixture: string | null;
+  players: LobbyPlayer[];
+}
+
+/** One R1 run: no progression or Edicts yet (rogue r01.md, R1.3). */
+export interface RunConfig extends RunIdentity {
+  heaven: 1;
+  floor: 1;
+  edicts: 0;
+  progressionEnabled: false;
+  fixture: string | null;
+}
 
 export type GameEvent =
   /**
@@ -52,14 +69,14 @@ export interface LobbyPlayer {
 export type RejectReason = 'bad_password' | 'full' | 'in_progress' | 'version' | 'load_timeout';
 
 export type CtrlMessage =
-  | { type: 'hello'; name: string; password: string; version: string }
+  | { type: 'hello'; name: string; password: string; version: string; bot: boolean }
   /** `inProgress`: the game is running, so the client waits in the in-progress Lobby (M8 §6.2). */
-  | { type: 'welcome'; playerId: number; lobby: { dungeonId: string; players: LobbyPlayer[] }; inProgress: boolean }
+  | { type: 'welcome'; playerId: number; lobby: LobbyState; inProgress: boolean }
   | { type: 'reject'; reason: RejectReason }
   | { type: 'pickClass'; classId: ClassId }
   /** Sent on every change, during the game too (M8 §6.2). */
-  | { type: 'lobby'; dungeonId: string; players: LobbyPlayer[] }
-  | { type: 'start'; dungeonId: string; players: Array<{ id: number; name: string; classId: ClassId }> }
+  | ({ type: 'lobby' } & LobbyState)
+  | ({ type: 'start'; players: Array<{ id: number; name: string; classId: ClassId; bot: boolean }> } & RunConfig)
   | { type: 'ready' }
   /** From the in-progress Lobby: the client enters the game (M8 §6.2). */
   | { type: 'enterGame' }

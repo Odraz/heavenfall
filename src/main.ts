@@ -2,16 +2,17 @@
 import './style.css';
 import { CLASS_IDS, type ClassId } from './data/classes';
 import { debugState, resetGameDebug, type Screen } from './debug';
-import { getDungeon } from './data/dungeons/index';
+import { floorHash } from './gen';
+import { newRunIdentity } from './net/version';
 import { parseParams } from './params';
-import { loadMap } from './sim/map';
+import { loadRunMap } from './sim/runMap';
 import { loadEnemyAnims, loadPlayerAnims } from './render/animAtlas';
 import { buildAtlas } from './render/atlas';
 import { loadGameTextures } from './render/textures';
 import { Game, type RosterEntry } from './client/game';
 import { HostSession } from './client/hostSession';
 import { createHostNet } from './net/hostNet';
-import type { CtrlMessage, LobbyPlayer } from './net/messages';
+import type { CtrlMessage, LobbyPlayer, LobbyState, RunConfig } from './net/messages';
 import type { NetStats } from './net/netStats';
 import { joinGame, type PeerTransport } from './net/peerTransport';
 import type { Transport } from './net/transport';
@@ -75,9 +76,20 @@ function toSingleplayerSetup(name: string): void {
  * players are drawn as billboards, so the local class's atlas isn't needed; in multiplayer every other
  * class's is loaded, since a player may join with any free class during the game (M8 §6.2).
  */
-async function loadGameAssets(dungeonId: string, roster: RosterEntry[], localId: number, multiplayer: boolean, progress: (text: string) => void) {
-  progress('Building the map…');
-  const map = loadMap(getDungeon(dungeonId)!);
+async function loadGameAssets(run: RunConfig, roster: RosterEntry[], localId: number, multiplayer: boolean, progress: (text: string) => void) {
+  progress(run.fixture === null ? 'Building the Pearly Gates…' : 'Building the map…');
+  // Give Loading a frame before synchronous generation; hidden tabs must still finish loading.
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+    setTimeout(resolve, 100);
+  });
+  const t0 = performance.now();
+  const { def, map, floor } = loadRunMap(run);
+  Object.assign(debugState, {
+    seed: run.seed, simSeed: run.simSeed, runId: run.runId,
+    attempts: floor?.attempts ?? 0, fallbackUsed: floor?.fallbackUsed ?? false,
+    genMs: floor ? performance.now() - t0 : 0, floorHash: floor ? floorHash(def) : null,
+  });
   progress('Drawing the sprites…');
   const localClass = roster.find((r) => r.id === localId)?.classId;
   const others = multiplayer ? CLASS_IDS.filter((c) => c !== localClass) : roster.filter((r) => r.id !== localId).map((r) => r.classId);
@@ -95,8 +107,14 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   const loading = loadingScreen();
   show('loading', loading.el);
   await loading.ready;
-  const roster: RosterEntry[] = [{ id: 0, name, classId }];
-  const assets = await loadGameAssets(dungeonId, roster, 0, false, loading.set);
+  const run: RunConfig = {
+    ...newRunIdentity(seed ?? undefined), heaven: 1, floor: 1, edicts: 0, progressionEnabled: false,
+    fixture: dungeonId === 'rogue' ? null : dungeonId,
+  };
+  const roster = [{ id: 0, name, classId, bot: params.bot }];
+  const assets = await loadGameAssets(run, roster, 0, false, loading.set);
+  const requestedRoom = run.fixture === null ? params.startRoom : params.startArena > 0 ? params.startArena : null;
+  const startRoom = requestedRoom === null ? undefined : Math.min(requestedRoom, assets.map.rooms.length - 1);
   // The session ends at Results or on leaving: the worker is terminated (§2.2).
   const end = (): void => {
     game.dispose();
@@ -110,6 +128,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
     host,
     localPlayerId: 0,
     roster,
+    startRoom,
     singleplayer: true,
     net: null,
     onResults: (data) => {
@@ -123,7 +142,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   });
   host.local.onCtrl = (msg) => game.handleCtrl(msg);
   await game.prepare();
-  host.start(dungeonId, roster, seed ?? (Math.random() * 2 ** 32) >>> 0, params.god, params.benchArena, true, params.benchBurst, params.startArena);
+  host.start(run, roster, params.god, params.benchArena, params.benchBurst, startRoom);
   show('inGame', null);
   game.start();
 }
@@ -153,7 +172,7 @@ function toHostSetup(name: string): void {
       const host = new HostSession(0);
       createHostNet(() => left).then(
         (net) => {
-          host.hostLobby(net, dungeonId, password, name, params.god);
+          host.hostLobby(net, dungeonId === 'rogue' ? null : dungeonId, password, name, params.god, params.bot);
           enterLobby({ transport: host.local, playerId: 0, host, client: null, gameId: net.gameId, net: net.stats }, null, false);
         },
         (e: unknown) => {
@@ -182,7 +201,7 @@ function toJoin(name: string, prefillId: string | null = null, auto = false): vo
     if (joining) return;
     joining = true;
     view.setStatus('Connecting…', true);
-    joinGame(gameId, name, password, () => left).then(
+    joinGame(gameId, name, password, () => left, params.bot).then(
       (j) =>
         enterLobby(
           { transport: j.transport, playerId: j.playerId, host: null, client: j.transport, gameId, net: j.transport.stats },
@@ -248,7 +267,7 @@ const BOT_RESULTS_MS = 2000;
  * run the same flow; only their transports differ. A client joining a game in progress waits in the
  * in-progress Lobby until it presses `Enter game`, which gets it its own `start` (M8 §6.2).
  */
-function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlayer[] } | null, inProgress: boolean, auto = false): void {
+function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean, auto = false): void {
   let game: Game | null = null;
   /** Counts the games of this session: a load from an earlier one stops. */
   let round = 0;
@@ -318,7 +337,7 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
    * ignores a taken class, and every accepted pick sends a new lobby state, so a lost race picks again;
    * in the in-progress Lobby it then presses `Enter game` (M8 §6.4). In game, it names the players.
    */
-  const updateLobby = (state: { dungeonId: string; players: LobbyPlayer[] }): void => {
+  const updateLobby = (state: LobbyState): void => {
     latest = state;
     game?.setRoster(state.players);
     if (loading || results) return;
@@ -377,7 +396,7 @@ function enterLobby(s: Session, initial: { dungeonId: string; players: LobbyPlay
     await view.ready;
     if (stale()) return;
     const roster: RosterEntry[] = msg.players;
-    const assets = await loadGameAssets(msg.dungeonId, roster, s.playerId, true, view.set);
+    const assets = await loadGameAssets(msg, roster, s.playerId, true, view.set);
     if (stale()) return;
     const g = new Game({
       root,

@@ -2,9 +2,12 @@
  * The Heavenly Gate (M10 gate): the boss arena's west wall drawn as the gate of Heaven. Golden gate
  * leaves and gilded railings in the wall's plane, white-and-gold gateposts and railing posts behind it,
  * with crowns and spires, built the hybrid way like the arches: simple geometry carrying painted faces.
- * Drawn only; the simulation's wall is unchanged. Built once from `map.gate`, deterministically.
+ * Drawn only; the simulation's wall is unchanged. Built once from `map.gate`, deterministically,
+ * rotating the canonical W-facing layout with the shared continuous Gate frame.
  */
 import type { GameMap } from '../sim/map';
+import type { GateDef } from '../data/dungeons/types';
+import { gateFloor, gateLocal, gateOutside, gatePoint, gateVector } from '../sim/gate';
 import type { ArchBuilder, ArchLight } from './arches';
 import { CROWN_BASE_PX, CROWN_TOP_ROW, CROWN_WIDE, POST_TOP_H, POST_TOP_W, SHAFT_REPEAT, SPIRE_COLS } from './gate.gen';
 import { TILE } from './looks';
@@ -84,7 +87,8 @@ export interface GatePanel {
 }
 
 export interface GateLayout {
-  /** The plane of the gate (the wall's face), the center line and the skipped rows. */
+  gate: GateDef;
+  /** Canonical W-facing coordinates; transformed at emission and ray entry. */
   x: number;
   yc: number;
   y0: number;
@@ -100,18 +104,12 @@ export interface GateLayout {
 /** The crown's scale: meters per pixel of gate-post-top-2, where the base band spans the 4 m box. */
 const CROWN_SCALE = 4 / CROWN_BASE_PX;
 
-/** A west-facing gate's plane and rows, as the layout reads them. */
-function westGate(map: GameMap): { x: number; yCenter: number; y0: number; y1: number } | null {
-  const g = map.gate;
-  if (!g) return null;
-  return { x: g.plane, yCenter: g.uCenter, y0: g.u0, y1: g.u1 };
-}
-
 /** The gate's layout, or null for a map without one. */
 export function gateLayout(map: GameMap): GateLayout | null {
-  const g = westGate(map);
-  if (!g) return null;
-  const F = map.floor[g.yCenter * map.w + g.x];
+  const gate = map.gate;
+  if (!gate) return null;
+  const g = { x: gate.plane, yCenter: gate.uCenter, y0: gate.u0, y1: gate.u1 };
+  const F = gateFloor(map);
   const crownH = (POST_TOP_H - CROWN_TOP_ROW) * CROWN_SCALE;
   const crownW = (CROWN_WIDE[1] - CROWN_WIDE[0]) * CROWN_SCALE;
   const spireW = SPIRE_WIDEN * (SPIRE_COLS[1] - SPIRE_COLS[0]) * CROWN_SCALE;
@@ -143,14 +141,53 @@ export function gateLayout(map: GameMap): GateLayout | null {
   const plinth: Array<[number, number]> = [[g.yCenter - LEAF_HALF, g.yCenter + LEAF_HALF]];
   for (const p of panels) plinth.push(p.side < 0 ? [g.yCenter - p.dOut, g.yCenter - p.dIn] : [g.yCenter + p.dIn, g.yCenter + p.dOut]);
   plinth.sort((a, b) => a[0] - b[0]);
-  return { x: g.x, yc: g.yCenter, y0: g.y0, y1: g.y1, F, posts, panels, plinth };
+  return { gate, x: g.x, yc: g.yCenter, y0: g.y0, y1: g.y1, F, posts, panels, plinth };
 }
 
-/** The cells the terrain and the relief skip (M10 gate §3): west of the plane, along the gate. */
+/** The cells the terrain and relief skip: outside the Gate, for any facing. */
 export function gateSkip(map: GameMap): ((c: number, r: number) => boolean) | null {
-  const g = westGate(map);
+  const g = map.gate;
   if (!g) return null;
-  return (c, r) => c < g.x && r >= g.y0 && r < g.y1;
+  return (c, r) => gateOutside(g, c, r);
+}
+
+function worldPoint(L: GateLayout, x: number, y: number): [number, number] {
+  return gatePoint(L.gate, x - L.x, y - L.yc);
+}
+
+/** Keep the authored layout and UVs; rotate geometry and all light queries through the same frame. */
+function gateBuilder(g: ArchBuilder, L: GateLayout): ArchBuilder {
+  if (L.gate.facing === 'W') return g;
+  let shadow: ArchBuilder['shadowAt'] = null;
+  return {
+    get rgb() { return g.rgb; },
+    set rgb(v) { g.rgb = v; },
+    get isFloor() { return g.isFloor; },
+    set isFloor(v) { g.isFloor = v; },
+    get shadowAt() { return shadow; },
+    set shadowAt(fn) {
+      shadow = fn;
+      g.shadowAt = fn ? (x, y) => {
+        const [dx, dy] = gateLocal(L.gate, x, y);
+        return fn(L.x + dx, L.yc + dy);
+      } : null;
+    },
+    quad(corners, uvs, shade, normal, layer) {
+      const [nx, ny] = gateVector(L.gate, normal[0], normal[1]);
+      g.quad(corners.map(([x, y, z]) => [...worldPoint(L, x, y), z]), uvs, shade, [nx, ny, normal[2]], layer);
+    },
+  };
+}
+
+function gateLight(light: ArchLight, L: GateLayout): ArchLight {
+  if (L.gate.facing === 'W') return light;
+  return {
+    faceColor(nx, ny, deep) { return light.faceColor(...gateVector(L.gate, nx, ny), deep); },
+    facesSun(nx, ny) { return light.facesSun(...gateVector(L.gate, nx, ny)); },
+    shadowZ(x, y, nx, ny, foot, top) {
+      return light.shadowZ(...worldPoint(L, x, y), ...gateVector(L.gate, nx, ny), foot, top);
+    },
+  };
 }
 
 /** A shadow line for faces turned to the sun, evaluated 1 cm inside the face (cached per point). */
@@ -197,6 +234,8 @@ const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
  * crowns and spires behind it. One cut-out mesh over the gate array, double-sided.
  */
 export function emitGate(g: ArchBuilder, L: GateLayout, light: ArchLight): void {
+  g = gateBuilder(g, L);
+  light = gateLight(light, L);
   g.isFloor = 0;
   const { x, yc, F } = L;
   const z0 = F + PLINTH;
@@ -275,6 +314,18 @@ export interface PlinthBuilder extends ArchBuilder {
  * open edges' cliffs). In 1 m pieces, so its front and top follow the shadow line.
  */
 export function emitPlinth(g: PlinthBuilder, L: GateLayout, light: ArchLight, inShadow: (x: number, y: number, z: number) => boolean, riser: number, wall: number, cliffBottom: number, cliffFade: number): void {
+  if (L.gate.facing !== 'W') {
+    const target = g;
+    const builder = gateBuilder(target, L) as PlinthBuilder;
+    builder.side = (x0, y0, x1, y1, z0, z1, u0, u1, v0, v1, normal, shade, layer, face, fade0, fade1) => {
+      const [nx, ny] = gateVector(L.gate, normal[0], normal[1]);
+      target.side(...worldPoint(L, x0, y0), ...worldPoint(L, x1, y1), z0, z1, u0, u1, v0, v1, [nx, ny, normal[2]], shade, layer, face, fade0, fade1);
+    };
+    g = builder;
+    const sample = inShadow;
+    inShadow = (x, y, z) => sample(...worldPoint(L, x, y), z);
+    light = gateLight(light, L);
+  }
   const { x, F } = L;
   const top = F + PLINTH;
   g.isFloor = 0;
@@ -329,6 +380,11 @@ function boxHit(x: number, y: number, z: number, dx: number, dy: number, dz: num
  * up. Returns the distance, or Infinity.
  */
 export function gateHit(L: GateLayout, x: number, y: number, z: number, dx: number, dy: number, dz: number, maxT: number): number {
+  if (L.gate.facing !== 'W') {
+    const [lx, ly] = gateLocal(L.gate, x, y);
+    const [ex, ey] = gateLocal(L.gate, x + dx, y + dy);
+    [x, y, dx, dy] = [L.x + lx, L.yc + ly, ex - lx, ey - ly];
+  }
   let best = Infinity;
   const z0 = L.F + PLINTH;
   if (Math.abs(dx) > 1e-9) {

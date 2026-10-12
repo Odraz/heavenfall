@@ -3,6 +3,7 @@
  * LocalTransport and, in multiplayer, relays between the worker and the clients' PeerJS connections.
  */
 import type { HostNet } from '../net/hostNet';
+import type { RunConfig } from '../net/messages';
 import { LocalTransport } from '../net/transport';
 import type { DirectorInfo } from '../sim/director';
 import type { SimPlayerInit } from '../sim/sim';
@@ -34,12 +35,12 @@ export class HostSession {
   }
 
   /** Singleplayer: starts the game at once. */
-  start(dungeonId: string, players: SimPlayerInit[], seed: number, god: boolean, benchArena: number, singleplayer: boolean, benchBurst = false, startArena = 0): void {
-    this.post({ t: 'start', dungeonId, players, seed, god, benchArena, benchBurst, singleplayer, localPlayerId: this.localPlayerId, startArena });
+  start(run: RunConfig, players: SimPlayerInit[], god: boolean, benchArena: number, benchBurst = false, startRoom?: number): void {
+    this.post({ ...run, t: 'start', players, god, benchArena, benchBurst, localPlayerId: this.localPlayerId, startRoom });
   }
 
   /** Multiplayer: opens the lobby in the worker and connects the clients' connections to it. */
-  hostLobby(net: HostNet, dungeonId: string, password: string, name: string, god: boolean): void {
+  hostLobby(net: HostNet, fixture: string | null, password: string, name: string, god: boolean, bot: boolean): void {
     this.net = net;
     net.onCtrl = (conn, msg) => this.post({ t: 'connCtrl', conn, msg });
     net.onInput = (conn, buf) => {
@@ -50,7 +51,7 @@ export class HostSession {
       this.unbind(conn);
       this.post({ t: 'connClosed', conn });
     };
-    this.post({ t: 'host', dungeonId, password, name, god });
+    this.post({ t: 'host', heaven: 1, fixture, password, name, god, bot });
   }
 
   /** The host's `Start` in the Lobby. */
