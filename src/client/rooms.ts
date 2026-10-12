@@ -63,7 +63,16 @@ export class ClientRooms {
 }
 
 export function roomMessage(model: ClientRooms, ownRoom: number, activeRoom: number, activePhase: number): string | null {
-  return activeRoom !== 255 && ownRoom !== activeRoom && model.map.rooms[ownRoom]?.kind === 'combat' &&
+  const room = model.map.rooms[ownRoom];
+  if (activeRoom !== 255 && ownRoom !== activeRoom && room?.kind === 'combat' &&
     model.states[ownRoom].phase === PHASE_IDLE && (activePhase === PHASE_COUNTDOWN || activePhase === PHASE_COMBAT)
-    ? 'Another room is sealing' : null;
+  ) return 'Another room is sealing';
+  // Generated-floor placeholders must be identified where players encounter them (r01.md).
+  if (!room?.shape) return null;
+  switch (room.kind) {
+    case 'pardoner': return 'The Pardoner · Empty stall (shop arrives in R3)';
+    case 'confessional': return 'The Confessional · Empty shell (Advocate arrives in R4)';
+    case 'boss': return 'The Gatekeeper · Inherited fight fixture (authored encounter arrives in R7)';
+    default: return null;
+  }
 }

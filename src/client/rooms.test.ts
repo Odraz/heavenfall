@@ -58,4 +58,22 @@ describe('R1.5 client room projection', () => {
     expect(roomMessage(model, 255, room, PHASE_COMBAT)).toBeNull();
     expect(roomMessage(model, room, 255, PHASE_IDLE)).toBeNull();
   });
+  it('identifies generated special-room fixtures at idle, countdown and combat, but not in corridors or fixed dungeons', () => {
+    const { model } = make();
+    for (const [kind, label] of [
+      ['pardoner', 'The Pardoner · Empty stall (shop arrives in R3)'],
+      ['confessional', 'The Confessional · Empty shell (Advocate arrives in R4)'],
+      ['boss', 'The Gatekeeper · Inherited fight fixture (authored encounter arrives in R7)'],
+    ] as const) {
+      const room = model.map.rooms.findIndex((r) => r.kind === kind);
+      for (const phase of [PHASE_IDLE, PHASE_COUNTDOWN, PHASE_COMBAT, PHASE_CLEARED]) {
+        expect(roomMessage(model, room, room, phase)).toBe(label);
+      }
+    }
+    expect(roomMessage(model, 255, 255, PHASE_IDLE)).toBeNull();
+    const { map } = loadRunMap({ heaven: 1, floor: 1, seed: 1, fixture: 'pearly-gates' });
+    const fixture = new ClientRooms(map, 'fixture');
+    const boss = map.rooms.findIndex((r) => r.kind === 'boss');
+    expect(roomMessage(fixture, boss, boss, PHASE_COMBAT)).toBeNull();
+  });
 });

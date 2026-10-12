@@ -7,6 +7,7 @@ test('a second generated run after Results gets a fresh identity and accepts res
   await page.setViewportSize({ width: 640, height: 360 });
   await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&room=999&class=fallen&god=1`);
   await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.activePhase === 'combat');
+  await expect(page.locator('.room-message')).toHaveText('The Gatekeeper · Inherited fight fixture (authored encounter arrives in R7)');
   const first = await state(page);
   await page.keyboard.press('KeyQ');
   await page.keyboard.press('KeyK');
@@ -69,6 +70,18 @@ test('the map shows Breach neighbours; holding M keeps movement and diverts mous
   await page.keyboard.press('Escape'); await expect(page.getByLabel('Full floor map')).toBeHidden();
   expect((await state(page)).paused).toBe(true);
   await page.keyboard.up('KeyM');
+});
+
+test('empty special rooms identify their later-milestone fixtures', async ({ page }) => {
+  const { floor } = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL_R1);
+  await page.setViewportSize({ width: 640, height: 360 });
+  await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&room=${floor.pardoner}&class=fallen&god=1`);
+  await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
+  await expect(page.locator('.room-message')).toHaveText('The Pardoner · Empty stall (shop arrives in R3)');
+  const { def } = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL_R1);
+  const [x, y] = def.rooms[floor.confessional].entry[0].cells[0];
+  await page.evaluate(([x, y]) => window.__heavenfallTeleport!(x + 0.5, y + 0.5), [x, y]);
+  await expect(page.locator('.room-message')).toHaveText('The Confessional · Empty shell (Advocate arrives in R4)');
 });
 
 test('two browser clients reproduce the pinned Node floor and dev entry positions', async ({ page: a, browser }) => {
