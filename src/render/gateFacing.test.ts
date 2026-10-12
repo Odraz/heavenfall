@@ -5,6 +5,9 @@ import { gateFloor, gateLocal, gatePoint } from '../sim/gate';
 import { loadMap } from '../sim/map';
 import { emitGate, emitPlinth, G_LEAVES, gateHit, gateLayout, gateSkip, PLINTH } from './gate';
 import { GeometryBuilder } from './terrain';
+import { PEARLY_POOL_R1 } from '../data/rooms/1';
+import { generateFloor } from '../gen';
+import { computeArches } from './arches';
 
 // Planes on the map boundary, including E/S just beyond the final cell. Expected coordinates are
 // authored independently of the Gate transform; a wrong facing or one-cell sampling offset fails.
@@ -19,6 +22,29 @@ const cases: Array<{
 ];
 
 describe('the generated Gate facing (rogue R1.3)', () => {
+  it('replaces the generated arcade behind the Gate in every facing, including boundary-straddling bays', () => {
+    const seen = new Set<GateDef['facing']>();
+    for (let seed = 1; seed <= 64 && seen.size < 4; seed++) {
+      const { map } = generateFloor(seed, 1, 1, PEARLY_POOL_R1);
+      const skip = gateSkip(map)!;
+      const replaced = map.heights.bays.filter((b) => b.cells.some(([c, r]) => skip(c, r)));
+      if (replaced.length === 0) continue;
+      const without = computeArches({ ...map, gate: null });
+      const arches = computeArches(map);
+      expect(arches.bays).toEqual(without.bays.filter((b) => !replaced.includes(b.bay)));
+      expect(arches.doors).toEqual(without.doors);
+      expect(arches.bays.length).toBeGreaterThan(0);
+      const bay = replaced[0];
+      const along = map.gate!.facing === 'W' || map.gate!.facing === 'E' ? 1 : 0;
+      const narrowed = { ...map, gate: { ...map.gate!, u0: bay.cells[0][along] + 1 } };
+      const narrowSkip = gateSkip(narrowed)!;
+      expect(bay.cells.some(([c, r]) => narrowSkip(c, r))).toBe(true);
+      expect(bay.cells.some(([c, r]) => !narrowSkip(c, r))).toBe(true);
+      expect(computeArches(narrowed).bays.some((b) => b.bay === bay)).toBe(false);
+      seen.add(map.gate!.facing);
+    }
+    expect([...seen].sort()).toEqual(['E', 'N', 'S', 'W']);
+  });
   for (const c of cases) {
     it(`${c.facing}: samples the interior cell, rotates leaves/plinth/light and hits the leaves and posts`, () => {
       const gate: GateDef = { facing: c.facing, plane: c.plane, uCenter: 80, u0: 54, u1: 106 };

@@ -1,6 +1,6 @@
 # R1 report: generated floor
 
-**Status: awaiting-human-play** (2026-10-12). Brief: [r01.md](r01.md). Stages R1.1–R1.6 and the R1.7 checkpoint are implemented on `rogue`; nothing pushed, merged or published. Final verification passes: **755 unit tests, 9 browser tests, typecheck, production build and 1,000-seed generator acceptance (99.7% within 20 attempts)**. The previously failing four-client path passed twice at this checkpoint without a protocol or timeout change. Human play and Gate A acceptance remain pending. Historical stage results are retained below.
+**Status: accepted** (2026-10-13). Brief: [r01.md](r01.md). Stages R1.1–R1.6 and the R1.7 checkpoint are implemented on `rogue`; nothing pushed, merged or published. Final verification passes: **755 unit tests, 9 browser tests, typecheck, production build and 1,000-seed generator acceptance (99.7% within 20 attempts)**. The previously failing four-client path passed twice at this checkpoint without a protocol or timeout change. Tomas accepted the R1 checkpoint `de0f8ae` on 2026-10-13 ("R01 looks good") and requested the Gate clipping repair before R2. Historical stage results are retained below.
 
 ## Git facts
 
@@ -362,3 +362,21 @@ Run `npm run dev`, then open `http://localhost:5173/`. Restart after source edit
 3. Backtrack after a room has been empty for ten seconds; stay three seconds for its finite trickle. Watch for sealed doors that never reopen, rooms that do not seal/clear, visible neighbouring fights, stranded players or map disagreement.
 
 Human observations and Gate A are pending: **does a new floor feel new, and did you choose a door for a reason?** No human play, acceptance or `rogue-r1` tag is claimed. R2 expansion waits for that answer.
+
+## Accepted checkpoint and Gate clipping repair (2026-10-13)
+
+Tomas accepted the played checkpoint `de0f8ae724ea25765c446dc45c0ee70ebf94a4fe` and supplied a screenshot of arcade walls clipping through Heaven's Gate in the generated boss room. Gate A is closed by that feedback; `rogue-r1` refers to that played SHA. The screenshot is human evidence of the defect, not evidence of the repaired view.
+
+The generated outer wall's height data contains arcade bays in the Gate span. Terrain and relief already skip those cells, but `computeArches` still emitted their painted faces and stone reveals, which intersected the Gate. The shared arcade calculation now excludes any bay with a Gate-owned cell, including bays crossing a span boundary. Rendering, shadows and tracer queries consume that same filtered list. Simulation geometry, floor generation and the fixed dungeon are unchanged.
+
+Changed files: `src/render/arches.ts`, `src/render/gateFacing.test.ts`, and the R1 status/report records. The regression reproduces actual generated arcade overlap in all four facings, tests boundary-straddling bays, and verifies that other bays and door arches remain.
+
+| Exact command | Result |
+|---|---|
+| `npm test` | 756 passed across 69 files, exit 0, 47.22 s; one test worker, unchanged performance thresholds. |
+| `npm run typecheck` | passed, exit 0. |
+| `npm run build -- --logLevel error` | passed, exit 0. |
+| `npm run e2e -- e2e/rogue-floor.spec.ts --grep 'two browser clients'` | 1 passed, exit 0, 26.2 s: production-build generated-floor parity and boss-room loading in two browser clients. |
+| Benchmarks | not run (not requested). |
+
+The corrected view has automated geometry coverage; human visual inspection of the repair remains available at the same boss fixture. R2 is authorized by Tomas's instruction to implement it immediately after this repair; its preparation and ordinary stage decisions can proceed independently.
