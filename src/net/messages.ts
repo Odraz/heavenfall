@@ -18,6 +18,21 @@ export interface RunConfig extends RunIdentity {
   fixture: string | null;
 }
 
+/** Shared room checkpoint, sent after go and before live events (rogue r01.md, R1.5). */
+export interface RoomSync {
+  phase: number;
+  knowledge: number;
+  entrySocket: number;
+  refills: number;
+}
+export interface FloorSync {
+  type: 'floorSync';
+  runId: string;
+  tick: number;
+  revision: number;
+  rooms: RoomSync[];
+}
+
 export type GameEvent =
   /**
    * `targets`: the player IDs the ability affected (M8 §10): every player Communion healed, including
@@ -69,6 +84,7 @@ export interface LobbyPlayer {
 export type RejectReason = 'bad_password' | 'full' | 'in_progress' | 'version' | 'load_timeout';
 
 export type CtrlMessage =
+  | FloorSync
   | { type: 'hello'; name: string; password: string; version: string; bot: boolean }
   /** `inProgress`: the game is running, so the client waits in the in-progress Lobby (M8 §6.2). */
   | { type: 'welcome'; playerId: number; lobby: LobbyState; inProgress: boolean }

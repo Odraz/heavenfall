@@ -67,7 +67,7 @@ import {
   WEAPONS,
   type AttackSlot,
 } from '../data/weapons';
-import type { GameEvent, PlayerStats } from '../net/messages';
+import type { FloorSync, GameEvent, PlayerStats } from '../net/messages';
 import {
   ALLY_NONE,
   encodeSnapshot,
@@ -707,6 +707,7 @@ export class Simulation {
       for (let i = 0; i < this.rooms.length; i++) if (i !== startRoom) this.rooms[i].phase = PHASE_CLEARED;
     }
     for (const st of this.rooms) if (st.phase === PHASE_CLEARED) st.knowledge = 2;
+    for (let i = 0; i < this.rooms.length; i++) if (this.rooms[i].knowledge === 2) this.discoverNeighbours(i);
     this.updateLeaves();
     this.god = !!opts.god;
     const useEntry = opts.startRoom !== undefined;
@@ -746,7 +747,31 @@ export class Simulation {
     return room.entry.find((e) => e.socket === this.rooms[ai].entrySocket) ?? room.entry[0];
   }
 
+  stateRevision = 0;
+
+  /** Detached records: subsequent simulation changes cannot mutate a queued checkpoint. */
+  floorSync(runId: string): FloorSync {
+    return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
+      rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })) };
+  }
+
+  private discoverNeighbours(ai: number): void {
+    for (const leaf of this.map.rooms[ai].leaves) {
+      if (leaf.to < 0 || this.rooms[leaf.to].knowledge !== 0) continue;
+      this.rooms[leaf.to].knowledge = 1;
+      this.roomState(leaf.to);
+    }
+  }
+
+  private visitRoom(ai: number): void {
+    if (this.rooms[ai].knowledge === 2) return;
+    this.rooms[ai].knowledge = 2;
+    this.roomState(ai);
+    this.discoverNeighbours(ai);
+  }
+
   private roomState(ai: number): void {
+    this.stateRevision++;
     const { phase, knowledge, entrySocket } = this.rooms[ai];
     this.events.push({ to: 'all', event: { type: 'roomState', room: ai, phase, knowledge, entrySocket } });
   }
@@ -1031,7 +1056,7 @@ export class Simulation {
       let started = false;
       const humans = this.players.filter((p) => this.livingTargetable(p) && !p.bot);
       const inside = humans.filter((p) => insideRect(a, p.x, p.y) && !this.onDoor(p));
-      if (inside.length > 0) st.knowledge = 2;
+      if (inside.length > 0) this.visitRoom(ai);
       if (st.phase === PHASE_IDLE && inside.length > 0) {
         if (a.kind === 'breach' || a.kind === 'pardoner' || a.kind === 'confessional') {
           st.phase = PHASE_CLEARED;
@@ -1226,6 +1251,15 @@ export class Simulation {
   countdownLeft(): number {
     if (this.activePhase !== PHASE_COUNTDOWN) return 0;
     return Math.max(0, this.rooms[this.activeRoom].sealTick - this.tick) / TICK_HZ;
+  }
+
+  /** The same living-human quorum used by the countdown, projected for the HUD. */
+  countdownHold(): number {
+    if (this.activePhase !== PHASE_COUNTDOWN) return 0;
+    const humans = this.players.filter((p) => this.livingTargetable(p) && !p.bot);
+    const room = this.map.rooms[this.activeRoom];
+    const inside = humans.filter((p) => insideRect(room, p.x, p.y) || this.inVestibule(this.activeRoom, p)).length;
+    return (inside < Math.ceil(humans.length / 2) ? 0x80 : 0) | (inside << 3) | humans.length;
   }
 
   private startRoom(ai: number): void {
@@ -3442,6 +3476,7 @@ export class Simulation {
       activePhase: this.activePhase,
       clearedMask: this.clearedMask(),
       countdown: Math.ceil(this.countdownLeft() * 10 - 1e-6),
+      hold: this.countdownHold(),
       enemiesRemaining: this.enemiesRemaining(),
       ...this.bossHeader(),
     };

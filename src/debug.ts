@@ -46,6 +46,9 @@ export interface DebugState {
   activePhase: 'idle' | 'countdown' | 'combat';
   /** Bit i: room i is cleared. */
   clearedMask: number;
+  roomKnowledge: number[];
+  floorSyncTick: number;
+  mapHeld: boolean;
   /** Seconds until the room seals, 0 outside the countdown (M8 §10). */
   countdown: number;
   netInKBps: number;
@@ -98,6 +101,9 @@ export const debugState: DebugState = {
   activeRoom: 255,
   activePhase: 'idle',
   clearedMask: 0,
+  roomKnowledge: [],
+  floorSyncTick: -1,
+  mapHeld: false,
   countdown: 0,
   netInKBps: 0,
   netOutKBps: 0,
@@ -138,6 +144,9 @@ export function resetGameDebug(): void {
     activeRoom: 255,
     activePhase: 'idle',
     clearedMask: 0,
+    roomKnowledge: [],
+    floorSyncTick: -1,
+    mapHeld: false,
     countdown: 0,
     netInKBps: 0,
     netOutKBps: 0,

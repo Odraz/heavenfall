@@ -59,8 +59,8 @@ export function decodeInput(buf: ArrayBuffer): InputMsg | null {
 
 // ---------------------------------------------------------------- snapshots
 
-/** The MVP's 25 bytes plus `countdown` (M8 §10) and the rooms' `clearedMask` (rogue game.md §14.3). */
-export const HEADER_BYTES = 31;
+/** The inherited header plus clearedMask and quorum hold; R1.6 moves them into the final run envelope. */
+export const HEADER_BYTES = 32;
 /** The MVP's 28 bytes plus `revive` and `shots` (M8 §10), `shots2` and `beam` (M9 §10). */
 export const PLAYER_BYTES = 32;
 export const ENEMY_BYTES = 8;
@@ -95,6 +95,8 @@ export interface SnapshotHeader {
   clearedMask: number;
   /** Tenths of a second until the room seals, 0 outside the countdown (M8 §5). */
   countdown: number;
+  /** Bit 7 waiting; bits 3–5 living humans in rect/vestibules; bits 0–2 living humans. */
+  hold: number;
   enemiesRemaining: number;
   bossHp: number;
   bossMaxHp: number;
@@ -195,6 +197,7 @@ export function encodeSnapshot(
     v.setUint16(23, ne, true);
     v.setUint16(25, np, true);
     v.setUint32(27, h.clearedMask >>> 0, true);
+    v.setUint8(31, h.hold);
     let o = HEADER_BYTES;
     for (const p of players) {
       v.setUint8(o, p.id);
@@ -269,6 +272,7 @@ export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
     activePhase: v.getUint8(7),
     clearedMask: v.getUint32(27, true),
     countdown: v.getUint16(8, true),
+    hold: v.getUint8(31),
     enemiesRemaining: v.getUint16(10, true),
     bossHp: v.getUint32(12, true),
     bossMaxHp: v.getUint32(16, true),

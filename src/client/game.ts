@@ -99,6 +99,9 @@ import { LocalPlayer, MAX_FRAME_DT, wasdDirection } from './localPlayer';
 import { PartyFrames } from './partyFrames';
 import { PlayerAnimator } from './playerAnim';
 import { SnapshotBuffer, type InterpolatedEnemies } from './snapshots';
+import type { Floor } from '../gen/generate';
+import { ClientRooms, roomMessage } from './rooms';
+import { MapView, type MapPlayer } from './mapView';
 
 const BENCH_TURN_RATE = 0.3;
 /** A move longer than this in one frame is a teleport: the weapon's sway resets (M11 §3.2, as the bob). */
@@ -270,6 +273,8 @@ export interface RosterEntry {
 export interface GameOptions {
   root: HTMLElement;
   map: GameMap;
+  floor: Floor | null;
+  runId: string;
   atlas: Atlas;
   textures: GameTextures;
   /** The animated 8-direction sprites of every enemy type that has an atlas, by type. */
@@ -315,6 +320,8 @@ export class Game {
   private readonly player: LocalPlayer;
   private readonly overlay: DebugOverlay;
   private readonly hud: Hud;
+  private readonly rooms: ClientRooms;
+  private readonly mapView: MapView;
   private readonly pause: PauseOverlay;
   private readonly party: PartyFrames | null;
   private paused = false;
@@ -485,7 +492,7 @@ export class Game {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'game-canvas';
     o.root.appendChild(this.canvas);
-    this.scene = new GameScene(this.canvas, this.map, o.textures.terrain, o.textures.fx.glow);
+    this.scene = new GameScene(this.canvas, this.map, o.textures.terrain, o.textures.fx.glow, o.floor);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
     for (const [type, set] of Object.entries(o.enemyAnims)) {
@@ -520,6 +527,8 @@ export class Game {
     this.hud.setHp(this.maxHp, 0, this.maxHp);
     this.hud.setRemaining(null);
     this.hud.setDeath(null);
+    this.rooms = new ClientRooms(this.map, o.runId);
+    this.mapView = new MapView(this.hud.root, this.rooms, o.floor, this.localId);
     this.party = o.singleplayer ? null : new PartyFrames(this.hud.leftColumn, this.hud.ownFrame);
     this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id));
     this.hud.onReady = () => this.sounds.abilityReady();
@@ -830,12 +839,22 @@ export class Game {
 
   /** A `ctrl` message from the host; the game handles its events (§9.2). */
   handleCtrl(msg: CtrlMessage): void {
+    if (msg.type === 'floorSync' && !this.disposed) {
+      if (this.rooms.sync(msg)) {
+        debugState.floorSyncTick = this.rooms.syncTick;
+        debugState.roomKnowledge = this.rooms.states.map((r) => r.knowledge);
+      }
+      return;
+    }
     if (msg.type !== 'event' || this.disposed) return;
+    if (msg.event.type === 'roomState') {
+      const transition = this.rooms.event(msg.event);
+      debugState.roomKnowledge = this.rooms.states.map((r) => r.knowledge);
+      if (!transition) return;
+    }
     this.onEvent(msg.event, performance.now());
     this.sounds.event(msg.event, (id) => this.playerPose(id));
   }
-
-  private readonly roomEntrySockets: number[] = [];
 
   private onEvent(e: GameEvent, now: number): void {
     switch (e.type) {
@@ -844,7 +863,6 @@ export class Game {
         this.lastTeleportId = e.teleportId;
         break;
       case 'roomState':
-        this.roomEntrySockets[e.room] = e.entrySocket;
         if (e.phase === PHASE_COMBAT) this.hud.centerText('The doors are sealed', 2000, now);
         else if (e.phase === PHASE_CLEARED && this.map.rooms[e.room].kind === 'combat') this.hud.centerText('Room cleared', 2000, now);
         break;
@@ -1147,6 +1165,7 @@ export class Game {
 
   private onSnapshot(s: Snapshot, prev: Snapshot | null): void {
     const now = performance.now();
+    this.rooms.snapshot(s);
     // Every leaf follows from the header's activeRoom, activePhase and clearedMask (rogue game.md §3.4).
     let changed = false;
     let k = 0;
@@ -1287,7 +1306,8 @@ export class Game {
     debugState.activePhase = s.activePhase === PHASE_COMBAT ? 'combat' : s.activePhase === PHASE_COUNTDOWN ? 'countdown' : 'idle';
     debugState.clearedMask = s.clearedMask;
     debugState.countdown = s.activePhase === PHASE_COUNTDOWN ? s.countdown / 10 : 0;
-    this.hud.setCountdown(s.activePhase === PHASE_COUNTDOWN ? s.countdown / 10 : null);
+    this.hud.setCountdown(s.activePhase === PHASE_COUNTDOWN ? s.countdown / 10 : null,
+      s.hold & 0x80 ? `Waiting for the party (${(s.hold >> 3) & 7}/${s.hold & 7})` : null);
     debugState.enemyCountsByTick = Object.fromEntries(this.snaps.enemyCountsByTick);
     debugState.players = s.players.map((p) => ({
       id: p.id,
@@ -1846,7 +1866,7 @@ export class Game {
         activeRoom: s?.activeRoom ?? 255,
         activePhase: s?.activePhase ?? 0,
         clearedMask: s?.clearedMask ?? 0,
-        entrySocket: this.roomEntrySockets[s?.activeRoom ?? 255],
+        entrySocket: this.rooms.states[s?.activeRoom ?? 255]?.entrySocket,
         followParty: !this.o.singleplayer,
         // Follow the host human, then the lowest-id living human (rogue game.md §12.4).
         hostPlayer: this.o.singleplayer ? null : (this.snaps.playersOut.find((q) => q.id === 0 && !q.dead && !this.roster.find((r) => r.id === q.id)?.bot) ?? this.snaps.playersOut.find((q) => !q.dead && !this.roster.find((r) => r.id === q.id)?.bot) ?? null),
@@ -1875,7 +1895,8 @@ export class Game {
       if (out.pressE) this.pressAbility('E', now);
     } else if (!this.dead) {
       const { dx, dy } = this.input.takeMouse();
-      p.look(dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY);
+      if (this.input.mapHeld) this.mapView.moveCursor(dx, dy);
+      else p.look(dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY);
       const axes = this.input.moveAxes();
       [mx, my] = wasdDirection(p.yaw, axes.forward, axes.right);
       wantJump = this.input.jumpQueued || this.input.isDown('Space');
@@ -1884,10 +1905,11 @@ export class Game {
     } else {
       // Dead: the camera can only rotate.
       const { dx, dy } = this.input.takeMouse();
-      p.look(dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY);
+      if (this.input.mapHeld) this.mapView.moveCursor(dx, dy);
+      else p.look(dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY);
     }
     this.input.jumpQueued = false;
-    this.fire = this.dead || this.over ? 0 : fire;
+    this.fire = this.dead || this.over || this.input.mapHeld ? 0 : fire;
     // Neither attack fires during Shadowstep's slash; held buttons resume afterwards (M12 §5.7).
     if (now - this.slashAt < SHADOWSTEP_TIME * 1000) this.fire = 0;
     const bx = p.body.x;
@@ -2029,6 +2051,17 @@ export class Game {
     this.hud.setLowEdge(this.lowHp.edge(now));
     this.hud.setCooldowns(this.displayedCooldown('Q', simNow), ABILITIES[this.classId].Q.cooldown, this.displayedCooldown('E', simNow), ABILITIES[this.classId].E.cooldown);
     this.hud.update(now);
+    this.mapView.open = this.input.mapHeld && !this.over && !this.paused && !this.hud.chatOpen;
+    debugState.mapHeld = this.mapView.open;
+    const ownRoom = this.rooms.roomAt(p.body.x, p.body.y);
+    const snap = this.snaps.newest;
+    this.hud.setRoomMessage(roomMessage(this.rooms, ownRoom, snap?.activeRoom ?? 255, snap?.activePhase ?? 0));
+    const mapPlayers: MapPlayer[] = this.snaps.playersOut.flatMap((q) => {
+      const r = this.roster.find((r) => r.id === q.id);
+      return r && q.id !== this.localId ? [{ ...q, name: r.name, classId: r.classId }] : [];
+    });
+    mapPlayers.push({ id: this.localId, name: this.roster.find((r) => r.id === this.localId)!.name, classId: this.classId, x: p.body.x, y: p.body.y, yaw: p.yaw });
+    this.mapView.update(now, mapPlayers, ownRoom);
     debugState.fps = this.fps.frame(now);
     debugState.simMs = this.o.host ? this.o.host.simMs(now) : 0;
     debugState.director = this.o.host?.director ?? null;
@@ -2429,6 +2462,7 @@ export class Game {
     this.incense.dispose();
     this.hum?.stop();
     this.hud.dispose();
+    this.mapView.dispose();
     this.bench?.dispose();
     this.scene.dispose();
     this.o.root.replaceChildren();

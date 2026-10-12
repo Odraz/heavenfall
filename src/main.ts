@@ -94,7 +94,7 @@ async function loadGameAssets(run: RunConfig, roster: RosterEntry[], localId: nu
   const localClass = roster.find((r) => r.id === localId)?.classId;
   const others = multiplayer ? CLASS_IDS.filter((c) => c !== localClass) : roster.filter((r) => r.id !== localId).map((r) => r.classId);
   const [atlas, textures, enemyAnims, players] = await Promise.all([buildAtlas(), loadGameTextures(map.gate !== null), loadEnemyAnims(), loadPlayerAnims(others)]);
-  return { map, atlas, textures, enemyAnims, players };
+  return { map, floor, runId: run.runId, atlas, textures, enemyAnims, players };
 }
 
 /**
@@ -454,6 +454,9 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
           break;
         }
         // Events are about the game, so they wait until this player is in it.
+        if (go) game?.handleCtrl(msg);
+        break;
+      case 'floorSync':
         if (go) game?.handleCtrl(msg);
         break;
     }

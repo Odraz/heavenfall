@@ -164,6 +164,7 @@ export class Hud {
   /** The arena countdown (M8 §5): a top-center line, and a large number in the last 5 s. */
   private readonly countdownLine: HTMLDivElement;
   private readonly countdownBig: HTMLDivElement;
+  private readonly roomMessage: HTMLDivElement;
   /** Soul markers (M8 §4.1), by player ID. */
   private readonly souls = new Map<number, { root: HTMLDivElement; fill: HTMLDivElement }>();
   private readonly soulLayer: HTMLDivElement;
@@ -427,6 +428,8 @@ export class Hud {
     this.countdownLine.hidden = true;
     this.countdownBig = el('div', 'countdown-big', this.root);
     this.countdownBig.hidden = true;
+    this.roomMessage = el('div', 'room-message', this.root);
+    this.roomMessage.hidden = true;
     this.result = el('div', 'result-text', this.root);
   }
 
@@ -742,13 +745,18 @@ export class Hud {
    * The arena countdown (M8 §5): `The doors seal in 0:47`, and the number alone, large, in the last
    * 5 s; null hides both.
    */
-  setCountdown(seconds: number | null): void {
+  setCountdown(seconds: number | null, waiting: string | null = null): void {
     this.countdownLine.hidden = seconds === null;
-    this.countdownBig.hidden = seconds === null || seconds > 5;
+    this.countdownBig.hidden = seconds === null || seconds > 5 || waiting !== null;
     if (seconds === null) return;
     const s = Math.ceil(seconds - 1e-6);
-    this.countdownLine.textContent = `The doors seal in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    this.countdownLine.textContent = waiting ?? `The doors seal in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
     this.countdownBig.textContent = String(Math.max(1, s));
+  }
+
+  setRoomMessage(text: string | null): void {
+    this.roomMessage.hidden = text === null;
+    this.roomMessage.textContent = text;
   }
 
   /**

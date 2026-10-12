@@ -897,7 +897,7 @@ div.weapon-swing {
 .remaining {
   position: absolute;
   right: 0;
-  top: 20px;
+  top: 224px;
   padding: 6px 24px 6px 64px;
   background: linear-gradient(to left, rgba(18, 13, 12, 0.75) 60%, transparent);
   font: 600 18px/1.2 var(--display-font);
@@ -1783,3 +1783,15 @@ div.weapon-swing {
   width: 0;
   background: linear-gradient(90deg, #f08a24, #ff7a3a);
 }
+
+/* R1.5: fixed slot maps. The full plate sits below HP/abilities and uses pointer-lock mouse deltas. */
+.minimap { position: absolute; width: 200px; height: 200px; top: 16px; right: 16px; border: 2px solid #e8dcc080; }
+.hud > .full-map { position: absolute; inset: 0; z-index: 0; background: rgba(0, 0, 0, 0.4); display: flex; align-items: center; justify-content: center; }
+.map-layout { display: flex; gap: 16px; padding: 12px; background: #19151bf2; border: 2px solid #e8dcc0; }
+.map-layout > canvas { width: 588px; height: 588px; }
+.map-legend { width: 190px; color: #e8dcc0; }
+.map-player-names { white-space: pre-line; padding: 12px; }
+.map-room-list { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.room-message { position: absolute; top: 116px; left: 50%; transform: translateX(-50%); padding: 8px 16px; background: #19151bcc; color: #ffd27a; }
+.hints { top: 266px; }
+.hud.map-open .crosshair { display: none; }

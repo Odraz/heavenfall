@@ -34,6 +34,7 @@ const header: SnapshotHeader = {
   activePhase: 3,
   clearedMask: 0x8001_0003,
   countdown: 473,
+  hold: 0x8c,
   enemiesRemaining: 777,
   bossHp: 31234,
   bossMaxHp: 40000,
@@ -160,10 +161,10 @@ describe('snapshot protocol', () => {
     expect(s.projZ[5]).toBe(15.984375);
   });
 
-  it('fits the largest snapshot at the current caps in one part (15 767 bytes, M9 §10)', () => {
+  it('fits the largest snapshot at the current caps in one part (15 768 bytes with the R1.5 hold byte)', () => {
     const parts = encodeSnapshot(header, players(4), entities(1501, 400));
     expect(parts.length).toBe(1);
-    expect(parts[0].byteLength).toBe(15767);
+    expect(parts[0].byteLength).toBe(15768);
   });
 
   it('splits snapshots above 16 000 bytes into parts that each carry the header and all players', () => {

@@ -39,8 +39,12 @@ export class Input {
 
   /** The held buttons as the input's `fire` bits (M9 §10). */
   fireBits(): number {
+    if (this.mapHeld) return 0;
     return (this.leftHeld ? FIRE_LEFT : 0) | (this.rightHeld ? FIRE_RIGHT : 0) | (this.rightLast ? FIRE_RIGHT_LAST : 0);
   }
+
+  /** M diverts mouse look/fire while movement continues. Chat and Pause suppress the map. */
+  get mapHeld(): boolean { return this.enabled && !this.typing && this.keys.has('KeyM'); }
 
   get pointerLocked(): boolean {
     return document.pointerLockElement === this.canvas;
@@ -108,6 +112,11 @@ export class Input {
     if (!this.enabled) return;
     if (e.repeat) return;
     this.keys.add(e.code);
+    if (e.code === 'KeyM') {
+      this.leftHeld = this.rightHeld = this.rightLast = false;
+      this.mouseDx = this.mouseDy = 0;
+      e.preventDefault();
+    }
     if (e.code === 'Space') {
       this.jumpQueued = true;
       e.preventDefault();
@@ -117,6 +126,7 @@ export class Input {
 
   private readonly keyup = (e: KeyboardEvent): void => {
     this.keys.delete(e.code);
+    if (e.code === 'KeyM') this.mouseDx = this.mouseDy = 0;
   };
 
   private readonly mousedown = (e: MouseEvent): void => {
@@ -125,6 +135,7 @@ export class Input {
       e.preventDefault();
       return;
     }
+    if (this.mapHeld) { e.preventDefault(); return; }
     if (!this.enabled || !this.pointerLockAllowed) return;
     if (!this.pointerLocked) {
       this.requestPointerLock();

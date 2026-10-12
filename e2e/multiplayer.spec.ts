@@ -88,6 +88,9 @@ test('multiplayer', async ({ page: a, browser }) => {
     await Promise.all([a, b, c].map((p) => p.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 })));
     await Promise.all([a, b, c].map((p) => p.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 0)));
     const first = await state(a);
+    expect(first.floorSyncTick).toBeGreaterThanOrEqual(0);
+    expect(first.roomKnowledge[0]).toBe(2);
+    expect(first.roomKnowledge.filter((k) => k === 1).length).toBeGreaterThan(0);
     expect(first.runId).toMatch(/^[0-9a-f]{32}$/);
     expect(first.floorHash).toMatch(/^[0-9a-f]{8}$/);
     for (const p of [b, c]) {
@@ -95,6 +98,8 @@ test('multiplayer', async ({ page: a, browser }) => {
       expect([s.runId, s.seed, s.simSeed, s.floorHash]).toEqual([first.runId, first.seed, first.simSeed, first.floorHash]);
       expect(s.activePhase).toBe('idle');
       expect(s.enemies).toBe(0);
+      expect(s.floorSyncTick).toBeGreaterThanOrEqual(0);
+      expect(s.roomKnowledge).toEqual(first.roomKnowledge);
     }
 
     // D joins the game in progress from an invite link, and picks the Betrayer (M8 §12.2). Until the
@@ -141,6 +146,8 @@ test('multiplayer', async ({ page: a, browser }) => {
     }
     await d.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 });
     const late = await state(d);
+    expect(late.floorSyncTick).toBeGreaterThan(0);
+    expect(late.roomKnowledge).toEqual((await state(a)).roomKnowledge);
     expect([late.runId, late.seed, late.simSeed, late.floorHash]).toEqual([first.runId, first.seed, first.simSeed, first.floorHash]);
     const lateSize = d.viewportSize()!;
     await d.setViewportSize({ width: 320, height: 180 });
@@ -205,6 +212,12 @@ test('multiplayer', async ({ page: a, browser }) => {
       }),
     );
     expect(errors).toEqual([]);
+  } catch (error) {
+    const contexts = await Promise.all(owned.flatMap((b) => b.contexts()).flatMap((c) => c.pages()).map(async (p) => ({
+      state: await state(p).catch(() => null), text: await p.locator('body').innerText().catch(() => ''),
+    })));
+    await test.info().attach('client-loading', { body: JSON.stringify({ errors, contexts }), contentType: 'application/json' });
+    throw error;
   } finally {
     await Promise.all(owned.map((b) => b.close()));
   }

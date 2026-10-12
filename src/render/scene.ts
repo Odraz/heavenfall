@@ -8,6 +8,8 @@ import { FOG_FAR, FOG_NEAR, installFogCurve } from './fog';
 import { FOG_COLOR, makeSky, setSkyLod } from './sky';
 import type { TerrainTextures } from './textures';
 import type { RenderStats } from '../client/bench';
+import type { Floor } from '../gen/generate';
+import { DoorSigils } from './doorSigils';
 
 export { FOG_COLOR };
 
@@ -23,12 +25,14 @@ export class GameScene {
   /** Light shafts, clouds and spires (M10 §7). */
   private readonly atmosphere: Atmosphere;
   private readonly lookTarget = new THREE.Vector3();
+  private readonly sigils: DoorSigils;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
     map: GameMap,
     textures: TerrainTextures,
     glow: THREE.Texture,
+    floor: Floor | null = null,
   ) {
     installFogCurve();
     this.sky = makeSky(textures.sky, false);
@@ -47,6 +51,8 @@ export class GameScene {
     this.scene.add(this.atmosphere.cards, this.atmosphere.shafts);
     if (this.atmosphere.radiance) this.scene.add(this.atmosphere.radiance);
     for (const leaves of this.terrain.doors) for (const m of leaves) if (m) this.scene.add(m);
+    this.sigils = new DoorSigils(map, floor);
+    this.scene.add(this.sigils.group);
     this.resize();
     window.addEventListener('resize', this.resize);
   }
@@ -144,6 +150,7 @@ export class GameScene {
   }
 
   dispose(): void {
+    this.sigils.dispose();
     window.removeEventListener('resize', this.resize);
     this.renderer.dispose();
     // Release the WebGL context now: a page that plays several games would otherwise pile them up.

@@ -20,6 +20,7 @@ const REMOTE_SNAPSHOT_EVERY = 3;
 const LOAD_CHECK_MS = 250;
 
 let sim: Simulation | null = null;
+let runId = '';
 /** The host's own player, who gets a snapshot every tick. */
 let localPlayerId = 0;
 let running = false;
@@ -106,7 +107,10 @@ function start(m: Extract<MainToWorker, { t: 'start' }>): void {
     dungeon: def, map, players: m.players, seed: m.simSeed, god: m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
     startRoom: m.startRoom,
   });
+  runId = m.runId;
   localPlayerId = m.localPlayerId;
+  send('all', { type: 'go' });
+  for (const p of sim.players) send(p.id, sim.floorSync(runId));
   paused = false;
   for (const p of sim.players) p.lastAcceptMs = performance.now();
   running = true;
@@ -162,6 +166,7 @@ function playerCtrl(playerId: number, msg: CtrlMessage): void {
       // simulation's teleport placing them.
       else if (sim?.addPlayer(joiner)) {
         send(playerId, { type: 'go' });
+        send(playerId, sim.floorSync(runId));
         broadcastLobby();
       }
       break;
@@ -228,7 +233,6 @@ function checkLoadTimeout(): void {
 function maybeGo(): void {
   if (!lobby?.allReady()) return;
   const players = lobby.go();
-  send('all', { type: 'go' });
   start({ ...lobby.run!, t: 'start', players, god, benchArena: -1, benchBurst: false, localPlayerId: 0 });
 }
 
