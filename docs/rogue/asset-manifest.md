@@ -6,32 +6,34 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 
 **S1 provenance note.** The Suno takes have no provenance sidecars: `generatedAt` is the date of their first commit (`dc7c6c6`), and their exact prompt, generation date and hashes are still to be recorded. `plan` is from [asset-plan.md](asset-plan.md) ("Pro since at least 2026-10-11").
 
+**Art receipt, 2026-10-12.** 27 user-provided JPEG/JFIF sources (4 model references, 23 game assets) converted to PNG at original resolution, with decoded pixels verified unchanged. Original downloads are preserved byte for byte in the corresponding `originals/` directories; each received row records its original path. Generation tool, generation date and subscription plan remain unknown. No runtime art was exported or accepted; preparation notes and remaining sources are in [art-prompts.md](art-prompts.md#received-sources--2026-10-12).
+
 ## Art: new
 
 | assetId | kind | required | neededBy | status | sourcePath | runtimePath | events | generator | generatedAt | plan | notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| dominion-design | model-ref | yes | R2 | requested | — | — | Dominion enemy (via model) | — | — | — | A1 pilot; never shown in game |
-| dominion-turnaround | model-ref | yes | R2 | requested | — | — | Dominion enemy (via model) | — | — | — | A1 |
-| dominion-wings | model-ref | yes | R2 | requested | — | — | Dominion enemy (via model) | — | — | — | A1 |
-| dominion-mace | model-ref | yes | R2 | requested | — | — | Dominion enemy (via model) | — | — | — | A1 |
+| dominion-design | model-ref | yes | R2 | received | `assets/art-src/reference/rogue/dominion-design.png` | — | Dominion enemy (via model) | — | — | — | A1 pilot; never shown in game; original: `assets/art-src/reference/rogue/originals/dominion-design.jpg` |
+| dominion-turnaround | model-ref | yes | R2 | received | `assets/art-src/reference/rogue/dominion-turnaround.png` | — | Dominion enemy (via model) | — | — | — | A1; original: `assets/art-src/reference/rogue/originals/dominion-turnaround.jfif` |
+| dominion-wings | model-ref | yes | R2 | received | `assets/art-src/reference/rogue/dominion-wings.png` | — | Dominion enemy (via model) | — | — | — | A1; original: `assets/art-src/reference/rogue/originals/dominion-wings.jfif` |
+| dominion-mace | model-ref | yes | R2 | received | `assets/art-src/reference/rogue/dominion-mace.png` | — | Dominion enemy (via model) | — | — | — | A1; original: `assets/art-src/reference/rogue/originals/dominion-mace.jfif` |
 | dominion-atlas | atlas | yes | R2 | requested | — | — | Dominion: idle, walk, mace raised (tell), strike, recovery, pain, death; 8 directions | — | — | — | rendered by Claude from the A1 model; `assets/sprites/dominion/` (planned); fallback: scaled tinted Blessed with gold bar, labeled |
 | gatekeeper-trumpet | model-ref | yes | R7 | requested | — | — | trumpet added to Gatekeeper model | — | — | — | A2; fallback: existing Gatekeeper with coded gold bar raised |
 | gatekeeper-trumpet-raised | model-ref | yes | R7 | requested | — | — | Gatekeeper raised pose (50%) | — | — | — | A2 |
-| amphora-tall | sprite | yes | R2 | requested | — | — | loot prop, variant 0 (socket index mod 3); shards cut from it | — | — | — | B1 pilot; fallback: coded ivory cylinder |
-| amphora-squat | sprite | yes | R2 | requested | — | — | loot prop, variant 1 | — | — | — | B1 |
-| amphora-lily | sprite | yes | R2 | requested | — | — | loot prop, variant 2 | — | — | — | B1 |
-| amphora-marked | sprite | yes | R2 (look), R6 (Chart) | requested | — | — | marked amphora; plus coded glint | — | — | — | B1; fallback: amphora-tall with coded gold cross |
-| sanctuary-lamp | sprite | yes | R2 | requested | — | — | blast prop | — | — | — | B1; ring = fx-ring tinted, smoke = fx-smoke; fallback: coded red cylinder, black band |
-| blessing-chalice | sprite | yes | R2 | requested | — | — | blessing prop | — | — | — | B1; heal ring = fx-ring gold; fallback: coded gold cylinder |
-| gold-halo | sprite | yes | R2 | requested | — | — | halo pickups: coin (3) smaller and paler, gold halo (6) | — | — | — | B2; fallback: fx-ring tinted gold |
-| heal-mote | sprite | yes | R2 | requested | — | — | heal mote pickup | — | — | — | B2, magenta background; fallback: spark tinted green |
-| rite-page | sprite | yes | R4 | requested | — | — | Rite page pickup | — | — | — | B2; R3 door/map plate glyph is coded |
-| npc-pardoner | sprite | yes | R3 | requested | — | — | Pardoner's stall figure | — | — | — | B3; fallback: coded pedestal, no figure |
-| pardoner-box | sprite | yes | R3 | requested | — | — | Pardoner's stall | — | — | — | B3 |
+| amphora-tall | sprite | yes | R2 | received | `assets/art-src/rogue/amphora-tall.png` | — | loot prop, variant 0 (socket index mod 3); shards cut from it | — | — | — | B1 pilot; fallback: coded ivory cylinder; original: `assets/art-src/rogue/originals/amphora-tall.jpg` |
+| amphora-squat | sprite | yes | R2 | received | `assets/art-src/rogue/amphora-squat.png` | — | loot prop, variant 1 | — | — | — | B1; original: `assets/art-src/rogue/originals/amphora-squat.jfif` |
+| amphora-lily | sprite | yes | R2 | received | `assets/art-src/rogue/amphora-lily.png` | — | loot prop, variant 2 | — | — | — | B1; original: `assets/art-src/rogue/originals/amphora-lily.jfif` |
+| amphora-marked | sprite | yes | R2 (look), R6 (Chart) | received | `assets/art-src/rogue/amphora-marked.png` | — | marked amphora; plus coded glint | — | — | — | B1; fallback: amphora-tall with coded gold cross; original: `assets/art-src/rogue/originals/amphora-marked.jfif` |
+| sanctuary-lamp | sprite | yes | R2 | received | `assets/art-src/rogue/sanctuary-lamp.png` | — | blast prop | — | — | — | B1; ring = fx-ring tinted, smoke = fx-smoke; fallback: coded red cylinder, black band; original: `assets/art-src/rogue/originals/sanctuary-lamp.jfif` |
+| blessing-chalice | sprite | yes | R2 | received | `assets/art-src/rogue/blessing-chalice.png` | — | blessing prop | — | — | — | B1; heal ring = fx-ring gold; fallback: coded gold cylinder; original: `assets/art-src/rogue/originals/blessing-chalice.jfif` |
+| gold-halo | sprite | yes | R2 | received | `assets/art-src/rogue/gold-halo.png` | — | halo pickups: coin (3) smaller and paler, gold halo (6) | — | — | — | B2; fallback: fx-ring tinted gold; original: `assets/art-src/rogue/originals/gold-halo.jfif` |
+| heal-mote | sprite | yes | R2 | received | `assets/art-src/rogue/heal-mote.png` | — | heal mote pickup | — | — | — | B2, magenta background; fallback: spark tinted green; original: `assets/art-src/rogue/originals/heal-mote.jfif` |
+| rite-page | sprite | yes | R4 | received | `assets/art-src/rogue/rite-page.png` | — | Rite page pickup | — | — | — | B2; R3 door/map plate glyph is coded; original: `assets/art-src/rogue/originals/rite-page.jfif` |
+| npc-pardoner | sprite | yes | R3 | received | `assets/art-src/rogue/npc-pardoner.png` | — | Pardoner's stall figure | — | — | — | B3; fallback: coded pedestal, no figure; original: `assets/art-src/rogue/originals/npc-pardoner.jfif` |
+| pardoner-box | sprite | yes | R3 | received | `assets/art-src/rogue/pardoner-box.png` | — | Pardoner's stall | — | — | — | B3; original: `assets/art-src/rogue/originals/shop-pedestal.jfif`; received as shop-pedestal, corrected by image content; empty shop pedestal still missing |
 | shop-pedestal | sprite | yes | R3 | requested | — | — | stall pedestal; item shown = its B7 sprite | — | — | — | B3; fallback: coded pedestal |
-| chart-scroll | sprite | yes | R3 | requested | — | — | the Chart for sale | — | — | — | B3 |
-| confessional-grille | sprite | yes | R1 (shell), R4 | requested | — | — | Confessional; the Advocate = two ember eyes in it | — | — | — | B4; fallback: dark panel |
-| tex-confessional-wood | texture | yes | R1 (shell), R4 | requested | — | — | Confessional walls and door leaf | — | — | — | B4; fallback: existing wall texture |
+| chart-scroll | sprite | yes | R3 | received | `assets/art-src/rogue/chart-scroll.png` | — | the Chart for sale | — | — | — | B3; original: `assets/art-src/rogue/originals/chart-scroll.jfif` |
+| confessional-grille | sprite | yes | R1 (shell), R4 | received | `assets/art-src/rogue/confessional-grille.png` | — | Confessional; the Advocate = two ember eyes in it | — | — | — | B4; fallback: dark panel; original: `assets/art-src/rogue/originals/confessional-grille.jfif` |
+| tex-confessional-wood | texture | yes | R1 (shell), R4 | received | `assets/art-src/rogue/tex-confessional-wood.png` | — | Confessional walls and door leaf | — | — | — | B4; fallback: existing wall texture; original: `assets/art-src/rogue/originals/tex-confessional-wood.jfif` |
 | shared-key | sprite | yes | R6 | requested | — | — | key; beam = fx-beam | — | — | — | B5; fallback: coded key glyph |
 | reliquary-chest | sprite | yes | R6 | requested | — | — | Reliquary closed; beam = fx-beam | — | — | — | B5; fallback: coded box |
 | reliquary-chest-open | sprite | yes | R6 | requested | — | — | Reliquary open | — | — | — | B5 |
@@ -40,13 +42,13 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 | watcher-open | sprite | yes | R7 | requested | — | — | Gatekeeper's Watchers | — | — | — | B6; rims, tethers coded; fallback: coded eye glyph |
 | watcher-closed | sprite | yes | R7 | requested | — | — | Gatekeeper's Watchers | — | — | — | B6 |
 | judgment-seal | sprite | yes | R7 | requested | — | — | Judgment Seal on a held player | — | — | — | B6; fallback: coded lock glyph |
-| item-balm | icon | yes | R3 | requested | — | — | Balm of the Rejected: pickup, pedestal, HUD slot | — | — | — | B7 pilot, magenta background; HUD icon composited by Claude; fallback: name in slot |
-| item-seal | icon | yes | R3 | requested | — | — | Wax Seal of Sanctuary | — | — | — | B7 |
-| item-feather | icon | yes | R3 | requested | — | — | Pilgrim's Feather | — | — | — | B7 |
-| item-mirror | icon | yes | R3 | requested | — | — | Mirror Ward | — | — | — | B7 |
-| item-venom | icon | yes | R3 | requested | — | — | Bitter Water | — | — | — | B7, magenta background |
-| item-frost | icon | yes | R3 | requested | — | — | Ash of Stillness | — | — | — | B7 |
-| item-chain | icon | yes | R3 | requested | — | — | Chain Vial | — | — | — | B7 |
+| item-balm | icon | yes | R3 | received | `assets/art-src/rogue/item-balm.png` | — | Balm of the Rejected: pickup, pedestal, HUD slot | — | — | — | B7 pilot, magenta background; HUD icon composited by Claude; fallback: name in slot; original: `assets/art-src/rogue/originals/item-balm.jfif` |
+| item-seal | icon | yes | R3 | received | `assets/art-src/rogue/item-seal.png` | — | Wax Seal of Sanctuary | — | — | — | B7; original: `assets/art-src/rogue/originals/item-seal.jfif` |
+| item-feather | icon | yes | R3 | received | `assets/art-src/rogue/item-feather.png` | — | Pilgrim's Feather | — | — | — | B7; original: `assets/art-src/rogue/originals/item-feather.jfif` |
+| item-mirror | icon | yes | R3 | received | `assets/art-src/rogue/item-mirror.png` | — | Mirror Ward | — | — | — | B7; original: `assets/art-src/rogue/originals/item-mirror.jfif` |
+| item-venom | icon | yes | R3 | received | `assets/art-src/rogue/item-venom.png` | — | Bitter Water | — | — | — | B7, magenta background; original: `assets/art-src/rogue/originals/tem-venom.jfif`; received as tem-venom, filename typo corrected |
+| item-frost | icon | yes | R3 | received | `assets/art-src/rogue/item-frost.png` | — | Ash of Stillness | — | — | — | B7; original: `assets/art-src/rogue/originals/item-frost.jfif` |
+| item-chain | icon | yes | R3 | received | `assets/art-src/rogue/item-chain.png` | — | Chain Vial | — | — | — | B7; original: `assets/art-src/rogue/originals/item-chain.jfif` |
 | item-plume | icon | yes | R3 | requested | — | — | Plume of Expulsion | — | — | — | B7 |
 | relic-usher | icon | yes | R6 | requested | — | — | Usher's Badge | — | — | — | B8 pilot; fallback: name on card |
 | relic-thurible | icon | yes | R6 | requested | — | — | Broken Thurible | — | — | — | B8 |
@@ -72,8 +74,8 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 | icon-well-of-giants | icon | yes | R5 | requested | — | — | The Well of the Giants | — | — | — | B9 |
 | icon-ring-of-giants | icon | yes | R5 | requested | — | — | Ring of the Giants | — | — | — | B9 |
 | icon-boundary-chain | icon | yes | R5 | requested | — | — | The Boundary Chain | — | — | — | B9 |
-| tex-refiner-channel | texture | yes | R2 | requested | — | — | Refiner's Fire channel; rim = tex-riser, embers = ember | — | — | — | B10; fallback: tex-floor tinted red + fx-glow |
-| fx-flames | texture | yes | R2 | requested | — | — | Refiner's Fire (scrolling); all fire effects R4–R5 | — | — | — | B10; fallback: fx-glow |
+| tex-refiner-channel | texture | yes | R2 | received | `assets/art-src/rogue/tex-refiner-channel.png` | — | Refiner's Fire channel; rim = tex-riser, embers = ember | — | — | — | B10; fallback: tex-floor tinted red + fx-glow; original: `assets/art-src/rogue/originals/tex-refiner-channel.jfif` |
+| fx-flames | texture | yes | R2 | received | `assets/art-src/rogue/fx-flames.png` | — | Refiner's Fire (scrolling); all fire effects R4–R5 | — | — | — | B10; fallback: fx-glow; original: `assets/art-src/rogue/originals/fx-flames.jfif` |
 | combo-expulsion | icon | no | R6 | requested | — | — | Order of Expulsion badge | — | — | — | B11 optional; default: combo badge (coded) |
 | combo-abandoned | icon | no | R6 | requested | — | — | Abandoned Mercy badge | — | — | — | B11 optional |
 | combo-chorus | icon | no | R6 | requested | — | — | Broken Chorus badge | — | — | — | B11 optional |

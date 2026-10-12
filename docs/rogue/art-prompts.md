@@ -15,24 +15,45 @@ Map icons, door sigils, reward plates, state markers, rings, lanes, timers, text
 
 Save every image as PNG with exactly this name: Part A in `assets/art-src/reference/rogue/`, Part B in `assets/art-src/rogue/`. "Needed by" is the milestone ([implementation.md](implementation.md)) whose play checkpoint first shows the image; until it arrives the game uses a labeled placeholder. **Required** images must exist before the slice is accepted; **optional** ones have a coded or reused fallback.
 
+**Checked means source received**, not integrated or accepted in the game. For partially received families, the missing files are listed below. Runtime preparation and human acceptance remain tracked in [asset-manifest.md](asset-manifest.md).
+
 **Part A: model references** (`assets/art-src/reference/rogue/`)
-- [ ] A1 The Dominion, needed by R2, required: `dominion-design.png` (do this first), `dominion-turnaround.png`, `dominion-wings.png`, `dominion-mace.png`
+- [x] A1 The Dominion, needed by R2, required: `dominion-design.png` (do this first), `dominion-turnaround.png`, `dominion-wings.png`, `dominion-mace.png`
 - [ ] A2 The Gatekeeper's trumpet, needed by R7, required: `gatekeeper-trumpet.png`, `gatekeeper-trumpet-raised.png`
 
 **Part B: game assets** (`assets/art-src/rogue/`)
-- [ ] B1 Breakable props, needed by R2, required: `amphora-tall.png` (pilot, do it first), `amphora-squat.png`, `amphora-lily.png`, `amphora-marked.png`, `sanctuary-lamp.png`, `blessing-chalice.png`
-- [ ] B2 Pickups, needed by R2 (halo, mote) and R4 (page), required: `gold-halo.png`, `heal-mote.png`, `rite-page.png`
-- [ ] B3 The Pardoner's stall, needed by R3, required: `npc-pardoner.png`, `pardoner-box.png`, `shop-pedestal.png`, `chart-scroll.png`
-- [ ] B4 The Confessional, needed by R1 (shell) and R4 (Advocate), required: `confessional-grille.png`, `tex-confessional-wood.png`
+- [x] B1 Breakable props, needed by R2, required: `amphora-tall.png` (pilot, do it first), `amphora-squat.png`, `amphora-lily.png`, `amphora-marked.png`, `sanctuary-lamp.png`, `blessing-chalice.png`
+- [x] B2 Pickups, needed by R2 (halo, mote) and R4 (page), required: `gold-halo.png`, `heal-mote.png`, `rite-page.png`
+- [ ] B3 The Pardoner's stall, needed by R3, required: `npc-pardoner.png`, `pardoner-box.png`, `shop-pedestal.png`, `chart-scroll.png`. **3/4 received; missing `shop-pedestal.png`.**
+- [x] B4 The Confessional, needed by R1 (shell) and R4 (Advocate), required: `confessional-grille.png`, `tex-confessional-wood.png`
 - [ ] B5 Rewards and challenges, needed by R6, required: `shared-key.png`, `reliquary-chest.png`, `reliquary-chest-open.png`, `judgment-bell.png`, `sundial.png`
 - [ ] B6 Boss parts, needed by R7, required: `watcher-open.png`, `watcher-closed.png`, `judgment-seal.png`
-- [ ] B7 Item icons, needed by R3, required: `item-balm.png` (pilot), `item-seal.png`, `item-feather.png`, `item-mirror.png`, `item-venom.png`, `item-frost.png`, `item-chain.png`, `item-plume.png`
+- [ ] B7 Item icons, needed by R3, required: `item-balm.png` (pilot), `item-seal.png`, `item-feather.png`, `item-mirror.png`, `item-venom.png`, `item-frost.png`, `item-chain.png`, `item-plume.png`. **7/8 received; missing `item-plume.png`.**
 - [ ] B8 Relic icons, needed by R6, required: `relic-usher.png` (pilot), `relic-thurible.png`, `relic-link.png`, `relic-tile.png`, `relic-qseal.png`, `relic-eseal.png`, `relic-comb.png`, `relic-wheel.png`, `relic-unbroken.png`, `relic-mercy.png`, `relic-armageddon.png`, `relic-sentence3.png`
 - [ ] B9 New ability icons, needed by R4 (Betrayer's three) and R5 (the other nine), required: `icon-judas-coin.png` (pilot), `icon-way-back.png`, `icon-silver-wire.png`, `icon-gatebreaker.png`, `icon-rain-of-fire.png`, `icon-cast-out.png`, `icon-bread-of-angels.png`, `icon-trial-by-fire.png`, `icon-cloud-of-witnesses.png`, `icon-well-of-giants.png`, `icon-ring-of-giants.png`, `icon-boundary-chain.png`
-- [ ] B10 Hazard and effect textures, needed by R2, required: `tex-refiner-channel.png`, `fx-flames.png`
+- [x] B10 Hazard and effect textures, needed by R2, required: `tex-refiner-channel.png`, `fx-flames.png`
 - [ ] B11 Optional: 6 combo emblems `combo-<id>.png` (R6) and 72 talent icons `talent-<class>-<tree>-<node>.png` (R4–R5). Without them the cards show the class glyph and the talent's name.
 
 **Totals:** 6 model references + 57 required game assets + 78 optional icons. Earlier drafts also listed `fx-embers`, `fx-incense-wisp` and `silent-trumpet`; the first two are covered by the existing `ember.png` and `fx-smoke.png`, and the trumpet is now the A2 model reference.
+
+### Received sources — 2026-10-12
+
+**27/63 required sources received:** 4 model references and 23 game assets; 36 required sources still missing. The JPEG/JFIF downloads were converted to PNG at their original resolution, with decoded pixels verified unchanged. Their green, magenta, grey or black backgrounds remain for later preparation. This receipt does not approve the pilots or replace the in-game acceptance check.
+
+The original downloads are preserved byte for byte under `assets/art-src/rogue/originals/` and `assets/art-src/reference/rogue/originals/`, with their original filenames. PNG sources use the prompt IDs above. Generation tool, generation date and subscription plan are unconfirmed; the receipt date is not a generation date.
+
+| Original filename | PNG source | Reason |
+|---|---|---|
+| `tem-venom.jfif` | `item-venom.png` | Filename typo; the image shows the Bitter Water flask. |
+| `shop-pedestal.jfif` | `pardoner-box.png` | The image shows the indulgence box: slanted lid, coin slot, red velvet panels and padlock. The empty marble shop pedestal is still needed. |
+
+**Preparation notes from source inspection:**
+
+- The Dominion design and wing sheet show wings extending outward; review them against the folded-down silhouette before modeling.
+- `heal-mote.png` includes detached sparkles; account for them when cropping the small pickup.
+- `item-frost.png` has violet plumes reaching the top edge; review the crop at 48 px before accepting it.
+- `confessional-grille.png` includes a stone surround; review the panel crop and how it joins the wood wall.
+- Tile seams (`tex-confessional-wood`, `tex-refiner-channel`, `fx-flames`), chroma-key edges and readability at gameplay size still need integration checks.
 
 ---
 

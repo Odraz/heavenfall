@@ -1,5 +1,7 @@
 # Art prompts
 
+Roguelite additions and their received-source checklist are in [Rogue art prompts](rogue/art-prompts.md).
+
 Every image milestone 6 needs ([mvp.md](mvp.md) §11.2), with a ready-to-paste prompt for each. There are two kinds:
 
 - **Part A, model references (16 images).** Claude builds the characters as 3D models in Blender and renders them into sprite atlases, as it did for the Blessed (the first-person weapons were Blender models too until M11 replaced them with paintings; their sheets are still attached to the M11 prompts). These images show what to build: one front picture to set the look, then front, side and back views to model from. They are never shown in the game.
