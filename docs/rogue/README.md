@@ -6,7 +6,7 @@ The slice ships every system below in the Pearly Gates. It does not ship the oth
 
 ## Development readiness
 
-**Start here:** the [revision-9 readiness review](readiness-review.md) says what was repaired, what you still need to decide and what each milestone must prove. [R0](r00.md) is done ([report](r00-report.md)) and [R1](r01.md) is prepared: review it, then ask the AI to implement it. The [roadmap](implementation.md) builds the floor first (R1), then the fight in it (R2), then persistence (R3), then builds (R4), each ending in something you can play. The [workflow](development-workflow.md) has the copyable prompts. The [code map](code-map.md) gives the first concrete tasks; [asset coverage](asset-coverage.md) maps every art/audio need to a prompt, reuse or coded treatment.
+**Start here:** the [revision-9 readiness review](readiness-review.md) says what was repaired, what you still need to decide and what each milestone must prove. [R0](r00.md) is done ([report](r00-report.md)). [R1](r01.md) is implemented and verified, **awaiting-human-play**: use its [report and Gate A checklist](r01-report.md) before expanding R2. The [roadmap](implementation.md) builds the floor first (R1), then the fight in it (R2), then persistence (R3), then builds (R4), each ending in something you can play. The [workflow](development-workflow.md) has the copyable prompts. The [code map](code-map.md) gives the first concrete tasks; [asset coverage](asset-coverage.md) maps every art/audio need to a prompt, reuse or coded treatment.
 
 Making assets: [asset-plan.md](asset-plan.md) says what to make when; [art-prompts.md](art-prompts.md) and [audio-prompts.md](audio-prompts.md) give each prompt with its attachments, file name and checks.
 

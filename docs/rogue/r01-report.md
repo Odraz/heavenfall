@@ -1,6 +1,6 @@
 # R1 report: generated floor
 
-**Status: R1.6 implemented; verification blocked by the multiplayer late-join test; R1.7 and human/Gate A acceptance pending** (2026-10-12). Brief: [r01.md](r01.md). Branch `rogue` (as recorded in [r00-report.md](r00-report.md)); nothing pushed, merged or published. Unit/type/build and seven local browser checks pass. The four-client multiplayer suite is not green; see the R1.6 verification below.
+**Status: awaiting-human-play** (2026-10-12). Brief: [r01.md](r01.md). Stages R1.1–R1.6 and the R1.7 checkpoint are implemented on `rogue`; nothing pushed, merged or published. Final verification passes: **755 unit tests, 9 browser tests, typecheck, production build and 1,000-seed generator acceptance (99.7% within 20 attempts)**. The previously failing four-client path passed twice at this checkpoint without a protocol or timeout change. Human play and Gate A acceptance remain pending. Historical stage results are retained below.
 
 ## Git facts
 
@@ -23,7 +23,9 @@
 | R1.6 start SHA | `8db3207c8b8ba336344b6c785c4ad724ed11d219` (*R1.5: record verified map and discovery checkpoint*); clean tree |
 | Main base checked at R1.6 | `fa9e3f5765cd09d5a315db6342107ff70ad159e8`, unchanged |
 | R1.6 code SHA | `7c854b6177e671266aad7e80f83207457f74ee18` (*R1.6: run-scoped input, snapshots and events; build fingerprint*); followed by the verification/blocker report commit |
-| End SHA | not yet: multiplayer verification and R1.7 remain |
+| R1.7 start SHA | `c2f42c99999261d1a33bb1aaecf76d499b04d268` (*R1.6: record protocol verification and multiplayer blocker*); clean tree |
+| Main base checked at R1.7 | `fa9e3f5765cd09d5a315db6342107ff70ad159e8`, unchanged |
+| R1.7 code / end SHA | `8cd3d1a802028276b6293a028998ff2391fceca9` (*R1.7: label generated-floor room fixtures*); checkpoint records follow it |
 
 ## What changed
 
@@ -189,9 +191,9 @@ Run `npm run dev`, then:
 
 ## Open items
 
-- R1.6 code is implemented. Its fourth-client multiplayer test remains unresolved; R1.7 and human play/feel acceptance are pending.
+- R1.1–R1.7 are implemented and verified. The fourth-client path passed the R1.7 initial retry and the final combined browser run. No automated check remains blocked; human play/feel and Gate A acceptance are pending.
 - Generated floors have encounters, countdowns, clear sustain, trickle, inherited boss victory, discovery, both maps and door sigils. Rewards, props, pickups, new enemies, fire and progression remain later milestones. The same countdown, fractional scaling, clear sustain and regeneration rules apply to fixed fixtures.
-- Inputs, snapshots, reliable events and build admission now use the R1.6 run-scoped contract. Do not treat the passing unit/solo/parity checks as proof of the unresolved four-client late-join path.
+- Inputs, snapshots, reliable events and build admission use the R1.6 run-scoped contract. Historical four-client failures remain recorded; their root cause has not been established.
 - Multiplayer runtime and Node/browser hash parity passed automated checks. Gate geometry/floor sampling/light queries/leaf and post hits passed for all four facings; its appearance across rotated floors and the floor's feel still need human play. No human feedback has been recorded for R1.3.
 - Allowed orientations are mostly identity and the transpose (0 and 7). The 1.5 m off-centre socket offsets mean a quarter-turn or a plain mirror moves the physical doorway off the authored strip, as rogue game.md §3.4 anticipates. The Breach and the Gate allow all 8.
 
@@ -317,8 +319,46 @@ npm run e2e -- e2e/multiplayer.spec.ts e2e/rogue-floor.spec.ts e2e/menus.spec.ts
 
 The source build tested by the browsers stamped both client and worker with `0.1.0+8db3207.p2.r1.bba2b33ab169`. The final local commits change the Git-short portion; the source hash remains the same. Vite emits a non-blocking warning about extensionless imports under a future native config loader; current typecheck/build succeed.
 
-**Unresolved verification blocker:** the complete four-client public-PeerJS path has not passed. The first denial was explicitly sandbox networking; later connection/Loading failures occurred with network access, including with streaming paused. Root cause is not established, so these are not excused as a proven external-service issue or recorded as passing. Investigate late-client loading/admission under the real browser workload before the R1.7 checkpoint or Gate A acceptance. No application timeout or performance limit was increased.
+**Historical verification blocker (R1.6):** the complete four-client public-PeerJS path had not passed at this stage. The first denial was explicitly sandbox networking; later connection/Loading failures occurred with network access, including with streaming paused. Root cause was not established, so those attempts remain failures rather than being attributed to a proven external-service issue. See the R1.7 reruns below. No application timeout or performance limit was increased.
 
 ### R1.6 play checklist
 
-Start with `npm run dev` (restart it after source edits/commits so every participant uses the same fingerprint). Play a generated run, reach Results and start another run with another class. Check that the run ID changes, inputs still work, the map opens on M and prior health/cooldowns/room knowledge do not carry over. In co-op, join a running game with a fourth client and verify Loading/placement/map catch-up; this is the unresolved automated path. The existing R1 fixture limitations and B4 art fallback still apply. Human play/feel and Gate A are pending; this report does not mark R1.6 fully verified or R1 accepted.
+Start with `npm run dev` (restart it after source edits/commits so every participant uses the same fingerprint). Play a generated run, reach Results and start another run with another class. Check that the run ID changes, inputs still work, the map opens on M and prior health/cooldowns/room knowledge do not carry over. In co-op, join a running game with a fourth client and verify Loading/placement/map catch-up; this was the blocked automated path at the R1.6 handoff. The existing R1 fixture limitations and B4 art fallback still apply. Human play/feel and Gate A are pending; R1.7 records the final verification, and R1 is not accepted yet.
+
+## R1.7 checkpoint
+
+Stages R1.1–R1.6 were already committed at the start of this request. The initial four-client retry passed without changing production networking, loading deadlines, browser settings or test limits. The previous failure did not reproduce; this is passing runtime evidence, not a diagnosis of the old failure.
+
+The checkpoint inspection found one remaining brief requirement: player-visible labels for the empty special rooms and inherited boss. `src/client/rooms.ts` now uses the existing room-message path to identify the Pardoner's empty stall (shop in R3), the Confessional shell (Advocate in R4), and the inherited Gatekeeper fight (authored encounter in R7). Fixed dungeons retain their existing messages. `src/client/rooms.test.ts` covers all room phases, corridor and fixed-dungeon exclusions; `e2e/rogue-floor.spec.ts` checks the labels in the actual rooms and during boss combat. Simulation, generation, balance and wire formats are unchanged.
+
+**Checkpoint changed files:** `src/client/rooms.ts`, `src/client/rooms.test.ts`, `e2e/rogue-floor.spec.ts`, this report, `r01.md`, `README.md` and `development-workflow.md` under `docs/rogue/`. Earlier stage sections list their own changes; the independently committed art imports remain preserved.
+
+### Final verification
+
+| Exact command | Result |
+|---|---|
+| `npm run e2e -- e2e/multiplayer.spec.ts` before the label change | **1 passed**, exit 0 (1.7 min): password/classes, three starters, fourth-client late admission, matching identity/map knowledge, chat, 30 seconds of advancing/matching snapshots, upload bound and host departure. |
+| `npm test` on final implementation | **755 passed across 69 files**, exit 0 (46.15 s), one worker; unchanged 8-ms/tick assertion. The initial checkpoint run also passed all 754 existing tests. |
+| `npm run typecheck` | passed on final implementation and browser test sources, exit 0; repeated after the code and checkpoint-record commits. |
+| `npm run build -- --logLevel error` | passed on final implementation, exit 0; also rebuilt by the combined browser command and repeated after the code and checkpoint-record commits. |
+| `npm run test:gen` | **1 passed**, exit 0 (39.13 s): all 1,000 floors valid, **997/1,000 = 99.7% within 20 attempts**, zero fallbacks, maximum 25 attempts, mean 3.882 attempts. Mean generation time 25.85 ms on this run. Generator, pool and pinned output are unchanged by the labels. |
+| `npm run e2e -- e2e/multiplayer.spec.ts e2e/rogue-floor.spec.ts e2e/menus.spec.ts e2e/controls.spec.ts e2e/full-run.spec.ts` | **9 passed**, exit 0 (16.1 min): controls 6.5 s; fixed full solo run 4.3 min; menus 10.6 s; four-client multiplayer 2.0 min; second generated run after Results 19.6 s; map/input 7.6 s; special-room fixture labels 6.8 s; Node/browser parity and dev entries 22.6 s; generated full-floor autopilot to boss victory 8.6 min. Full traversals use the specified autopilot, `god=1` and K; they do not establish human combat balance. |
+| `git diff --check` | passed on the implementation and checkpoint records. |
+| Benchmarks | not run (not requested). |
+
+The source fingerprint is `5160955de416`; the combined browsers tested `0.1.0+c2f42c9.p2.r1.5160955de416`. Subsequent commits change the Git-short portion without changing the source hash. Typecheck/build passed after committing the checkpoint. Performance and timing checks ran without competing test workers. The earlier PeerJS/loading failures remain in the historical evidence; their root cause is unknown, and recurrence should be investigated with the seed and loading stage captured, without raising deadlines. There is no reproducible blocking defect from the final checks.
+
+### Fixture limits and human play
+
+- The shop and Confessional are labeled empty shells. Props, pickups, halos, XP, rewards, Dominion and fire arrive in later milestones; generated key/map-reliquary/Bell marks and map clicks have no interaction yet.
+- The labeled inherited Gatekeeper ends the run on death. There is no Stair or authored R7 boss encounter. Crest timing, warned unsafe-spawn fallback and relocation beams remain the R1 fixtures specified in the brief.
+- The Confessional keeps the existing wall texture; received B4 sources still need repair/replacement and human visual acceptance. Room seal/clear sounds retain their synthesized fallback.
+- The old fixed dungeon remains available at `?dev=1&map=pearly-gates`; the generated fallback retains the four R1 template substitutions recorded in the brief.
+
+Run `npm run dev`, then open `http://localhost:5173/`. Restart after source edits/commits, and have every co-op participant use the same build. For a repeatable generated floor use `http://localhost:5173/?dev=1&map=rogue&seed=317434499&class=fallen`; F3 shows the seed. The boss can be isolated with `&room=10&god=1`.
+
+1. Play two solo seeds with different classes. Inspect M before each route choice, clear the combat rooms and reach the boss. Reach Results and start another run.
+2. Play a third seed in co-op. Scout and leave during countdown, then gather inside; leave one player outside at sealing. Join the running game and compare doors and map knowledge.
+3. Backtrack after a room has been empty for ten seconds; stay three seconds for its finite trickle. Watch for sealed doors that never reopen, rooms that do not seal/clear, visible neighbouring fights, stranded players or map disagreement.
+
+Human observations and Gate A are pending: **does a new floor feel new, and did you choose a door for a reason?** No human play, acceptance or `rogue-r1` tag is claimed. R2 expansion waits for that answer.
