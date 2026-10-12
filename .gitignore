@@ -61,3 +61,10 @@ node_modules/
 # --- Claude Code local settings ---
 .claude/settings.local.json
 __pycache__/
+
+# Suno takes waiting to be placed (scripts/sfx_inbox.py)
+/assets/audio-src/rogue/sfx/inbox/
+# Local sound history: replaced takes, the rejected ElevenLabs trial's session records and rollback plan
+/assets/audio-src/rogue/sfx/rejected/
+/assets/audio-src/rogue/sfx/sessions/
+/reports/audio/

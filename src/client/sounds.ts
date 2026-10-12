@@ -66,7 +66,7 @@ export class GameSounds {
     sfx('fallingStarLand');
   }
 
-  /** Your Shadowstep's dagger cut, as its streak appears (M12 §5.7). */
+  /** Your Shadowstep's dagger cut, with the first-person slash as the dash starts (M12 §5.7). */
   ownDaggerCut(): void {
     sfx('daggerCut');
   }
