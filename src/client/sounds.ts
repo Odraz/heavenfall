@@ -222,6 +222,12 @@ export class GameSounds {
       case 'pickupCollected':
         sfx(e.kind === COIN || e.kind === GOLD_HALO ? 'goldPickup' : 'motePickup', { x: e.x, y: e.y });
         break;
+      case 'propBroken':
+        sfx(e.family === 'loot' ? 'porcelainBreak' : e.family === 'blast' ? 'blastLampCrack' : 'chaliceHeal', { x: e.x, y: e.y });
+        break;
+      case 'propBlast':
+        sfx('blastLampBurst', { x: e.x, y: e.y });
+        break;
       case 'bossCast':
         sfx(e.phase === 'start' ? 'judgmentCharge' : e.phase === 'completed' ? 'judgmentBlast' : 'interrupted');
         break;

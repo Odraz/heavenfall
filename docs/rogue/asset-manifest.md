@@ -8,6 +8,8 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 
 **Art receipt, 2026-10-12.** 27 user-provided JPEG/JFIF sources (4 model references, 23 game assets) converted to PNG at original resolution, with decoded pixels verified unchanged. Original downloads are preserved byte for byte in the corresponding `originals/` directories; each received row records its original path. Generation tool, generation date and subscription plan remain unknown. No runtime art was exported or accepted; preparation notes and remaining sources are in [art-prompts.md](art-prompts.md#received-sources--2026-10-12).
 
+**R2.2 fallback, 2026-10-13.** All six B1 prop sources remain `received`; none is visually accepted. Inspected amphora/lamp sources have a solid green background requiring preparation. `src/client/props.ts` currently renders labeled coded ivory variants, a marked cross/glint, red-black lamp and gold chalice in one billboard atlas; accepted breaks drive shards, blast smoke/rings and heal feedback. The three S1 prop families now have named synthesized entries and accepted event mappings; their received MP3s still need runtime cutting in R2.3.
+
 ## Art: new
 
 | assetId | kind | required | neededBy | status | sourcePath | runtimePath | events | generator | generatedAt | plan | notes |

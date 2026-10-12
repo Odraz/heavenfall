@@ -4,6 +4,8 @@ The register of decisions made while implementing the rogue slice, each beside t
 
 Started in R0 (2026-10-12) on branch `rogue`.
 
+R2.2 (2026-10-13): `Floor.props` feeds identical `SimOptions.props` and client definitions through `propDefs`, instead of adding duplicate sockets to `RoomDef`. Canonical socket IDs/loot ordinal survive orientation and selection; map geometry and the accepted R1 pinned hash stay unchanged. Props are transparent to native ray penetration budgets, like existing breakable globes, but respect the accepted terrain/enemy stopping point. These are routine implementation choices under R2's authorized scope. B1 source images remain preserved; the runtime uses labeled coded sprites while green-background source preparation and human visual acceptance remain pending.
+
 | Date | Milestone | Clause | Decision | Reason | Your approval |
 |---|---|---|---|---|---|
 | 2026-10-12 | R0 | [implementation.md](implementation.md) *Branch and delivery model* | Before `rogue` was created, the `sfx-samples` branch (the recorded S1 combat sounds, their tooling and [audio-prompts.md](audio-prompts.md)) was merged into local `main` (`fa9e3f5`). `rogue` starts from that `main`. | Branching from the old `main` would have left the recorded sounds and their prompt doc out of the rogue line. | You, 2026-10-12 ("Merge into main") |

@@ -36,6 +36,8 @@ export interface DebugState {
   projectiles: number;
   wallet: number;
   pickups: Array<{ id: number; kind: number; x: number; y: number }>;
+  props: Array<{ id: number; room: number; family: string; x: number; y: number; z: number; marked: boolean }>;
+  brokenProps: number[];
   seed: number | null;
   simSeed: number | null;
   runId: string | null;
@@ -95,6 +97,8 @@ export const debugState: DebugState = {
   projectiles: 0,
   wallet: 0,
   pickups: [],
+  props: [],
+  brokenProps: [],
   seed: null,
   simSeed: null,
   runId: null,
@@ -138,6 +142,10 @@ export function resetGameDebug(): void {
     enemies: 0,
     enemyCountsByTick: {},
     projectiles: 0,
+    wallet: 0,
+    pickups: [],
+    props: [],
+    brokenProps: [],
     seed: null,
     simSeed: null,
     runId: null,

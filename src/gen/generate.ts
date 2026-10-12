@@ -23,7 +23,7 @@ export interface Floor {
   slotOrigin: [number, number];
   rooms: Array<LayoutRoom & { templateId: string; orientation: number }>;
   /** Filled prop sockets (inactive until R2), in room then template order. */
-  props: Array<{ room: number; index: number; family: PropFamily; at: Cell; marked: boolean }>;
+  props: Array<{ room: number; index: number; family: PropFamily; at: Cell; marked: boolean; variant: number }>;
   confessional: number;
   boss: number;
   reliquary: number;
@@ -63,7 +63,8 @@ export function floorRecord(heaven: number, floor: number, seed: number, attempt
         const ot = s.oriented[p.room];
         const room = s.def.rooms[p.room];
         const q = ot.props[p.index];
-        return { room: p.room, index: p.index, family: q.family, at: [q.at[0] + room.rect.x0, q.at[1] + room.rect.y0] as Cell, marked: p.marked };
+        const variant = ot.template.props.slice(0, p.index).filter((s) => s.family === 'loot').length % 3;
+        return { room: p.room, index: p.index, family: q.family, at: [q.at[0] + room.rect.x0, q.at[1] + room.rect.y0] as Cell, marked: p.marked, variant };
       }),
     confessional: layout.confessional,
     boss: layout.boss,

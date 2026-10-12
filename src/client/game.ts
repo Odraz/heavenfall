@@ -103,6 +103,8 @@ import { RunEvents } from '../net/runEvents';
 import type { Floor } from '../gen/generate';
 import { ClientRooms, roomMessage } from './rooms';
 import { PickupView } from './pickups';
+import { PropView } from './props';
+import { propDefs } from '../data/props';
 import { MapView, type MapPlayer } from './mapView';
 
 const BENCH_TURN_RATE = 0.3;
@@ -386,6 +388,7 @@ export class Game {
   /** The censers' incense clouds (M9 §2.8), drawn where each censer vanished. */
   private readonly incense: IncenseClouds;
   private readonly pickups: PickupView;
+  private readonly props: PropView;
   /** When each enemy slot's Falling Star launch arc starts (M9 §3.2). */
   private readonly launchAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
   /** Wading (M12 §3.1): launched enemies don't press until then (ms), and the applied speed factor. */
@@ -499,6 +502,8 @@ export class Game {
     this.scene = new GameScene(this.canvas, this.map, o.textures.terrain, o.textures.fx.glow, o.floor);
     this.pickups = new PickupView(this.map, o.runId);
     this.scene.scene.add(this.pickups.group);
+    this.props = new PropView(this.map, o.runId, propDefs(o.floor), this.scene.terrain.lightmap);
+    this.scene.scene.add(this.props.billboards.mesh);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
     for (const [type, set] of Object.entries(o.enemyAnims)) {
@@ -562,6 +567,9 @@ export class Game {
 
     debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0, primaryShots: 0, secondaryShots: 0 }));
     debugState.wallet = 0; debugState.pickups = [];
+    debugState.props = this.props.defs.map((p) => ({ id: p.id, room: p.room, family: p.family, x: p.x, y: p.y,
+      z: this.map.floor[Math.floor(p.y) * this.map.w + Math.floor(p.x)], marked: p.marked }));
+    debugState.brokenProps = [];
     this.sounds.renderDelay = (this.snaps.delayTicks * TICK_MS) / 1000;
   }
 
@@ -855,6 +863,7 @@ export class Game {
   handleCtrl(msg: CtrlMessage): void {
     if (msg.type === 'floorSync' && !this.disposed) {
       this.pickups.model.sync(msg);
+      if (this.props.model.sync(msg)) debugState.brokenProps = [...this.props.model.broken];
       if (this.rooms.sync(msg)) {
         debugState.floorSyncTick = this.rooms.syncTick;
         debugState.roomKnowledge = this.rooms.states.map((r) => r.knowledge);
@@ -868,12 +877,30 @@ export class Game {
       if (!transition) return;
     }
     if (msg.event.type === 'pickupState') this.pickups.model.state(msg.event.pickup, msg.tick, msg.revision);
+    if (msg.event.type === 'propBroken' || msg.event.type === 'propBlast') {
+      if (!this.props.model.event(msg.event, msg.revision)) return;
+      debugState.brokenProps = [...this.props.model.broken];
+    }
     this.onEvent(msg.event, performance.now());
     this.sounds.event(msg.event, (id) => this.playerPose(id));
   }
 
   private onEvent(e: GameEvent, now: number): void {
     switch (e.type) {
+      case 'propBroken':
+        if (e.family === 'blessing') {
+          this.vfx.ring(now, e.x, e.y, e.z, 0xffdc75, 0, 6, 300);
+          for (const id of e.targets) { const p = this.playerPose(id); if (p) this.particles.healColumn(p.x, p.y, p.z); }
+        } else if (e.family === 'loot') {
+          this.particles.globeShards(e.x, e.y, e.z + 0.5, 8);
+          this.vfx.glow(now, e.x, e.y, e.z + 0.5, 0xffe4b5, 0.2, e.marked ? 1 : 0.5, 300);
+          if (e.marked) this.vfx.beam(now, [[e.x, e.y, e.z], [e.x, e.y, e.z + 2]], 0xffda68, 0.25, 500);
+        }
+        break;
+      case 'propBlast':
+        this.vfx.ring(now, e.x, e.y, e.z, 0xf05a25, 0, 4, 250);
+        this.vfx.smoke(now, e.x, e.y, e.z + 0.6, 0x28252b, 0.3, 1.5, 500);
+        break;
       case 'teleport':
         this.player.teleport(e.x, e.y, e.z);
         this.lastTeleportId = e.teleportId;
@@ -2057,6 +2084,7 @@ export class Game {
     this.drawStarPreview();
     this.drawBillboards(now, ents, enemyZ);
     this.pickups.update(this.snaps.newest, this.scene.camera, this.snaps.estimatedTick(now));
+    this.props.update(this.scene.camera, this.snaps.estimatedTick(simNow));
     const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
     this.hud.setHealing(this.ownBeamOn, now);
     this.hud.setBeamed(beamed.has(this.localId));
@@ -2087,8 +2115,9 @@ export class Game {
     debugState.director = this.o.host?.director ?? null;
     debugState.netInKBps = this.o.net ? this.o.net.inKBps(now) : 0;
     debugState.netOutKBps = this.o.net ? this.o.net.outKBps(now) : 0;
+    // Read-only own pose also supports the normal-menu multiplayer prop/catch-up fixture.
+    Object.assign(debugState.self, { x: b.x, y: b.y, z: b.z, yaw: p.yaw, pitch: p.pitch });
     if (this.params.dev) {
-      Object.assign(debugState.self, { x: b.x, y: b.y, z: b.z, yaw: p.yaw, pitch: p.pitch });
       let near = 0;
       let sx = 0;
       let sy = 0;
@@ -2481,6 +2510,7 @@ export class Game {
     this.pool?.dispose();
     this.incense.dispose();
     this.pickups.dispose();
+    this.props.dispose();
     this.hum?.stop();
     this.hud.dispose();
     this.mapView.dispose();

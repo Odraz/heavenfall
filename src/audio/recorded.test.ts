@@ -8,10 +8,12 @@ describe('recorded sound effects', () => {
       '../../assets/sfx/revolver-01.wav': 'r1',
       '../../assets/sfx/hitTick-01.wav': 'h1',
       '../../assets/sfx/porcelainBreak-01.wav': 'p1',
+      '../../assets/sfx/unlistedSound-01.wav': 'x1',
       '../../assets/sfx/revolver.wav': 'x',
     });
     expect([...g.entries()]).toEqual([
       ['hitTick', ['h1']],
+      ['porcelainBreak', ['p1']],
       ['revolver', ['r1', 'r2']],
     ]);
   });

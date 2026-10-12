@@ -28,6 +28,10 @@ function part(p: Partial<SynthPart> & Pick<SynthPart, 'wave' | 'freq'>): SynthPa
 }
 
 export const SFX = {
+  porcelainBreak: { priority: PRIO_OTHERS, parts: [part({ wave: 'noise', freq: 7000, decay: 0.02, release: 0.14, volume: 0.35 }), part({ wave: 'sine', freq: 1700, decay: 0.05, release: 0.12, volume: 0.15 })] },
+  blastLampCrack: { priority: PRIO_ABILITY, parts: [part({ wave: 'noise', freq: 11000, decay: 0.02, release: 0.09, volume: 0.25 })] },
+  blastLampBurst: { priority: PRIO_ABILITY, parts: [part({ wave: 'noise', freq: 1500, decay: 0.08, release: 0.2, volume: 0.6, lowpass: 2200 }), part({ wave: 'sine', freq: 90, freqEnd: 35, decay: 0.1, release: 0.25, volume: 0.5 })] },
+  chaliceHeal: { priority: PRIO_ABILITY, parts: [part({ wave: 'sine', freq: 660, freqEnd: 880, decay: 0.12, release: 0.25, volume: 0.25 }), part({ wave: 'sine', freq: 990, decay: 0.08, release: 0.3, volume: 0.1 })] },
   goldPickup: { priority: PRIO_ABILITY, parts: [part({ wave: 'sine', freq: 1200, freqEnd: 1800, decay: 0.06, release: 0.15, volume: 0.25 })] },
   motePickup: { priority: PRIO_ABILITY, parts: [part({ wave: 'sine', freq: 660, freqEnd: 990, decay: 0.08, release: 0.2, volume: 0.2 })] },
   // ---------------------------------------------------------------- weapons

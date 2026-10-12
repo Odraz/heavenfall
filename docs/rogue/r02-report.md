@@ -1,6 +1,6 @@
 # R2 report: pressure and pickups
 
-**Status: implementing** (2026-10-13). Brief: [r02.md](r02.md). R2.1 is implemented and verified; R2.2–R2.7 remain. Gate B and human feel acceptance are pending. Local branch `rogue`; nothing pushed, merged or published.
+**Status: implementing** (2026-10-13). Brief: [r02.md](r02.md). R2.1 and R2.2 are implemented and verified; R2.3–R2.7 remain. Gate B and human feel acceptance are pending. Local branch `rogue`; nothing pushed, merged or published.
 
 ## Authorization and Git facts
 
@@ -45,11 +45,33 @@ Updated: `src/sim/sim.ts`, `src/net/protocol.ts`, `src/net/protocol.test.ts`, `s
 
 Browser execution used installed Chromium and public PeerJS outside the restricted process/network sandbox. Test bounds and loading deadlines remain unchanged.
 
+## R2.2: authoritative props
+
+Start SHA `762ed44`. Seed-selected `Floor.props` now supplies identical host/client definitions. IDs combine room and canonical socket index; three loot variants follow canonical loot ordinal, including skipped sockets. The R1 geometry and pinned hash are unchanged. Props have nonblocking 0.5-m cylinders and family heights 1/1.3/1.2 m. Every positive native player attack shares ray/area geometry, stopping/LOS and vertical reach; healing/control-only actions and hostile enemy contact cannot break them.
+
+Accepted loot breaks use the combat/noncombat tables and weighted eight-item catalog. The marked amphora always drops one 6-halo gold pickup without a random draw. Lamps crack immediately and burst six ticks later, resolving due IDs in order: 60 enemy/15 player damage in 4 m, body-center LOS, each chain gets its own six ticks. A blast cannot break a chalice. World heavy kills award no player kill, emit owner -1 bursts and settle the ordinary victim ledger once. Chalices heal all living connected players in 6 m by 30 HP, once, with LOS.
+
+Reliable terminal events and detached broken/pending-blast checkpoints keep late entry and run reset authoritative. Projection rejects malformed payloads without advancing its watermark. Required presentation includes three labeled ivory silhouettes, red-black lamps, gold chalices, shards, blast/heal rings, pending crack glow and the marked 90-tick glint/beam. B1 sources are received and preserved; inspected source images still have a solid green background and no runtime exports. Coded sprites remain the documented fallback; human visual acceptance is pending. The three prop sounds now have catalog-named synthesized cues; received MP3s are not yet runtime WAVs (R2.3).
+
+New files: `src/data/props.ts`, `src/sim/props.ts`, `src/sim/props.test.ts`, `src/client/props.ts`, `src/client/props.test.ts`, `e2e/prop-fixtures.ts`. Updated: `src/gen/generate.ts`, `src/sim/worker.ts`, `src/sim/sim.ts`, `src/net/messages.ts`, `src/client/game.ts`, `src/client/sounds.ts`, `src/audio/sfx.ts`, `src/audio/recorded.test.ts`, `src/debug.ts`, the pressure and multiplayer browser suites, and these milestone/decision records.
+
+| Exact command | Result |
+|---|---|
+| `npm test -- src/sim/props.test.ts src/client/props.test.ts` | 18 passed before the additional malformed-checkpoint regression. An initial assertion expected a 60-HP Chorister to survive a 70-damage Revolver; corrected the fixture expectation. |
+| Final `npm test` | **796 passed across 74 files**, exit 0, 48.71 s; one worker, unchanged 8-ms/tick assertion passed. Includes 19 prop behavior/projection regressions and four new synthesized cue cases. |
+| `npm run typecheck` | passed, exit 0. |
+| `npm run build -- --logLevel error` | passed, exit 0. |
+| `npm run e2e -- e2e/rogue-pressure.spec.ts e2e/multiplayer.spec.ts e2e/rogue-floor.spec.ts --grep 'shooting the marked\|generated combat drops\|multiplayer\|second generated run' --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-props'` | 4 passed, exit 0, 3.3 min: real mouse prop break/drop/wallet, combat pickup, generated-run reset, and four-client PeerJS including pre-join prop break restored for the late joiner. Final source rerun recorded below. |
+
+Screenshots were captured and inspected; the central countdown overlays the marked amphora in the early-shot capture, so this is break/wallet runtime evidence, not completed art acceptance. Multiplayer keeps the original loading/network/upload deadlines; its human host remains idle in the Breach while shooting the vase and three bot followers exercise snapshots/chat/late entry/host departure. No benchmark, generator acceptance or human Gate B is claimed at this stage.
+
+Final source rerun: the same exact four-test command above with output directory ending `r02-props-final`: **4 passed**, exit 0, 3.0 min (multiplayer 2.0 min, restart 21.7 s, combat pickup 27.6 s, marked amphora 8.7 s). Production build in that command passed. `git diff --check` passed.
+
 ## Current fixture limits and next stage
 
-Props, Dominion, fire damage/dry navigation, six-second crest, remaining 10 templates and recorded shuffle bags are still unfinished. This checkpoint must not be labeled the completed R2 milestone. Gold halos can be represented/collected but the marked prop and elite sources arrive in the next stages. No shop, profile, durable money, XP, inventory or build mechanics have been added.
+Dominion, fire damage/dry navigation, six-second crest, remaining 10 templates and recorded shuffle bags are still unfinished. This checkpoint must not be labeled the completed R2 milestone. Marked props supply gold halos; elite sources arrive in R2.4. No shop, profile, durable money, XP, inventory or build mechanics have been added.
 
-R2.2 begins with the existing `Floor.props` seed-selected sockets in `src/gen/generate.ts`/`assign.ts`/`fallback.ts`. Keep canonical socket identity and loot variant through orientation, rather than rerolling in simulation. The prepared brief defaults to stamping a runtime prop record into RoomDef; an equivalent explicit Floor-derived SimOptions record is a routine implementation choice if it preserves those identities and avoids unnecessary pinned geometry changes. Ensure worker host startup and client Game receive the same selected records. Connect all player attack paths and blasts to the shared prop queries; no enemy walking break and no movement collision. Test and commit this stage before R2.3.
+R2.3 next: preserve the existing audio limits/limiter/positional rules and source provenance; finish the three received prop families through the existing cutting tool, replace per-play random selection with cosmetic shuffle bags, and test failed fetch/decode/silent recordings. Other missing S2/S3/S8 recordings stay explicit synthesized fallbacks. No source regeneration, paid generation or human ear approval is implied.
 
 For a quick R2.1 check: run `npm run dev`, open a generated room with `?dev=1&map=rogue&seed=317434499&room=1&class=betrayer&god=1`, shoot the room's enemies and collect halos before they fade. Watch the wallet and motes; move onto a mote at full HP and confirm it waits. These dev/god runs do not establish balance or human Gate B acceptance.
 

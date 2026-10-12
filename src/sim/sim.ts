@@ -108,7 +108,9 @@ import { lineOfSight, raycastTerrain } from './los';
 import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
-import { COIN, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, PICKUP_CAP, type PickupRecord } from '../data/pickups';
+import { COIN, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, PICKUP_CAP, itemDrop, type PickupRecord } from '../data/pickups';
+import { PROP_HEIGHT, type PropDef } from '../data/props';
+import { Props, type Prop } from './props';
 import { HaloLedger, HALO_WEIGHT, haloBudget, moteCap } from './economy';
 import { Pickups } from './pickups';
 import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, reviveSlowdown, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
@@ -151,6 +153,8 @@ export interface SimOptions {
   runId?: string;
   /** Reuse the map already generated and validated during Loading. */
   map?: GameMap;
+  /** Generated, seed-selected prop bodies. Fixed fixtures retain their inherited content. */
+  props?: readonly PropDef[];
   /** Players at `go`; each one's index is its ID (M8 §6.2). */
   players: SimPlayerInit[];
   seed: number;
@@ -529,6 +533,7 @@ export class Simulation {
   readonly eIncarnation = new Uint32Array(ENEMY_SLOTS);
   private nextIncarnation = 1;
   readonly pickups: Pickups;
+  readonly props: Props;
   readonly haloLedgers = new Map<number, HaloLedger>();
   private readonly moteDrops = new Map<number, number>();
   readonly eType = new Uint8Array(ENEMY_SLOTS);
@@ -694,6 +699,7 @@ export class Simulation {
     this.runId = opts.runId ?? '00000000000000000000000000000000';
     this.map = opts.map ?? loadMap(opts.dungeon);
     this.pickups = new Pickups(this.map, (p) => this.emit('all', { type: 'pickupState', pickup: { ...p } }));
+    this.props = new Props(this.map, opts.props ?? [], (p, origin) => this.propBroken(p, origin));
     this.benchRoom = opts.benchRoom ?? -1;
     this.benchBurst = !!opts.benchBurst && this.benchRoom >= 0;
     this.noWaves = !!opts.noWaves;
@@ -777,7 +783,7 @@ export class Simulation {
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
-      pickups: this.pickups.live.map((p) => ({ ...p })) };
+      pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint() };
   }
 
   private discoverNeighbours(ai: number): void {
@@ -1038,6 +1044,7 @@ export class Simulation {
     this.separate(1);
     this.updateProjectiles();
     this.updateClouds();
+    this.props.update(this.tick, (p) => this.explodeProp(p));
     this.updateSouls();
     this.pickups.update(this.tick, this.players, (drop, collector) => this.collectPickup(drop, this.slots[collector.id]!));
     this.recoverEnemies();
@@ -1838,7 +1845,7 @@ export class Simulation {
    * burst death (M12 §4.1), summed over the tick; a burst is blasted away from (fromX, fromY), by
    * default the credited player.
    */
-  damageEnemy(slot: number, amount: number, source: number, force = amount, fromX = NaN, fromY = NaN): void {
+  damageEnemy(slot: number, amount: number, source: number, force = amount, fromX = NaN, fromY = NaN, worldBurst = false): void {
     if (!this.eAlive[slot] || amount <= 0) return;
     // 1. Bound (M9 §3.6): a rooted enemy, during the pull too, takes double damage, and double force.
     if (this.isRooted(slot)) {
@@ -1865,7 +1872,7 @@ export class Simulation {
       if (shooter) {
         shooter.kills++;
         this.noteBurst(slot, shooter, fromX, fromY);
-      }
+      } else if (worldBurst) this.noteBurst(slot, null, fromX, fromY);
       this.removeEnemy(slot);
     }
   }
@@ -1901,15 +1908,67 @@ export class Simulation {
   }
 
   /** A credited kill bursts when its tick's force reaches 2× the type's max HP, heavy at 4× (M12 §4.1). */
-  private noteBurst(slot: number, shooter: SimPlayer, fromX: number, fromY: number): void {
+  private noteBurst(slot: number, shooter: SimPlayer | null, fromX: number, fromY: number): void {
     const type = this.eType[slot];
     if (type === GATEKEEPER) return;
     const tier = burstTier(this.eForce[slot], ENEMIES[type].hp);
     if (tier === 0) return;
-    const fx = Number.isNaN(fromX) ? shooter.x : fromX;
-    const fy = Number.isNaN(fromY) ? shooter.y : fromY;
+    const fx = Number.isNaN(fromX) ? shooter?.x ?? this.eX[slot] : fromX;
+    const fy = Number.isNaN(fromY) ? shooter?.y ?? this.eY[slot] : fromY;
     const angle = burstAngle(fx, fy, this.eX[slot], this.eY[slot], slot);
-    this.tickBursts.push(slot, tier === 2 ? angle + 360 : angle, shooter.id);
+    this.tickBursts.push(slot, tier === 2 ? angle + 360 : angle, shooter?.id ?? -1);
+  }
+
+  // ------------------------------------------------------------------ generated props (rogue R2.2)
+
+  private propBroken(p: Prop, origin: 'player' | 'world'): void {
+    const z = p.z + PROP_HEIGHT[p.family] / 2;
+    const targets: number[] = [];
+    if (p.family === 'loot') {
+      if (p.marked) this.pickups.drop(GOLD_HALO, p.room, p.x, p.y, this.tick);
+      else {
+        const combat = ['combat', 'boss'].includes(this.map.rooms[p.room].kind);
+        const roll = this.random();
+        if (roll >= (combat ? 0.75 : 0.85) && roll < (combat ? 0.85 : 0.95)) this.pickups.drop(COIN, p.room, p.x, p.y, this.tick);
+        else if (roll >= (combat ? 0.85 : 0.95) && roll < (combat ? 0.95 : 1)) this.pickups.drop(HEAL_MOTE, p.room, p.x, p.y, this.tick);
+        else if (combat && roll >= 0.95) this.pickups.drop(itemDrop(this.random), p.room, p.x, p.y, this.tick);
+      }
+    } else if (p.family === 'blessing' && origin === 'player') {
+      for (const q of this.players) {
+        if (!this.livingTargetable(q) || this.roomAt(q.x, q.y) !== p.room ||
+          distToCylinder(p.x, p.y, z, q.x, q.y, q.z, PLAYER_RADIUS, PLAYER_HEIGHT) > 6 ||
+          !lineOfSight(this.map, p.x, p.y, z, q.x, q.y, q.z + PLAYER_HEIGHT / 2)) continue;
+        this.heal(q, 30); targets.push(q.id);
+      }
+    }
+    this.emit('all', { type: 'propBroken', id: p.id, family: p.family, x: p.x, y: p.y, z: p.z,
+      marked: p.marked, impactTick: p.blastTick, targets });
+  }
+
+  private explodeProp(p: Prop): void {
+    const z = p.z + PROP_HEIGHT.blast / 2;
+    this.emit('all', { type: 'propBlast', id: p.id, x: p.x, y: p.y, z: p.z });
+    const victims: number[] = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k], def = ENEMIES[this.eType[s]];
+      if (this.roomAt(this.eX[s], this.eY[s]) !== p.room ||
+        distToCylinder(p.x, p.y, z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > 4 ||
+        !lineOfSight(this.map, p.x, p.y, z, this.eX[s], this.eY[s], this.eZ[s] + def.height / 2)) continue;
+      victims.push(s);
+    }
+    for (const s of victims) this.damageEnemy(s, 60, -1, Infinity, p.x, p.y, true);
+    for (const q of this.players) {
+      if (!this.livingTargetable(q) || this.roomAt(q.x, q.y) !== p.room ||
+        distToCylinder(p.x, p.y, z, q.x, q.y, q.z, PLAYER_RADIUS, PLAYER_HEIGHT) > 4 ||
+        !lineOfSight(this.map, p.x, p.y, z, q.x, q.y, q.z + PLAYER_HEIGHT / 2)) continue;
+      this.damagePlayer(q, 15);
+    }
+    this.props.area(p.x, p.y, z, 4, this.tick, 'world', (q) => q.room === p.room);
+  }
+
+  /** Native damage rays carry on through props, like globes, until their accepted enemy/terrain stop. */
+  private propsOnRay(x: number, y: number, z: number, dx: number, dy: number, dz: number, stop: number): void {
+    for (const { prop } of this.props.ray(x, y, z, dx, dy, dz, stop)) this.props.break(prop.id, this.tick);
   }
 
   /** A hit on a player. */
@@ -1959,6 +2018,7 @@ export class Simulation {
     }
     // Applied after the scan: a kill removes the enemy from the active list.
     for (const s of hit) this.damageEnemy(s, SHROUD_BURST_DAMAGE, source, Infinity, x, y);
+    if (caster?.connected) this.props.area(x, y, cz, SHROUD_BURST_RADIUS, this.tick);
     this.emit('all', { type: 'shroudBurst', playerId: p.id, x, y, z });
   }
 
@@ -2212,6 +2272,7 @@ export class Simulation {
       if (hits.length >= w.maxHits) stop = this.rayT(hits[hits.length - 1], ex, ey, ez, dx, dy, dz);
       this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
       this.globesOnRay(p, ex, ey, ez, dx, dy, dz, stop);
+      this.propsOnRay(ex, ey, ez, dx, dy, dz, stop);
       for (const s of hits) {
         // A shotgun pellet within 6 m deals 20, a Blessed's HP, and always bursts what it kills; beyond, 10
         // (M12 §5.1, §4.1).
@@ -2277,6 +2338,7 @@ export class Simulation {
     const y = this.pY[slot];
     const z = this.pZ[slot];
     this.removeProjectile(slot);
+    this.props.area(x, y, z, GLOBE_SHOT_BLAST, this.tick);
     for (let k = this.activeCount - 1; k >= 0; k--) {
       const s = this.active[k];
       const def = ENEMIES[this.eType[s]];
@@ -2321,6 +2383,10 @@ export class Simulation {
     const ax = Math.cos(p.yaw);
     const ay = Math.sin(p.yaw);
     const cosMax = Math.cos(SCOURGE_HALF_ARC);
+    this.props.area(cx, cy, cz, w.range, this.tick, 'player', (q) => {
+      const dx = q.x - cx, dy = q.y - cy, length = Math.hypot(dx, dy);
+      return length < 1e-9 || (dx * ax + dy * ay) / length >= cosMax - 1e-9;
+    });
     const hit: Array<{ s: number; d: number }> = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
@@ -2363,6 +2429,7 @@ export class Simulation {
     const souls = new Set<SimPlayer>();
     this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
     this.globesOnRay(p, ex, ey, ez, dx, dy, dz, stop);
+    this.propsOnRay(ex, ey, ez, dx, dy, dz, stop);
     // Its force is what the bullet still carried on reaching the enemy (M12 §4.1).
     for (const h of dealt.hits) this.damageEnemy(h.s, h.amount, p.index, h.carried);
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, false), p);
@@ -2579,6 +2646,7 @@ export class Simulation {
     const g = groundHeight(this.map, cx, cy, PLAYER_RADIUS, Infinity, false, true);
     const floor = g === -Infinity ? p.z : g;
     const cz = floor + PLAYER_HEIGHT / 2;
+    this.props.area(cx, cy, cz, FALLING_STAR_RADIUS, this.tick);
     const hit: Array<{ s: number; d: number }> = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
@@ -2626,6 +2694,12 @@ export class Simulation {
     const len = Math.sqrt(len2);
     const ux = len > 1e-9 ? dx / len : 0;
     const uy = len > 1e-9 ? dy / len : 0;
+    for (const q of this.props.all) {
+      if (q.broken) continue;
+      const t = len2 > 1e-12 ? Math.max(0, Math.min(1, ((q.x - x0) * dx + (q.y - y0) * dy) / len2)) : 0;
+      const x = x0 + dx * t, y = y0 + dy * t, z = z0 + (z1 - z0) * t + PLAYER_HEIGHT / 2;
+      if (this.props.inArea(q, x, y, z, SHADOWSTEP_CUT_REACH)) this.props.break(q.id, this.tick);
+    }
     const hit: number[] = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
@@ -2788,7 +2862,13 @@ export class Simulation {
       }
       // A censer passing a globe shatters it and flies on (M12 follow-up §1.3).
       const shooter = this.slots[owner];
-      if (shooter) this.globesOnRay(shooter, x, y, z, dx, dy, dz, Math.min(len, terrainT, hitT, soulT));
+      const propHit = this.pDamage[slot] > 0 ? this.props.ray(x, y, z, dx, dy, dz, Math.min(len, terrainT, hitT, soulT), pr)[0] : undefined;
+      if (shooter) this.globesOnRay(shooter, x, y, z, dx, dy, dz, Math.min(len, terrainT, hitT, soulT, propHit?.distance ?? Infinity));
+      if (propHit) {
+        this.props.break(propHit.prop.id, this.tick);
+        this.explodeCenser(slot, x + dx * propHit.distance, y + dy * propHit.distance, z + dz * propHit.distance, -1);
+        return;
+      }
       if (soulT < hitT) {
         this.explodeCenser(slot, x + dx * soulT, y + dy * soulT, z + dz * soulT, -1);
         return;
@@ -2870,6 +2950,7 @@ export class Simulation {
     while (this.clouds.length && this.tick >= this.clouds[0].until) this.clouds.shift();
     const pulsing = this.clouds.filter((c) => this.tick >= c.from && (this.tick - c.from) % CLOUD_PULSE_TICKS === 0);
     if (pulsing.length === 0) return;
+    for (const c of pulsing) if (c.owner.connected) this.props.area(c.x, c.y, c.z, CLOUD_RADIUS, this.tick);
     const hits: Array<[number, number]> = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];

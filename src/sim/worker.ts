@@ -10,6 +10,7 @@ import { PING_MS } from '../net/peerConfig';
 import { MAX_TICKS_PER_LOOP, TICK_MS } from './constants';
 import { Simulation } from './sim';
 import { loadRunMap } from './runMap';
+import { propDefs } from '../data/props';
 import { localSnap, type MainToWorker, type WorkerToMain } from './workerMessages';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
@@ -104,9 +105,9 @@ function loop(): void {
 
 function start(m: Extract<MainToWorker, { t: 'start' }>): void {
   stopLoop();
-  const { def, map } = loadRunMap(m);
+  const { def, map, floor } = loadRunMap(m);
   sim = new Simulation({
-    dungeon: def, map, runId: m.runId, players: m.players, seed: m.simSeed, god: m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
+    dungeon: def, map, props: propDefs(floor), runId: m.runId, players: m.players, seed: m.simSeed, god: m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
     startRoom: m.startRoom,
   });
   runId = m.runId;

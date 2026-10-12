@@ -1,5 +1,6 @@
 import type { Browser, Page } from '@playwright/test';
 import { expect, state, test } from './fixtures';
+import { shootProp } from './prop-fixtures';
 
 /**
  * A client page in its own browser, failing the test on console and page errors like `page`. Smaller
@@ -48,7 +49,7 @@ test('multiplayer', async ({ page: a, browser }) => {
     const [b, c, d] = clients;
 
     // (1) A hosts with password `pw` and reads the game ID.
-    await toMultiplayer(a, '/?bot=1&god=1', 'Alice');
+    await toMultiplayer(a, '/?god=1', 'Alice');
     await a.getByRole('button', { name: 'Host game' }).click();
     await a.getByLabel('Password').fill('pw');
     await a.getByRole('button', { name: 'Create' }).click();
@@ -88,7 +89,8 @@ test('multiplayer', async ({ page: a, browser }) => {
     await start.click();
     progress('loading starters');
 
-    // (4) Everyone loads the host's generated floor. This all-bot admission fixture stays idle: only humans start encounters.
+    // (4) Everyone loads the host's generated floor. The human host stays in the Breach;
+    // bots follow, and no encounter starts during this admission/catch-up fixture.
     await Promise.all([a, b, c].map((p) => p.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 })));
     await Promise.all([a, b, c].map((p) => p.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 0)));
     const first = await state(a);
@@ -105,6 +107,13 @@ test('multiplayer', async ({ page: a, browser }) => {
       expect(s.floorSyncTick).toBeGreaterThanOrEqual(0);
       expect(s.roomKnowledge).toEqual(first.roomKnowledge);
     }
+    progress('breaking a seeded Breach amphora');
+    const own = (await state(a)).self;
+    const vase = (await state(a)).props.filter((p) => p.room === 0 && p.family === 'loot')
+      .sort((p, q) => Math.hypot(p.x - own.x, p.y - own.y) - Math.hypot(q.x - own.x, q.y - own.y))[0];
+    expect(vase).toBeDefined();
+    await shootProp(a, vase.id);
+    await Promise.all([b, c].map((p) => expect.poll(async () => (await state(p)).brokenProps.includes(vase.id)).toBe(true)));
     progress('joining late client');
 
     // D joins the game in progress from an invite link, and picks the Betrayer (M8 §12.2). Until the
@@ -152,6 +161,7 @@ test('multiplayer', async ({ page: a, browser }) => {
     }
     await d.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 });
     const late = await state(d);
+    expect(late.brokenProps).toContain(vase.id);
     expect(late.floorSyncTick).toBeGreaterThan(0);
     expect(late.roomKnowledge).toEqual((await state(a)).roomKnowledge);
     expect([late.runId, late.seed, late.simSeed, late.floorHash]).toEqual([first.runId, first.seed, first.simSeed, first.floorHash]);

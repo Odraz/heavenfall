@@ -1,6 +1,7 @@
 /** `ctrl` messages and game events (§9.2). */
 import type { ClassId } from '../data/classes';
 import type { PickupRecord } from '../data/pickups';
+import type { PropFamily } from '../data/rooms/types';
 import type { RunIdentity } from './version';
 
 /** The host's choice, carried by both welcome and lobby. Fixed maps are development fixtures. */
@@ -33,9 +34,13 @@ export interface FloorSync {
   revision: number;
   rooms: RoomSync[];
   pickups?: PickupRecord[];
+  brokenProps?: number[];
+  propBlasts?: Array<{ id: number; impactTick: number }>;
 }
 
 export type GameEvent =
+  | { type: 'propBroken'; id: number; family: PropFamily; x: number; y: number; z: number; marked: boolean; impactTick: number; targets: number[] }
+  | { type: 'propBlast'; id: number; x: number; y: number; z: number }
   | { type: 'pickupState'; pickup: PickupRecord }
   | { type: 'pickupCollected'; id: number; kind: number; playerId: number; x: number; y: number; z: number }
   /**
