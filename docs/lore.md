@@ -37,6 +37,15 @@ The players should feel the damned are on the right side, without the game prete
 | The Binder | an angel | chained the giants around the frozen lake (circle 9) | the Throne (heaven 9) |
 | The Betrayer | a human | Judecca, beside Judas (circle 9) | the Throne (heaven 9) |
 
+## Others at the Gates
+
+Two of the damned the party meets on the way up, in the Pearly Gates' special rooms ([rogue/game.md](rogue/game.md) §6.6, §9.6).
+
+| Who | Blurb |
+|---|---|
+| The Pardoner | A seller of indulgences who was refused at the Gates. |
+| The Advocate | Hell's counsel in the appeal of the damned. It speaks through the grille of a confessional. |
+
 ## Loading cards
 
 While a game loads, a card fills the screen: a painting with a title and one or two sentences in archaic English under it. A random card is shown at each load (not the one shown last time), and if loading takes longer, another follows every 5 s (`src/ui/loading.ts`). *The Appeal* sets up the Gatekeeper's *"Your appeal is denied."* The paintings' prompts are in [art-prompts.md](art-prompts.md) (*Loading cards*).
