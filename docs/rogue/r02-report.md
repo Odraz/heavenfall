@@ -7,7 +7,7 @@
 - Tomas accepted R1 at `de0f8ae724ea25765c446dc45c0ee70ebf94a4fe` ("R01 looks good") and requested a Gate clipping fix, a commit, then independent R02 implementation overnight.
 - Gate repair / R2 start SHA: `767b351a039f3d7a7010ce7893d4812ebf0782a9`.
 - Local `main` remains `fa9e3f5765cd09d5a315db6342107ff70ad159e8`, the base recorded in R0/R1. Cached `origin/main` is `c5d74e456f9932953d432eaa7e679f427ec8d937`; no fetch, push, main merge or ref replacement was performed.
-- R2.1 code end SHA: recorded below after the verified implementation commit.
+- R2.1 code end SHA: `36d24131b40de6399ae37cd4e42f395fd31c9629` (authoritative pickups, halo ledger and bounded snapshots). The following documentation commit only records that identity.
 - Protocol version **3**, rules version **2**. Floor layout/pool/pinned hash remain the R1 fixture until R2.6 introduces the full pool. Restart the dev server after a commit so every participant uses the same artifact fingerprint.
 
 ## R2.1: pickups, halo ledger and bounded snapshots
