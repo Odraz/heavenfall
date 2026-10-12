@@ -63,6 +63,6 @@ export function press(p: SimPlayer, key: 'Q' | 'E', allyTargetId = 255): void {
  * The room must be in its countdown.
  */
 export function sealNow(sim: Simulation, ai = 0): void {
-  sim.rooms[ai].sealTick = sim.tick + 1;
+  sim.rooms[ai].sealTick = sim.tick; // Already expired, independent of the next quorum hold.
   sim.step();
 }

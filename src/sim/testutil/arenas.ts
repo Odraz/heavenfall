@@ -32,13 +32,12 @@ export function arenaDungeon(waves: WaveDef[], boss = false): DungeonDef {
 
 const CLASSES: ClassId[] = ['betrayer', 'heretic', 'binder', 'fallen'];
 
-export function arenaSim(waves: WaveDef[], opts: { players?: number; god?: boolean; singleplayer?: boolean; noWaves?: boolean; boss?: boolean } = {}): Simulation {
+export function arenaSim(waves: WaveDef[], opts: { players?: number; god?: boolean; noWaves?: boolean; boss?: boolean } = {}): Simulation {
   return new Simulation({
     dungeon: arenaDungeon(waves, opts.boss),
     players: Array.from({ length: opts.players ?? 4 }, (_, id) => ({ id, name: `P${id}`, classId: CLASSES[id] })),
     seed: 1,
     god: opts.god,
-    singleplayer: opts.singleplayer,
     noWaves: opts.noWaves,
   });
 }

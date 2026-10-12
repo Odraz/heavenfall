@@ -41,8 +41,7 @@ export type GameEvent =
   | { type: 'dashCut'; playerId: number; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number }
   /** A globe shattered (M12 follow-up §1.3): `by` is the player who shot it down, or −1 when it broke on its own. */
   | { type: 'globeShatter'; x: number; y: number; z: number; by: number }
-  | { type: 'arenaStarted'; arenaIndex: number }
-  | { type: 'arenaCleared'; arenaIndex: number }
+  | { type: 'roomState'; room: number; phase: number; knowledge: number; entrySocket: number }
   | { type: 'bossCast'; phase: 'start' | 'interrupted' | 'completed' }
   /** `stats`: the players still connected at the end, by ID. */
   | { type: 'gameOver'; result: 'victory' | 'defeat'; timeMs: number; stats: Record<number, PlayerStats> };
@@ -61,6 +60,7 @@ export interface LobbyPlayer {
   id: number;
   name: string;
   classId: ClassId | null;
+  bot?: boolean;
   isHost: boolean;
   /** Still on Results after a game; the host's `Start` waits for them. */
   inResults: boolean;

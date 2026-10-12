@@ -104,7 +104,7 @@ function start(m: Extract<MainToWorker, { t: 'start' }>): void {
   const { def, map } = loadRunMap(m);
   sim = new Simulation({
     dungeon: def, map, players: m.players, seed: m.simSeed, god: m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
-    singleplayer: m.players.length === 1 && !m.players[0].bot, startRoom: m.startRoom, walkOnly: m.fixture === null,
+    startRoom: m.startRoom,
   });
   localPlayerId = m.localPlayerId;
   paused = false;

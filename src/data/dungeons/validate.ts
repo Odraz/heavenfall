@@ -71,6 +71,7 @@ export function validateLevel(map: GameMap, markers: string[], mode: ValidateMod
   for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) if (marker(c, r) === 'x') xCells.push([c, r]);
 
   map.rooms.forEach((a, ai) => {
+    if (a.kind === 'combat' && a.waves.length === 0) errors.push(`room ${ai}: an ordinary combat room has no waves`);
     const inRect = (c: number, r: number) => c >= a.rect.x0 && c <= a.rect.x1 && r >= a.rect.y0 && r <= a.rect.y1;
     for (const e of a.entry) {
       for (const [c, r] of e.cells) if (!enemy[r * w + c]) errors.push(`room ${ai}: entry cell ${cellName(c, r)} isn't enemy-reachable`);
@@ -158,7 +159,6 @@ export function validateLevel(map: GameMap, markers: string[], mode: ValidateMod
     if (a.kind === 'combat' && xs.length < 6) errors.push(`room ${ai}: only ${xs.length} x cells in its rect`);
     if (a.kind !== 'combat' && a.kind !== 'boss' && xs.length > 0) errors.push(`room ${ai}: a ${a.kind} room has x cells`);
     for (const [c, r] of xs) if (!enemy[r * w + c]) errors.push(`room ${ai}: x cell ${cellName(c, r)} isn't enemy-reachable`);
-    if (a.kind === 'combat' && a.waves.length === 0) errors.push(`room ${ai}: an ordinary combat room has no waves`);
     if (a.kind !== 'combat' && a.waves.length > 0) errors.push(`room ${ai}: a ${a.kind} room has ordinary waves`);
     // (b) one entry per used socket, 4 non-door floor cells inside the rect each.
     const used = a.leaves.map((l) => l.socket).join(',');

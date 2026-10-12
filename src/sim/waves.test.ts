@@ -230,7 +230,7 @@ describe('squads (M12 follow-up §4.2)', () => {
 
 describe('dev arena=N', () => {
   it('starts on arena N’s entry cells with the arenas before it cleared, and N seals as usual', () => {
-    const sim = new Simulation({ dungeon: DUNGEONS['pearly-gates'], players: [{ id: 0, name: 'P0', classId: 'binder' }], seed: 1, god: true, singleplayer: true, startRoom: 2 });
+    const sim = new Simulation({ dungeon: DUNGEONS['pearly-gates'], players: [{ id: 0, name: 'P0', classId: 'binder' }], seed: 1, god: true, startRoom: 2 });
     expect(sim.rooms.map((a) => a.phase)).toEqual([PHASE_CLEARED, PHASE_CLEARED, PHASE_IDLE, PHASE_IDLE]);
     const [c, r] = pearlyGates.arenas[2].entryCells[0];
     expect([sim.players[0].x, sim.players[0].y]).toEqual([c + 0.5, r + 0.5]);

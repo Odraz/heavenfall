@@ -5,7 +5,7 @@ import { FIRE_LEFT, FIRE_RIGHT, SCOURGE_HALF_ARC, SECONDARIES } from '../data/we
 import { aimDir, rayCylinder } from '../sim/combat';
 import { PHASE_COMBAT, PHASE_COUNTDOWN } from '../net/protocol';
 import { PLAYER_EYE, PLAYER_HEIGHT, PLAYER_RADIUS } from '../sim/constants';
-import { FlowField } from '../sim/flowfield';
+import { FlowField, UNREACHABLE } from '../sim/flowfield';
 import { lineOfSight, raycastTerrain } from '../sim/los';
 import { roomCleared, type GameMap } from '../sim/map';
 import { distToCylinder, type Body } from '../sim/movement';
@@ -29,6 +29,9 @@ export interface BotView {
   activeRoom: number;
   activePhase: number;
   clearedMask: number;
+  entrySocket?: number;
+  /** Multiplayer bots follow humans; a solo autopilot explores. */
+  followParty?: boolean;
   /** The host's player position for a client's bot in multiplayer; null for the host's bot. */
   hostPlayer: { x: number; y: number } | null;
   qReady: boolean;
@@ -39,6 +42,7 @@ export interface BotView {
   entryIndex: number;
   /** Teammates' souls: their ground points (M8 §4.1). */
   souls: ReadonlyArray<{ x: number; y: number; z: number }>;
+  humanSouls?: ReadonlyArray<{ x: number; y: number; z: number }>;
   classId: ClassId;
   /** Living teammates (not the bot), with their HP as a fraction of max HP, for Sacrament (M9 §8). */
   teammates: ReadonlyArray<{ x: number; y: number; z: number; hpFrac: number }>;
@@ -81,6 +85,10 @@ export class Bot {
   private readonly field: FlowField;
   private fieldCell = -1;
   private lastFieldTime = -Infinity;
+  private lastRescueTime = -Infinity;
+  private rescueGoal: { x: number; y: number } | null = null;
+  private waypointCell = -1;
+  private waypointGoal = -1;
   private readonly out: BotOutput = { yaw: null, pitch: null, dirX: 0, dirY: 0, fire: 0, jump: false, pressQ: false, pressE: false };
   /** The Betrayer's last line check and its result. */
   private lastLineCheck = -Infinity;
@@ -144,10 +152,34 @@ export class Bot {
     let goal: { x: number; y: number } | null = null;
     if (v.activePhase === PHASE_COUNTDOWN) {
       // Every bot heads for its own entry cell in the room counting down (M8 §6.4).
-      const cell = v.map.rooms[v.activeRoom]?.entry[0].cells[v.entryIndex];
+      const room = v.map.rooms[v.activeRoom];
+      const at = v.hostPlayer ?? b;
+      const entry = room?.entry.find((e) => e.socket === v.entrySocket) ?? room?.entry.reduce((best, e) => {
+        const distance = (cells: typeof e.cells) => {
+          const x = cells.reduce((sum, cell) => sum + cell[0] + 0.5, 0) / 4;
+          const y = cells.reduce((sum, cell) => sum + cell[1] + 0.5, 0) / 4;
+          return (at.x - x) ** 2 + (at.y - y) ** 2;
+        };
+        return distance(e.cells) < distance(best.cells) ? e : best;
+      });
+      const cell = entry?.cells[v.entryIndex];
       if (cell) goal = { x: cell[0] + 0.5, y: cell[1] + 0.5 };
     } else if (v.hostPlayer) {
       if (Math.hypot(v.hostPlayer.x - ex, v.hostPlayer.y - ey) > FOLLOW_HOST_DIST) goal = v.hostPlayer;
+    } else if (v.followParty && (v.humanSouls ?? v.souls).length > 0) {
+      const souls = v.humanSouls ?? v.souls;
+      const retained = this.rescueGoal && souls.some((s) => s.x === this.rescueGoal!.x && s.y === this.rescueGoal!.y);
+      if (now - this.lastRescueTime >= FIELD_INTERVAL || (this.rescueGoal && !retained)) {
+        this.rescueGoal = [...souls].sort((a, b) => (a.x - ex) ** 2 + (a.y - ey) ** 2 - (b.x - ex) ** 2 - (b.y - ey) ** 2)
+          .find((s) => {
+            this.field.compute(Math.floor(s.x), Math.floor(s.y));
+            return this.field.at(Math.floor(ex), Math.floor(ey)) !== UNREACHABLE;
+          }) ?? null;
+        this.lastRescueTime = now;
+        this.fieldCell = this.rescueGoal ? this.field.targetCell : -1;
+        this.lastFieldTime = now;
+      }
+      goal = this.rescueGoal;
     } else if (v.activePhase === PHASE_COMBAT) {
       if (!target) {
         let best = Infinity;
@@ -159,16 +191,58 @@ export class Bot {
           }
         }
       }
-    } else {
-      // The first room not cleared.
-      const next = v.map.rooms.findIndex((_, i) => !roomCleared(v.clearedMask, i));
-      const room = v.map.rooms[next];
-      if (room) goal = { x: room.entry[0].cells[0][0] + 0.5, y: room.entry[0].cells[0][1] + 0.5 };
+    } else if (!v.followParty) {
+      goal = this.nextEntry(v);
     }
 
     if (goal) this.steer(now, v, goal, o);
     o.jump = v.blockedLastFrame;
     return o;
+  }
+
+  /** BFS through cleared rooms; closest frontier first, then room index. */
+  private nextEntry(v: BotView): { x: number; y: number } | null {
+    const map = v.map;
+    if (!map.rooms.some((r) => r.kind === 'breach')) {
+      const room = map.rooms.find((_, i) => !roomCleared(v.clearedMask, i));
+      const cell = room?.entry[0].cells[v.entryIndex];
+      return cell ? { x: cell[0] + 0.5, y: cell[1] + 0.5 } : null;
+    }
+    const c = Math.floor(v.body.x), r = Math.floor(v.body.y);
+    let start = map.roomOf[r * map.w + c];
+    if (start === 255) {
+      let best = Infinity;
+      for (let i = 0; i < map.rooms.length; i++) {
+        if (!roomCleared(v.clearedMask, i)) continue;
+        for (const e of map.rooms[i].entry) {
+          const [x, y] = e.cells[v.entryIndex];
+          const d = (v.body.x - x - 0.5) ** 2 + (v.body.y - y - 0.5) ** 2;
+          if (d < best) { best = d; start = i; }
+        }
+      }
+    }
+    if (start === 255 || !roomCleared(v.clearedMask, start)) return null;
+    const distance = new Int16Array(map.rooms.length).fill(-1);
+    const queue = [start];
+    distance[start] = 0;
+    const candidates: Array<{ room: number; from: number; distance: number }> = [];
+    for (let k = 0; k < queue.length; k++) {
+      const from = queue[k];
+      for (const leaf of map.rooms[from].leaves) {
+        const to = leaf.to;
+        if (to < 0 || distance[to] >= 0) continue;
+        if (roomCleared(v.clearedMask, to)) { distance[to] = distance[from] + 1; queue.push(to); }
+        else candidates.push({ room: to, from, distance: distance[from] + 1 });
+      }
+    }
+    candidates.sort((a, b) => Number(map.rooms[a.room].kind === 'boss') - Number(map.rooms[b.room].kind === 'boss') || a.distance - b.distance || a.room - b.room);
+    const next = candidates[0];
+    if (!next) return null;
+    const room = map.rooms[next.room];
+    const socket = room.leaves.find((l) => l.to === next.from)?.socket;
+    const entry = room.entry.find((e) => e.socket === socket) ?? room.entry[0];
+    const [x, y] = entry.cells[v.entryIndex];
+    return { x: x + 0.5, y: y + 0.5 };
   }
 
   /** Aims along (dx, dy, dz); returns the yaw. */
@@ -243,11 +317,13 @@ export class Bot {
 
   /** The nearest teammate's soul within 30 m in line of sight, if no living enemy is within 6 m. */
   private soulToRevive(v: BotView, ex: number, ey: number, ez: number): { x: number; y: number; z: number } | null {
-    if (v.souls.length === 0) return null;
-    for (const e of v.enemies) if (Math.hypot(e.x - ex, e.y - ey) <= REVIVE_SAFE) return null;
+    const rescue = v.followParty && !v.hostPlayer;
+    const souls = rescue ? v.humanSouls ?? v.souls : v.souls;
+    if (souls.length === 0) return null;
+    if (!rescue) for (const e of v.enemies) if (Math.hypot(e.x - ex, e.y - ey) <= REVIVE_SAFE) return null;
     let best: { x: number; y: number; z: number } | null = null;
     let bestD = REVIVE_RANGE;
-    for (const s of v.souls) {
+    for (const s of souls) {
       const d = Math.hypot(s.x - ex, s.y - ey, s.z + SOUL_AIM_HEIGHT - ez);
       if (d > bestD || !lineOfSight(v.map, ex, ey, ez, s.x, s.y, s.z + SOUL_AIM_HEIGHT)) continue;
       best = s;
@@ -275,7 +351,7 @@ export class Bot {
     const gc = Math.floor(goal.x);
     const gr = Math.floor(goal.y);
     const cell = gr * map.w + gc;
-    if (cell !== this.fieldCell && now - this.lastFieldTime >= FIELD_INTERVAL) {
+    if (now - this.lastFieldTime >= FIELD_INTERVAL) {
       this.field.compute(gc, gr);
       this.fieldCell = cell;
       this.lastFieldTime = now;
@@ -288,15 +364,23 @@ export class Bot {
     const fr = Math.floor(this.fieldCell / map.w);
     let tx: number;
     let ty: number;
-    if (Math.abs(c - fc) <= 1 && Math.abs(r - fr) <= 1) {
-      // In the field's goal cell or next to it: straight at the goal.
+    if (c === fc && r === fr) {
+      // In the goal cell: straight to the requested point.
       tx = this.fieldCell === cell ? goal.x : fc + 0.5;
       ty = this.fieldCell === cell ? goal.y : fr + 0.5;
+      this.waypointCell = -1;
     } else {
-      const n = this.field.bestNeighbor(c, r);
-      if (n < 0) return;
-      tx = (n % map.w) + 0.5;
-      ty = Math.floor(n / map.w) + 0.5;
+      const wx = (this.waypointCell % map.w) + 0.5;
+      const wy = Math.floor(this.waypointCell / map.w) + 0.5;
+      // Finish a diagonal through its centre before selecting the next cell. Replanning at the
+      // intermediate orthogonal cell can turn back on a stair and oscillate forever.
+      if (this.waypointCell < 0 || this.waypointGoal !== this.fieldCell || this.field.dist[this.waypointCell] === UNREACHABLE || Math.hypot(wx - b.x, wy - b.y) < ARRIVE_DIST) {
+        this.waypointCell = this.field.bestNeighbor(c, r);
+        this.waypointGoal = this.fieldCell;
+      }
+      if (this.waypointCell < 0) return;
+      tx = (this.waypointCell % map.w) + 0.5;
+      ty = Math.floor(this.waypointCell / map.w) + 0.5;
     }
     const dx = tx - b.x;
     const dy = ty - b.y;

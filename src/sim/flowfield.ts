@@ -1,6 +1,7 @@
 /** Flow fields (§7.3), shared by the simulation and the bot. */
 import { EPS, STEP_UP } from './constants';
 import type { GameMap } from './map';
+import type { Rect } from '../data/dungeons/types';
 
 export const UNREACHABLE = 0x7fffffff;
 export const COST_ORTHO = 10;
@@ -53,12 +54,14 @@ export class FlowField {
    * Dijkstra over 8 neighbors with a bucket queue, computed backward from the target cell
    * over one-way steps, so distances measure paths to it.
    */
-  compute(tc: number, tr: number): void {
+  compute(tc: number, tr: number, clamp?: Rect): void {
     const { map, dist, air, buckets } = this;
     const w = map.w;
     dist.fill(UNREACHABLE);
     this.targetCell = -1;
+    const inside = (c: number, r: number) => !clamp || (c >= clamp.x0 && c <= clamp.x1 && r >= clamp.y0 && r <= clamp.y1);
     if (tc < 0 || tr < 0 || tc >= w || tr >= map.h) return;
+    if (!inside(tc, tr)) return;
     const t = tr * w + tc;
     if (map.solid[t]) return;
     this.targetCell = t;
@@ -81,6 +84,7 @@ export class FlowField {
           const ac = bc + DX[k];
           const ar = br + DY[k];
           if (ac < 0 || ar < 0 || ac >= w || ar >= map.h) continue;
+          if (!inside(ac, ar)) continue;
           const a = ar * w + ac;
           if (map.solid[a]) continue;
           // The step from A to B has offset (-DX[k], -DY[k]), which is neighbor index opposite(k).

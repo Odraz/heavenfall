@@ -101,7 +101,7 @@ export class Lobby {
   lobbyMessage(): Extract<CtrlMessage, { type: 'lobby' }> {
     const players = [...this.players.values()]
       .sort((a, b) => a.id - b.id)
-      .map(({ id, name, classId, isHost, state }) => ({ id, name, classId, isHost, inResults: state === 'results' }));
+      .map(({ id, name, classId, bot, isHost, state }) => ({ id, name, classId, bot, isHost, inResults: state === 'results' }));
     return { type: 'lobby', heaven: this.heaven, fixture: this.fixture, players };
   }
 

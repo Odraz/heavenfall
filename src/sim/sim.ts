@@ -110,20 +110,17 @@ import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, ty
 import { mulberry32 } from './rng';
 import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, reviveSlowdown, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
 
-/** Party-size multipliers ×10 (§7.5), indexed by party size. */
-const MULT10 = [0, 4, 6, 8, 10];
-
-/** The party-size multiplier (§7.5). */
+/** Linear party scaling, including half-player bots (rogue game.md §0). */
 export function partyMultiplier(partySize: number): number {
-  return MULT10[Math.max(1, Math.min(4, partySize))] / 10;
+  return (2 + 2 * Math.max(1, Math.min(4, partySize))) / 10;
 }
 
 /**
  * The Gatekeeper's HP and Judgment's interrupt multiplier: 0.3 for a solo game (M12 follow-up §3.3,
  * was 0.4), the party-size multiplier otherwise.
  */
-export function bossMultiplier(partySize: number): number {
-  return partySize <= 1 ? 0.3 : partyMultiplier(partySize);
+export function bossMultiplier(partySize: number, solo = partySize === 1): number {
+  return solo ? 0.3 : partyMultiplier(partySize);
 }
 
 /** A wave's enemies for the party size, each type and its squad (M12 follow-up §4.2) scaled. */
@@ -133,8 +130,7 @@ export function waveSize(w: WaveDef, partySize: number): number {
 
 /** Scales one enemy count for the party size, rounding up (§7.5). */
 export function scaleCount(count: number, partySize: number): number {
-  const m = MULT10[Math.max(1, Math.min(4, partySize))];
-  return Math.ceil((count * m) / 10);
+  return Math.max(0, Math.ceil(count * partyMultiplier(partySize) - 1e-9));
 }
 
 export interface SimPlayerInit {
@@ -159,14 +155,10 @@ export interface SimOptions {
   benchRoom?: number;
   /** With `benchRoom`: every 0.5 s, 40 damage to the 20 Blessed nearest a point 8 m ahead of player 0 (M12 §10). */
   benchBurst?: boolean;
-  /** Singleplayer: enables health regeneration (§5.7). */
-  singleplayer?: boolean;
   /** Arena waves are disabled (tests). */
   noWaves?: boolean;
-  /** Dev `arena=N`: the rooms before N start cleared, and the players on N's entry cells. */
+  /** Dev entry: fixtures clear rooms before N; generated floors clear every other room. */
   startRoom?: number;
-  /** R1.3 generated floors: all doors open, room encounters deferred to R1.4. */
-  walkOnly?: boolean;
 }
 
 export interface SimEvent {
@@ -282,6 +274,16 @@ interface SpawnBatch {
 }
 
 interface RoomState {
+  /** Knowledge replication and neighbour discovery arrive in R1.5. */
+  knowledge: number;
+  entrySocket: number;
+  cancelTicks: number;
+  refills: number;
+  lastHumanTick: number;
+  trickleAt: number;
+  humanInside: boolean;
+  lastLivingTick: number;
+  holdUsed: number;
   phase: number;
   /** Index of the latest started wave, or -1. */
   wave: number;
@@ -335,6 +337,7 @@ const SPAWN_TYPES = [BLESSED, CHORISTER, CHERUB];
 const SPAWN_ELIGIBLE_DIST = 8;
 /** Combat arenas place a wave only on spawn points this far from every living player, when any are (M12 §2.2). */
 const SPAWN_FAR_DIST = 15;
+const SPAWN_MIN_DIST = 3;
 /** A combat arena's wave arrives over this many ticks (M12 §2.2). */
 const WAVE_ARRIVAL_TICKS = 10 * TICK_HZ;
 /** A wave's squad starts this long after the wave, one every SQUAD_EVERY_TICKS (M12 follow-up §4.2). */
@@ -427,9 +430,10 @@ export const BOSS_CAST_JUDGMENT = 2;
 /** No room is active (the snapshot's `activeRoom`, rogue game.md §14.3). */
 export const ROOM_NONE = 255;
 
-/** The room countdown (M8 §5): 60 s, cut to 5 s once every living player is inside. */
-const COUNTDOWN = 60;
-const COUNTDOWN_ALL_IN = 5;
+/** Human quorum countdown (rogue game.md §4.3), shortened when everyone is inside. */
+const COUNTDOWN = 20;
+const COUNTDOWN_ALL_IN = 3;
+const COUNTDOWN_CANCEL = 3;
 
 const REGEN_DELAY_TICKS = 8 * TICK_HZ;
 const REGEN_FRACTION = 0.015;
@@ -495,8 +499,6 @@ export class Simulation {
   readonly benchRoom: number;
   private readonly benchBurst: boolean;
   readonly noWaves: boolean;
-  readonly singleplayer: boolean;
-  private readonly walkOnly: boolean;
   /** Every player is invulnerable (`god=1`). */
   private readonly god: boolean;
   /** Seeded PRNG for all simulation randomness (§2.2); tests may replace it. */
@@ -528,6 +530,13 @@ export class Simulation {
   readonly eTarget = new Int8Array(ENEMY_SLOTS);
   readonly eRoom = new Int8Array(ENEMY_SLOTS);
   readonly eWave = new Int16Array(ENEMY_SLOTS);
+  readonly home = new Uint8Array(ENEMY_SLOTS).fill(ROOM_NONE);
+  readonly leashed = new Uint8Array(ENEMY_SLOTS);
+  private readonly eUnreachableSince = new Int32Array(ENEMY_SLOTS).fill(-1);
+  private readonly eRecoveryFailed = new Int32Array(ENEMY_SLOTS).fill(-1);
+  private readonly eStillSince = new Int32Array(ENEMY_SLOTS);
+  private readonly eStillX = new Float64Array(ENEMY_SLOTS);
+  private readonly eStillY = new Float64Array(ENEMY_SLOTS);
   readonly eLos = new Uint8Array(ENEMY_SLOTS);
   readonly eStrafe = new Int8Array(ENEMY_SLOTS);
   readonly eStrafeT = new Float64Array(ENEMY_SLOTS);
@@ -588,6 +597,7 @@ export class Simulation {
   private bossKilled = false;
   /** The boss arena's party size, for the Judgment interrupt threshold and summons (M8 §6.3). */
   private bossParty = 1;
+  private bossSolo = false;
 
   /** Dense list of living enemy slots. */
   readonly active = new Int32Array(ENEMY_SLOTS);
@@ -663,11 +673,18 @@ export class Simulation {
     this.benchRoom = opts.benchRoom ?? -1;
     this.benchBurst = !!opts.benchBurst && this.benchRoom >= 0;
     this.noWaves = !!opts.noWaves;
-    this.singleplayer = !!opts.singleplayer;
-    this.walkOnly = !!opts.walkOnly;
     this.random = mulberry32(opts.seed);
     this.rooms = this.map.rooms.map((a, i) => ({
-      phase: PHASE_IDLE,
+      phase: a.kind === 'breach' ? PHASE_CLEARED : PHASE_IDLE,
+      knowledge: a.kind === 'breach' ? 2 : 0,
+      entrySocket: a.entry[0]?.socket ?? 0,
+      cancelTicks: 0,
+      refills: 3,
+      lastHumanTick: 0,
+      trickleAt: -1,
+      humanInside: false,
+      lastLivingTick: 0,
+      holdUsed: 0,
       wave: -1,
       queue: [],
       rr: 0,
@@ -686,11 +703,13 @@ export class Simulation {
     // Dev `arena=N`: the rooms before it are cleared, their doors open.
     const startRoom = this.benchRoom >= 0 ? 0 : Math.max(0, Math.min(opts.startRoom ?? 0, this.rooms.length - 1));
     for (let ai = 0; ai < startRoom; ai++) this.rooms[ai].phase = PHASE_CLEARED;
-    // This checkpoint is for walking the generated geometry; the fixture still runs its fights.
-    if (this.walkOnly) for (const st of this.rooms) st.phase = PHASE_CLEARED;
+    if (opts.startRoom !== undefined && this.map.rooms.some((r) => r.kind === 'breach')) {
+      for (let i = 0; i < this.rooms.length; i++) if (i !== startRoom) this.rooms[i].phase = PHASE_CLEARED;
+    }
+    for (const st of this.rooms) if (st.phase === PHASE_CLEARED) st.knowledge = 2;
     this.updateLeaves();
     this.god = !!opts.god;
-    const useEntry = startRoom > 0 || (this.walkOnly && opts.startRoom !== undefined);
+    const useEntry = opts.startRoom !== undefined;
     for (const p of opts.players) {
       const [c, r] = this.benchRoom >= 0 ? this.map.rooms[this.benchRoom].entry[0].cells[0] : useEntry ? this.map.rooms[startRoom].entry[0].cells[p.id] : this.map.spawns[p.id];
       this.insertPlayer(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
@@ -709,6 +728,27 @@ export class Simulation {
 
   playerById(id: number): SimPlayer | undefined {
     return this.players.find((p) => p.id === id);
+  }
+
+  get solo(): boolean {
+    const connected = this.players.filter((p) => p.connected);
+    return connected.length === 1 && !connected[0].bot;
+  }
+
+  partySize(): number {
+    let p = 0;
+    for (const player of this.players) if (player.connected) p += player.bot ? 0.5 : 1;
+    return Math.max(1, p);
+  }
+
+  private entry(ai: number) {
+    const room = this.map.rooms[ai];
+    return room.entry.find((e) => e.socket === this.rooms[ai].entrySocket) ?? room.entry[0];
+  }
+
+  private roomState(ai: number): void {
+    const { phase, knowledge, entrySocket } = this.rooms[ai];
+    this.events.push({ to: 'all', event: { type: 'roomState', room: ai, phase, knowledge, entrySocket } });
   }
 
   /** The active room's phase (countdown or combat), PHASE_IDLE when no room is active (rogue game.md §14.3). */
@@ -883,10 +923,10 @@ export class Simulation {
     let x: number;
     let y: number;
     let z: number;
-    if (this.activeRoom !== ROOM_NONE || !lead) {
+    if (phase === PHASE_COMBAT || !lead) {
       const next = this.activeRoom !== ROOM_NONE ? this.activeRoom : this.rooms.findIndex((st) => st.phase !== PHASE_CLEARED);
       const a = next >= 0 ? this.map.rooms[next] : undefined;
-      const [c, r] = a ? a.entry[0].cells[p.index] : this.map.spawns[p.index];
+      const [c, r] = a ? this.entry(next).cells[p.index] : this.map.spawns[p.index];
       [x, y, z] = [c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]];
     } else [x, y, z] = [lead.x, lead.y, lead.z];
     if (phase === PHASE_COMBAT) {
@@ -932,6 +972,7 @@ export class Simulation {
     this.tick++;
     this.nowMs = nowMs ?? this.tick * TICK_MS;
     this.checkRoomStarts();
+    this.updateTrickle();
     this.updateFlowFields();
     this.updateSpawning();
     this.updatePlayers();
@@ -941,6 +982,7 @@ export class Simulation {
     this.updateProjectiles();
     this.updateClouds();
     this.updateSouls();
+    this.recoverEnemies();
     this.checkVictory();
     this.checkRoomClears();
     this.checkDefeat();
@@ -981,36 +1023,199 @@ export class Simulation {
     return !!p && p.connected && !p.dead;
   }
 
-  /**
-   * Room countdown (M8 §5): a living player entering an idle room, once every earlier one is
-   * cleared, starts a 60 s countdown; it drops to 5 s when every living player is inside (none on a
-   * door cell), never restarts, and seals the room at 0. The benchmark's room starts at once,
-   * without waiting for earlier rooms to be cleared.
-   */
+  /** Room kinds, one active encounter, and human quorum (rogue game.md §4.3). */
   private checkRoomStarts(): void {
-    if (this.walkOnly) return;
-    this.map.rooms.forEach((a, ai) => {
-      const st = this.rooms[ai];
-      if (st.phase === PHASE_IDLE) {
-        if (!this.players.some((p) => this.livingTargetable(p) && insideRect(a, p.x, p.y))) return;
-        if (ai === this.benchRoom) {
-          this.startRoom(ai);
-          return;
+    if (this.result || this.bossKilled) return;
+    for (let ai = 0; ai < this.rooms.length; ai++) {
+      const a = this.map.rooms[ai], st = this.rooms[ai];
+      let started = false;
+      const humans = this.players.filter((p) => this.livingTargetable(p) && !p.bot);
+      const inside = humans.filter((p) => insideRect(a, p.x, p.y) && !this.onDoor(p));
+      if (inside.length > 0) st.knowledge = 2;
+      if (st.phase === PHASE_IDLE && inside.length > 0) {
+        if (a.kind === 'breach' || a.kind === 'pardoner' || a.kind === 'confessional') {
+          st.phase = PHASE_CLEARED;
+          this.updateLeaves();
+          this.roomState(ai);
+          continue;
         }
-        if (this.rooms.slice(0, ai).some((e) => e.phase !== PHASE_CLEARED)) return;
-        if (this.activeRoom !== ROOM_NONE) return;
+        if (this.activeRoom !== ROOM_NONE) continue;
+        const p = inside[0];
+        let best = Infinity;
+        for (const e of a.entry) {
+          const x = e.cells.reduce((sum, c) => sum + c[0] + 0.5, 0) / 4;
+          const y = e.cells.reduce((sum, c) => sum + c[1] + 0.5, 0) / 4;
+          const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+          if (d < best || (d === best && e.socket < st.entrySocket)) {
+            best = d;
+            st.entrySocket = e.socket;
+          }
+        }
+        if (ai === this.benchRoom) { this.startRoom(ai); continue; }
         st.phase = PHASE_COUNTDOWN;
+        st.cancelTicks = 0;
         st.sealTick = this.tick + ticks(COUNTDOWN);
+        started = true;
         this.activeRoom = ai;
+        this.roomState(ai);
         this.updateLeaves();
       }
-      if (st.phase !== PHASE_COUNTDOWN) return;
-      const living = this.players.filter((p) => this.livingTargetable(p));
-      if (living.length > 0 && living.every((p) => insideRect(a, p.x, p.y) && !this.onDoor(p))) {
-        st.sealTick = Math.min(st.sealTick, this.tick + ticks(COUNTDOWN_ALL_IN));
+      if (st.phase !== PHASE_COUNTDOWN) continue;
+      st.cancelTicks = inside.length === 0 ? st.cancelTicks + 1 : 0;
+      if (humans.length === 0 || st.cancelTicks >= ticks(COUNTDOWN_CANCEL)) {
+        st.phase = PHASE_IDLE;
+        st.cancelTicks = 0;
+        this.activeRoom = ROOM_NONE;
+        this.roomState(ai);
+        this.updateLeaves();
+        continue;
       }
+      const near = humans.filter((p) => insideRect(a, p.x, p.y) || this.inVestibule(ai, p)).length;
+      if (near < Math.ceil(humans.length / 2) && !started) st.sealTick++;
+      if (inside.length === humans.length) st.sealTick = Math.min(st.sealTick, this.tick + ticks(COUNTDOWN_ALL_IN));
       if (this.tick >= st.sealTick) this.startRoom(ai);
-    });
+    }
+  }
+
+  private inVestibule(ai: number, p: SimPlayer): boolean {
+    const { x0, y0, x1, y1 } = this.map.rooms[ai].rect;
+    return this.roomAt(p.x, p.y) === ROOM_NONE && p.x >= x0 - 4 && p.x < x1 + 5 && p.y >= y0 - 4 && p.y < y1 + 5;
+  }
+
+  private enemyMayTarget(slot: number, p: SimPlayer): boolean {
+    return !this.leashed[slot] || this.roomAt(p.x, p.y) === this.home[slot];
+  }
+
+  /** Check the whole displacement, including pulls across a corner, and retain the last home cell. */
+  private clampLeash(slot: number, b: Body): void {
+    const x = this.eX[slot], y = this.eY[slot];
+    const dx = b.x - x, dy = b.y - y;
+    const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 4));
+    let last = 0;
+    for (let k = 1; k <= steps; k++) {
+      const f = k / steps;
+      if (this.roomAt(x + dx * f, y + dy * f) !== this.home[slot]) {
+        b.x = x + dx * last;
+        b.y = y + dy * last;
+        b.z = this.eZ[slot];
+        return;
+      }
+      last = f;
+    }
+  }
+
+  /** Finite revisit encounters; passing through spends no refill. Doors stay open. */
+  private updateTrickle(): void {
+    for (let ai = 0; ai < this.rooms.length; ai++) {
+      const st = this.rooms[ai];
+      const human = this.players.some((p) => this.livingTargetable(p) && !p.bot && this.roomAt(p.x, p.y) === ai);
+      const living = this.players.some((p) => this.livingTargetable(p) && this.roomAt(p.x, p.y) === ai);
+      if (living) st.lastLivingTick = this.tick;
+      else if (st.alive > 0 && this.tick - st.lastLivingTick >= ticks(10)) {
+        for (let k = this.activeCount - 1; k >= 0; k--) {
+          const s = this.active[k];
+          if (this.leashed[s] && this.home[s] === ai) this.removeEnemy(s, true);
+        }
+      }
+      const allowed = this.activeRoom === ROOM_NONE && !this.bossKilled && !this.result &&
+        this.map.rooms[ai].kind === 'combat' && st.phase === PHASE_CLEARED && st.refills > 0;
+      if (!allowed || !human) st.trickleAt = -1;
+      else if (!st.humanInside && this.tick - st.lastHumanTick >= ticks(10)) st.trickleAt = this.tick + ticks(3);
+      if (human) st.lastHumanTick = this.tick;
+      st.humanInside = human;
+      if (st.trickleAt < 0 || this.tick < st.trickleAt) continue;
+      const count = Math.floor(Math.min(12, 4 + 2 * this.partySize()));
+      if (!this.canAlloc(count)) continue;
+      const points = this.map.roomSpawnPoints[ai];
+      const safe = new Uint8Array(points.length);
+      if (!this.markEligible(points, SPAWN_MIN_DIST, safe)) continue;
+      const hidden: number[] = [];
+      let farthest = -1, farDist = -1;
+      for (let i = 0; i < points.length; i++) {
+        if (!safe[i]) continue;
+        const [c, r] = points[i];
+        let seen = false, distance = Infinity;
+        for (const p of this.players) {
+          if (!this.livingTargetable(p)) continue;
+          if (lineOfSight(this.map, p.x, p.y, p.z + PLAYER_EYE, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c] + 1)) seen = true;
+          distance = Math.min(distance, (p.x - c - 0.5) ** 2 + (p.y - r - 0.5) ** 2);
+        }
+        if (!seen) hidden.push(i);
+        if (distance > farDist) { farDist = distance; farthest = i; }
+      }
+      let placed = 0;
+      for (; placed < count; placed++) {
+        const i = hidden.length > 0 ? hidden[placed % hidden.length] : farthest;
+        const [c, r] = points[i];
+        const slot = this.allocSlot();
+        if (slot < 0) break;
+        this.spawnAt(slot, BLESSED, c, r, ai, -1);
+        this.home[slot] = ai;
+        this.leashed[slot] = 1;
+        this.retarget(slot);
+      }
+      if (placed > 0) { st.refills--; st.trickleAt = -1; this.invalidateFields(); }
+    }
+  }
+
+  /** R1 recovery is instant; the warned beam belongs to R2. No kill credit on removal. */
+  private recoverEnemies(): void {
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      if ((this.eX[s] - this.eStillX[s]) ** 2 + (this.eY[s] - this.eStillY[s]) ** 2 >= 1 || this.eHurtTick[s] > this.eStillSince[s]) {
+        this.eStillSince[s] = this.tick;
+        this.eStillX[s] = this.eX[s];
+        this.eStillY[s] = this.eY[s];
+      }
+    }
+    if (this.tick % ticks(5) !== 0 || this.activePhase !== PHASE_COMBAT) return;
+    const ai = this.activeRoom, st = this.rooms[ai];
+    const lastPlaced = st.wave === this.map.rooms[ai].waves.length - 1 && st.waveFullySpawned[st.wave];
+    for (let k = this.activeCount - 1; k >= 0; k--) {
+      const s = this.active[k];
+      if (this.eRoom[s] !== ai || this.eType[s] === GATEKEEPER || this.leashed[s]) continue;
+      const fields = this.eType[s] === CHERUB ? this.airFields : this.groundFields;
+      const c = Math.floor(this.eX[s]), r = Math.floor(this.eY[s]);
+      const reachable = this.players.some((p) => this.livingTargetable(p) && this.fieldValid[p.index] && fields[p.index].targetCell >= 0 && fields[p.index].at(c, r) !== UNREACHABLE);
+      if (reachable) this.eUnreachableSince[s] = -1;
+      else if (this.eUnreachableSince[s] < 0) this.eUnreachableSince[s] = this.tick;
+      const unreachable = this.eUnreachableSince[s] >= 0 && this.tick - this.eUnreachableSince[s] >= ticks(10);
+      const stuck = lastPlaced && st.alive <= 10 && this.tick - this.eStillSince[s] >= ticks(20);
+      if (!unreachable && !stuck && this.eRecoveryFailed[s] < 0) continue;
+      const points = this.map.roomSpawnPoints[ai], safe = new Uint8Array(points.length);
+      this.markEligible(points, SPAWN_MIN_DIST, safe);
+      let best = -1, distance = -1;
+      for (let i = 0; i < points.length; i++) {
+        if (!safe[i]) continue;
+        const [x, y] = points[i];
+        let nearest = Infinity;
+        let reachableMarker = false;
+        for (const p of this.players) {
+          if (!this.livingTargetable(p)) continue;
+          nearest = Math.min(nearest, (p.x - x - 0.5) ** 2 + (p.y - y - 0.5) ** 2);
+          if (this.fieldValid[p.index] && fields[p.index].targetCell >= 0 && fields[p.index].at(x, y) !== UNREACHABLE) reachableMarker = true;
+        }
+        if (reachableMarker && nearest > distance) { distance = nearest; best = i; }
+      }
+      if (best >= 0) {
+        const [x, y] = points[best];
+        this.eX[s] = this.eStillX[s] = x + 0.5;
+        this.eY[s] = this.eStillY[s] = y + 0.5;
+        this.eZ[s] = this.map.floor[y * this.map.w + x] + (this.eType[s] === CHERUB ? CHERUB_HOVER : 0);
+        this.eStillSince[s] = this.tick;
+        this.eUnreachableSince[s] = this.eRecoveryFailed[s] = -1;
+        this.retarget(s);
+      } else if (this.eRecoveryFailed[s] < 0) this.eRecoveryFailed[s] = this.tick;
+      else if (this.tick - this.eRecoveryFailed[s] >= ticks(10)) {
+        console.warn('diagnostic: unreachable enemy removed', { room: ai, slot: s });
+        this.removeEnemy(s, true);
+      }
+    }
+  }
+
+  private roomAt(x: number, y: number): number {
+    const c = Math.floor(x), r = Math.floor(y);
+    return c >= 0 && r >= 0 && c < this.map.w && r < this.map.h ? this.map.roomOf[r * this.map.w + c] : ROOM_NONE;
   }
 
   private onDoor(p: SimPlayer): boolean {
@@ -1028,23 +1233,23 @@ export class Simulation {
     const st = this.rooms[ai];
     st.phase = PHASE_COMBAT;
     this.activeRoom = ai;
-    // Party-size scaling counts the players in the game at the seal (M8 §6.3).
-    st.partySize = Math.max(1, this.players.length);
+    // Freeze P at the seal: connected humans plus half-player bots.
+    st.partySize = this.partySize();
     this.updateLeaves();
     this.invalidateFields();
-    this.events.push({ to: 'all', event: { type: 'arenaStarted', arenaIndex: ai } });
+    this.roomState(ai);
     for (const p of this.players) {
-      if (!this.livingTargetable(p)) continue;
+      if (!p.connected) continue;
       if (!insideRect(a, p.x, p.y) || this.onDoor(p)) {
-        const [c, r] = a.entry[0].cells[p.index];
+        const [c, r] = this.entry(ai).cells[p.index];
         this.teleport(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
       }
     }
     if (this.isPacedRoom(ai)) {
-      // The director (M12 §2.3): every intensity starts at 0; it can't start a wave while more than
-      // the largest wave is alive.
-      const cap = Math.max(...a.waves.map((w) => waveSize(w, st.partySize)));
-      st.director = new Director(a.waves.length, cap, this.singleplayer);
+      // Account for the previous wave's 30% carry-over, bounded by the global cap.
+      const sizes = a.waves.map((w) => waveSize(w, st.partySize));
+      const cap = Math.min(MAX_LIVING_ENEMIES, Math.max(...sizes.map((size, i) => size + Math.floor(0.3 * (sizes[i - 1] ?? 0)))));
+      st.director = new Director(a.waves.length, cap, this.solo);
     }
     if (this.benchRoom < 0 && !this.noWaves && a.waves.length > 0) this.startWave(ai, 0);
     if (a.boss && this.map.boss) this.placeBoss(ai);
@@ -1057,7 +1262,7 @@ export class Simulation {
    */
   private isPacedRoom(ai: number): boolean {
     const a = this.map.rooms[ai];
-    return !a.boss && a.waves.length > 1 && ai !== this.benchRoom && !this.noWaves;
+    return a.kind === 'combat' && (a.shape !== undefined || a.waves.length > 1) && ai !== this.benchRoom && !this.noWaves;
   }
 
   /** The director of the arena in combat, if it has one (M12 §2.3). */
@@ -1094,7 +1299,8 @@ export class Simulation {
     const slot = this.allocSlot();
     if (slot < 0) return;
     this.bossParty = this.rooms[ai].partySize;
-    this.bossMaxHp = ENEMIES[GATEKEEPER].hp * bossMultiplier(this.bossParty);
+    this.bossSolo = this.solo;
+    this.bossMaxHp = ENEMIES[GATEKEEPER].hp * bossMultiplier(this.bossParty, this.bossSolo);
     this.bossCast = BOSS_CAST_NONE;
     this.bossCastTicks = 0;
     this.volleyDue = this.tick + ticks(VOLLEY_FIRST);
@@ -1127,23 +1333,24 @@ export class Simulation {
       const st = this.rooms[ai];
       if (st.phase !== PHASE_COMBAT || a.boss || this.benchRoom >= 0) return;
       const allWavesStarted = this.noWaves || st.wave >= a.waves.length - 1;
-      if (!allWavesStarted || st.queue.length > 0 || st.alive > 0) return;
+      if (!allWavesStarted || st.queue.length > 0 || st.squad || st.alive > 0) return;
       st.phase = PHASE_CLEARED;
       if (this.activeRoom === ai) this.activeRoom = ROOM_NONE;
       this.updateLeaves();
       this.invalidateFields();
-      this.events.push({ to: 'all', event: { type: 'arenaCleared', arenaIndex: ai } });
-      // The living are healed to full, as the fallen come back at full (M12 follow-up §3.2).
-      for (const p of this.players) if (p.connected && !p.dead) p.hp = p.maxHp;
+      this.roomState(ai);
+      st.lastHumanTick = this.tick;
+      // Clear sustain (rogue game.md §4.3), once per encounter.
+      for (const p of this.players) if (p.connected && !p.dead) p.hp = Math.min(p.maxHp, p.hp + 0.3 * p.maxHp);
       for (const p of this.players) {
         if (!p.connected || !p.dead) continue;
         p.dead = false;
-        p.hp = p.maxHp;
+        p.hp = 0.5 * p.maxHp;
         p.shield = 0;
         p.revive = 0;
         p.revivers = 0;
         p.lastDamageTick = this.tick;
-        const [c, r] = a.entry[0].cells[p.index];
+        const [c, r] = this.entry(ai).cells[p.index];
         this.events.push({ to: 'all', event: { type: 'playerRespawned', playerId: p.id } });
         this.teleport(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
       }
@@ -1174,27 +1381,54 @@ export class Simulation {
     this.fieldValid.fill(false);
   }
 
-  /** One ground and one air field per living player, each recomputed every 0.25 s on staggered ticks. */
+  /** Only rebuild occupied enemy rooms, at the inherited staggered cadence. */
   private updateFlowFields(): void {
     for (const p of this.players) {
-      if (!this.livingTargetable(p)) continue;
+      const room = this.roomAt(p.x, p.y);
+      // Roomless hand-written geometry fixtures retain their explicit fields.
+      if (this.map.rooms.length === 0) {
+        if (this.livingTargetable(p) && this.activeCount > 0) this.computeFields(p, ROOM_NONE);
+        continue;
+      }
+      if (!this.livingTargetable(p) || room === ROOM_NONE || !this.hasEnemies(room)) {
+        this.fieldValid[p.index] = false;
+        continue;
+      }
       const k = p.index * 2;
       const due = Math.floor((this.tick + k) / 7.5) !== Math.floor((this.tick + k - 1) / 7.5);
-      if (!due && this.fieldValid[p.index]) continue;
-      this.computeFields(p);
+      const cell = Math.floor(p.y) * this.map.w + Math.floor(p.x);
+      if (!due && this.fieldValid[p.index] && this.groundFields[p.index].targetCell === cell) continue;
+      this.computeFields(p, room);
     }
   }
 
-  /** Computes every living player's flow fields now. */
-  refreshFields(): void {
-    for (const p of this.players) if (this.livingTargetable(p)) this.computeFields(p);
+  private hasEnemies(room: number): boolean {
+    if (this.rooms[room].alive > 0 || (this.bossSlot >= 0 && this.eRoom[this.bossSlot] === room)) return true;
+    // Dev/test enemies may be placed without an owning wave.
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      if (this.eRoom[s] < 0 && this.roomAt(this.eX[s], this.eY[s]) === room) return true;
+    }
+    return false;
   }
 
-  private computeFields(p: SimPlayer): void {
-    const c = Math.floor(p.x);
-    const r = Math.floor(p.y);
-    this.groundFields[p.index].compute(c, r);
-    this.airFields[p.index].compute(c, r);
+  /** Explicit refresh for dev/test placements, including roomless geometry fixtures. */
+  refreshFields(): void {
+    for (const p of this.players) if (this.livingTargetable(p)) this.computeFields(p, this.roomAt(p.x, p.y), true);
+  }
+
+  private computeFields(p: SimPlayer, room: number, forceAir = false): void {
+    const c = Math.floor(p.x), r = Math.floor(p.y);
+    const rect = room === ROOM_NONE ? undefined : this.map.rooms[room].rect;
+    const clamp = rect ? { x0: rect.x0 - 4, y0: rect.y0 - 4, x1: rect.x1 + 4, y1: rect.y1 + 4 } : undefined;
+    this.groundFields[p.index].compute(c, r, clamp);
+    let flyers = forceAir;
+    for (let k = 0; k < this.activeCount && !flyers; k++) {
+      const s = this.active[k];
+      flyers = this.eType[s] === CHERUB && (this.eRoom[s] === room || (this.eRoom[s] < 0 && this.roomAt(this.eX[s], this.eY[s]) === room));
+    }
+    if (flyers) this.airFields[p.index].compute(c, r, clamp);
+    else this.airFields[p.index].targetCell = -1;
     this.fieldValid[p.index] = true;
   }
 
@@ -1244,7 +1478,7 @@ export class Simulation {
   private placeSquad(ai: number): void {
     const st = this.rooms[ai];
     const q = st.squad;
-    if (!q || q.left <= 0 || this.tick < q.next || this.living >= MAX_LIVING_ENEMIES) return;
+    if (!q || q.left <= 0 || this.tick < q.next || this.activeCount >= MAX_LIVING_ENEMIES) return;
     let points = q.at;
     let eligible = new Uint8Array(points.length);
     const own = this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible);
@@ -1252,7 +1486,7 @@ export class Simulation {
       points = this.map.roomSpawnPoints[ai];
       if (points.length === 0) return;
       eligible = new Uint8Array(points.length);
-      if (!this.markEligible(points, SPAWN_FAR_DIST, eligible) && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible)) eligible.fill(1);
+      if (!this.markEligible(points, this.map.rooms[ai].shape === '1x1' ? 10 : SPAWN_FAR_DIST, eligible) && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible) && !this.markEligible(points, SPAWN_MIN_DIST, eligible)) return;
     }
     let found = -1;
     const rr = own ? q.rr : st.rr;
@@ -1263,6 +1497,7 @@ export class Simulation {
         break;
       }
     }
+    if (found < 0) return;
     const slot = this.allocSlot();
     if (slot < 0) return;
     const [c, r] = points[found];
@@ -1317,11 +1552,11 @@ export class Simulation {
     // than 8 m; if no point is, every point.
     const paced = st.director !== null;
     const eligible = new Uint8Array(np);
-    const far = paced && this.markEligible(points, SPAWN_FAR_DIST, eligible);
-    if (!far && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible)) eligible.fill(1);
+    const far = paced && this.markEligible(points, this.map.rooms[ai].shape === '1x1' ? 10 : SPAWN_FAR_DIST, eligible);
+    if (!far && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible) && !this.markEligible(points, SPAWN_MIN_DIST, eligible)) return;
 
     while (st.queue.length > 0) {
-      if (this.living >= MAX_LIVING_ENEMIES) return;
+      if (this.activeCount >= MAX_LIVING_ENEMIES) return;
       if (paced && st.pace < 1 - 1e-9) return;
       let found = -1;
       for (let k = 0; k < np; k++) {
@@ -1389,6 +1624,7 @@ export class Simulation {
   }
 
   private allocSlot(): number {
+    if (this.activeCount >= MAX_LIVING_ENEMIES) return -1;
     if (this.freeCount > 0) {
       const s = this.freeFifo[this.freeHead];
       if (this.eFreedTick[s] + SLOT_REUSE_TICKS <= this.tick) {
@@ -1399,6 +1635,18 @@ export class Simulation {
     }
     if (this.nextFresh < ENEMY_SLOTS) return this.nextFresh++;
     return -1;
+  }
+
+  /** A trickle is one complete batch; wait rather than spending a refill on a partial placement. */
+  private canAlloc(count: number): boolean {
+    if (this.activeCount + count > MAX_LIVING_ENEMIES) return false;
+    let available = ENEMY_SLOTS - this.nextFresh;
+    for (let k = 0; k < this.freeCount && available < count; k++) {
+      const s = this.freeFifo[(this.freeHead + k) % ENEMY_SLOTS];
+      if (this.tick - this.eFreedTick[s] < SLOT_REUSE_TICKS) break;
+      available++;
+    }
+    return available >= count;
   }
 
   /** Places a new enemy on a cell (§2.3) and returns its slot, or -1 if no slot is free. */
@@ -1423,6 +1671,13 @@ export class Simulation {
     this.eHp[slot] = def.hp;
     this.eRoom[slot] = room;
     this.eWave[slot] = wave;
+    this.home[slot] = ROOM_NONE;
+    this.leashed[slot] = 0;
+    this.eUnreachableSince[slot] = -1;
+    this.eRecoveryFailed[slot] = -1;
+    this.eStillSince[slot] = this.tick;
+    this.eStillX[slot] = this.eX[slot];
+    this.eStillY[slot] = this.eY[slot];
     this.eLos[slot] = 0;
     this.eTarget[slot] = -1;
     this.eStrafe[slot] = 1;
@@ -1524,7 +1779,7 @@ export class Simulation {
     // Judgment is interrupted by the boss taking 1 300 damage during it, counted after step 1.
     if (slot === this.bossSlot && this.bossCast === BOSS_CAST_JUDGMENT) {
       this.judgmentDamage += amount;
-      if (this.judgmentDamage >= JUDGMENT_INTERRUPT * bossMultiplier(this.bossParty) - 1e-9) this.interruptJudgment();
+      if (this.judgmentDamage >= JUDGMENT_INTERRUPT * bossMultiplier(this.bossParty, this.bossSolo) - 1e-9) this.interruptJudgment();
     }
     const shooter = source >= 0 ? this.slots[source] : undefined;
     if (shooter) shooter.damage += Math.min(amount, this.eHp[slot]);
@@ -1726,12 +1981,13 @@ export class Simulation {
   // ------------------------------------------------------------------ players
 
   /**
-   * Singleplayer regeneration (§5.7): 1.5% of max HP per second after 8 s without damage, except in a
-   * combat arena's fight (M12 §2.5), where it's 8% after 2 s (M12 follow-up §3.1), and only while its
-   * director relaxes.
+   * True solo sustain (rogue game.md §4.3): breath during ordinary combat relax, baseline during
+   * boss combat. There is no passive recovery between encounters.
    */
   private regenerate(p: SimPlayer): void {
+    if (this.activePhase !== PHASE_COMBAT || this.roomAt(p.x, p.y) !== this.activeRoom) return;
     const d = this.activeDirector();
+    if (!d && this.map.rooms[this.activeRoom].kind !== 'boss') return;
     const [delay, fraction] = d ? [BREATH_DELAY_TICKS, BREATH_FRACTION] : [REGEN_DELAY_TICKS, REGEN_FRACTION];
     if (d && d.phase !== 'relax') return;
     if (this.tick - p.lastDamageTick < delay) return;
@@ -1747,7 +2003,7 @@ export class Simulation {
         p.fireTimer = Math.max(0, p.fireTimer - TICK_DT);
         continue;
       }
-      if (this.singleplayer) this.regenerate(p);
+      if (this.solo) this.regenerate(p);
       if (p.landingTick >= 0 && this.tick >= p.landingTick) {
         p.landingTick = -1;
         this.fallingStarLanding(p);
@@ -2545,7 +2801,7 @@ export class Simulation {
     }
     if (this.eTauntUntil[slot] > this.tick) {
       const f = this.fallenIndex();
-      if (f >= 0 && this.livingTargetable(this.slots[f])) {
+      if (f >= 0 && this.livingTargetable(this.slots[f]) && this.enemyMayTarget(slot, this.slots[f]!)) {
         this.eTarget[slot] = f;
         return;
       }
@@ -2556,8 +2812,9 @@ export class Simulation {
     let best = -1;
     let bestD = Infinity;
     for (const p of this.players) {
-      if (!this.livingTargetable(p) || !this.fieldValid[p.index]) continue;
+      if (!this.livingTargetable(p) || !this.enemyMayTarget(slot, p) || !this.fieldValid[p.index]) continue;
       const field = air ? this.airFields[p.index] : this.groundFields[p.index];
+      if (field.targetCell < 0) continue;
       let d = field.at(c, r);
       if (d === UNREACHABLE) continue;
       if (p.classId === 'fallen') d *= 0.5;
@@ -2631,8 +2888,8 @@ export class Simulation {
       this.eStartX[slot] = this.eX[slot];
       this.eStartY[slot] = this.eY[slot];
       const t = this.eTarget[slot];
-      const targetGone = t >= 0 && !this.livingTargetable(this.slots[t]);
-      if (targetGone || slot % RETARGET_TICKS === tick % RETARGET_TICKS) this.retarget(slot);
+      const targetGone = t >= 0 && (!this.livingTargetable(this.slots[t]) || !this.enemyMayTarget(slot, this.slots[t]!));
+      if (targetGone || t < 0 || slot % RETARGET_TICKS === tick % RETARGET_TICKS) this.retarget(slot);
       const type = this.eType[slot];
       if (type === GATEKEEPER) {
         this.updateLos(slot);
@@ -2665,9 +2922,11 @@ export class Simulation {
     const o = slot * 6;
     const f = Math.min(1, (this.tick - this.ePullStart[slot]) / ticks(CHAINS_PULL_TIME));
     const p = this.ePull;
-    this.eX[slot] = p[o] + (p[o + 3] - p[o]) * f;
-    this.eY[slot] = p[o + 1] + (p[o + 4] - p[o + 1]) * f;
-    this.eZ[slot] = p[o + 2] + (p[o + 5] - p[o + 2]) * f;
+    const b = this.loadBody(slot);
+    b.x = p[o] + (p[o + 3] - p[o]) * f;
+    b.y = p[o + 1] + (p[o + 4] - p[o + 1]) * f;
+    b.z = p[o + 2] + (p[o + 5] - p[o + 2]) * f;
+    this.storeBody(slot, b);
     this.eState[slot] = ST_MOVING;
     if (f >= 1) {
       this.ePullStart[slot] = -1;
@@ -2819,6 +3078,7 @@ export class Simulation {
   }
 
   private storeBody(slot: number, b: Body): void {
+    if (this.leashed[slot]) this.clampLeash(slot, b);
     this.eX[slot] = b.x;
     this.eY[slot] = b.y;
     this.eZ[slot] = b.z;
@@ -3105,10 +3365,7 @@ export class Simulation {
         py = sy + ty * k2 - y;
       }
       this.loadBody(s);
-      if (tryDisplace(this.map, b, px, py)) {
-        this.eX[s] = b.x;
-        this.eY[s] = b.y;
-      }
+      if (tryDisplace(this.map, b, px, py)) this.storeBody(s, b);
     }
   }
 

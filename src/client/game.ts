@@ -29,7 +29,7 @@ import {
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
-import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_STUNNED, FLAG_TAUNTED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
+import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_STUNNED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
 import { aimDir, estimateSilverBullet, rayCylinder } from '../sim/combat';
@@ -264,6 +264,7 @@ export interface RosterEntry {
   id: number;
   name: string;
   classId: ClassId;
+  bot?: boolean;
 }
 
 export interface GameOptions {
@@ -776,8 +777,8 @@ export class Game {
     for (const p of players) {
       if (!p.classId) continue;
       const r = this.roster.find((q) => q.id === p.id);
-      if (r) Object.assign(r, { name: p.name, classId: p.classId });
-      else this.roster.push({ id: p.id, name: p.name, classId: p.classId });
+      if (r) Object.assign(r, { name: p.name, classId: p.classId, bot: p.bot });
+      else this.roster.push({ id: p.id, name: p.name, classId: p.classId, bot: p.bot });
     }
   }
 
@@ -834,17 +835,18 @@ export class Game {
     this.sounds.event(msg.event, (id) => this.playerPose(id));
   }
 
+  private readonly roomEntrySockets: number[] = [];
+
   private onEvent(e: GameEvent, now: number): void {
     switch (e.type) {
       case 'teleport':
         this.player.teleport(e.x, e.y, e.z);
         this.lastTeleportId = e.teleportId;
         break;
-      case 'arenaStarted':
-        this.hud.centerText('The doors are sealed', 2000, now);
-        break;
-      case 'arenaCleared':
-        this.hud.centerText('Room cleared', 2000, now);
+      case 'roomState':
+        this.roomEntrySockets[e.room] = e.entrySocket;
+        if (e.phase === PHASE_COMBAT) this.hud.centerText('The doors are sealed', 2000, now);
+        else if (e.phase === PHASE_CLEARED && this.map.rooms[e.room].kind === 'combat') this.hud.centerText('Room cleared', 2000, now);
         break;
       case 'playerRevived': {
         // The hellfire pillar where the player rises (M8 §3.1); the soul sinks back into the body.
@@ -1844,13 +1846,16 @@ export class Game {
         activeRoom: s?.activeRoom ?? 255,
         activePhase: s?.activePhase ?? 0,
         clearedMask: s?.clearedMask ?? 0,
-        // A client's bot follows the host's player (§2.5).
-        hostPlayer: this.o.host ? null : (this.snaps.playersOut.find((q) => q.id === 0) ?? null),
+        entrySocket: this.roomEntrySockets[s?.activeRoom ?? 255],
+        followParty: !this.o.singleplayer,
+        // Follow the host human, then the lowest-id living human (rogue game.md §12.4).
+        hostPlayer: this.o.singleplayer ? null : (this.snaps.playersOut.find((q) => q.id === 0 && !q.dead && !this.roster.find((r) => r.id === q.id)?.bot) ?? this.snaps.playersOut.find((q) => !q.dead && !this.roster.find((r) => r.id === q.id)?.bot) ?? null),
         qReady: this.displayedCooldown('Q', now) <= 0,
         eReady: this.displayedCooldown('E', now) <= 0,
         blockedLastFrame: p.moveResult.blocked,
         entryIndex: this.entryIndex,
         souls: this.snaps.playersOut.filter((q) => q.dead && q.id !== this.localId),
+        humanSouls: this.snaps.playersOut.filter((q) => q.dead && q.id !== this.localId && !this.roster.find((r) => r.id === q.id)?.bot),
         classId: this.classId,
         teammates: this.snaps.playersOut.flatMap((q) => {
           const cls = this.classOf(q.id);

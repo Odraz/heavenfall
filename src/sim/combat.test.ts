@@ -91,8 +91,8 @@ describe('damage pipeline (M9 §3.6)', () => {
     expect(p.shield).toBe(0);
   });
 
-  it('singleplayer regenerates 1.5% of max HP per second after 8 s without damage', () => {
-    const sim = makeSim(room(20, 10), ['fallen'], { singleplayer: true });
+  it('solo has no passive regeneration outside sealed combat', () => {
+    const sim = makeSim(room(20, 10), ['fallen']);
     const p = sim.players[0];
     sim.step();
     sim.damagePlayer(p, 100 / 0.6); // 100 after Brimstone Hide
@@ -101,7 +101,7 @@ describe('damage pipeline (M9 §3.6)', () => {
     expect(p.hp).toBeCloseTo(300);
     for (let i = 0; i < 31; i++) sim.step();
     // 1 s of regeneration: 6 HP.
-    expect(p.hp).toBeCloseTo(306, 0);
+    expect(p.hp).toBeCloseTo(300, 6);
     const multi = makeSim(room(20, 10), ['fallen', 'binder']);
     multi.damagePlayer(multi.players[0], 100);
     for (let i = 0; i < 300; i++) multi.step();

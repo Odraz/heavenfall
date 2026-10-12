@@ -111,7 +111,8 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
     ...newRunIdentity(seed ?? undefined), heaven: 1, floor: 1, edicts: 0, progressionEnabled: false,
     fixture: dungeonId === 'rogue' ? null : dungeonId,
   };
-  const roster = [{ id: 0, name, classId, bot: params.bot }];
+  // Solo autopilot drives the human slot; half-player bots are multiplayer admissions.
+  const roster = [{ id: 0, name, classId, bot: false }];
   const assets = await loadGameAssets(run, roster, 0, false, loading.set);
   const requestedRoom = run.fixture === null ? params.startRoom : params.startArena > 0 ? params.startArena : null;
   const startRoom = requestedRoom === null ? undefined : Math.min(requestedRoom, assets.map.rooms.length - 1);

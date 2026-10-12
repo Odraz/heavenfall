@@ -178,7 +178,7 @@ describe('the director, intensity (M12 §2.3)', () => {
 const w = (blessed: number): WaveDef => ({ blessed, choristers: 0, cherubs: 0 });
 
 describe('the director in the simulation (M12 §2.3)', () => {
-  it('runs from the seal, with wave 1 in build up and every intensity 0, and its cap is the largest scaled wave', () => {
+  it('runs from the seal, with wave 1 in build up and every intensity 0, and its cap includes 30% carry-over', () => {
     const sim = arenaSim([w(50), { blessed: 70, choristers: 5, cherubs: 6 }, w(30)], { players: 2 });
     sealAt(sim);
     const d = sim.rooms[0].director!;
@@ -186,7 +186,7 @@ describe('the director in the simulation (M12 §2.3)', () => {
     expect([d.phase, sim.rooms[0].wave]).toEqual(['build', 0]);
     expect([...d.intensity]).toEqual([0, 0, 0, 0]);
     // At 2 players: ceil(70 × 0.6) + ceil(5 × 0.6) + ceil(6 × 0.6) = 42 + 3 + 4.
-    expect(d.cap).toBe(49);
+    expect(d.cap).toBe(58);
   });
 
   it('a hit adds 150 × (shield absorbed + HP lost) ÷ max HP; a lethal hit counts HP down to 0, then the death zeroes it', () => {
@@ -338,7 +338,7 @@ describe('the director in the simulation (M12 §2.3)', () => {
 
 describe('a breath in single player (M12 §2.5)', () => {
   const solo = () => {
-    const sim = arenaSim([w(50), w(50)], { players: 1, singleplayer: true });
+    const sim = arenaSim([w(50), w(50)], { players: 1 });
     sealAt(sim);
     const p = sim.players[0];
     p.hp = p.maxHp / 2;
@@ -364,9 +364,9 @@ describe('a breath in single player (M12 §2.5)', () => {
     expect(p.hp).toBeCloseTo(hp + (p.maxHp * 0.08) / 30, 6);
   });
 
-  it('a clear heals every living player to full, in single player and with 2 players (M12 follow-up §3.2)', () => {
+  it('a clear heals every living player by 30%, in single player and with 2 players (M12 follow-up §3.2)', () => {
     for (const players of [1, 2]) {
-      const sim = arenaSim([w(5)], { players, singleplayer: players === 1 });
+      const sim = arenaSim([w(5)], { players });
       sealAt(sim);
       for (const p of sim.players) p.hp = p.maxHp * 0.3;
       for (let i = 0; i < 400 && sim.rooms[0].phase !== PHASE_CLEARED; i++) {
@@ -374,11 +374,11 @@ describe('a breath in single player (M12 §2.5)', () => {
         sim.step();
       }
       expect(sim.rooms[0].phase).toBe(PHASE_CLEARED);
-      for (const p of sim.players) expect(p.hp).toBe(p.maxHp);
+      for (const p of sim.players) expect(p.hp).toBeCloseTo(p.maxHp * 0.6, 6);
     }
   });
 
-  it('none after the last wave starts; as before once the arena is cleared', () => {
+  it('none after the last wave starts or once the room is cleared', () => {
     const { sim, p, d } = solo();
     d.waveStarted(1);
     for (let i = 0; i < 30; i++) sim.step();
@@ -386,6 +386,6 @@ describe('a breath in single player (M12 §2.5)', () => {
     sim.rooms[0].phase = PHASE_CLEARED;
     p.lastDamageTick = sim.tick - 300;
     sim.step();
-    expect(p.hp).toBeCloseTo(p.maxHp * (0.5 + 0.015 / 30), 6);
+    expect(p.hp).toBeCloseTo(p.maxHp * 0.5, 6);
   });
 });

@@ -84,7 +84,7 @@ test('multiplayer', async ({ page: a, browser }) => {
     await expect(start).toBeEnabled();
     await start.click();
 
-    // (4) Everyone loads the host's generated floor; R1.3 is the doors-open walkthrough.
+    // (4) Everyone loads the host's generated floor. This all-bot admission fixture stays idle: only humans start encounters.
     await Promise.all([a, b, c].map((p) => p.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 })));
     await Promise.all([a, b, c].map((p) => p.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 0)));
     const first = await state(a);
@@ -142,6 +142,8 @@ test('multiplayer', async ({ page: a, browser }) => {
     await d.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 });
     const late = await state(d);
     expect([late.runId, late.seed, late.simSeed, late.floorHash]).toEqual([first.runId, first.seed, first.simSeed, first.floorHash]);
+    const lateSize = d.viewportSize()!;
+    await d.setViewportSize({ width: 320, height: 180 });
     await Promise.all(throttles.map((t) => t.send('Emulation.setCPUThrottlingRate', { rate: 1 })));
     await a.waitForFunction(() => window.__heavenfall.players.some((p) => p.id === 3));
     // B chats: Enter opens the chat line, Enter sends; every page has the message within 3 s (M8 §7).
@@ -159,6 +161,7 @@ test('multiplayer', async ({ page: a, browser }) => {
     await expect(a.locator('.chat-message')).toContainText('Bob: Rise, brothers!');
 
     await Promise.all([a, b, c].map((p, i) => p.setViewportSize(sizes[i])));
+    await d.setViewportSize(lateSize);
 
     // (5) For 30 s, sampled every 1 s: every client's snapshots advance, each client's enemy count at its
     // newest tick equals A's at the same tick, and A's upload stays within budget.
