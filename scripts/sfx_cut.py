@@ -1,4 +1,4 @@
-"""Cuts the recorded sound effects for the game (docs/rogue/audio-prompts.md, "Cutting").
+"""Finishes all 17 S1 sound-effect families for the game (docs/rogue/audio-prompts.md).
 
 Reads every take assets/audio-src/rogue/sfx/<name>-NN.mp3 (or .wav) whose <name> is listed in
 SOUNDS, writes assets/sfx/<name>-NN.wav: mono, 48 kHz, 16-bit. The originals stay untouched.
@@ -14,9 +14,15 @@ For each take:
   it replaces, so the toggle compares sound, not level.
 
 Usage: python -I scripts/sfx_cut.py [name ...]   (no names: every listed sound)
+Optional source sidecar `processing` overrides: anchor (onset/peak), pre_roll_seconds,
+max_duration_seconds and fade_out_seconds. Cutting never depends on provider labels.
 Needs Python 3 with NumPy, and ffmpeg on the PATH.
 """
+import json
+import math
 import pathlib
+import re
+import shutil
 import subprocess
 import sys
 import wave
@@ -47,6 +53,9 @@ SOUNDS = {
     "blessedDeath": (0.35, 0.08, "onset", 0.003),
     # The trailer-impact takes swell up to their hit: cut from just before the hit.
     "massKill": (1.0, 0.25, "peak", 0.03),
+    "porcelainBreak": (0.7, 0.14, "onset", 0.003),
+    "blastLampCrack": (0.15, 0.025, "onset", 0.003),
+    "blastLampBurst": (0.7, 0.14, "onset", 0.003),
 }
 
 
@@ -60,6 +69,8 @@ def decode(path: pathlib.Path) -> np.ndarray:
 def envelope_db(x: np.ndarray) -> np.ndarray:
     """Level per 1 ms, smoothed over 5 ms."""
     n = len(x) // HOP
+    if n < 5 or not np.isfinite(x).all() or np.max(np.abs(x)) < 1e-8:
+        raise ValueError("take is too short, silent or contains invalid samples")
     rms = np.sqrt((x[: n * HOP].reshape(n, HOP) ** 2).mean(axis=1))
     rms = np.convolve(rms, np.ones(5) / 5, mode="same")
     return 20 * np.log10(rms + 1e-9)
@@ -78,7 +89,9 @@ def cut(x: np.ndarray, longest: float, fade_out: float, anchor: str, pre: float)
             end_ms = i + 20
             break
     y = x[start_ms * HOP: end_ms * HOP].copy()
-    fi = int(0.003 * SR)
+    if not len(y) or np.max(np.abs(y)) < 1e-8:
+        raise ValueError("cut contains no audible samples; review processing settings")
+    fi = min(int(0.003 * SR), len(y))
     y[:fi] *= np.linspace(0, 1, fi)
     fo = min(int(fade_out * SR), len(y) // 2)
     y[len(y) - fo:] *= np.linspace(1, 0, fo) ** 2
@@ -95,21 +108,82 @@ def write_wav(path: pathlib.Path, y: np.ndarray) -> None:
         w.writeframes(pcm.tobytes())
 
 
-def main(names: list[str]) -> None:
+def processing_settings(name: str, overrides: dict) -> tuple[float, float, str, float]:
+    longest, fade_out, anchor, pre = SOUNDS[name]
+    if not isinstance(overrides, dict):
+        raise ValueError("processing must be a JSON object")
+    allowed = {"anchor", "pre_roll_seconds", "max_duration_seconds", "fade_out_seconds"}
+    if overrides.keys() - allowed:
+        raise ValueError(f"unknown processing settings: {', '.join(sorted(overrides.keys() - allowed))}")
+    anchor = overrides.get("anchor", anchor)
+    if anchor not in ("onset", "peak"):
+        raise ValueError("processing anchor must be onset or peak")
+    values = []
+    for key, default, minimum in (("max_duration_seconds", longest, 0.005),
+                                  ("fade_out_seconds", fade_out, 0), ("pre_roll_seconds", pre, 0)):
+        value = overrides.get(key, default)
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value) or value < minimum):
+            raise ValueError(f"{key} must be a finite number >= {minimum}")
+        values.append(value)
+    return values[0], values[1], anchor, values[2]
+
+
+def family_files(folder: pathlib.Path, name: str) -> list[pathlib.Path]:
+    return sorted(p for p in folder.glob(f"{name}-*")
+                  if p.suffix.lower() in (".mp3", ".wav")
+                  and re.fullmatch(rf"{re.escape(name)}-\d+", p.stem))
+
+
+def prepare_family(name: str, takes: list[pathlib.Path] | None = None) -> list:
+    if name not in SOUNDS:
+        raise ValueError(f"no S1 finishing rule for {name}")
+    takes = family_files(SRC, name) if takes is None else takes
+    if len({p.stem for p in takes}) != len(takes):
+        raise ValueError(f"{name}: duplicate source take numbers across formats")
+    prepared = []
+    for p in takes:
+        sidecar = p.with_suffix(".json")
+        source = json.loads(sidecar.read_text(encoding="utf-8-sig")) if sidecar.exists() else {}
+        if not isinstance(source, dict):
+            raise ValueError(f"expected a JSON object: {sidecar}")
+        settings = processing_settings(name, source.get("processing", {}))
+        prepared.append((p, *cut(decode(p), *settings)))
+    return prepared
+
+
+def install_family(name: str, prepared: list) -> None:
+    if not prepared:
+        return
     OUT.mkdir(parents=True, exist_ok=True)
-    for name in names or SOUNDS:
-        longest, fade_out, anchor, pre = SOUNDS[name]
-        takes = sorted(p for p in SRC.glob(f"{name}-[0-9][0-9].*") if p.suffix in (".mp3", ".wav"))
-        if not takes:
+    previous = [p for p in family_files(OUT, name) if p.suffix.lower() == ".wav"]
+    if previous:
+        archive = SRC / "rejected" / "runtime"
+        version = 1
+        while (archive / f"{name}-v{version}").exists():
+            version += 1
+        folder = archive / f"{name}-v{version}"
+        folder.mkdir(parents=True)
+        for old in previous:
+            shutil.move(str(old), folder / old.name)
+        print(f"{name}: previous runtime takes archived in {folder.relative_to(ROOT).as_posix()}")
+    for p, y, start_ms in prepared:
+        dst = OUT / f"{p.stem}.wav"
+        write_wav(dst, y)
+        print(f"{p.name}: from {start_ms} ms, {len(y) * 1000 // SR} ms -> {dst.relative_to(ROOT).as_posix()}")
+
+
+def main(names: list[str]) -> None:
+    names = list(dict.fromkeys(names or SOUNDS))
+    unknown = set(names) - SOUNDS.keys()
+    if unknown:
+        raise ValueError(f"no S1 finishing rule for: {', '.join(sorted(unknown))}")
+    for name in names:
+        prepared = prepare_family(name)
+        if prepared:
+            install_family(name, prepared)
+        else:
             print(f"{name}: no takes")
-            continue
-        for old in OUT.glob(f"{name}-[0-9][0-9].wav"):
-            old.unlink()
-        for p in takes:
-            y, start_ms = cut(decode(p), longest, fade_out, anchor, pre)
-            dst = OUT / f"{p.stem}.wav"
-            write_wav(dst, y)
-            print(f"{p.name}: from {start_ms} ms, {len(y) * 1000 // SR} ms -> {dst.relative_to(ROOT).as_posix()}")
 
 
 if __name__ == "__main__":
