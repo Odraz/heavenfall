@@ -11,6 +11,12 @@ test('menus', async ({ page }) => {
   await page.getByRole('button', { name: /The Fallen/ }).click();
   await page.getByRole('button', { name: 'Start' }).click();
   await page.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 });
+  await page.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 0);
+  const first = await state(page);
+  expect(first.floorHash).toMatch(/^[0-9a-f]{8}$/);
+  expect(first.runId).toMatch(/^[0-9a-f]{32}$/);
+  expect(first.activePhase).toBe('idle');
+  expect(first.enemies).toBe(0);
 
   await page.keyboard.press('Escape');
   await expect.poll(async () => (await state(page)).paused).toBe(true);
@@ -31,4 +37,17 @@ test('menus', async ({ page }) => {
   await expect.poll(async () => (await state(page)).screen).toBe('title');
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByRole('slider', { name: 'Music' })).toHaveValue('23');
+  expect((await state(page)).runId).toBeNull();
+  expect((await state(page)).floorHash).toBeNull();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.getByRole('button', { name: 'Singleplayer' }).click();
+  await page.getByRole('button', { name: /The Binder/ }).click();
+  await page.getByRole('button', { name: 'Start' }).click();
+  await page.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 });
+  await page.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 0);
+  const second = await state(page);
+  expect(second.runId).toMatch(/^[0-9a-f]{32}$/);
+  expect(second.runId).not.toBe(first.runId);
+  expect(second.floorHash).toMatch(/^[0-9a-f]{8}$/);
+  expect(second.players[0].classId).toBe('binder');
 });

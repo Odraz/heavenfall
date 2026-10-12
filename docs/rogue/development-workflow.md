@@ -46,7 +46,7 @@ You don't need every asset before coding starts, or four people for every milest
 
 ## Verification policy (applies to every prompt below)
 
-- **Automated tests: the AI decides** where they pay off and explains results in plain words. `npm test` (the existing vitest suite) runs at every stage; the AI updates tests a deliberate change makes obsolete and adds tests for pure logic (generator, transforms, pool validation, profile codec/migration, legality resolver, ledgers). `npm run e2e` runs when a stage changes the session/network flow.
+- **Every delivered stage or milestone must be tested** (your project instruction, confirmed 2026-10-12; see [AGENTS.md](../../AGENTS.md)). The AI adds meaningful coverage for changed behavior and explains results in plain words. `npm test` (the existing vitest suite) runs at every stage; the AI updates tests a deliberate change makes obsolete and adds tests for pure logic (generator, transforms, pool validation, profile codec/migration, legality resolver, ledgers). `npm run e2e` runs when a stage changes the session/network flow. Keep performance limits intact and run timing-sensitive tests without competing workers. A blocked or unrun check is reported as such, never as passed.
 - **`npm run typecheck` and `npm run build`** at every commit.
 - **`npm run bench` only when you ask**, after you've played the build. Don't put benchmark gates inside stages. Compare builds back to back (the laptop drifts 5–10%); never two benchmarks at once (both use port 4173).
 - **Never claim** a play session, measurement or check that didn't happen. Reports keep tests, measurements, inspection and your observations separate.

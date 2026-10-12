@@ -29,6 +29,20 @@ describe('URL parameters (§2.5)', () => {
     expect(parseParams('?seed=7').seed).toBeNull();
   });
 
+  it('selects the generated floor and distinguishes room=0 from normal Breach spawns', () => {
+    expect(parseParams('?dev=1&map=rogue&seed=317434499&room=10')).toMatchObject({ mapId: 'rogue', seed: 0x12ebaa83, startRoom: 10, startArena: 0 });
+    expect(parseParams('?dev=1&map=rogue&room=0').startRoom).toBe(0);
+    for (const suffix of ['', '&room=x', '&room=-1']) expect(parseParams(`?dev=1&map=rogue${suffix}`).startRoom).toBeNull();
+    expect(parseParams('?map=rogue&room=10').startRoom).toBeNull();
+    expect(parseParams('?dev=1&map=pearly-gates&room=10').startRoom).toBeNull();
+    expect(parseParams('?dev=1&map=rogue&room=9999999999999999999999999999').startRoom).toBe(31);
+    expect(parseParams('?dev=1&map=rogue&seed=4294967296').seed).toBe(0);
+  });
+
+  it('keeps generated maps out of the benchmark', () => {
+    expect(parseParams('?bench=1&map=rogue&room=10&seed=7')).toMatchObject({ mapId: 'sandbox', seed: null, startRoom: null });
+  });
+
   it('keeps bot and god with the menus', () => {
     expect(parseParams('?bot=1&god=1')).toMatchObject({ dev: false, bot: true, god: true });
   });

@@ -18,13 +18,15 @@ export const LOAD_TIMEOUT_MS = 20000;
 /** The whole lobby: before `start` (and again after the game), Loading (everyone loads at once), then the game. */
 export type LobbyPhase = 'lobby' | 'loading' | 'game';
 
-export type LobbyOptions = ({ heaven: 1; fixture: string | null } | { dungeonId: string }) & {
+export interface LobbyOptions {
+  heaven: 1;
+  fixture: string | null;
   /** Empty means an open game. */
   password: string;
   version: string;
   hostName: string;
   hostBot?: boolean;
-};
+}
 
 export type JoinResult = { ok: true; playerId: number; inProgress: boolean } | { ok: false; reason: RejectReason };
 
@@ -68,8 +70,7 @@ export class Lobby {
   private readonly readyIds = new Set<number>();
 
   constructor(o: LobbyOptions) {
-    // Keep the fixture constructor used by the inherited lobby fixtures; the wire uses heaven/fixture.
-    this.fixture = 'dungeonId' in o ? o.dungeonId : o.fixture;
+    this.fixture = o.fixture;
     this.password = o.password;
     this.version = o.version;
     this.players.set(0, { id: 0, name: cleanName(o.hostName), classId: null, bot: !!o.hostBot, isHost: true, inResults: false, state: 'lobby', startedAt: 0 });

@@ -23,5 +23,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     testTimeout: 60000,
+    // The simulation's 8 ms/tick assertion needs an idle CPU, not competing generator/renderer suites.
+    maxWorkers: 1,
   },
 });
