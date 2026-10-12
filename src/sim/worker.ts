@@ -47,7 +47,7 @@ function send(to: number | 'all', msg: CtrlMessage): void {
 
 function flushEvents(): void {
   if (!sim) return;
-  for (const e of sim.events) send(e.to, { type: 'event', event: e.event });
+  for (const e of sim.events) send(e.to, { type: 'event', runId, tick: e.tick, revision: e.revision, event: e.event });
   sim.events.length = 0;
 }
 
@@ -96,15 +96,17 @@ function loop(): void {
     runTick();
     acc -= TICK_MS;
     n++;
+    if (!running) return;
   }
   if (acc >= TICK_MS) acc %= TICK_MS;
   timer = setTimeout(loop, Math.max(1, TICK_MS - acc - 1));
 }
 
 function start(m: Extract<MainToWorker, { t: 'start' }>): void {
+  stopLoop();
   const { def, map } = loadRunMap(m);
   sim = new Simulation({
-    dungeon: def, map, players: m.players, seed: m.simSeed, god: m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
+    dungeon: def, map, runId: m.runId, players: m.players, seed: m.simSeed, god: m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
     startRoom: m.startRoom,
   });
   runId = m.runId;
@@ -263,7 +265,8 @@ ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
       break;
     }
     case 'input': {
-      const input = decodeInput(m.buf);
+      if (!sim) break;
+      const input = decodeInput(m.buf, runId);
       if (sim && input) sim.applyInput(m.playerId, input, performance.now());
       break;
     }
@@ -282,6 +285,9 @@ ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
       clearInterval(loadTimer);
       sim = null;
       lobby = null;
+      runId = '';
+      connPlayer.clear();
+      playerConn.clear();
       break;
   }
 };

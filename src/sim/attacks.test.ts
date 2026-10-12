@@ -1,3 +1,4 @@
+import { INPUT_DEFAULTS } from './testutil/sims';
 /** M9 stage 1: controls, the shared fire timer and the secondary attacks (M9 §2, §11.1). */
 import { describe, expect, it, vi } from 'vitest';
 import { CLASSES } from '../data/classes';
@@ -376,7 +377,7 @@ describe('speeds (M9 §2.7)', () => {
     expect(p.speed).toBe(6);
     put(sim, p, 2.5, 2.5);
     p.lastAcceptMs = 0;
-    sim.applyInput(0, { seq: 1, x: 12.5, y: 2.5, z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 }, 100);
+    sim.applyInput(0, { seq: 1, x: 12.5, y: 2.5, z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, ...INPUT_DEFAULTS, lastTeleportId: 0 }, 100);
     expect(p.x).toBeCloseTo(2.5 + 1.2 * 0.6 + 0.5, 6);
   });
 });

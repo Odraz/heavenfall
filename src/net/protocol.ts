@@ -1,11 +1,24 @@
 /** Binary input and snapshot encoding, little-endian (§9.3, §9.4). */
+import { PROTOCOL_VERSION } from './version';
+
+function writeRunId(v: DataView, offset: number, runId: string): void {
+  if (!/^[0-9a-f]{32}$/.test(runId)) throw new Error('invalid run id');
+  for (let i = 0; i < 16; i++) v.setUint8(offset + i, parseInt(runId.slice(i * 2, i * 2 + 2), 16));
+}
+
+function readRunId(v: DataView, offset: number): string {
+  let id = '';
+  for (let i = 0; i < 16; i++) id += v.getUint8(offset + i).toString(16).padStart(2, '0');
+  return id;
+}
 
 // ---------------------------------------------------------------- input
 
-export const INPUT_BYTES = 30;
+export const INPUT_BYTES = 49;
 export const ALLY_NONE = 255;
 
 export interface InputMsg {
+  runId: string;
   seq: number;
   x: number;
   y: number;
@@ -20,6 +33,13 @@ export interface InputMsg {
   /** 255 = none. */
   allyTargetId: number;
   lastTeleportId: number;
+  /** Reserved for R3; sent as zero in R1. */
+  item1Presses: number;
+  item2Presses: number;
+  mapHeld: boolean;
+  /** Held state has no cast consumer until R4. */
+  qHeld: boolean;
+  eHeld: boolean;
 }
 
 export function encodeInput(m: InputMsg): ArrayBuffer {
@@ -36,31 +56,47 @@ export function encodeInput(m: InputMsg): ArrayBuffer {
   v.setUint8(26, m.ePresses & 0xff);
   v.setUint8(27, m.allyTargetId & 0xff);
   v.setUint16(28, m.lastTeleportId & 0xffff, true);
+  writeRunId(v, 30, m.runId);
+  v.setUint8(46, m.item1Presses & 0xff);
+  v.setUint8(47, m.item2Presses & 0xff);
+  v.setUint8(48, (m.mapHeld ? 1 : 0) | (m.qHeld ? 2 : 0) | (m.eHeld ? 4 : 0));
   return buf;
 }
 
-export function decodeInput(buf: ArrayBuffer): InputMsg | null {
+export function decodeInput(buf: ArrayBuffer, expectedRunId: string): InputMsg | null {
   if (buf.byteLength !== INPUT_BYTES) return null;
   const v = new DataView(buf);
+  const runId = readRunId(v, 30);
+  if (runId !== expectedRunId) return null;
+  const flags = v.getUint8(48);
+  const fire = v.getUint8(24);
+  if ((flags & ~7) !== 0 || (fire & ~7) !== 0) return null;
+  for (const offset of [4, 8, 12, 16, 20]) if (!Number.isFinite(v.getFloat32(offset, true))) return null;
   return {
+    runId,
     seq: v.getUint32(0, true),
     x: v.getFloat32(4, true),
     y: v.getFloat32(8, true),
     z: v.getFloat32(12, true),
     yaw: v.getFloat32(16, true),
     pitch: v.getFloat32(20, true),
-    fire: v.getUint8(24) & 0x07,
+    fire,
     qPresses: v.getUint8(25),
     ePresses: v.getUint8(26),
     allyTargetId: v.getUint8(27),
     lastTeleportId: v.getUint16(28, true),
+    item1Presses: v.getUint8(46),
+    item2Presses: v.getUint8(47),
+    mapHeld: (flags & 1) !== 0,
+    qHeld: (flags & 2) !== 0,
+    eHeld: (flags & 4) !== 0,
   };
 }
 
 // ---------------------------------------------------------------- snapshots
 
-/** The inherited header plus clearedMask and quorum hold; R1.6 moves them into the final run envelope. */
-export const HEADER_BYTES = 32;
+/** Run-scoped header, repeated in every part (rogue r01.md, R1.6). */
+export const HEADER_BYTES = 61;
 /** The MVP's 28 bytes plus `revive` and `shots` (M8 §10), `shots2` and `beam` (M9 §10). */
 export const PLAYER_BYTES = 32;
 export const ENEMY_BYTES = 8;
@@ -86,6 +122,8 @@ export const FLAG_SLOWED = 16;
 export const FLAG_TAUNTED = 32;
 
 export interface SnapshotHeader {
+  runId: string;
+  stateRevision: number;
   tick: number;
   /** The room in countdown or combat, 255 for none (rogue game.md §14.3). */
   activeRoom: number;
@@ -165,6 +203,8 @@ export function encodeSnapshot(
   maxBytes = MAX_SNAPSHOT_BYTES,
 ): ArrayBuffer[] {
   const fixed = HEADER_BYTES + players.length * PLAYER_BYTES;
+  if (players.length > 4 || e.enemyCount > 0xffff || e.projectileCount > 0xffff ||
+    maxBytes > MAX_SNAPSHOT_BYTES || maxBytes < fixed) throw new Error('snapshot size out of range');
   const ranges: Array<[number, number, number, number]> = [];
   let ei = 0;
   let pi = 0;
@@ -173,31 +213,39 @@ export function encodeSnapshot(
     const ne = Math.max(0, Math.min(e.enemyCount - ei, Math.floor(cap / ENEMY_BYTES)));
     cap -= ne * ENEMY_BYTES;
     const np = Math.max(0, Math.min(e.projectileCount - pi, Math.floor(cap / PROJECTILE_BYTES)));
-    if (ne === 0 && np === 0 && ranges.length > 0) throw new Error('snapshot part too small');
+    if (ne === 0 && np === 0 && (ei < e.enemyCount || pi < e.projectileCount)) throw new Error('snapshot part too small');
     ranges.push([ei, ne, pi, np]);
     ei += ne;
     pi += np;
   } while (ei < e.enemyCount || pi < e.projectileCount);
+  if (ranges.length > 255) throw new Error('too many snapshot parts');
 
   return ranges.map(([e0, ne, p0, np], partIndex) => {
     const buf = new ArrayBuffer(fixed + ne * ENEMY_BYTES + np * PROJECTILE_BYTES);
     const v = new DataView(buf);
-    v.setUint32(0, h.tick >>> 0, true);
-    v.setUint8(4, partIndex);
-    v.setUint8(5, ranges.length);
-    v.setUint8(6, h.activeRoom);
-    v.setUint8(7, h.activePhase);
-    v.setUint16(8, Math.min(0xffff, h.countdown), true);
-    v.setUint16(10, Math.min(0xffff, h.enemiesRemaining), true);
-    v.setUint32(12, Math.max(0, Math.ceil(h.bossHp)), true);
-    v.setUint32(16, h.bossMaxHp, true);
-    v.setUint8(20, h.bossCast);
-    v.setUint8(21, h.bossCastProgress);
-    v.setUint8(22, players.length);
-    v.setUint16(23, ne, true);
-    v.setUint16(25, np, true);
-    v.setUint32(27, h.clearedMask >>> 0, true);
-    v.setUint8(31, h.hold);
+    v.setUint8(0, PROTOCOL_VERSION);
+    v.setUint8(1, partIndex);
+    v.setUint8(2, ranges.length);
+    v.setUint8(3, players.length);
+    writeRunId(v, 4, h.runId);
+    v.setUint32(20, h.tick >>> 0, true);
+    v.setUint32(24, h.stateRevision >>> 0, true);
+    v.setUint8(28, h.activeRoom);
+    v.setUint8(29, h.activePhase);
+    v.setUint16(30, Math.min(0xffff, h.countdown), true);
+    v.setUint8(32, h.hold);
+    v.setUint32(33, h.clearedMask >>> 0, true);
+    v.setUint16(37, Math.min(0xffff, h.enemiesRemaining), true);
+    v.setUint32(39, Math.max(0, Math.ceil(h.bossHp)), true);
+    v.setUint32(43, h.bossMaxHp, true);
+    v.setUint8(47, h.bossCast);
+    v.setUint8(48, h.bossCastProgress);
+    v.setUint16(49, e.enemyCount, true);
+    v.setUint16(51, e.projectileCount, true);
+    v.setUint16(53, 0, true); // pickups arrive in R2
+    v.setUint16(55, ne, true);
+    v.setUint16(57, np, true);
+    v.setUint16(59, 0, true);
     let o = HEADER_BYTES;
     for (const p of players) {
       v.setUint8(o, p.id);
@@ -241,6 +289,10 @@ export function encodeSnapshot(
 export interface Snapshot extends SnapshotHeader {
   partIndex: number;
   partCount: number;
+  totalEnemyCount: number;
+  totalProjectileCount: number;
+  totalPickupCount: number;
+  pickupCount: number;
   players: SnapshotPlayer[];
   enemyCount: number;
   enemySlot: Uint16Array;
@@ -257,27 +309,41 @@ export interface Snapshot extends SnapshotHeader {
   projZ: Float32Array;
 }
 
-export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
-  if (buf.byteLength < HEADER_BYTES) return null;
+export function decodeSnapshot(buf: ArrayBuffer, expectedRunId?: string): Snapshot | null {
+  if (buf.byteLength < HEADER_BYTES || buf.byteLength > MAX_SNAPSHOT_BYTES) return null;
   const v = new DataView(buf);
-  const playerCount = v.getUint8(22);
-  const ne = v.getUint16(23, true);
-  const np = v.getUint16(25, true);
+  if (v.getUint8(0) !== PROTOCOL_VERSION) return null;
+  const runId = readRunId(v, 4);
+  if (expectedRunId !== undefined && runId !== expectedRunId) return null;
+  const partIndex = v.getUint8(1), partCount = v.getUint8(2), playerCount = v.getUint8(3);
+  const totalEnemyCount = v.getUint16(49, true), totalProjectileCount = v.getUint16(51, true);
+  const totalPickupCount = v.getUint16(53, true), pickupCount = v.getUint16(59, true);
+  const ne = v.getUint16(55, true);
+  const np = v.getUint16(57, true);
+  if (playerCount > 4 || partCount === 0 || partIndex >= partCount ||
+    ne > totalEnemyCount || np > totalProjectileCount || totalPickupCount !== 0 || pickupCount !== 0) return null;
+  if (partCount === 1 && (ne !== totalEnemyCount || np !== totalProjectileCount)) return null;
   if (buf.byteLength !== HEADER_BYTES + playerCount * PLAYER_BYTES + ne * ENEMY_BYTES + np * PROJECTILE_BYTES) return null;
+  for (let i = 0; i < playerCount; i++) {
+    const o = HEADER_BYTES + i * PLAYER_BYTES;
+    if (v.getUint8(o) >= 4) return null;
+    for (const offset of [1, 5, 9, 13]) if (!Number.isFinite(v.getFloat32(o + offset, true))) return null;
+  }
   const s: Snapshot = {
-    tick: v.getUint32(0, true),
-    partIndex: v.getUint8(4),
-    partCount: v.getUint8(5),
-    activeRoom: v.getUint8(6),
-    activePhase: v.getUint8(7),
-    clearedMask: v.getUint32(27, true),
-    countdown: v.getUint16(8, true),
-    hold: v.getUint8(31),
-    enemiesRemaining: v.getUint16(10, true),
-    bossHp: v.getUint32(12, true),
-    bossMaxHp: v.getUint32(16, true),
-    bossCast: v.getUint8(20),
-    bossCastProgress: v.getUint8(21),
+    runId,
+    stateRevision: v.getUint32(24, true),
+    tick: v.getUint32(20, true),
+    partIndex, partCount, totalEnemyCount, totalProjectileCount, totalPickupCount, pickupCount,
+    activeRoom: v.getUint8(28),
+    activePhase: v.getUint8(29),
+    clearedMask: v.getUint32(33, true),
+    countdown: v.getUint16(30, true),
+    hold: v.getUint8(32),
+    enemiesRemaining: v.getUint16(37, true),
+    bossHp: v.getUint32(39, true),
+    bossMaxHp: v.getUint32(43, true),
+    bossCast: v.getUint8(47),
+    bossCastProgress: v.getUint8(48),
     players: [],
     enemyCount: ne,
     enemySlot: new Uint16Array(ne),
@@ -383,23 +449,54 @@ function concatParts(parts: Snapshot[]): Snapshot {
  */
 export class SnapshotAssembler {
   newestCompleteTick = -1;
+  private runId = '';
   private readonly pending = new Map<number, Array<Snapshot | undefined>>();
+  private readonly invalid = new Set<number>();
+
+  reset(runId: string): void {
+    this.runId = runId;
+    this.newestCompleteTick = -1;
+    this.pending.clear();
+    this.invalid.clear();
+  }
+
+  private invalidate(tick: number): null {
+    this.pending.delete(tick);
+    this.invalid.add(tick);
+    return null;
+  }
 
   /** Adds a part; returns the complete snapshot when this part completes a tick. */
   add(part: Snapshot): Snapshot | null {
-    if (part.tick <= this.newestCompleteTick) return null;
+    // Check identity before allocating pending state or touching the watermark.
+    if (part.runId !== this.runId || part.tick <= this.newestCompleteTick || this.invalid.has(part.tick)) return null;
     if (part.partCount === 0 || part.partIndex >= part.partCount) return null;
     let parts = this.pending.get(part.tick);
     if (!parts) {
       parts = new Array<Snapshot | undefined>(part.partCount);
       this.pending.set(part.tick, parts);
     }
-    if (parts.length !== part.partCount) return null;
+    if (parts.length !== part.partCount) return this.invalidate(part.tick);
+    const sibling = parts.find((p) => p !== undefined);
+    if (sibling) {
+      for (const key of SHARED_HEADER) if (sibling[key] !== part[key]) return this.invalidate(part.tick);
+      if (sibling.players.length !== part.players.length) return this.invalidate(part.tick);
+      for (let i = 0; i < part.players.length; i++) {
+        for (const key of Object.keys(sibling.players[i]) as Array<keyof SnapshotPlayer>) {
+          if (sibling.players[i][key] !== part.players[i][key]) return this.invalidate(part.tick);
+        }
+      }
+    }
     parts[part.partIndex] = part;
     for (let i = 0; i < parts.length; i++) if (!parts[i]) return null;
+    const complete = parts as Snapshot[];
+    if (complete.reduce((n, p) => n + p.enemyCount, 0) !== part.totalEnemyCount ||
+      complete.reduce((n, p) => n + p.projectileCount, 0) !== part.totalProjectileCount ||
+      complete.reduce((n, p) => n + p.pickupCount, 0) !== part.totalPickupCount) return this.invalidate(part.tick);
     this.newestCompleteTick = part.tick;
     for (const t of this.pending.keys()) if (t <= part.tick) this.pending.delete(t);
-    return concatParts(parts as Snapshot[]);
+    for (const t of this.invalid) if (t <= part.tick) this.invalid.delete(t);
+    return concatParts(complete);
   }
 
   /** Number of incomplete ticks kept. */
@@ -407,3 +504,7 @@ export class SnapshotAssembler {
     return this.pending.size;
   }
 }
+
+const SHARED_HEADER = ['runId', 'tick', 'stateRevision', 'activeRoom', 'activePhase', 'countdown', 'hold',
+  'clearedMask', 'enemiesRemaining', 'bossHp', 'bossMaxHp', 'bossCast', 'bossCastProgress',
+  'totalEnemyCount', 'totalProjectileCount', 'totalPickupCount'] as const;

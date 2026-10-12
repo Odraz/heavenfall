@@ -4,6 +4,7 @@ import { CLASS_IDS, type ClassId } from './data/classes';
 import { debugState, resetGameDebug, type Screen } from './debug';
 import { floorHash } from './gen';
 import { newRunIdentity } from './net/version';
+import { RunEvents } from './net/runEvents';
 import { parseParams } from './params';
 import { loadRunMap } from './sim/runMap';
 import { loadEnemyAnims, loadPlayerAnims } from './render/animAtlas';
@@ -272,6 +273,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
   let game: Game | null = null;
   /** Counts the games of this session: a load from an earlier one stops. */
   let round = 0;
+  let activeEvents: RunEvents | null = null;
   let loading = false;
   let go = false;
   let ended = false;
@@ -430,6 +432,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
         break;
       case 'start':
         if (loading) break;
+        activeEvents = new RunEvents(msg.runId);
         loading = true;
         if (s.client) s.client.loading = true;
         void load(msg);
@@ -446,6 +449,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
         if (typeof msg.playerId === 'number' && typeof msg.text === 'string') onChat(msg.playerId, msg.text);
         break;
       case 'event':
+        if (activeEvents && !activeEvents.accept(msg)) break;
         // A player still in the in-progress Lobby or loading into the game is in the Lobby for the
         // next one.
         if (msg.event.type === 'gameOver' && !go) {

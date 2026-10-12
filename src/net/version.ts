@@ -1,6 +1,9 @@
 /** Run identity (rogue game.md §2.2): drawn before Loading, reused by every participant. */
 import { fmix32 } from '../gen/hash';
 
+export const PROTOCOL_VERSION = 2;
+export const RULES_VERSION = 1;
+
 export interface RunIdentity {
   runId: string;
   seed: number;

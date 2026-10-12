@@ -3,6 +3,40 @@ import { PINNED } from '../src/gen/pinned';
 import { PEARLY_POOL_R1 } from '../src/data/rooms/1';
 import { expect, state, test } from './fixtures';
 
+test('a second generated run after Results gets a fresh identity and accepts restarted input and snapshots', async ({ page }) => {
+  await page.setViewportSize({ width: 640, height: 360 });
+  await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&room=999&class=fallen&god=1`);
+  await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.activePhase === 'combat');
+  const first = await state(page);
+  await page.keyboard.press('KeyQ');
+  await page.keyboard.press('KeyK');
+  await page.waitForFunction(() => window.__heavenfall.screen === 'results', null, { timeout: 10_000 });
+  expect((await state(page)).gameResult).toBe('victory');
+  await page.getByRole('button', { name: 'Back to title' }).click();
+  expect((await state(page)).runId).toBeNull();
+  await page.getByLabel('Player name').fill('Again');
+  await page.getByRole('button', { name: 'Singleplayer', exact: true }).click();
+  await page.getByRole('button', { name: /The Heretic Saint/ }).click();
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await page.waitForFunction(() => window.__heavenfall.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0 && window.__heavenfall.floorSyncTick >= 0);
+  const second = await state(page);
+  expect(second.runId).toMatch(/^[0-9a-f]{32}$/); expect(second.runId).not.toBe(first.runId);
+  expect(second.gameResult).toBeNull(); expect(second.floorSyncTick).toBe(0);
+  expect(second.players[0]).toMatchObject({ classId: 'heretic', hp: 150, kills: 0, dead: false, primaryShots: 0, secondaryShots: 0 });
+  // Input sequences restart, and the map flag survives the new wire format.
+  await page.locator('.game-canvas').click({ position: { x: 300, y: 160 } });
+  await page.waitForFunction(() => document.pointerLockElement !== null);
+  await page.keyboard.down('KeyM');
+  await expect(page.getByLabel('Full floor map')).toBeVisible();
+  await page.keyboard.up('KeyM');
+  await page.keyboard.press('KeyQ');
+  await expect(page.locator('.ability').filter({ hasText: 'Q' })).not.toHaveClass(/ready/);
+  await page.waitForFunction(() => window.__heavenfall.activePhase === 'combat');
+  await page.keyboard.press('KeyK');
+  await page.waitForFunction(() => window.__heavenfall.screen === 'results', null, { timeout: 10_000 });
+  expect((await state(page)).gameResult).toBe('victory');
+});
+
 test('the map shows Breach neighbours; holding M keeps movement and diverts mouse and attacks', async ({ page }) => {
   const { floor, def } = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL_R1);
   await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&class=fallen&god=1`);

@@ -1,3 +1,4 @@
+import { INPUT_DEFAULTS } from './testutil/sims';
 import { describe, expect, it } from 'vitest';
 import type { ArenaDef, WaveDef } from '../data/dungeons/types';
 import { BLESSED, CHERUB } from '../data/enemies';
@@ -122,9 +123,9 @@ describe('arenas', () => {
     expect(sim.players[0].teleportId).toBe(0);
     // An input sent before the client saw the teleport is ignored.
     const p2 = sim.players[2];
-    sim.applyInput(2, { seq: 1, x: 2.5, y: 2.5, z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 }, sim.nowMs);
+    sim.applyInput(2, { seq: 1, x: 2.5, y: 2.5, z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, ...INPUT_DEFAULTS, lastTeleportId: 0 }, sim.nowMs);
     expect(p2.x).toBe(7.5);
-    sim.applyInput(2, { seq: 2, x: 7.6, y: 1.5, z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 1 }, sim.nowMs + 33);
+    sim.applyInput(2, { seq: 2, x: 7.6, y: 1.5, z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, ...INPUT_DEFAULTS, lastTeleportId: 1 }, sim.nowMs + 33);
     expect(p2.x).toBeCloseTo(7.6);
   });
 

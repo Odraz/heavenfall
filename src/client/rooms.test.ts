@@ -11,6 +11,14 @@ function make() {
   return { sim, model: new ClientRooms(map, 'run') };
 }
 describe('R1.5 client room projection', () => {
+  it('does not replay room transitions at or before a reliable checkpoint revision', () => {
+    const { sim, model } = make(); const sync = sim.floorSync('run'); model.sync(sync);
+    const room = sim.map.rooms.findIndex((r) => r.kind === 'combat');
+    const e = { type: 'roomState' as const, room, phase: PHASE_COMBAT, knowledge: 2, entrySocket: model.states[room].entrySocket };
+    expect(model.event(e, sync.revision - 1)).toBe(false);
+    expect(model.event(e, sync.revision)).toBe(false); expect(model.states[room].knowledge).toBe(sync.rooms[room].knowledge);
+    expect(model.event(e, sync.revision + 1)).toBe(true); expect(model.states[room].knowledge).toBe(2);
+  });
   it('applies a complete checkpoint and rejects wrong runs, incomplete/invalid siblings and older revisions atomically', () => {
     const { sim, model } = make(); const sync = sim.floorSync('run');
     expect(model.sync(sync)).toBe(true); const before = structuredClone(model.states);

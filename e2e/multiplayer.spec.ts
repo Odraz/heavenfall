@@ -40,6 +40,8 @@ test('multiplayer', async ({ page: a, browser }) => {
   test.setTimeout(300_000);
   const errors: string[] = [];
   const owned: Browser[] = [];
+  let stage = 'hosting';
+  const progress = (next: string): void => { stage = next; console.log(`multiplayer: ${stage}`); };
   try {
     const clients: Page[] = [];
     for (const label of ['B', 'C', 'D']) clients.push(await clientPage(browser, errors, label, owned));
@@ -53,6 +55,7 @@ test('multiplayer', async ({ page: a, browser }) => {
     await a.waitForFunction(() => window.__heavenfall.screen === 'lobby', null, { timeout: 30_000 });
     const gameId = (await a.locator('.game-id').textContent())!.trim();
     expect(gameId).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
+    progress('joining starters');
 
     // (2) B joins with password `x` and sees `Wrong password`, then joins with `pw`; C joins.
     await toMultiplayer(b, '/?bot=1', 'Bob');
@@ -83,6 +86,7 @@ test('multiplayer', async ({ page: a, browser }) => {
     await hereticOnB.click();
     await expect(start).toBeEnabled();
     await start.click();
+    progress('loading starters');
 
     // (4) Everyone loads the host's generated floor. This all-bot admission fixture stays idle: only humans start encounters.
     await Promise.all([a, b, c].map((p) => p.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 })));
@@ -101,6 +105,7 @@ test('multiplayer', async ({ page: a, browser }) => {
       expect(s.floorSyncTick).toBeGreaterThanOrEqual(0);
       expect(s.roomKnowledge).toEqual(first.roomKnowledge);
     }
+    progress('joining late client');
 
     // D joins the game in progress from an invite link, and picks the Betrayer (M8 §12.2). Until the
     // chat check, the three running games are drawn small: software rendering them at full size starves
@@ -121,6 +126,7 @@ test('multiplayer', async ({ page: a, browser }) => {
     await d.getByLabel('Password').fill('pw');
     await d.getByRole('button', { name: 'Join', exact: true }).click();
     await d.waitForFunction(() => window.__heavenfall.screen === 'lobby', null, { timeout: 30_000 });
+    progress('loading late client');
     await expect(d.getByRole('button', { name: /The Fallen/ })).toBeDisabled();
     await d.getByRole('button', { name: /The Betrayer/ }).click();
     const enter = d.getByRole('button', { name: 'Enter game' });
@@ -152,6 +158,7 @@ test('multiplayer', async ({ page: a, browser }) => {
     const lateSize = d.viewportSize()!;
     await d.setViewportSize({ width: 320, height: 180 });
     await Promise.all(throttles.map((t) => t.send('Emulation.setCPUThrottlingRate', { rate: 1 })));
+    progress('chat');
     await a.waitForFunction(() => window.__heavenfall.players.some((p) => p.id === 3));
     // B chats: Enter opens the chat line, Enter sends; every page has the message within 3 s (M8 §7).
     // Still drawn small, so a starved page doesn't miss the 3 s.
@@ -169,6 +176,7 @@ test('multiplayer', async ({ page: a, browser }) => {
 
     await Promise.all([a, b, c].map((p, i) => p.setViewportSize(sizes[i])));
     await d.setViewportSize(lateSize);
+    progress('snapshot consistency');
 
     // (5) For 30 s, sampled every 1 s: every client's snapshots advance, each client's enemy count at its
     // newest tick equals A's at the same tick, and A's upload stays within budget.
@@ -199,9 +207,11 @@ test('multiplayer', async ({ page: a, browser }) => {
       );
       expect((await state(a)).netOutKBps).toBeLessThanOrEqual(437);
       prev = ticks;
+      if ((i + 1) % 10 === 0) progress(`snapshot sample ${i + 1}/30`);
     }
 
     // (6) A leaves: every client returns to Title with `Host left the game` within 6 s.
+    progress('host leaves');
     await a.keyboard.press('Escape');
     await expect.poll(async () => (await state(a)).paused).toBe(true);
     await a.getByRole('button', { name: 'Leave game' }).click();
@@ -213,9 +223,12 @@ test('multiplayer', async ({ page: a, browser }) => {
     );
     expect(errors).toEqual([]);
   } catch (error) {
+    console.log(`multiplayer failed during ${stage}: ${String(error)}`);
     const contexts = await Promise.all(owned.flatMap((b) => b.contexts()).flatMap((c) => c.pages()).map(async (p) => ({
-      state: await state(p).catch(() => null), text: await p.locator('body').innerText().catch(() => ''),
+      state: await Promise.race([state(p).catch(() => null), new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000))]),
+      text: await p.locator('body').innerText({ timeout: 2000 }).catch(() => ''),
     })));
+    console.log(JSON.stringify({ errors, contexts }));
     await test.info().attach('client-loading', { body: JSON.stringify({ errors, contexts }), contentType: 'application/json' });
     throw error;
   } finally {

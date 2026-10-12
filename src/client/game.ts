@@ -99,6 +99,7 @@ import { LocalPlayer, MAX_FRAME_DT, wasdDirection } from './localPlayer';
 import { PartyFrames } from './partyFrames';
 import { PlayerAnimator } from './playerAnim';
 import { SnapshotBuffer, type InterpolatedEnemies } from './snapshots';
+import { RunEvents } from '../net/runEvents';
 import type { Floor } from '../gen/generate';
 import { ClientRooms, roomMessage } from './rooms';
 import { MapView, type MapPlayer } from './mapView';
@@ -331,6 +332,7 @@ export class Game {
   private wasLocked = false;
   private readonly fps = new FpsCounter();
   private readonly snaps: SnapshotBuffer;
+  private readonly runEvents: RunEvents;
   private readonly billboards: Billboards;
   /** Contact shadows under the characters (M10 §5.4). */
   private readonly shadows: ContactShadows;
@@ -545,7 +547,8 @@ export class Game {
     this.player = new LocalPlayer(sc + 0.5, sr + 0.5, this.map.floor[sr * this.map.w + sc], CLASSES[me.classId].speed);
     this.leafDrawn = new Int8Array(this.map.rooms.reduce((n, a) => n + a.leaves.length, 0)).fill(-1);
 
-    this.snaps = new SnapshotBuffer(o.host ? 1.5 : 4.5);
+    this.runEvents = new RunEvents(o.runId);
+    this.snaps = new SnapshotBuffer(o.host ? 1.5 : 4.5, o.runId);
     this.snaps.onComplete = (s, prev) => this.onSnapshot(s, prev);
     o.transport.onSnapshot = (buf) => this.snaps.addPart(buf, performance.now());
 
@@ -808,6 +811,7 @@ export class Game {
     const p = this.player;
     this.o.transport.sendInput(
       encodeInput({
+        runId: this.o.runId,
         seq: ++this.seq,
         x: p.body.x,
         y: p.body.y,
@@ -819,6 +823,11 @@ export class Game {
         ePresses: this.ePresses,
         allyTargetId: this.allyTargetId,
         lastTeleportId: this.lastTeleportId,
+        item1Presses: 0,
+        item2Presses: 0,
+        mapHeld: this.input.mapHeld,
+        qHeld: this.input.enabled && !this.input.typing && this.input.isDown('KeyQ'),
+        eHeld: this.input.enabled && !this.input.typing && this.input.isDown('KeyE'),
       }),
     );
   }
@@ -846,9 +855,9 @@ export class Game {
       }
       return;
     }
-    if (msg.type !== 'event' || this.disposed) return;
+    if (msg.type !== 'event' || this.disposed || !this.runEvents.accept(msg)) return;
     if (msg.event.type === 'roomState') {
-      const transition = this.rooms.event(msg.event);
+      const transition = this.rooms.event(msg.event, msg.revision);
       debugState.roomKnowledge = this.rooms.states.map((r) => r.knowledge);
       if (!transition) return;
     }

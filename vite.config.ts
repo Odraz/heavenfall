@@ -1,6 +1,9 @@
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
+import { fileURLToPath } from 'node:url';
+import { buildFingerprint, sourceHash } from './buildFingerprint';
+import { PROTOCOL_VERSION, RULES_VERSION } from './src/net/version';
 
 function gitShortHash(): string {
   try {
@@ -15,7 +18,8 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
 export default defineConfig({
   base: './',
   define: {
-    __BUILD_VERSION__: JSON.stringify(`${pkg.version}-${gitShortHash()}`),
+    __BUILD_VERSION__: JSON.stringify(buildFingerprint(pkg.version, gitShortHash(), PROTOCOL_VERSION, RULES_VERSION,
+      sourceHash(fileURLToPath(new URL('.', import.meta.url))))),
   },
   worker: { format: 'es' },
   build: { chunkSizeWarningLimit: 2000 },

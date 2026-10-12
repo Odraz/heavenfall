@@ -38,8 +38,8 @@ export class ClientRooms {
   }
 
   /** True only for a phase transition: discovery of an already cleared room is silent. */
-  event(e: Extract<GameEvent, { type: 'roomState' }>): boolean {
-    if (!this.valid(e.room, e)) return false;
+  event(e: Extract<GameEvent, { type: 'roomState' }>, revision?: number): boolean {
+    if (!this.valid(e.room, e) || (revision !== undefined && revision <= this.syncRevision)) return false;
     const changed = this.eventPhases[e.room] !== e.phase;
     this.eventPhases[e.room] = e.phase;
     const st = this.states[e.room];

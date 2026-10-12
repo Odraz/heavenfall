@@ -76,7 +76,18 @@ export class SnapshotBuffer {
   constructor(
     /** Render delay in ticks: 1.5 on the host, 4.5 on remote clients. */
     readonly delayTicks: number,
-  ) {}
+    private runId: string,
+  ) { this.reset(runId); }
+
+  /** A new run may restart ticks at zero; none of the old interpolation state survives. */
+  reset(runId: string): void {
+    this.runId = runId;
+    this.assembler.reset(runId);
+    this.ring.length = 0;
+    this.enemyCountsByTick.clear();
+    this.out.count = this.projOut.count = 0;
+    this.playersOut.length = 0;
+  }
 
   get newest(): Snapshot | null {
     return this.ring.length ? this.ring[this.ring.length - 1].snap : null;
@@ -92,7 +103,7 @@ export class SnapshotBuffer {
   }
 
   addPart(buf: ArrayBuffer, now: number): void {
-    const part = decodeSnapshot(buf);
+    const part = decodeSnapshot(buf, this.runId);
     if (!part) return;
     const snap = this.assembler.add(part);
     if (!snap) return;

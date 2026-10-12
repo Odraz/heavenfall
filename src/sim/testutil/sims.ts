@@ -4,6 +4,12 @@ import { ENEMIES } from '../../data/enemies';
 import { Simulation, type SimOptions, type SimPlayer } from '../sim';
 import { dungeonOf } from './maps';
 
+/** Run-scoped fields for standalone simulation fixtures; session tests supply their admitted ID. */
+export const INPUT_DEFAULTS = {
+  runId: '00000000000000000000000000000000',
+  item1Presses: 0, item2Presses: 0, mapHeld: false, qHeld: false, eHeld: false,
+};
+
 /** An open room of floor 0, `w` × `h` cells inside a wall border. */
 export function room(w: number, h: number): string[] {
   const wall = '#'.repeat(w + 2);

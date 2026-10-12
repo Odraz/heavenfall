@@ -101,6 +101,6 @@ export type CtrlMessage =
   /** C→H with `text` only; H→all with the sender's `playerId` too (M8 §7). */
   | { type: 'chat'; text: string; playerId?: number }
   | { type: 'go' }
-  | { type: 'event'; event: GameEvent }
+  | { type: 'event'; runId: string; tick: number; revision: number; event: GameEvent }
   | { type: 'ping' }
   | { type: 'leave' };

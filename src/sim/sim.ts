@@ -144,6 +144,8 @@ export interface SimPlayerInit {
 
 export interface SimOptions {
   dungeon: DungeonDef;
+  /** Real sessions always supply it; standalone simulation fixtures use the zero identity. */
+  runId?: string;
   /** Reuse the map already generated and validated during Loading. */
   map?: GameMap;
   /** Players at `go`; each one's index is its ID (M8 §6.2). */
@@ -163,6 +165,8 @@ export interface SimOptions {
 
 export interface SimEvent {
   to: number | 'all';
+  tick: number;
+  revision: number;
   event: GameEvent;
 }
 
@@ -491,6 +495,7 @@ export function segmentDistance(
 
 export class Simulation {
   readonly map: GameMap;
+  readonly runId: string;
   /** The players in the game, sorted by ID. */
   readonly players: SimPlayer[] = [];
   /** The players by index, which is their ID (M8 §6.2); empty slots are undefined. */
@@ -669,6 +674,7 @@ export class Simulation {
   private readonly lastSentTick = new Map<number, number>();
 
   constructor(opts: SimOptions) {
+    this.runId = opts.runId ?? '00000000000000000000000000000000';
     this.map = opts.map ?? loadMap(opts.dungeon);
     this.benchRoom = opts.benchRoom ?? -1;
     this.benchBurst = !!opts.benchBurst && this.benchRoom >= 0;
@@ -771,9 +777,13 @@ export class Simulation {
   }
 
   private roomState(ai: number): void {
-    this.stateRevision++;
     const { phase, knowledge, entrySocket } = this.rooms[ai];
-    this.events.push({ to: 'all', event: { type: 'roomState', room: ai, phase, knowledge, entrySocket } });
+    this.emit('all', { type: 'roomState', room: ai, phase, knowledge, entrySocket });
+  }
+
+  /** R1 has one reliable payload per revision; capture identity when the event is emitted. */
+  private emit(to: number | 'all', event: GameEvent): void {
+    this.events.push({ to, tick: this.tick, revision: ++this.stateRevision, event });
   }
 
   /** The active room's phase (countdown or combat), PHASE_IDLE when no room is active (rogue game.md §14.3). */
@@ -801,6 +811,7 @@ export class Simulation {
 
   /** Applies an input message from a player (§9.3). `nowMs` is the host time of arrival. */
   applyInput(playerId: number, m: InputMsg, nowMs: number): void {
+    if (m.runId !== this.runId) return;
     const p = this.playerById(playerId);
     if (!p || !p.connected) return;
     if (p.lastSeq >= 0 && m.seq <= p.lastSeq) return;
@@ -866,7 +877,7 @@ export class Simulation {
     p.z = z;
     p.teleportId = (p.teleportId + 1) & 0xffff;
     p.lastAcceptMs = this.nowMs;
-    this.events.push({ to: p.id, event: { type: 'teleport', teleportId: p.teleportId, x, y, z } });
+    this.emit(p.id, { type: 'teleport', teleportId: p.teleportId, x, y, z });
   }
 
   /** Adds a player to the game in its slot, with its feet at (x, y, z). */
@@ -1033,7 +1044,7 @@ export class Simulation {
   /** Sends this tick's burst deaths as one `bursts` event, if there were any (M12 §4.1). */
   flushBursts(): void {
     if (this.tickBursts.length === 0) return;
-    this.events.push({ to: 'all', event: { type: 'bursts', list: this.tickBursts.slice() } });
+    this.emit('all', { type: 'bursts', list: this.tickBursts.slice() });
     this.tickBursts.length = 0;
   }
 
@@ -1385,7 +1396,7 @@ export class Simulation {
         p.revivers = 0;
         p.lastDamageTick = this.tick;
         const [c, r] = this.entry(ai).cells[p.index];
-        this.events.push({ to: 'all', event: { type: 'playerRespawned', playerId: p.id } });
+        this.emit('all', { type: 'playerRespawned', playerId: p.id });
         this.teleport(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
       }
     });
@@ -1406,7 +1417,7 @@ export class Simulation {
     for (const p of this.players) {
       if (p.connected) stats[p.id] = { kills: p.kills, damage: Math.round(p.damage), deaths: p.deaths, reviveAssists: p.reviveAssists };
     }
-    this.events.push({ to: 'all', event: { type: 'gameOver', result, timeMs: Math.round(this.timeMs), stats } });
+    this.emit('all', { type: 'gameOver', result, timeMs: Math.round(this.timeMs), stats });
   }
 
   // ------------------------------------------------------------------ flow fields
@@ -1888,7 +1899,7 @@ export class Simulation {
     }
     // Applied after the scan: a kill removes the enemy from the active list.
     for (const s of hit) this.damageEnemy(s, SHROUD_BURST_DAMAGE, source, Infinity, x, y);
-    this.events.push({ to: 'all', event: { type: 'shroudBurst', playerId: p.id, x, y, z } });
+    this.emit('all', { type: 'shroudBurst', playerId: p.id, x, y, z });
   }
 
   private killPlayer(p: SimPlayer): void {
@@ -1910,7 +1921,7 @@ export class Simulation {
     p.pendingE = false;
     p.landingTick = -1;
     p.dash = null;
-    this.events.push({ to: 'all', event: { type: 'playerDied', playerId: p.id } });
+    this.emit('all', { type: 'playerDied', playerId: p.id });
     // Blasphemy ends when the Fallen dies (§7.2).
     if (p.classId === 'fallen') for (let k = 0; k < this.activeCount; k++) this.eTauntUntil[this.active[k]] = 0;
   }
@@ -2213,7 +2224,7 @@ export class Simulation {
       if (!lineOfSight(this.map, x, y, z, this.eX[s], this.eY[s], this.eZ[s] + def.height / 2)) continue;
       this.damageEnemy(s, GLOBE_SHOT_DAMAGE, p.index, GLOBE_SHOT_DAMAGE, x, y);
     }
-    this.events.push({ to: 'all', event: { type: 'globeShatter', x, y, z, by: p.id } });
+    this.emit('all', { type: 'globeShatter', x, y, z, by: p.id });
   }
 
   /**
@@ -2234,7 +2245,7 @@ export class Simulation {
       }
       this.damagePlayer(p, damage);
     }
-    this.events.push({ to: 'all', event: { type: 'globeShatter', x, y, z, by: -1 } });
+    this.emit('all', { type: 'globeShatter', x, y, z, by: -1 });
   }
 
   /**
@@ -2295,7 +2306,7 @@ export class Simulation {
     // Its force is what the bullet still carried on reaching the enemy (M12 §4.1).
     for (const h of dealt.hits) this.damageEnemy(h.s, h.amount, p.index, h.carried);
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, false), p);
-    this.events.push({ to: 'all', event: { type: 'silverBullet', playerId: p.id, x: ex, y: ey, z: ez, ex: ex + dx * stop, ey: ey + dy * stop, ez: ez + dz * stop } });
+    this.emit('all', { type: 'silverBullet', playerId: p.id, x: ex, y: ey, z: ez, ex: ex + dx * stop, ey: ey + dy * stop, ez: ez + dz * stop });
   }
 
   // ------------------------------------------------------------------ souls (M8 §4)
@@ -2332,7 +2343,7 @@ export class Simulation {
     p.lastDamageTick = this.tick;
     p.invulUntil = Math.max(p.invulUntil, this.tick + ticks(REVIVE_INVULNERABLE));
     this.invalidateFields();
-    this.events.push({ to: 'all', event: { type: 'playerRevived', playerId: p.id } });
+    this.emit('all', { type: 'playerRevived', playerId: p.id });
     this.teleport(p, p.x, p.y, p.z);
   }
 
@@ -2386,7 +2397,7 @@ export class Simulation {
   }
 
   private abilityEvent(p: SimPlayer, slot: 'Q' | 'E', x: number, y: number, z: number, targets: number[] = []): void {
-    this.events.push({ to: 'all', event: { type: 'abilityUsed', playerId: p.id, slot, x, y, z, targets } });
+    this.emit('all', { type: 'abilityUsed', playerId: p.id, slot, x, y, z, targets });
   }
 
   private useQ(p: SimPlayer): void {
@@ -2523,7 +2534,7 @@ export class Simulation {
       this.knockAway(s, cx, cy, KNOCKBACK_DIST, FALLING_STAR_KNOCKBACK_TIME);
       launched.push(s);
     }
-    this.events.push({ to: 'all', event: { type: 'starLanded', playerId: p.id, x: cx, y: cy, z: floor, launched } });
+    this.emit('all', { type: 'starLanded', playerId: p.id, x: cx, y: cy, z: floor, launched });
   }
 
   /**
@@ -2580,7 +2591,7 @@ export class Simulation {
     this.cutNewSegments(p, dash);
     const q = dash.pts;
     const l = q.length - 3;
-    this.events.push({ to: 'all', event: { type: 'dashCut', playerId: p.id, x0: q[0], y0: q[1], z0: q[2], x1: q[l], y1: q[l + 1], z1: q[l + 2] } });
+    this.emit('all', { type: 'dashCut', playerId: p.id, x0: q[0], y0: q[1], z0: q[2], x1: q[l], y1: q[l + 1], z1: q[l + 2] });
   }
 
   /**
@@ -3019,7 +3030,7 @@ export class Simulation {
       this.bossCastTicks = 0;
       this.judgmentDamage = 0;
       this.eState[slot] = ST_WINDUP;
-      this.events.push({ to: 'all', event: { type: 'bossCast', phase: 'start' } });
+      this.emit('all', { type: 'bossCast', phase: 'start' });
     } else if (tick >= this.volleyDue && t >= 0 && this.eLos[slot]) {
       this.bossCast = BOSS_CAST_VOLLEY;
       this.bossCastTicks = 0;
@@ -3057,7 +3068,7 @@ export class Simulation {
     this.bossCast = BOSS_CAST_NONE;
     this.judgmentDue = this.tick + ticks(JUDGMENT_INTERVAL);
     this.eState[slot] = ST_ATTACKING;
-    this.events.push({ to: 'all', event: { type: 'bossCast', phase: 'completed' } });
+    this.emit('all', { type: 'bossCast', phase: 'completed' });
     for (const p of this.players) {
       if (!this.livingTargetable(p)) continue;
       if (lineOfSight(this.map, p.x, p.y, p.z + PLAYER_EYE, bx, by, bz)) this.damagePlayer(p, p.maxHp);
@@ -3069,7 +3080,7 @@ export class Simulation {
     if (this.bossCast !== BOSS_CAST_JUDGMENT) return;
     this.bossCast = BOSS_CAST_NONE;
     this.judgmentDue = this.tick + ticks(JUDGMENT_INTERVAL);
-    this.events.push({ to: 'all', event: { type: 'bossCast', phase: 'interrupted' } });
+    this.emit('all', { type: 'bossCast', phase: 'interrupted' });
   }
 
   /** Whether a caster's target is within its range with line of sight. */
@@ -3471,6 +3482,8 @@ export class Simulation {
     }
     this.lastSentTick.set(recipientId, this.tick);
     const header: SnapshotHeader = {
+      runId: this.runId,
+      stateRevision: this.stateRevision,
       tick: this.tick,
       activeRoom: this.activeRoom,
       activePhase: this.activePhase,
