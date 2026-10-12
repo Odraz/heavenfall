@@ -1,6 +1,6 @@
 # R1 report: generated floor
 
-**Status: implementing; R1.4 implemented and tested, awaiting-human-play; R1.5–R1.7 pending** (2026-10-12). Brief: [r01.md](r01.md). Branch `rogue` (as recorded in [r00-report.md](r00-report.md)); nothing pushed, merged or published. R1.4 enables the room lifecycle; map/discovery and the final protocol remain subsequent checkpoints.
+**Status: implementing; R1.5 implemented and tested, awaiting-human-play; R1.6–R1.7 pending** (2026-10-12). Brief: [r01.md](r01.md). Branch `rogue` (as recorded in [r00-report.md](r00-report.md)); nothing pushed, merged or published. R1.5 adds the map/discovery checkpoint; the final protocol remains R1.6.
 
 ## Git facts
 
@@ -17,7 +17,10 @@
 | R1.4 parent | `fd6bb3b6b60fb6a7bfd67c9946839ff35598b465` (*art: import rogue sources and update prompt checklist*), committed independently during this stage; preserved |
 | Main base checked at R1.4 | `fa9e3f5765cd09d5a315db6342107ff70ad159e8`, unchanged |
 | R1.4 code SHA | `0d52171afc902b780b320722659199a14b00a3b7` (*R1.4: room lifecycle, trickle and leash*); followed by the checkpoint report/decisions commit |
-| End SHA | not yet: R1.5–R1.7 remain |
+| R1.5 start SHA | `05a125ddd51baf0226b108d8c85e9460a084b761` (*R1.4: record verified lifecycle checkpoint*) |
+| Main base checked at R1.5 | `fa9e3f5765cd09d5a315db6342107ff70ad159e8`, unchanged |
+| R1.5 code SHA | `d83cf8ffaf82548dd4c436906d8562ad8dd5d92d` (*R1.5: map, discovery and door sigils*); followed by the checkpoint report commit |
+| End SHA | not yet: R1.6–R1.7 remain |
 
 ## What changed
 
@@ -183,8 +186,8 @@ Run `npm run dev`, then:
 
 ## Open items
 
-- R1.5–R1.7 remain. R1.4 has passing unit/typecheck/build and all five selected browser checks. No unresolved R1.4 code defect remains; human play/feel acceptance is pending.
-- Generated floors have encounters, countdowns, clear sustain, trickle and inherited boss victory. The map/discovery UI, door sigils, rewards, props, pickups, new enemies, fire and progression remain later-stage work. The same countdown, fractional scaling, clear sustain and regeneration rules apply to fixed fixtures.
+- R1.6–R1.7 remain after the R1.5 checkpoint. Human play/feel acceptance is pending.
+- Generated floors have encounters, countdowns, clear sustain, trickle, inherited boss victory, discovery, both maps and door sigils. Rewards, props, pickups, new enemies, fire and progression remain later milestones. The same countdown, fractional scaling, clear sustain and regeneration rules apply to fixed fixtures.
 - Binary inputs, snapshots and events are not run-scoped yet; the protocol/header/fingerprint change remains R1.6. The `runId` introduced here is currently loading/admission metadata.
 - Multiplayer runtime and Node/browser hash parity passed automated checks. Gate geometry/floor sampling/light queries/leaf and post hits passed for all four facings; its appearance across rotated floors and the floor's feel still need human play. No human feedback has been recorded for R1.3.
 - Allowed orientations are mostly identity and the transpose (0 and 7). The 1.5 m off-centre socket offsets mean a quarter-turn or a plain mirror moves the physical doorway off the authored strip, as rogue game.md §3.4 anticipates. The Breach and the Gate allow all 8.
@@ -216,3 +219,60 @@ Run `npm run dev`, then open `http://localhost:5173/?dev=1&map=rogue&seed=317434
 6. For the automatic traversal, add `&bot=1&god=1` and press K during fights. For the old fixed dungeon use `?dev=1&map=pearly-gates&class=fallen&bot=1&god=1`.
 
 This checkpoint still needs human play/feel acceptance. It does not complete R1 or pass Gate A; map/discovery and the final run-scoped wire format remain R1.5/R1.6.
+
+## R1.5 map and discovery
+
+The host visits rooms only for connected living humans and reveals every vestibule neighbour. Knowledge stays party-wide and monotonic, including after cancelled countdowns and when a scout enters a second idle room during another encounter. The Breach starts visited and its neighbours discovered. Every discovery or phase event increments `stateRevision`.
+
+Every starter receives `go`, then its detached `floorSync { runId, tick, revision, rooms }` before the first snapshot/event. A late joiner receives the same current room projection, including selected entries and remaining refills, before its placement event. The client validates the whole checkpoint before applying it and ignores another run, bad record counts/fields and older revisions. Geometry stays locally generated; phases use complete snapshots. Reliable room events update knowledge/entries and trigger seal/clear feedback only on a phase transition, so discovery and catch-up do not replay cues.
+
+The 200 × 200 minimap uses 28-pixel slots; the M-held 588 × 588 map uses 84-pixel slots, a 40% dimmer, an icon legend and player names. Both show only known rooms, state fills/outlines, vestibule connectors, the current-room gold outline, a facing arrow and class-coloured teammates. M diverts mouse movement to the map cursor and releases/suppresses both attacks while WASD continues. Release, focus loss, chat and Pause hide it. Clicks remain inert until R6. Fixtures show `No map in the fixture`. The remaining-enemies counter sits below the minimap.
+
+The renderer places one 1.2-m glyph quad above each generated leaf, facing its owner and naming the destination by kind/focus (plus a secondary focus). The same cached Path2D shapes serve both maps and the quads. All leaves share one canvas atlas/material and one mesh; their UVs select the destination glyph. The atlas and geometry are disposed with the scene. The HUD adds `Another room is sealing` and the host's `Waiting for the party (n/H)`; existing seal/clear cues remain.
+
+Two routine choices are recorded in `implementation-decisions.md`: the waiting HUD consumes the specified hold byte now, appended to the inherited header (32 bytes, maximum current snapshot 15,768 bytes); R1.6 moves it to the final envelope. B4's supplied sources were visually inspected but fail the seamless/panel-only checks, so the Confessional keeps the specified existing-wall fallback. Sources are unchanged and their manifest entries remain received, not accepted.
+
+**Changed files at R1.5:**
+
+| Area | Files |
+|---|---|
+| Host discovery/checkpoints/quorum | `src/sim/sim.ts`, `src/sim/worker.ts`, `src/net/messages.ts`, `src/net/protocol.ts` |
+| Room model and maps | new `src/client/rooms.ts`, `mapIcons.ts`, `mapView.ts`; `src/client/game.ts`, `input.ts`, `hud.ts`, `src/main.ts`, `src/debug.ts`, `src/style.css` |
+| Door glyphs | new `src/render/doorSigils.ts`; `src/render/scene.ts` |
+| Unit coverage | new `src/sim/roomDiscovery.test.ts`, `workerSync.test.ts`, `src/client/rooms.test.ts`, `input.test.ts`, `src/render/doorSigils.test.ts`; `src/net/protocol.test.ts` |
+| Browser coverage | `e2e/rogue-floor.spec.ts`, `e2e/multiplayer.spec.ts` |
+| Records | `r01.md`, this report, `implementation-decisions.md`, `asset-manifest.md` |
+
+**R1.5 verification:**
+
+| Check | Result |
+|---|---|
+| Targeted R1.5 unit suites plus protocol | 23 passed across 6 files |
+| `npm test` on final source | **741 passed across 66 files**, one worker; timing threshold unchanged (44.99 s). Initial source also passed 740 tests before the atlas regression was added. |
+| `npm run typecheck` | passed on final source and after the R1.5 code commit |
+| `npm run build -- --logLevel error` | passed on final source and after the R1.5 code commit, also rebuilt through both browser commands |
+| `git diff --check` | passed |
+| `npm run e2e -- e2e/rogue-floor.spec.ts -g 'map shows Breach'` | Map/discovery and M input check passed (10.9 s). Restricted runner stalled during browser cleanup and was interrupted after the individual passing result. Visual inspection found the world crosshair still drawn over the map; it is now hidden while the map is open. |
+| `npm run e2e -- e2e/rogue-floor.spec.ts e2e/full-run.spec.ts e2e/menus.spec.ts e2e/multiplayer.spec.ts` with network/process access, before sigil batching | **4 passed, 2 failed**, process exit 1 (19.4 min): fixed solo run (5.3 min), menus (11.8 s), map/input (28.0 s), generated autopilot through every combat room to boss victory (9.1 min). Multiplayer late admission and the second parity client timed out during loading. The retry after batching below passed. |
+| Final browser retry with network/process access (exact command below) | **4 passed**, process exit 0 (2.6 min): menus (11.4 s), multiplayer (1.8 min), map/input (8.1 s), Node/browser parity and dev entry positions (20.2 s). Loading, chat, upload and other deadlines/limits unchanged. No remaining failed check. The two complete traversals above were not repeated after this renderer-only optimization; simulation, movement and lifecycle code were unchanged. |
+| Generator suite, benchmarks | not run: generator/pool/pinned output unchanged; benchmarks not requested |
+
+Final browser retry:
+
+```sh
+npm run e2e -- e2e/multiplayer.spec.ts e2e/rogue-floor.spec.ts e2e/menus.spec.ts -g 'multiplayer|pinned Node|map shows Breach|menus'
+```
+
+The added unit coverage exercises initial and propagated knowledge, repeated visits, minority scouts/competing rooms, bots/souls/disconnected players, cancel retention, hold-byte transport, immutable join checkpoints below 1 KiB, go/checkpoint/snapshot/event ordering in the real worker, atomic malformed-checkpoint rejection, delayed snapshots/checkpoints, transition-only feedback, idle-room hints, M movement/fire/focus behavior and every pinned-floor leaf's inward pose/destination icon. The renderer regression checks one atlas/draw, 1.2-m quads, inward triangle winding, destination UV selection and texture/geometry disposal. Browser checks add exact initial known-room content, M-held movement with stable aim and no primary/secondary shots, map hiding on release/Pause and matching starter/late-join knowledge.
+
+## R1.5 play checklist
+
+Run `npm run dev`, then open `http://localhost:5173/?dev=1&map=rogue&seed=317434499&class=fallen`.
+
+1. In the Breach, check that only it and its immediate neighbours appear on the minimap. Compare the neighbour icons with the glyphs above the doors.
+2. Hold M: inspect the full map/legend, move with WASD and move the cursor with the mouse. Neither mouse button should attack. Release M to resume mouse look; Escape hides the map and opens Pause.
+3. Visit a combat room and cancel its countdown. It stays grey/visited; its neighbours remain discovered. Seal it and clear it to see the red pulse, ivory clear state and open route choices.
+4. Host/join with humans. A minority scout should see `Waiting for the party (n/H)`; a scout in another idle combat room sees `Another room is sealing`. Joining later should show the party's known rooms immediately. Open chat while holding M and check the map hides.
+5. Compare a different seed and the fixed `?dev=1&map=pearly-gates` fixture, whose map plate explicitly says it has no map. The Confessional's wall art is still a fallback; shops, rewards and map clicks remain inert fixtures.
+
+Human play and Gate A acceptance are pending. This stage does not complete R1; R1.6 still owns run-scoped inputs, snapshots/events and the final build fingerprint.
