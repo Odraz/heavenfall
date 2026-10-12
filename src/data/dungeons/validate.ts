@@ -12,7 +12,11 @@ import { circleOverlapsCell } from '../../sim/movement';
 const DX = [1, -1, 0, 0, 1, 1, -1, -1];
 const DY = [0, 0, 1, -1, 1, -1, 1, -1];
 
-export type ValidateMode = 'fixture' | 'floor';
+/**
+ * `fixture`: the fixed dungeons' per-arena rules. `floor`: a generated floor (rogue game.md §14.2).
+ * `template`: a template fixture (§4.7 rule 9), the floor rules without the boss cardinality.
+ */
+export type ValidateMode = 'fixture' | 'floor' | 'template';
 
 /** Cells reachable from the S cells with all doors open and the given up-step limit. */
 export function reachable(map: GameMap, upStep: number): Uint8Array {
@@ -173,6 +177,10 @@ export function validateLevel(map: GameMap, markers: string[], mode: ValidateMod
 
   // (d) exactly one boss room, B inside it on its dais; its add markers and entries reachable.
   const bossRooms = map.rooms.map((a, i) => (a.boss ? i : -1)).filter((i) => i >= 0);
+  if (mode === 'template' && bossRooms.length === 0) {
+    if (map.boss) errors.push('a B cell without a boss room');
+    return errors;
+  }
   if (bossRooms.length !== 1) errors.push(`expected exactly one boss room, found ${bossRooms.length}`);
   if (!map.boss) errors.push('the floor has no B cell');
   if (bossRooms.length === 1 && map.boss) {

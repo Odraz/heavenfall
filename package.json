@@ -9,6 +9,7 @@
     "preview": "vite preview --port 4173 --strictPort",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:gen": "vitest run --config vitest.gen.config.ts --reporter=verbose",
     "e2e": "npm run build && playwright test",
     "bench": "npm run build && node scripts/bench.mjs"
   },
