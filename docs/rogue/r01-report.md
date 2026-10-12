@@ -1,6 +1,6 @@
 # R1 report: generated floor
 
-**Status: implementing, paused after R1.2 at your request** (2026-10-12). Brief: [r01.md](r01.md). Branch `rogue` (as recorded in [r00-report.md](r00-report.md)); nothing pushed, merged or published.
+**Status: implementing; R1.3 implemented, R1.4–R1.7 pending** (2026-10-12). Brief: [r01.md](r01.md). Branch `rogue` (as recorded in [r00-report.md](r00-report.md)); nothing pushed, merged or published. R1.3 is the doors-open walkthrough checkpoint, not the complete R1 lifecycle.
 
 ## Git facts
 
@@ -9,7 +9,10 @@
 | Start SHA | `ab87f87bb32f8bfce8b2a505e81d5b7a1e49269e` (*R0: prepare R1 (generated floor) against the code*) |
 | R1.1 | `c3da916` *R1.1: rooms instead of arenas; fixtures unchanged* |
 | R1.2 | `a21fab8` *R1.2: floor generator and R1 room pool*, then the commit adding this report (*R1.2: pinned generator results*) |
-| End SHA | not yet: R1.3–R1.7 remain |
+| R1.3 start SHA | `a52861602646537d5ca846ae54b02cd215c68397` (*R1.2: pinned generator results*) |
+| R1.3 code SHA | `32a1747b34cb69579a3d4d41b60a985137c356c5` (*R1.3: play on a generated floor (doors open)*); followed by the checkpoint report commit |
+| Main base checked at R1.3 | `fa9e3f5765cd09d5a315db6342107ff70ad159e8`, unchanged from R0 |
+| End SHA | not yet: R1.4–R1.7 remain |
 
 ## What changed
 
@@ -42,7 +45,29 @@
   - `1/index.ts` exports `PEARLY_POOL_R1` in pool order;
   - `validate.ts` checks rules 1–8 and 10.
 - `npm run test:gen` (`vitest.gen.config.ts`, `src/gen/floors.gen.ts`) runs the 1 000 pinned seeds.
-- Nothing in the game uses the generator yet; R1.3 connects it.
+- At the R1.2 checkpoint nothing in the game used the generator; R1.3 below connects it.
+
+### R1.3 Load a generated floor
+
+- Singleplayer and Host Setup select a generated Pearly Gates floor. `src/sim/runMap.ts` shares the map-loading step between the worker and every client: generated runs call `generateFloor(seed, heaven, floor, PEARLY_POOL_R1)` and reuse its validated `GameMap`; fixtures still use `getDungeon`/`loadMap`. No generator, pool or pinned-output data changed.
+- `Lobby.start()` draws a cryptographic 128-bit lowercase hex `runId` and independent u32 `seed`/`simSeed` before Loading. The worker uses the retained identity at `go`, with its simulation RNG seeded by `simSeed`; a late joiner's `start` carries the same identity. A subsequent Start draws a new one. Singleplayer uses the same identity helper. An explicit dev seed sets `simSeed = fmix32(seed ^ 0x53494d)`.
+- `hello.bot` reaches lobby admission and the simulation player record, including late joiners. The worker infers its initial solo flag from a single human with no bots; fractional party scaling and dynamic solo/sustain rules remain R1.4.
+- `welcome`/`lobby` carry `heaven` and `fixture`. `start` carries `runId`, `heaven: 1`, `floor: 1`, the two seeds, `edicts: 0`, `progressionEnabled: false`, `fixture` and each player's `bot` flag. Internal worker starts carry the same run fields and `startRoom`, replacing the fixed dungeon/seed/singleplayer envelope. The inherited fixture-only Lobby constructor is retained for existing callers; no legacy dungeon field is sent on the wire.
+- Generated runs use the temporary `walkOnly` option: every room is marked cleared so the existing header/leaf rule opens both leaves of every vestibule, and room starts are suppressed. There are no waves, boss fight, clear rewards or victory on a generated floor in this stage. The fixed fixtures retain their fights. R1.4 replaces this temporary cleared mask with the real room lifecycle; knowledge/visited state arrives in R1.5.
+- The Gate keeps its authored W-facing layout and UVs, with a shared continuous-coordinate frame in `src/sim/gate.ts` rotating emission, plinth, normals, light queries, ray/post hitboxes, terrain/relief skips and the cloud banks/radiance for N/E/S. Floor height comes from the adjacent interior cell, including E/S planes beyond their final cell. Authoritative wall collision already follows the stamped map geometry.
+- Music selection is by generated room shape (2×2 Arena 1, 2×1/1×2 Arena 2, 1×1 Arena 3, boss Boss, specials Calm); fixtures keep their previous mapping. The walk-through stays on Calm until encounters arrive.
+- Loading shows `Building the Pearly Gates…`. F3 shows seed, attempts, fallback use and generation time. `window.__heavenfall` also exposes `simSeed`, `runId` and `floorHash`; `activeRoom` and `clearedMask` already existed at R1.1. The new fields reset on returning to the menus.
+- Dev URLs support `map=rogue`, `seed=N` and `room=N`. Room selection is clamped after generation and places each player on the selected room's first entry, including an explicit `room=0`; without it, players use the Breach's normal spawns. `map=pearly-gates`/`map=sandbox` and fixture `arena=N` remain available. `bench=1` always resolves a fixed fixture.
+
+**Changed files at R1.3** (20 source files; the report and decision register follow in the documentation commit):
+
+| Area | Files |
+|---|---|
+| Run identity and admission | `src/net/version.ts` (new), `src/net/messages.ts`, `src/net/lobby.ts`, `src/net/peerTransport.ts` |
+| Worker/session and simulation | `src/client/hostSession.ts`, `src/sim/workerMessages.ts`, `src/sim/worker.ts`, `src/sim/runMap.ts` (new), `src/sim/sim.ts` |
+| Gate facing | `src/sim/gate.ts` (new), `src/render/gate.ts`, `src/render/atmosphere.ts` |
+| Loading, menus and debug | `src/main.ts`, `src/params.ts`, `src/debug.ts`, `src/ui/debugOverlay.ts`, `src/ui/menus.ts`, `src/ui/multiplayer.ts`, `src/client/game.ts` |
+| Room music | `src/client/sounds.ts` |
 
 ## Design change made (needs your review)
 
@@ -62,6 +87,19 @@
 | `npm run typecheck`, `npm run build` | passed at both commits |
 | `npm run test:gen` at R1.2 | passed; numbers below |
 | e2e, benchmark | not run: no session or network flow has changed yet (e2e is due at R1.3) |
+
+**R1.3 verification** (the R1.1/R1.2 results above are historical, not rerun):
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | passed on the final R1.3 source |
+| `npm run build` | passed on the final R1.3 source |
+| `git diff --check` | passed |
+| Automated tests, generator suite and e2e | not run; no tests created or changed, following your current AGENTS.md instruction, which takes precedence over the Markdown workflow's test policy |
+| Browser play, multiplayer runtime, Node/browser hash comparison | not performed; runtime and visual evidence remains outstanding |
+| Benchmark | not run (not requested) |
+
+Source inspection followed the run identity through start, ready/go, timeout removal and late admission; it also checked that the Gate's world/light/ray paths share the same frame. These are inspection results, not runtime measurements. The generator's 99.7% measurement and pinned hash below remain R1.2 evidence.
 
 **Measured generator results** (1 000 pinned seeds `imul(i+1, 0x9E3779B1) >>> 0`, heaven 1, R1 pool, this laptop):
 
@@ -83,7 +121,20 @@
 - negative cases prove the checks catch an untagged pillar, a broken composition, a lamp or marker on a threshold, and an unreachable spawn point;
 - notation tests cover rooms.md §2.1's stair examples and each rejected error.
 
+## R1.3 play checklist
+
+Run `npm run dev`, then:
+
+1. Start Singleplayer from the menu, leave and start again. Walk through every available door; expect no fights or countdowns at this checkpoint. F3 should show each run's seed.
+2. Open `?dev=1&map=rogue&seed=317434499` (the inherited pinned seed `0x12EBAA83`). Compare `window.__heavenfall.floorHash` with R1.2's `d12ff201`; reopen the same URL to check a repeatable layout. This comparison has not been executed for R1.3.
+3. Add `&room=10` to inspect the pinned floor's boss room and Gate, and `&room=0` to check entry placement at the Breach. Try another seed to see a different layout/Gate facing.
+4. Host a game from the menu and join another client (or a `?bot=1` tab). Compare `runId`, `seed`, `simSeed` and `floorHash` between clients. Leave and rejoin the running game with a free class; its run fields should match too.
+5. Open `?dev=1&map=pearly-gates&arena=3` to check the inherited boss fixture, or `?dev=1&map=sandbox` for the arena fixture. Combat remains enabled there.
+
 ## Open items
 
-- R1.3–R1.7 not started (awaiting your approval to continue).
+- R1.4–R1.7 remain. R1.3 code is committed with typecheck/build evidence; its planned simulation/lobby tests and e2e additions were omitted under your no-tests instruction. Existing exact start-message assertions still describe the old payload and need a separately authorized test update.
+- Generated floors currently have all rooms cleared solely to open the doors; no map/discovery, encounters, trickle, rewards or run completion yet. Leave through the Pause menu after walking. Fixture combat still uses the inherited timings/heals.
+- Binary inputs, snapshots and events are not run-scoped yet; the protocol/header/fingerprint change remains R1.6. The `runId` introduced here is currently loading/admission metadata.
+- Multiplayer runtime, browser hash parity and the rotated Gate's appearance/hits still need play or authorized tests. No human feedback has been recorded for R1.3.
 - Allowed orientations are mostly identity and the transpose (0 and 7). The 1.5 m off-centre socket offsets mean a quarter-turn or a plain mirror moves the physical doorway off the authored strip, as rogue game.md §3.4 anticipates. The Breach and the Gate allow all 8.
