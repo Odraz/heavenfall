@@ -21,6 +21,8 @@ import {
   FLAG_TAUNTED,
   HEADER_BYTES,
   PLAYER_BYTES,
+  ENEMY_BYTES,
+  PICKUP_BYTES,
   INPUT_BYTES,
   MAX_SNAPSHOT_BYTES,
   SnapshotAssembler,
@@ -65,10 +67,11 @@ function players(n: number): SnapshotPlayer[] {
     shots2: (100 + i * 50) & 0xff,
     // Player 1 is being healed by player 2's Sacrament (M9 §10).
     beam: i === 2 ? 1 : 255,
+    wallet: i * 999,
   }));
 }
 
-function entities(ne: number, np: number): SnapshotEntities {
+function entities(ne: number, np: number, nk = 0): SnapshotEntities {
   const e: SnapshotEntities = {
     enemyCount: ne,
     enemySlot: new Uint16Array(ne),
@@ -76,12 +79,19 @@ function entities(ne: number, np: number): SnapshotEntities {
     enemyY: new Float32Array(ne),
     enemyTypeState: new Uint8Array(ne),
     enemyFlags: new Uint8Array(ne),
+    enemyZ: new Float32Array(ne),
+    enemyIncarnation: new Uint32Array(ne),
     projectileCount: np,
     projSlot: new Uint16Array(np),
     projKind: new Uint8Array(np),
     projX: new Float32Array(np),
     projY: new Float32Array(np),
     projZ: new Float32Array(np),
+    pickupCount: nk,
+    pickupId: Uint32Array.from({ length: nk }, (_, i) => 65536 + i),
+    pickupX: new Float32Array(nk).fill(12.5),
+    pickupY: new Float32Array(nk).fill(23.25),
+    pickupKind: Uint8Array.from({ length: nk }, (_, i) => i % 16),
   };
   for (let i = 0; i < ne; i++) {
     e.enemySlot[i] = i * 2;
@@ -89,6 +99,8 @@ function entities(ne: number, np: number): SnapshotEntities {
     e.enemyY[i] = 3.125 + (i % 7);
     e.enemyTypeState[i] = (i % 4) | ((i % 5) << 4);
     e.enemyFlags[i] = i % 64;
+    e.enemyZ[i] = i / 64;
+    e.enemyIncarnation[i] = 70000 + i;
   }
   for (let i = 0; i < np; i++) {
     e.projSlot[i] = i;
@@ -173,9 +185,9 @@ describe('snapshot protocol', () => {
   it('round-trips header, players, enemies and projectiles', () => {
     const parts = encodeSnapshot(header, players(4), entities(100, 20));
     expect(parts.length).toBe(1);
-    expect(parts[0].byteLength).toBe(HEADER_BYTES + 4 * 32 + 100 * 8 + 20 * 9);
+    expect(parts[0].byteLength).toBe(HEADER_BYTES + 4 * PLAYER_BYTES + 100 * ENEMY_BYTES + 20 * 9);
     const s = decodeSnapshot(parts[0])!;
-    expect(HEADER_BYTES).toBe(61);
+    expect(HEADER_BYTES).toBe(65);
     const v = new DataView(parts[0]);
     expect([v.getUint8(0), v.getUint8(1), v.getUint8(2), v.getUint8(3)]).toEqual([PROTOCOL_VERSION, 0, 1, 4]);
     expect(Array.from(new Uint8Array(parts[0], 4, 16))).toEqual(Array.from(new Uint8Array(encodeInput({
@@ -199,14 +211,21 @@ describe('snapshot protocol', () => {
     expect(s.projZ[5]).toBe(15.984375);
   });
 
-  it('fits the largest snapshot at the current caps in one part (15 797 bytes)', () => {
-    const parts = encodeSnapshot(header, players(4), entities(1501, 400));
-    expect(parts.length).toBe(1);
-    expect(parts[0].byteLength).toBe(15797);
+  it('reserves the full pickup pool in part zero and fits all maximum entities in two parts', () => {
+    const parts = encodeSnapshot(header, players(4), entities(1500, 400, 160));
+    expect(parts.length).toBe(2);
+    expect(parts.every((p) => p.byteLength <= MAX_SNAPSHOT_BYTES)).toBe(true);
+    expect(parts.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (HEADER_BYTES + 4 * PLAYER_BYTES) + 1500 * ENEMY_BYTES + 400 * 9 + 160 * PICKUP_BYTES);
+    expect(decodeSnapshot(parts[0])!.pickupCount).toBe(160);
+    expect(decodeSnapshot(parts[1])!.pickupCount).toBe(0);
+    const a = new SnapshotAssembler(); a.reset(header.runId); a.add(decodeSnapshot(parts[1])!);
+    const joined = a.add(decodeSnapshot(parts[0])!)!;
+    expect(joined.pickupId[159]).toBe(65695); expect(joined.enemyZ[1499]).toBe(1499 / 64);
+    expect(joined.enemyIncarnation[1499]).toBe(71499);
   });
 
   it('splits snapshots above 16 000 bytes into parts that each carry the header and all players', () => {
-    const e = entities(2500, 400);
+    const e = entities(1500, 400);
     const parts = encodeSnapshot(header, players(4), e);
     expect(parts.length).toBe(2);
     let enemies = 0;
@@ -221,27 +240,27 @@ describe('snapshot protocol', () => {
       enemies += s.enemyCount;
       projectiles += s.projectileCount;
     });
-    expect(enemies).toBe(2500);
+    expect(enemies).toBe(1500);
     expect(projectiles).toBe(400);
     // The first part is as full as fits: (16 000 − 27 − 120) ÷ 8 enemies.
-    expect(decodeSnapshot(parts[0])!.enemyCount).toBe(Math.floor((MAX_SNAPSHOT_BYTES - HEADER_BYTES - 4 * PLAYER_BYTES) / 8));
+    expect(decodeSnapshot(parts[0])!.enemyCount).toBe(Math.floor((MAX_SNAPSHOT_BYTES - HEADER_BYTES - 4 * PLAYER_BYTES) / ENEMY_BYTES));
   });
 
   it('reassembles parts that arrive out of order', () => {
-    const parts = encodeSnapshot(header, players(2), entities(2500, 400)).map((b) => decodeSnapshot(b)!);
+    const parts = encodeSnapshot(header, players(2), entities(1500, 400)).map((b) => decodeSnapshot(b)!);
     const a = new SnapshotAssembler();
     a.reset(header.runId);
     expect(a.add(parts[1])).toBeNull();
     const s = a.add(parts[0])!;
     expect(s).not.toBeNull();
-    expect(s.enemyCount).toBe(2500);
+    expect(s.enemyCount).toBe(1500);
     expect(s.projectileCount).toBe(400);
-    for (let i = 0; i < 2500; i++) expect(s.enemySlot[i]).toBe(i * 2);
+    for (let i = 0; i < 1500; i++) expect(s.enemySlot[i]).toBe(i * 2);
     expect(a.newestCompleteTick).toBe(header.tick);
   });
 
   it('ignores stale parts and drops older incomplete ticks', () => {
-    const at = (tick: number) => encodeSnapshot({ ...header, tick }, players(1), entities(2500, 0)).map((b) => decodeSnapshot(b)!);
+    const at = (tick: number) => encodeSnapshot({ ...header, tick }, players(1), entities(1500, 0)).map((b) => decodeSnapshot(b)!);
     const a = new SnapshotAssembler();
     a.reset(header.runId);
     const t10 = at(10);
@@ -277,7 +296,7 @@ describe('snapshot protocol', () => {
 
   it('drops another run before allocating pending ticks and resets both pending and watermark for a new run', () => {
     const a = new SnapshotAssembler(); a.reset(header.runId);
-    const parts = encodeSnapshot(header, players(1), entities(2500, 0)).map((b) => decodeSnapshot(b)!);
+    const parts = encodeSnapshot(header, players(1), entities(1500, 0)).map((b) => decodeSnapshot(b)!);
     const foreign = { ...parts[0], runId: 'f'.repeat(32), tick: 0xffffffff };
     expect(a.add(foreign)).toBeNull(); expect(a.pendingTicks).toBe(0); expect(a.newestCompleteTick).toBe(-1);
     a.add(parts[0]); a.reset(foreign.runId);
@@ -285,13 +304,13 @@ describe('snapshot protocol', () => {
     const empty = decodeSnapshot(encodeSnapshot({ ...header, runId: foreign.runId, tick: 1 }, [], entities(0, 0))[0])!;
     expect(a.add(empty)?.tick).toBe(1);
     a.reset(header.runId); expect(a.newestCompleteTick).toBe(-1);
-    expect(a.add(parts[1])).toBeNull(); expect(a.add(parts[0])?.enemyCount).toBe(2500);
+    expect(a.add(parts[1])).toBeNull(); expect(a.add(parts[0])?.enemyCount).toBe(1500);
   });
 
   it('permanently invalidates a tick with disagreeing sibling totals, part counts, headers or players', () => {
-    const parts = encodeSnapshot(header, players(1), entities(2500, 400)).map((b) => decodeSnapshot(b)!);
+    const parts = encodeSnapshot(header, players(1), entities(1500, 400)).map((b) => decodeSnapshot(b)!);
     const variants = [
-      { ...parts[1], totalEnemyCount: 2499 }, { ...parts[1], totalProjectileCount: 399 },
+      { ...parts[1], totalEnemyCount: 1499 }, { ...parts[1], totalProjectileCount: 399 },
       { ...parts[1], totalPickupCount: 1 }, { ...parts[1], partCount: 3 },
       { ...parts[1], stateRevision: header.stateRevision + 1 },
       { ...parts[1], players: [{ ...parts[1].players[0], x: 99 }] },
@@ -306,11 +325,41 @@ describe('snapshot protocol', () => {
   });
 
   it('requires assembled entity sums to match the repeated totals and rejects undersized encoder parts', () => {
-    const parts = encodeSnapshot(header, players(1), entities(2500, 0)).map((b) => decodeSnapshot(b)!);
+    const parts = encodeSnapshot(header, players(1), entities(1500, 0)).map((b) => decodeSnapshot(b)!);
     const a = new SnapshotAssembler(); a.reset(header.runId); a.add(parts[0]);
     expect(a.add({ ...parts[1], enemyCount: parts[1].enemyCount - 1 })).toBeNull();
     expect(a.add(parts[1])).toBeNull();
     expect(() => encodeSnapshot(header, players(1), entities(1, 0), HEADER_BYTES + PLAYER_BYTES)).toThrow('snapshot part too small');
+  });
+
+  it('bounds incomplete ticks and expires them by local receipt time', () => {
+    const a = new SnapshotAssembler(); a.reset(header.runId);
+    const parts = (tick: number) => encodeSnapshot({ ...header, tick }, players(1), entities(1500, 0)).map((b) => decodeSnapshot(b)!);
+    for (let tick = 1; tick <= 20; tick++) { a.add(parts(tick)[0], tick); expect(a.pendingTicks).toBeLessThanOrEqual(4); }
+    expect(a.add(parts(20)[1], 520)).toBeNull(); // first part expired; no partial publish
+    expect(a.pendingTicks).toBe(1);
+    expect(a.add(parts(20)[0], 521)?.enemyCount).toBe(1500);
+  });
+
+  it('ignores identical duplicates but invalidates changed duplicates and overlapping ranges', () => {
+    const parts = encodeSnapshot(header, players(1), entities(1500, 400, 160)).map((b) => decodeSnapshot(b)!);
+    const a = new SnapshotAssembler(); a.reset(header.runId); a.add(parts[0], 0);
+    expect(a.add(parts[0], 1)).toBeNull(); expect(a.pendingTicks).toBe(1);
+    const changed = { ...parts[0], pickupId: parts[0].pickupId.slice() }; changed.pickupId[0]++;
+    expect(a.add(changed, 2)).toBeNull(); expect(a.pendingTicks).toBe(0);
+    expect(a.add(parts[1], 3)).toBeNull();
+    a.reset(header.runId); a.add(parts[0], 0);
+    expect(a.add({ ...parts[1], enemyStart: 0 }, 1)).toBeNull(); expect(a.pendingTicks).toBe(0);
+  });
+
+  it('rejects global caps and malformed pickup identity/kinds before allocating a tick', () => {
+    for (const e of [entities(1501, 0), entities(0, 401), entities(0, 0, 161)]) expect(() => encodeSnapshot(header, [], e)).toThrow();
+    const good = encodeSnapshot(header, [], entities(0, 0, 1))[0];
+    for (const [offset, value] of [[HEADER_BYTES, 0], [HEADER_BYTES + 8, 16], [2, 5]]) {
+      const bad = good.slice(0); const view = new DataView(bad);
+      if (offset === HEADER_BYTES) view.setUint32(offset, value, true); else view.setUint8(offset, value);
+      expect(decodeSnapshot(bad)).toBeNull();
+    }
   });
 });
 

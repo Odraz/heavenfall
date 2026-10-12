@@ -102,6 +102,7 @@ import { SnapshotBuffer, type InterpolatedEnemies } from './snapshots';
 import { RunEvents } from '../net/runEvents';
 import type { Floor } from '../gen/generate';
 import { ClientRooms, roomMessage } from './rooms';
+import { PickupView } from './pickups';
 import { MapView, type MapPlayer } from './mapView';
 
 const BENCH_TURN_RATE = 0.3;
@@ -384,6 +385,7 @@ export class Game {
   private inFieldNow = false;
   /** The censers' incense clouds (M9 §2.8), drawn where each censer vanished. */
   private readonly incense: IncenseClouds;
+  private readonly pickups: PickupView;
   /** When each enemy slot's Falling Star launch arc starts (M9 §3.2). */
   private readonly launchAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
   /** Wading (M12 §3.1): launched enemies don't press until then (ms), and the applied speed factor. */
@@ -495,6 +497,8 @@ export class Game {
     this.canvas.className = 'game-canvas';
     o.root.appendChild(this.canvas);
     this.scene = new GameScene(this.canvas, this.map, o.textures.terrain, o.textures.fx.glow, o.floor);
+    this.pickups = new PickupView(this.map, o.runId);
+    this.scene.scene.add(this.pickups.group);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
     for (const [type, set] of Object.entries(o.enemyAnims)) {
@@ -557,6 +561,7 @@ export class Game {
     this.bench = this.params.benchArena >= 0 && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString(), () => this.scene.renderStats()) : null;
 
     debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0, primaryShots: 0, secondaryShots: 0 }));
+    debugState.wallet = 0; debugState.pickups = [];
     this.sounds.renderDelay = (this.snaps.delayTicks * TICK_MS) / 1000;
   }
 
@@ -849,6 +854,7 @@ export class Game {
   /** A `ctrl` message from the host; the game handles its events (§9.2). */
   handleCtrl(msg: CtrlMessage): void {
     if (msg.type === 'floorSync' && !this.disposed) {
+      this.pickups.model.sync(msg);
       if (this.rooms.sync(msg)) {
         debugState.floorSyncTick = this.rooms.syncTick;
         debugState.roomKnowledge = this.rooms.states.map((r) => r.knowledge);
@@ -861,6 +867,7 @@ export class Game {
       debugState.roomKnowledge = this.rooms.states.map((r) => r.knowledge);
       if (!transition) return;
     }
+    if (msg.event.type === 'pickupState') this.pickups.model.state(msg.event.pickup, msg.tick, msg.revision);
     this.onEvent(msg.event, performance.now());
     this.sounds.event(msg.event, (id) => this.playerPose(id));
   }
@@ -1220,6 +1227,7 @@ export class Game {
         this.hud.setOwnRevive(progress);
       } else this.ownRevive = 0;
       this.hud.setHp(me.hp, me.shield, this.maxHp);
+      this.hud.setWallet(me.wallet);
       this.ownHp = me.hp;
       // The steady blue edge while the own shield is up (M12 §6.1).
       this.hud.setShieldEdge(me.shield > 0 && !me.dead ? SHIELD_EDGE : 0);
@@ -1311,6 +1319,8 @@ export class Game {
     debugState.lastSnapshotTick = s.tick;
     debugState.enemies = s.enemyCount;
     debugState.projectiles = s.projectileCount;
+    debugState.wallet = s.players.find((p) => p.id === this.localId)?.wallet ?? 0;
+    debugState.pickups = Array.from(s.pickupId, (id, i) => ({ id, kind: s.pickupKind[i], x: s.pickupX[i], y: s.pickupY[i] }));
     debugState.activeRoom = s.activeRoom;
     debugState.activePhase = s.activePhase === PHASE_COMBAT ? 'combat' : s.activePhase === PHASE_COUNTDOWN ? 'countdown' : 'idle';
     debugState.clearedMask = s.clearedMask;
@@ -2046,6 +2056,7 @@ export class Game {
     }
     this.drawStarPreview();
     this.drawBillboards(now, ents, enemyZ);
+    this.pickups.update(this.snaps.newest, this.scene.camera, this.snaps.estimatedTick(now));
     const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
     this.hud.setHealing(this.ownBeamOn, now);
     this.hud.setBeamed(beamed.has(this.localId));
@@ -2469,6 +2480,7 @@ export class Game {
     this.sounds.dispose();
     this.pool?.dispose();
     this.incense.dispose();
+    this.pickups.dispose();
     this.hum?.stop();
     this.hud.dispose();
     this.mapView.dispose();

@@ -34,6 +34,8 @@ export interface DebugState {
   enemies: number;
   enemyCountsByTick: Record<number, number>;
   projectiles: number;
+  wallet: number;
+  pickups: Array<{ id: number; kind: number; x: number; y: number }>;
   seed: number | null;
   simSeed: number | null;
   runId: string | null;
@@ -91,6 +93,8 @@ export const debugState: DebugState = {
   enemies: 0,
   enemyCountsByTick: {},
   projectiles: 0,
+  wallet: 0,
+  pickups: [],
   seed: null,
   simSeed: null,
   runId: null,

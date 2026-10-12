@@ -19,6 +19,8 @@ export interface InterpolatedEnemies {
   slot: Uint16Array;
   x: Float32Array;
   y: Float32Array;
+  z: Float32Array;
+  incarnation: Uint32Array;
   type: Uint8Array;
   state: Uint8Array;
   flags: Uint8Array;
@@ -57,6 +59,8 @@ export class SnapshotBuffer {
     slot: new Uint16Array(ENEMY_SLOTS),
     x: new Float32Array(ENEMY_SLOTS),
     y: new Float32Array(ENEMY_SLOTS),
+    z: new Float32Array(ENEMY_SLOTS),
+    incarnation: new Uint32Array(ENEMY_SLOTS),
     type: new Uint8Array(ENEMY_SLOTS),
     state: new Uint8Array(ENEMY_SLOTS),
     flags: new Uint8Array(ENEMY_SLOTS),
@@ -105,7 +109,7 @@ export class SnapshotBuffer {
   addPart(buf: ArrayBuffer, now: number): void {
     const part = decodeSnapshot(buf, this.runId);
     if (!part) return;
-    const snap = this.assembler.add(part);
+    const snap = this.assembler.add(part, now);
     if (!snap) return;
     const slotIndex = new Int16Array(ENEMY_SLOTS).fill(-1);
     for (let i = 0; i < snap.enemyCount; i++) slotIndex[snap.enemySlot[i]] = i;
@@ -168,13 +172,15 @@ export class SnapshotBuffer {
       const slot = a.enemySlot[i];
       let x = a.enemyX[i];
       let y = a.enemyY[i];
+      let z = a.enemyZ[i];
       let state = a.enemyState[i];
       let flags = a.enemyFlags[i];
       if (B) {
         const j = B.slotIndex[slot];
-        if (j >= 0) {
+        if (j >= 0 && B.snap.enemyIncarnation[j] === a.enemyIncarnation[i]) {
           x += (B.snap.enemyX[j] - x) * f;
           y += (B.snap.enemyY[j] - y) * f;
+          z += (B.snap.enemyZ[j] - z) * f;
           if (f >= 0.5) {
             state = B.snap.enemyState[j];
             flags = B.snap.enemyFlags[j];
@@ -185,6 +191,8 @@ export class SnapshotBuffer {
       out.slot[k] = slot;
       out.x[k] = x;
       out.y[k] = y;
+      out.z[k] = z;
+      out.incarnation[k] = a.enemyIncarnation[i];
       out.type[k] = a.enemyType[i];
       out.state[k] = state;
       out.flags[k] = flags;

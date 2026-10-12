@@ -87,6 +87,7 @@ export class Hud {
   private readonly hpFill: HTMLDivElement;
   private readonly shieldFill: HTMLDivElement;
   private readonly hpText: HTMLDivElement;
+  private readonly wallet: HTMLDivElement;
   /**
    * The painted weapon (M11 §3): its box, placed by the manifest and moved by one transform, holding the
    * idle image, the alt image, the hammer, the cylinder blur, the green censer and the glow layers. The
@@ -309,6 +310,10 @@ export class Hud {
 
     // The bottom-left column (M9 §6.4): chat on top, then the party frames, then the own frame.
     this.leftColumn = el('div', 'hud-left', this.root);
+    this.wallet = el('div', 'halo-wallet', this.leftColumn);
+    this.wallet.setAttribute('aria-label', 'Halo wallet');
+    this.wallet.style.cssText = 'color:#ffdc77;font-size:16px;text-shadow:1px 1px 2px #000;';
+    this.setWallet(0);
     const chat = el('div', 'chat', this.leftColumn);
     this.chatMessages = el('div', 'chat-messages', chat);
     this.chatInput = el('input', 'chat-input', chat);
@@ -432,6 +437,8 @@ export class Hud {
     this.roomMessage.hidden = true;
     this.result = el('div', 'result-text', this.root);
   }
+
+  setWallet(value: number): void { this.wallet.textContent = `Halos ${value}`; }
 
   setHp(hp: number, shield: number, maxHp: number): void {
     const total = Math.max(maxHp, hp + shield);

@@ -5,6 +5,7 @@
 import { audio, setMusic, sfx, type SoundPos } from '../audio/audio';
 import { PRIO_ABILITY, PRIO_OTHERS } from '../audio/sfx';
 import type { ClassId } from '../data/classes';
+import { COIN, GOLD_HALO } from '../data/pickups';
 import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import type { TrackId } from '../data/music';
 import type { GameEvent } from '../net/messages';
@@ -217,6 +218,9 @@ export class GameSounds {
       case 'roomState':
         if (e.phase === PHASE_COMBAT) sfx('doorsSeal');
         else if (e.phase === PHASE_CLEARED && this.map.rooms[e.room].kind === 'combat') sfx('arenaCleared');
+        break;
+      case 'pickupCollected':
+        sfx(e.kind === COIN || e.kind === GOLD_HALO ? 'goldPickup' : 'motePickup', { x: e.x, y: e.y });
         break;
       case 'bossCast':
         sfx(e.phase === 'start' ? 'judgmentCharge' : e.phase === 'completed' ? 'judgmentBlast' : 'interrupted');

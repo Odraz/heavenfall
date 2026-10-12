@@ -1,6 +1,7 @@
 import { floorHash, fmix32, generateFloor } from '../src/gen';
 import { PINNED } from '../src/gen/pinned';
 import { PEARLY_POOL_R1 } from '../src/data/rooms/1';
+import { gatePoint, gateVector } from '../src/sim/gate';
 import { expect, state, test } from './fixtures';
 
 test('a second generated run after Results gets a fresh identity and accepts restarted input and snapshots', async ({ page }) => {
@@ -99,7 +100,11 @@ test('two browser clients reproduce the pinned Node floor and dev entry position
     await a.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&class=fallen&room=0`);
     await a.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0, null, { timeout: 30_000 });
     await a.setViewportSize({ width: 320, height: 180 });
-    await b.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&class=binder&room=999&god=1`);
+    const gate = generated.map.gate!;
+    const [gx, gy] = gatePoint(gate, 14, 0);
+    const [dx, dy] = gateVector(gate, -1, 0);
+    const camera = `${gx},${gy},,${Math.atan2(dy, dx) * 180 / Math.PI},15`;
+    await b.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&class=binder&room=999&god=1&cam=${camera}`);
     await b.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0, null, { timeout: 30_000 });
     await b.waitForFunction(() => window.__heavenfall.activePhase === 'combat', null, { timeout: 10_000 });
     for (const [page, room] of [[a, 0], [b, generated.floor.boss]] as const) {
@@ -121,6 +126,7 @@ test('two browser clients reproduce the pinned Node floor and dev entry position
       }).toEqual([c + 0.5, r + 0.5, generated.map.floor[r * generated.map.w + c]]);
     }
     expect((await state(a)).runId).not.toBe((await state(b)).runId);
+    await b.screenshot({ path: test.info().outputPath('r1-gate-clipping-fixed.png') });
     await a.keyboard.press('F3');
     await expect(a.locator('.debug-overlay')).toContainText(`Seed ${PINNED.seed}`);
     expect(errors).toEqual([]);

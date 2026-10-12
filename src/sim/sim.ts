@@ -108,6 +108,9 @@ import { lineOfSight, raycastTerrain } from './los';
 import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
+import { COIN, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, PICKUP_CAP, type PickupRecord } from '../data/pickups';
+import { HaloLedger, HALO_WEIGHT, haloBudget, moteCap } from './economy';
+import { Pickups } from './pickups';
 import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, reviveSlowdown, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
 
 /** Linear party scaling, including half-player bots (rogue game.md §0). */
@@ -180,6 +183,8 @@ export interface SimPlayer {
   speed: number;
   maxHp: number;
   hp: number;
+  wallet: number;
+  itemReadyTick: number;
   shield: number;
   /** Tick at which the shield expires. */
   shieldUntil: number;
@@ -521,6 +526,11 @@ export class Simulation {
 
   // Enemies, structure of arrays indexed by slot.
   readonly eAlive = new Uint8Array(ENEMY_SLOTS);
+  readonly eIncarnation = new Uint32Array(ENEMY_SLOTS);
+  private nextIncarnation = 1;
+  readonly pickups: Pickups;
+  readonly haloLedgers = new Map<number, HaloLedger>();
+  private readonly moteDrops = new Map<number, number>();
   readonly eType = new Uint8Array(ENEMY_SLOTS);
   readonly eState = new Uint8Array(ENEMY_SLOTS);
   readonly eX = new Float64Array(ENEMY_SLOTS);
@@ -662,12 +672,19 @@ export class Simulation {
     enemyY: new Float32Array(ENEMY_SLOTS),
     enemyTypeState: new Uint8Array(ENEMY_SLOTS),
     enemyFlags: new Uint8Array(ENEMY_SLOTS),
+    enemyZ: new Float32Array(ENEMY_SLOTS),
+    enemyIncarnation: new Uint32Array(ENEMY_SLOTS),
     projectileCount: 0,
     projSlot: new Uint16Array(MAX_PROJECTILES),
     projKind: new Uint8Array(MAX_PROJECTILES),
     projX: new Float32Array(MAX_PROJECTILES),
     projY: new Float32Array(MAX_PROJECTILES),
     projZ: new Float32Array(MAX_PROJECTILES),
+    pickupCount: 0,
+    pickupId: new Uint32Array(PICKUP_CAP),
+    pickupX: new Float32Array(PICKUP_CAP),
+    pickupY: new Float32Array(PICKUP_CAP),
+    pickupKind: new Uint8Array(PICKUP_CAP),
   };
   private readonly baseFlags = new Uint8Array(ENEMY_SLOTS);
   private preparedTick = -1;
@@ -676,6 +693,7 @@ export class Simulation {
   constructor(opts: SimOptions) {
     this.runId = opts.runId ?? '00000000000000000000000000000000';
     this.map = opts.map ?? loadMap(opts.dungeon);
+    this.pickups = new Pickups(this.map, (p) => this.emit('all', { type: 'pickupState', pickup: { ...p } }));
     this.benchRoom = opts.benchRoom ?? -1;
     this.benchBurst = !!opts.benchBurst && this.benchRoom >= 0;
     this.noWaves = !!opts.noWaves;
@@ -758,7 +776,8 @@ export class Simulation {
   /** Detached records: subsequent simulation changes cannot mutate a queued checkpoint. */
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
-      rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })) };
+      rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
+      pickups: this.pickups.live.map((p) => ({ ...p })) };
   }
 
   private discoverNeighbours(ai: number): void {
@@ -892,6 +911,8 @@ export class Simulation {
       speed: cls.speed,
       maxHp: cls.hp,
       hp: cls.hp,
+      wallet: 0,
+      itemReadyTick: 0,
       shield: 0,
       shieldUntil: 0,
       dead: false,
@@ -1018,6 +1039,7 @@ export class Simulation {
     this.updateProjectiles();
     this.updateClouds();
     this.updateSouls();
+    this.pickups.update(this.tick, this.players, (drop, collector) => this.collectPickup(drop, this.slots[collector.id]!));
     this.recoverEnemies();
     this.checkVictory();
     this.checkRoomClears();
@@ -1280,6 +1302,11 @@ export class Simulation {
     this.activeRoom = ai;
     // Freeze P at the seal: connected humans plus half-player bots.
     st.partySize = this.partySize();
+    if (a.kind === 'combat' && a.shape && a.band) {
+      const weight = a.waves.reduce((sum, w) => sum + scaleCount(w.blessed, st.partySize) +
+        10 * (scaleCount(w.choristers, st.partySize) + scaleCount(w.cherubs, st.partySize)), 0);
+      this.haloLedgers.set(ai, new HaloLedger(haloBudget(a.shape, a.band), weight));
+    }
     this.updateLeaves();
     this.invalidateFields();
     this.roomState(ai);
@@ -1702,7 +1729,9 @@ export class Simulation {
   }
 
   private spawnAt(slot: number, type: number, c: number, r: number, room: number, wave: number): void {
+    if (this.nextIncarnation > 0xffffffff) throw new Error('enemy incarnation exhausted');
     const def = ENEMIES[type];
+    this.eIncarnation[slot] = this.nextIncarnation++;
     this.eAlive[slot] = 1;
     this.eType[slot] = type;
     this.eState[slot] = ST_IDLE;
@@ -1832,12 +1861,43 @@ export class Simulation {
     this.eHurtTick[slot] = this.tick;
     // 5. Death and kill credit.
     if (this.eHp[slot] <= 0) {
+      this.enemyDrops(slot);
       if (shooter) {
         shooter.kills++;
         this.noteBurst(slot, shooter, fromX, fromY);
       }
       this.removeEnemy(slot);
     }
+  }
+
+  /** Only accepted damage deaths reach this path; recovery/dev removal never settles rewards. */
+  private enemyDrops(slot: number): void {
+    const room = this.eRoom[slot], type = this.eType[slot], def = this.map.rooms[room];
+    if (!def?.shape || type === GATEKEEPER || this.leashed[slot]) return;
+    const x = this.eX[slot], y = this.eY[slot];
+    if (this.eWave[slot] >= 0) {
+      const coins = this.haloLedgers.get(room)?.death(HALO_WEIGHT[type as 0 | 1 | 2] ?? 0) ?? 0;
+      for (let i = 0; i < coins; i++) this.pickups.drop(COIN, room, x, y, this.tick);
+    }
+    if ((type === CHORISTER || type === CHERUB) && this.random() < 0.2) this.dropMote(room, x, y);
+  }
+
+  private dropMote(room: number, x: number, y: number): void {
+    const count = this.moteDrops.get(room) ?? 0;
+    if (count >= moteCap(this.map.rooms[room]?.shape)) return;
+    this.moteDrops.set(room, count + 1);
+    this.pickups.drop(HEAL_MOTE, room, x, y, this.tick);
+  }
+
+  private collectPickup(drop: PickupRecord, p: SimPlayer): boolean {
+    if (drop.kind === COIN || drop.kind === GOLD_HALO) {
+      for (const human of this.players) if (human.connected && !human.bot) human.wallet += drop.value;
+    } else if (drop.kind === HEAL_MOTE) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.08);
+    else if (drop.kind === ITEM_FIRST && this.tick >= p.itemReadyTick && p.hp < p.maxHp && !p.bot) {
+      p.hp = Math.min(p.maxHp, p.hp + 40); p.itemReadyTick = this.tick + TICK_HZ;
+    } else return false; // R3 owns other item effects and inventory storage.
+    this.emit('all', { type: 'pickupCollected', id: drop.id, kind: drop.kind, playerId: p.id, x: drop.x, y: drop.y, z: this.pickups.floor(drop.x, drop.y) });
+    return true;
   }
 
   /** A credited kill bursts when its tick's force reaches 2× the type's max HP, heavy at 4× (M12 §4.1). */
@@ -3452,6 +3512,8 @@ export class Simulation {
       e.enemySlot[k] = s;
       e.enemyX[k] = this.eX[s];
       e.enemyY[k] = this.eY[s];
+      e.enemyZ[k] = this.eZ[s];
+      e.enemyIncarnation[k] = this.eIncarnation[s];
       e.enemyTypeState[k] = (this.eType[s] & 0x0f) | (this.eState[s] << 4);
       let f = 0;
       if (this.isRooted(s)) f |= FLAG_ROOTED;
@@ -3468,6 +3530,10 @@ export class Simulation {
       e.projX[i] = this.pX[slot];
       e.projY[i] = this.pY[slot];
       e.projZ[i] = this.pZ[slot];
+    });
+    e.pickupCount = this.pickups.live.length;
+    this.pickups.live.forEach((p, i) => {
+      e.pickupId[i] = p.id; e.pickupX[i] = p.x; e.pickupY[i] = p.y; e.pickupKind[i] = p.kind;
     });
   }
 
@@ -3513,6 +3579,7 @@ export class Simulation {
         shots: p.shots & 0xff,
         shots2: p.shots2 & 0xff,
         beam: this.tick < p.beamUntil ? p.beamId : ALLY_NONE,
+        wallet: p.wallet,
       });
     }
     return encodeSnapshot(header, players, e);

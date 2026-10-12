@@ -34,12 +34,12 @@ it('hashes sorted relative paths and LF bytes, excluding tests/testutil; dirty s
 });
 
 it('pins protocol/rules/content in the handshake and rejects a dirty-build mismatch before admission', () => {
-  expect([PROTOCOL_VERSION, RULES_VERSION]).toEqual([2, 1]);
+  expect([PROTOCOL_VERSION, RULES_VERSION]).toEqual([3, 2]);
   const host = buildFingerprint('0.1.0', 'abc1234', PROTOCOL_VERSION, RULES_VERSION, '0123456789ab');
-  expect(host).toBe('0.1.0+abc1234.p2.r1.0123456789ab');
-  expect(__BUILD_VERSION__).toMatch(/^0\.1\.0\+(?:[0-9a-f]+|nogit)\.p2\.r1\.[0-9a-f]{12}$/);
+  expect(host).toBe('0.1.0+abc1234.p3.r2.0123456789ab');
+  expect(__BUILD_VERSION__).toMatch(/^0\.1\.0\+(?:[0-9a-f]+|nogit)\.p3\.r2\.[0-9a-f]{12}$/);
   const lobby = new Lobby({ heaven: 1, fixture: null, version: host, password: 'pw', hostName: 'Host' });
-  const other = buildFingerprint('0.1.0', 'abc1234', 2, 1, 'abcdef012345');
+  const other = buildFingerprint('0.1.0', 'abc1234', PROTOCOL_VERSION, RULES_VERSION, 'abcdef012345');
   expect(lobby.join('Guest', 'wrong', other)).toEqual({ ok: false, reason: 'version' });
   expect(lobby.run).toBeNull(); expect(lobby.lobbyMessage().players).toHaveLength(1);
   expect(lobby.join('Guest', 'pw', host).ok).toBe(true);

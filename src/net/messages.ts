@@ -1,5 +1,6 @@
 /** `ctrl` messages and game events (§9.2). */
 import type { ClassId } from '../data/classes';
+import type { PickupRecord } from '../data/pickups';
 import type { RunIdentity } from './version';
 
 /** The host's choice, carried by both welcome and lobby. Fixed maps are development fixtures. */
@@ -31,9 +32,12 @@ export interface FloorSync {
   tick: number;
   revision: number;
   rooms: RoomSync[];
+  pickups?: PickupRecord[];
 }
 
 export type GameEvent =
+  | { type: 'pickupState'; pickup: PickupRecord }
+  | { type: 'pickupCollected'; id: number; kind: number; playerId: number; x: number; y: number; z: number }
   /**
    * `targets`: the player IDs the ability affected (M8 §10): every player Communion healed, including
    * at full HP; the player Martyr's Shroud shielded; the Falling Star ally. Empty for the others.

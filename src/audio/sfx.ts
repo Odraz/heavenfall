@@ -28,6 +28,8 @@ function part(p: Partial<SynthPart> & Pick<SynthPart, 'wave' | 'freq'>): SynthPa
 }
 
 export const SFX = {
+  goldPickup: { priority: PRIO_ABILITY, parts: [part({ wave: 'sine', freq: 1200, freqEnd: 1800, decay: 0.06, release: 0.15, volume: 0.25 })] },
+  motePickup: { priority: PRIO_ABILITY, parts: [part({ wave: 'sine', freq: 660, freqEnd: 990, decay: 0.08, release: 0.2, volume: 0.2 })] },
   // ---------------------------------------------------------------- weapons
   /** A deep blast with a crunchy tail. */
   shotgun: {
