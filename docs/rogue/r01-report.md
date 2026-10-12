@@ -1,6 +1,6 @@
 # R1 report: generated floor
 
-**Status: implementing; R1.5 implemented and tested, awaiting-human-play; R1.6–R1.7 pending** (2026-10-12). Brief: [r01.md](r01.md). Branch `rogue` (as recorded in [r00-report.md](r00-report.md)); nothing pushed, merged or published. R1.5 adds the map/discovery checkpoint; the final protocol remains R1.6.
+**Status: R1.6 implemented; verification blocked by the multiplayer late-join test; R1.7 and human/Gate A acceptance pending** (2026-10-12). Brief: [r01.md](r01.md). Branch `rogue` (as recorded in [r00-report.md](r00-report.md)); nothing pushed, merged or published. Unit/type/build and seven local browser checks pass. The four-client multiplayer suite is not green; see the R1.6 verification below.
 
 ## Git facts
 
@@ -20,7 +20,10 @@
 | R1.5 start SHA | `05a125ddd51baf0226b108d8c85e9460a084b761` (*R1.4: record verified lifecycle checkpoint*) |
 | Main base checked at R1.5 | `fa9e3f5765cd09d5a315db6342107ff70ad159e8`, unchanged |
 | R1.5 code SHA | `d83cf8ffaf82548dd4c436906d8562ad8dd5d92d` (*R1.5: map, discovery and door sigils*); followed by the checkpoint report commit |
-| End SHA | not yet: R1.6–R1.7 remain |
+| R1.6 start SHA | `8db3207c8b8ba336344b6c785c4ad724ed11d219` (*R1.5: record verified map and discovery checkpoint*); clean tree |
+| Main base checked at R1.6 | `fa9e3f5765cd09d5a315db6342107ff70ad159e8`, unchanged |
+| R1.6 code SHA | `7c854b6177e671266aad7e80f83207457f74ee18` (*R1.6: run-scoped input, snapshots and events; build fingerprint*); followed by the verification/blocker report commit |
+| End SHA | not yet: multiplayer verification and R1.7 remain |
 
 ## What changed
 
@@ -186,9 +189,9 @@ Run `npm run dev`, then:
 
 ## Open items
 
-- R1.6–R1.7 remain after the R1.5 checkpoint. Human play/feel acceptance is pending.
+- R1.6 code is implemented. Its fourth-client multiplayer test remains unresolved; R1.7 and human play/feel acceptance are pending.
 - Generated floors have encounters, countdowns, clear sustain, trickle, inherited boss victory, discovery, both maps and door sigils. Rewards, props, pickups, new enemies, fire and progression remain later milestones. The same countdown, fractional scaling, clear sustain and regeneration rules apply to fixed fixtures.
-- Binary inputs, snapshots and events are not run-scoped yet; the protocol/header/fingerprint change remains R1.6. The `runId` introduced here is currently loading/admission metadata.
+- Inputs, snapshots, reliable events and build admission now use the R1.6 run-scoped contract. Do not treat the passing unit/solo/parity checks as proof of the unresolved four-client late-join path.
 - Multiplayer runtime and Node/browser hash parity passed automated checks. Gate geometry/floor sampling/light queries/leaf and post hits passed for all four facings; its appearance across rotated floors and the floor's feel still need human play. No human feedback has been recorded for R1.3.
 - Allowed orientations are mostly identity and the transpose (0 and 7). The 1.5 m off-centre socket offsets mean a quarter-turn or a plain mirror moves the physical doorway off the authored strip, as rogue game.md §3.4 anticipates. The Breach and the Gate allow all 8.
 
@@ -276,3 +279,46 @@ Run `npm run dev`, then open `http://localhost:5173/?dev=1&map=rogue&seed=317434
 5. Compare a different seed and the fixed `?dev=1&map=pearly-gates` fixture, whose map plate explicitly says it has no map. The Confessional's wall art is still a fallback; shops, rewards and map clicks remain inert fixtures.
 
 Human play and Gate A acceptance are pending. This stage does not complete R1; R1.6 still owns run-scoped inputs, snapshots/events and the final build fingerprint.
+
+## R1.6 run-scoped protocol
+
+The R1.6 source implements the prepared wire format. Binary inputs are exactly 49 bytes: the inherited 30 bytes, the admitted 16-byte run ID, two item press counters and the three held flags. The host checks exact length, run identity, finite floats and legal input/weapon flags before it touches sequence/counter history. Item counters are sent as zero in R1; held Q/E have no new ability consumer yet. Host-local and remote inputs use the same codec.
+
+Every snapshot part repeats the specified 61-byte schema-2 header, including run identity, reliable state revision, room/leaf/quorum fields and total/per-part entity counts. Players remain 32 bytes, enemies 8 and projectiles 9; both pickup counts are zero until R2. The maximum current snapshot (4 players, 1,501 enemies including the boss, 400 projectiles) is **15,797 bytes**, below the unchanged 16,000-byte bound. Clients reject another run before allocating entity/assembly state. Run resets clear pending parts, invalid ticks, the complete-tick watermark, interpolation history and diagnostic tick counts. Conflicting sibling totals, part counts, shared headers or players invalidate their whole tick, and completed entity sums must match the advertised totals.
+
+Reliable events now carry `{runId, tick, revision, event}`. The simulation records tick/revision at emission and assigns one revision per R1 payload; the worker preserves that identity when flushing. Clients reject foreign, duplicate and older reliable events without using snapshots to advance the reliable watermark. A room checkpoint suppresses already-covered room transitions while allowing a late joiner's pending placement teleport. The session also guards game-over handling while Loading/Results are outside the Game instance. Starting twice cancels the previous worker loop and builds a fresh Simulation; finishing a run stops scheduling it.
+
+`PROTOCOL_VERSION = 2`, `RULES_VERSION = 1`. The build-time producer is `buildFingerprint.ts`, called by `vite.config.ts` at startup. It hashes every regular file under `src/`, excluding `*.test.ts` and `testutil/`, in sorted slash-separated relative-path order. Each contributes its path, NUL, file bytes with CRLF normalized to LF, then NUL. `__BUILD_VERSION__` is `${pkg.version}+${gitShort}.p2.r1.${first12HexOfSha256}`. Generator/catalog content is pinned by that source hash; save-schema versioning remains R3. `hello.version` uses the fingerprint and the existing Lobby rejects mismatches before admission/generation. Restart the dev server after source edits before a multiplayer test.
+
+Changed files: `buildFingerprint.ts`, `vite.config.ts`; `src/net/{version,messages,protocol,runEvents}.ts` and the protocol/fingerprint/event tests; `src/sim/{sim,worker}.ts`, `workerSync.test.ts`, input fixtures and the mechanically adapted ability/arena/attack/class/revive tests; `src/client/{game,rooms,snapshots}.ts`, room/snapshot tests; `src/main.ts`; `e2e/{rogue-floor,multiplayer}.spec.ts`; this report and `implementation-decisions.md`. No generator, pool, pinned floor, asset or gameplay-balance changes.
+
+The new regression coverage includes byte offsets and round-trips, length/schema/run/NaN/infinity/reserved-bit rejection, multipart inconsistency and reset, independent reliable ordering, dirty-source/rename/CRLF fingerprints, version rejection before admission, and two runs in the real worker both while running and after victory. The passing browser regression starts another generated run through Results and the menus, changes class, checks fresh identity/state and confirms new-run ability input, map flags and victory.
+
+### R1.6 verification
+
+| Command/check | Result |
+|---|---|
+| `npm test -- src/net/protocol.test.ts src/net/buildFingerprint.test.ts src/net/runEvents.test.ts src/client/snapshots.test.ts src/client/rooms.test.ts src/sim/workerSync.test.ts` | 29 passed across 6 files, before the additional post-victory worker case |
+| Initial `npm test` | 752 passed, one old revive-event assertion failed because the envelope gained tick/revision. Updated it to assert the exact emission tick and revisions; subsequent complete runs passed. |
+| Final `npm test` | **754 passed across 69 files**, exit 0, 48.77 s. One worker; unchanged 8-ms/tick performance assertion. |
+| `npm test -- src/sim/workerSync.test.ts` | 3 passed, including restarting the same worker after victory |
+| `npm run typecheck` | passed on final implementation and test sources, including after the code commit |
+| `npm run build -- --logLevel error` | passed, including after the code commit; also rebuilt through every browser command |
+| Full browser command below | **7 passed, multiplayer failed**, exit 1. Controls 7.0 s; fixed full solo run 4.6 min; menus 14.2 s; second generated run after Results 22.1 s; map/input 8.2 s; Node/browser parity/dev entries 23.8 s; full pinned-floor autopilot 8.7 min. Multiplayer was blocked at hosting by `net::ERR_NETWORK_ACCESS_DENIED` to the public PeerJS WebSocket. Sandbox cleanup also left this test's preview process running; its verified PID/command was inspected and stopped, allowing the runner to report its exit. |
+| `npm run e2e -- e2e/multiplayer.spec.ts` with network/process access | **Not passed.** First retry hit the 300-s overall timeout. Bounded diagnostics then exposed the fourth client's 20-s Loading rejection; other retries failed before its Lobby admission with `Connection failed`. Three admitted clients matched run/seed/floor metadata and continued receiving snapshots. |
+| Same multiplayer command, controlled streaming-paused retry | **Failed**, exit 1, 57.8 s: the fourth client reached Lobby but was rejected as `Loading took too long`; the host's wait for player 3 then expired at `e2e/multiplayer.spec.ts`'s `atGo` wait. Pausing the movie did not resolve the failure. Smaller-canvas/no-CPU-throttle experiments also did not resolve it and are reverted. The final fixture keeps its original rendering settings, 20-s Loading bound, 30-s admission waits, 3-s chat, 6-s host-leave and 437-KB/s upload limits. |
+| Generator suite, benchmarks | not run: generator/pool/pinned output unchanged; benchmarks not requested |
+
+Full browser command:
+
+```sh
+npm run e2e -- e2e/multiplayer.spec.ts e2e/rogue-floor.spec.ts e2e/menus.spec.ts e2e/controls.spec.ts e2e/full-run.spec.ts
+```
+
+The source build tested by the browsers stamped both client and worker with `0.1.0+8db3207.p2.r1.bba2b33ab169`. The final local commits change the Git-short portion; the source hash remains the same. Vite emits a non-blocking warning about extensionless imports under a future native config loader; current typecheck/build succeed.
+
+**Unresolved verification blocker:** the complete four-client public-PeerJS path has not passed. The first denial was explicitly sandbox networking; later connection/Loading failures occurred with network access, including with streaming paused. Root cause is not established, so these are not excused as a proven external-service issue or recorded as passing. Investigate late-client loading/admission under the real browser workload before the R1.7 checkpoint or Gate A acceptance. No application timeout or performance limit was increased.
+
+### R1.6 play checklist
+
+Start with `npm run dev` (restart it after source edits/commits so every participant uses the same fingerprint). Play a generated run, reach Results and start another run with another class. Check that the run ID changes, inputs still work, the map opens on M and prior health/cooldowns/room knowledge do not carry over. In co-op, join a running game with a fourth client and verify Loading/placement/map catch-up; this is the unresolved automated path. The existing R1 fixture limitations and B4 art fallback still apply. Human play/feel and Gate A are pending; this report does not mark R1.6 fully verified or R1 accepted.
