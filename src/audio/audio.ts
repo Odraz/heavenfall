@@ -1,10 +1,12 @@
 /**
  * Sound playback (M8 §9.1, §9.3): one AudioContext with a master gain fed by a music group and a
- * sound-effects group; every sound effect rendered once by the synthesizer; voice limits; and
- * positional sounds with distance falloff and stereo panning.
+ * sound-effects group; every sound effect rendered once by the synthesizer, with recorded takes
+ * replacing it while that setting is on (./recorded.ts); voice limits; and positional sounds with
+ * distance falloff and stereo panning.
  */
 import type { TrackId } from '../data/music';
 import { MusicPlayer } from './music';
+import { loadRecordedSetting, nextTake, peakRms, saveRecordedSetting, TAKES } from './recorded';
 import { SFX, type SfxName } from './sfx';
 import { renderSound } from './synth';
 import { loadVolume, saveVolume, VOLUME_KEYS, type VolumeKey } from './volume';
@@ -51,6 +53,9 @@ export class AudioEngine {
   private readonly sfxBus: GainNode;
   readonly music: MusicPlayer;
   private readonly buffers = new Map<SfxName, AudioBuffer>();
+  /** The recorded takes, each with the gain that matches it to the synthesized cue's loudness. */
+  private readonly takes = new Map<SfxName, { bufs: AudioBuffer[]; gains: number[]; last: number }>();
+  private recordedOn = loadRecordedSetting();
   private readonly voices: Voice[] = [];
   private readonly lastStart = new Map<SfxName, number>();
   private readonly volumes: Record<VolumeKey, number>;
@@ -69,7 +74,7 @@ export class AudioEngine {
     this.volumes = { master: loadVolume('master'), music: loadVolume('music'), sfx: loadVolume('sfx') };
     for (const k of VOLUME_KEYS) this.bus(k).gain.value = this.volumes[k];
     this.music = new MusicPlayer(this.ctx, this.musicBus);
-    void this.renderAll();
+    void this.renderAll().then(() => this.loadTakes());
   }
 
   /**
@@ -85,6 +90,42 @@ export class AudioEngine {
       this.buffers.set(name, buf);
       await new Promise((r) => setTimeout(r, 0));
     }
+  }
+
+  /**
+   * Loads every recorded take after the synthesized cues exist, so each take's gain can match its
+   * cue's loudness. A sound plays synthesized until all its takes are in; a take that fails to load
+   * is left out.
+   */
+  private async loadTakes(): Promise<void> {
+    for (const [name, urls] of TAKES) {
+      const synth = this.buffers.get(name);
+      if (!synth) continue;
+      const target = peakRms(synth.getChannelData(0), synth.sampleRate);
+      const bufs: AudioBuffer[] = [];
+      const gains: number[] = [];
+      for (const url of urls) {
+        try {
+          const buf = await this.ctx.decodeAudioData(await (await fetch(url)).arrayBuffer());
+          bufs.push(buf);
+          gains.push(target / Math.max(1e-6, peakRms(buf.getChannelData(0), buf.sampleRate)));
+        } catch {
+          // Left out; the other takes still play.
+        }
+      }
+      if (bufs.length) this.takes.set(name, { bufs, gains, last: -1 });
+    }
+  }
+
+  /** Whether recorded takes replace the synthesized cues (the Recorded SFX setting). */
+  get recorded(): boolean {
+    return this.recordedOn;
+  }
+
+  /** Sets and saves the Recorded SFX setting; the next sound played follows it. */
+  setRecorded(on: boolean): void {
+    this.recordedOn = on;
+    saveRecordedSetting(on);
   }
 
   private bus(k: VolumeKey): GainNode {
@@ -126,8 +167,15 @@ export class AudioEngine {
    */
   play(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number, rate?: number): void {
     const def = SFX[name];
-    const buffer = this.buffers.get(name);
+    let buffer = this.buffers.get(name);
     if (!buffer) return;
+    const recorded = this.recordedOn ? this.takes.get(name) : undefined;
+    let take = -1;
+    if (recorded) {
+      take = nextTake(recorded.bufs.length, recorded.last);
+      buffer = recorded.bufs[take];
+      gain *= recorded.gains[take];
+    }
     const prio = priority ?? def.priority;
     const now = this.ctx.currentTime;
     const start = Math.max(now, now + when);
@@ -152,6 +200,7 @@ export class AudioEngine {
       this.steal(victim);
     }
     this.lastStart.set(name, start);
+    if (recorded) recorded.last = take;
     const src = this.ctx.createBufferSource();
     src.buffer = buffer;
     src.playbackRate.value = playbackRate('ui' in def && def.ui === true, rate);

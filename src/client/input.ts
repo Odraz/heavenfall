@@ -24,7 +24,7 @@ export class Input {
   typing = false;
   /** How many times `release()` was called: Falling Star's preview cancels on a frame it changes (M12 §5.2). */
   releases = 0;
-  /** Called on every key press (not repeats): F3, Q, E and the dev keys. */
+  /** Called on every key press (not repeats): F3, F8, Q, E and the dev keys. */
   onKey: (code: string) => void = () => {};
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -96,7 +96,7 @@ export class Input {
   }
 
   private readonly keydown = (e: KeyboardEvent): void => {
-    if (e.code === 'F3') {
+    if (e.code === 'F3' || e.code === 'F8') {
       e.preventDefault();
       if (!e.repeat) this.onKey(e.code);
       return;

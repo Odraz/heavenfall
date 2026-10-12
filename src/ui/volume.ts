@@ -1,8 +1,9 @@
 /**
  * The Master, Music and SFX sliders on Title and the Pause overlay, in a Settings view (M8 §9.3), with
- * the Screen shake toggle (M12 §4.5).
+ * the Screen shake toggle (M12 §4.5) and the Recorded SFX toggle.
  */
 import { audio, sfx } from '../audio/audio';
+import { loadRecordedSetting, saveRecordedSetting } from '../audio/recorded';
 import { loadVolume, saveVolume, VOLUME_KEYS, VOLUME_LABELS, volumeText, type VolumeKey } from '../audio/volume';
 import { loadShakeSetting, saveShakeSetting } from '../client/shake';
 
@@ -72,6 +73,43 @@ export function shakeToggle(parent: HTMLElement): HTMLLabelElement {
 }
 
 /**
+ * The Recorded SFX toggle: on, the recorded takes replace the synthesized cues; off, the old
+ * synthesized cues play, to compare. Saved at once; F8 flips it in a game. The returned function
+ * shows the current setting again (F8 may have flipped it since).
+ */
+export function recordedToggle(parent: HTMLElement): () => void {
+  const row = document.createElement('label');
+  row.className = 'volume-row toggle-row';
+  const name = document.createElement('span');
+  name.className = 'volume-label';
+  name.textContent = 'Recorded SFX';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.name = 'recorded-sfx';
+  input.checked = audio()?.recorded ?? loadRecordedSetting();
+  const value = document.createElement('span');
+  value.className = 'volume-value';
+  value.textContent = input.checked ? 'On' : 'Off';
+  input.addEventListener('change', () => {
+    setRecorded(input.checked);
+    value.textContent = input.checked ? 'On' : 'Off';
+    sfx('buttonClick');
+  });
+  row.append(name, input, value);
+  parent.appendChild(row);
+  return () => {
+    input.checked = audio()?.recorded ?? loadRecordedSetting();
+    value.textContent = input.checked ? 'On' : 'Off';
+  };
+}
+
+function setRecorded(on: boolean): void {
+  const a = audio();
+  if (a) a.setRecorded(on);
+  else saveRecordedSetting(on);
+}
+
+/**
  * A `Settings` button in `buttons` that turns `panel` into the Settings view: its title, the sliders
  * and `Back`. The panel keeps its size meanwhile, so the window doesn't move. The returned function
  * goes back to the panel's own contents.
@@ -90,7 +128,9 @@ export function settingsButton(panel: HTMLElement, buttons: HTMLElement): () => 
   title.className = 'settings-title';
   title.textContent = 'Settings';
   view.appendChild(title);
-  shakeToggle(volumeSliders(view));
+  const sliders = volumeSliders(view);
+  shakeToggle(sliders);
+  const syncRecorded = recordedToggle(sliders);
   const back = document.createElement('button');
   back.type = 'button';
   back.className = 'button secondary';
@@ -111,6 +151,7 @@ export function settingsButton(panel: HTMLElement, buttons: HTMLElement): () => 
     panel.style.height = `${panel.offsetHeight}px`;
     hidden = [...panel.children].filter((e): e is HTMLElement => e instanceof HTMLElement && e !== view && !e.hidden);
     for (const e of hidden) e.hidden = true;
+    syncRecorded();
     view.hidden = false;
   });
   back.addEventListener('click', close);

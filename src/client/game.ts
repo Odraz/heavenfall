@@ -561,6 +561,15 @@ export class Game {
 
   private onKey(code: string): void {
     if (code === 'F3') this.overlay.toggle();
+    if (code === 'F8') {
+      // Recorded SFX on/off, to compare with the synthesized cues.
+      const a = audio();
+      if (a) {
+        a.setRecorded(!a.recorded);
+        this.hud.centerText(`Recorded SFX: ${a.recorded ? 'On' : 'Off'}`, 1200, performance.now());
+      }
+      return;
+    }
     if (this.over || this.params.benchArena >= 0) return;
     if (code === 'Escape') {
       this.openPause();
@@ -635,10 +644,11 @@ export class Game {
     p.startDash(dx, dy);
     this.ePresses = (this.ePresses + 1) & 0xff;
     this.localEReadyAt = now + def.cooldown * 1000;
-    // The dagger cuts across the view for the dash's 200 ms (M12 §5.7).
+    // The dagger cuts across the view for the dash's 200 ms (M12 §5.7), its sound with the slash.
     this.slashAt = now;
     debugState.slashAt = now;
     this.hud.slash(now);
+    this.sounds.ownDaggerCut();
     this.dashFrom = [p.body.x, p.body.y, p.body.z];
   }
 
@@ -1968,7 +1978,6 @@ export class Game {
     // Your Shadowstep's streak, from where it started to where it ended, as the dash ends (M12 §5.7).
     if (this.wasDashing && !p.dashing && this.dashFrom) {
       this.dashStreak(now, ...this.dashFrom, p.body.x, p.body.y, p.body.z);
-      this.sounds.ownDaggerCut();
       debugState.streakAt = now;
       this.dashFrom = null;
     }
