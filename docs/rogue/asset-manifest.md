@@ -123,6 +123,8 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 
 Each family needs 3 accepted takes (51 keepers); runtime WAVs load through `src/audio/recorded.ts` and play from `src/client/sounds.ts` while the Recorded SFX setting is on (default on; F8 toggles).
 
+R2.3 runtime inventory: all **17 families / 51 WAVs** exist and are connected. Nine prop WAVs were cut from the received keepers with the existing tool; all sources/spares are preserved. Runtime audit found mono 48-kHz 16-bit, nonempty, <=1-second files; the nine MP3 SHA-256 hashes match their committed LFS OIDs. No new provider generation or paid request ran. Listening/readability acceptance remains pending. S2 Dominion/fire, S3 pickups/chalice and S8 fire/incense recordings are still missing; their named synthesized entries exist in `src/audio/sfx.ts`. Pickup/chalice events are connected; Dominion/fire event and ambient consumers follow in R2.4/R2.5.
+
 | assetId | kind | required | neededBy | status | sourcePath | runtimePath | events | generator | generatedAt | plan | notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | chaingun | sfx | yes | R2 | integrated-review | `assets/audio-src/rogue/sfx/chaingun-01..03.mp3` | `assets/sfx/chaingun-01..03.wav` | `chaingun` (Binder primary) | Suno Sounds | 2026-10-12 | Pro | pilot; pilot cuts also in `sfx/cut/` |
@@ -139,9 +141,9 @@ Each family needs 3 accepted takes (51 keepers); runtime WAVs load through `src/
 | burstPop | sfx | yes | R2 | integrated-review | `assets/audio-src/rogue/sfx/burstPop-01..03.mp3` | `assets/sfx/burstPop-01..03.wav` | `burstPop` (angel bursts; later Gatebreaker bursts) | Suno Sounds | 2026-10-12 | Pro | 1 spare |
 | blessedDeath | sfx | yes | R2 | integrated-review | `assets/audio-src/rogue/sfx/blessedDeath-01..03.mp3` | `assets/sfx/blessedDeath-01..03.wav` | `blessedDeath` (aggregated, voice-limited) | Suno Sounds | 2026-10-12 | Pro | 1 spare |
 | massKill | sfx | yes | R2 | integrated-review | `assets/audio-src/rogue/sfx/massKill-01..03.mp3` | `assets/sfx/massKill-01..03.wav` | `massKill` (one per crest) | Suno Sounds | 2026-10-12 | Pro | accepted for now but not liked; 2 spares |
-| porcelainBreak | sfx | yes | R2 | received | `assets/audio-src/rogue/sfx/porcelainBreak-01..03.mp3` | — | amphora breaks; marked amphora (then `chartReveal` R6) | Suno Sounds | 2026-10-12 | Pro | no SFX entry or runtime WAV yet; heard once props exist; 1 spare |
-| blastLampCrack | sfx | yes | R2 | received | `assets/audio-src/rogue/sfx/blastLampCrack-01..03.mp3` | — | lamp hit (bursts 0.2 s later) | Suno Sounds | 2026-10-12 | Pro | no SFX entry or runtime WAV yet; 1 spare |
-| blastLampBurst | sfx | yes | R2 | received | `assets/audio-src/rogue/sfx/blastLampBurst-01..03.mp3` | — | lamp explodes | Suno Sounds | 2026-10-12 | Pro | no SFX entry or runtime WAV yet; 1 spare |
+| porcelainBreak | sfx | yes | R2 | integrated-review | `assets/audio-src/rogue/sfx/porcelainBreak-01..03.mp3` | `assets/sfx/porcelainBreak-01..03.wav` | amphora breaks; marked amphora (then `chartReveal` R6) | Suno Sounds | 2026-10-12 | Pro | R2.3 cut and connected; human ear approval pending; 1 spare |
+| blastLampCrack | sfx | yes | R2 | integrated-review | `assets/audio-src/rogue/sfx/blastLampCrack-01..03.mp3` | `assets/sfx/blastLampCrack-01..03.wav` | lamp hit (bursts 0.2 s later) | Suno Sounds | 2026-10-12 | Pro | R2.3 cut and connected; human ear approval pending; 1 spare |
+| blastLampBurst | sfx | yes | R2 | integrated-review | `assets/audio-src/rogue/sfx/blastLampBurst-01..03.mp3` | `assets/sfx/blastLampBurst-01..03.wav` | lamp explodes | Suno Sounds | 2026-10-12 | Pro | R2.3 cut and connected; human ear approval pending; 1 spare |
 
 ## Audio: new events (S2–S8)
 

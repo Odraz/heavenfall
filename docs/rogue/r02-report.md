@@ -1,6 +1,6 @@
 # R2 report: pressure and pickups
 
-**Status: implementing** (2026-10-13). Brief: [r02.md](r02.md). R2.1 and R2.2 are implemented and verified; R2.3–R2.7 remain. Gate B and human feel acceptance are pending. Local branch `rogue`; nothing pushed, merged or published.
+**Status: implementing** (2026-10-13). Brief: [r02.md](r02.md). R2.1–R2.3 are implemented and verified; R2.4–R2.7 remain. Gate B and human feel acceptance are pending. Local branch `rogue`; nothing pushed, merged or published.
 
 ## Authorization and Git facts
 
@@ -8,6 +8,7 @@
 - Gate repair / R2 start SHA: `767b351a039f3d7a7010ce7893d4812ebf0782a9`.
 - Local `main` remains `fa9e3f5765cd09d5a315db6342107ff70ad159e8`, the base recorded in R0/R1. Cached `origin/main` is `c5d74e456f9932953d432eaa7e679f427ec8d937`; no fetch, push, main merge or ref replacement was performed.
 - R2.1 code end SHA: `36d24131b40de6399ae37cd4e42f395fd31c9629` (authoritative pickups, halo ledger and bounded snapshots). The following documentation commit only records that identity.
+- R2.2 code end SHA: `42271ee3a73bf300aa8d11e6437dca429150e484` (authoritative props, delayed blasts and late-entry checkpoints).
 - Protocol version **3**, rules version **2**. Floor layout/pool/pinned hash remain the R1 fixture until R2.6 introduces the full pool. Restart the dev server after a commit so every participant uses the same artifact fingerprint.
 
 ## R2.1: pickups, halo ledger and bounded snapshots
@@ -67,11 +68,33 @@ Screenshots were captured and inspected; the central countdown overlays the mark
 
 Final source rerun: the same exact four-test command above with output directory ending `r02-props-final`: **4 passed**, exit 0, 3.0 min (multiplayer 2.0 min, restart 21.7 s, combat pickup 27.6 s, marked amphora 8.7 s). Production build in that command passed. `git diff --check` passed.
 
+## R2.3: recorded combat sound
+
+Start SHA `42271ee3a73bf300aa8d11e6437dca429150e484`. All 17 S1 families now have three runtime takes (51 WAVs). The nine received prop keepers use the established cutting/normalizing pipeline; original MP3s and spare takes are unchanged. There was no provider request, paid generation or replacement of the previous accepted pilot cuts.
+
+Each sound uses a cosmetic Fisher-Yates shuffle bag, every surviving take once per bag and no repeated boundary take. Only admitted playback advances the bag: rejected voices, inaudible positions, the 30-ms gap and the Recorded SFX toggle preserve it. Failed HTTP/fetch/body/decode or silent/nonfinite recordings leave the other takes available; a wholly failed family keeps its synth. Normalization is finite and capped at 4x. Existing 24 total / 4 per-sound voices, priorities, positional attenuation, pitch, limiter and mass-kill aggregation remain intact. Inherited-name filenames such as `constructor` are rejected.
+
+Named Dominion step/tell/slam, fire ignition and fire/incense ambient synth definitions are ready for their R2.4/R2.5 consumers. Pickup/chalice/prop consumers are already connected. Their optional recordings remain missing; S1 human listening acceptance also remains pending. Decoding or a source file on disk does not grant that acceptance.
+
+Changed: `src/audio/recorded.ts`, `src/audio/recorded.test.ts`, `src/audio/audio.ts`, `src/audio/sfx.ts`, new `src/audio/audio.test.ts`, new `e2e/recorded-sound.spec.ts`, nine `assets/sfx/{porcelainBreak,blastLampCrack,blastLampBurst}-01..03.wav`, and milestone/asset/decision records.
+
+| Exact command | Result |
+|---|---|
+| `python -I scripts/sfx_cut.py porcelainBreak blastLampCrack blastLampBurst` | Nine mono 48-kHz 16-bit runtime WAVs produced, originals preserved. Initial restricted execution could not launch ffmpeg; the authorized escalation succeeded. |
+| `python -I -` (inline WAV-header/content and LFS-source SHA-256 audit) | 51 nonempty mono 48-kHz 16-bit WAVs, all <=1 s; nine original MP3 hashes match committed LFS OIDs. |
+| `npm test -- src/audio/recorded.test.ts src/audio/audio.test.ts` | 11 passed. An initial typecheck rejected the test harness's private-field intersection; corrected only its cast. |
+| Final `npm test` | **809 passed across 75 files**, exit 0, 52.32 s; one worker, unchanged 8-ms/tick check passed. |
+| `npm run typecheck` | passed, exit 0 on final source and browser fixture. |
+| `npm run build -- --logLevel error` | passed, exit 0; browser command also built production. |
+| `npm run e2e -- e2e/recorded-sound.spec.ts e2e/rogue-pressure.spec.ts --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-audio-final'` | **4 passed**, exit 0, 1.0 min. Native WebAudio observation counted 51 decoded WAVs, real primary recording playback and F8 synth/toggle persistence; an injected three-file corrupt amphora family decoded the other 48 and played the real synth break cue. Existing combat pickup/marked break/wallet checks passed. |
+
+The first browser run passed 3/4 but missed the toggle test's instantaneous mouse click during the Revolver cooldown. The fixture now holds real fire until playback, without changing game code or timing limits; the final four-test run passed. No multiplayer/network code changed in this stage, and no benchmark or human hearing approval is claimed.
+
 ## Current fixture limits and next stage
 
-Dominion, fire damage/dry navigation, six-second crest, remaining 10 templates and recorded shuffle bags are still unfinished. This checkpoint must not be labeled the completed R2 milestone. Marked props supply gold halos; elite sources arrive in R2.4. No shop, profile, durable money, XP, inventory or build mechanics have been added.
+Dominion, fire damage/dry navigation, six-second crest and remaining 10 templates are still unfinished. This checkpoint must not be labeled the completed R2 milestone. Marked props supply gold halos; elite sources arrive in R2.4. No shop, profile, durable money, XP, inventory or build mechanics have been added.
 
-R2.3 next: preserve the existing audio limits/limiter/positional rules and source provenance; finish the three received prop families through the existing cutting tool, replace per-play random selection with cosmetic shuffle bags, and test failed fetch/decode/silent recordings. Other missing S2/S3/S8 recordings stay explicit synthesized fallbacks. No source regeneration, paid generation or human ear approval is implied.
+R2.4 next: Dominion type/cast/slam, elite count/HP scaling and ledger reservations, reliable/snapshot catch-up, ring/model fallback and bot avoidance. The R1 runtime pool contains no elite template, so use meaningful simulation fixtures while preparing the first elite template for a scoped dev encounter; full runtime pool adoption remains R2.6. Preserve the fixed dungeon and test/commit before the hazard stage.
 
 For a quick R2.1 check: run `npm run dev`, open a generated room with `?dev=1&map=rogue&seed=317434499&room=1&class=betrayer&god=1`, shoot the room's enemies and collect halos before they fade. Watch the wallet and motes; move onto a mote at full HP and confirm it waits. These dev/god runs do not establish balance or human Gate B acceptance.
 

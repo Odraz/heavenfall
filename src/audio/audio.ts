@@ -6,7 +6,7 @@
  */
 import type { TrackId } from '../data/music';
 import { MusicPlayer } from './music';
-import { loadRecordedSetting, nextTake, peakRms, saveRecordedSetting, TAKES } from './recorded';
+import { loadRecordedSetting, loadRecordedTakes, ShuffleBag, saveRecordedSetting, TAKES } from './recorded';
 import { SFX, type SfxName } from './sfx';
 import { renderSound } from './synth';
 import { loadVolume, saveVolume, VOLUME_KEYS, type VolumeKey } from './volume';
@@ -54,7 +54,7 @@ export class AudioEngine {
   readonly music: MusicPlayer;
   private readonly buffers = new Map<SfxName, AudioBuffer>();
   /** The recorded takes, each with the gain that matches it to the synthesized cue's loudness. */
-  private readonly takes = new Map<SfxName, { bufs: AudioBuffer[]; gains: number[]; last: number }>();
+  private readonly takes = new Map<SfxName, { bufs: AudioBuffer[]; gains: number[]; bag: ShuffleBag }>();
   private recordedOn = loadRecordedSetting();
   private readonly voices: Voice[] = [];
   private readonly lastStart = new Map<SfxName, number>();
@@ -101,19 +101,8 @@ export class AudioEngine {
     for (const [name, urls] of TAKES) {
       const synth = this.buffers.get(name);
       if (!synth) continue;
-      const target = peakRms(synth.getChannelData(0), synth.sampleRate);
-      const bufs: AudioBuffer[] = [];
-      const gains: number[] = [];
-      for (const url of urls) {
-        try {
-          const buf = await this.ctx.decodeAudioData(await (await fetch(url)).arrayBuffer());
-          bufs.push(buf);
-          gains.push(target / Math.max(1e-6, peakRms(buf.getChannelData(0), buf.sampleRate)));
-        } catch {
-          // Left out; the other takes still play.
-        }
-      }
-      if (bufs.length) this.takes.set(name, { bufs, gains, last: -1 });
+      const { bufs, gains } = await loadRecordedTakes(urls, synth, { fetch: (url) => fetch(url), decode: (data) => this.ctx.decodeAudioData(data) });
+      if (bufs.length) this.takes.set(name, { bufs, gains, bag: new ShuffleBag(bufs.length) });
     }
   }
 
@@ -170,9 +159,8 @@ export class AudioEngine {
     let buffer = this.buffers.get(name);
     if (!buffer) return;
     const recorded = this.recordedOn ? this.takes.get(name) : undefined;
-    let take = -1;
     if (recorded) {
-      take = nextTake(recorded.bufs.length, recorded.last);
+      const take = recorded.bag.peek();
       buffer = recorded.bufs[take];
       gain *= recorded.gains[take];
     }
@@ -200,7 +188,7 @@ export class AudioEngine {
       this.steal(victim);
     }
     this.lastStart.set(name, start);
-    if (recorded) recorded.last = take;
+    if (recorded) recorded.bag.take();
     const src = this.ctx.createBufferSource();
     src.buffer = buffer;
     src.playbackRate.value = playbackRate('ui' in def && def.ui === true, rate);
