@@ -73,7 +73,7 @@ In the game since 2026-10-12 (branch `sfx-samples`). Accepted for now but not li
    - it sounds like a different world: sci-fi lasers, cartoon, modern guns, gore;
    - for frequent families: it's too similar to a take you already kept (three takes should sound like the same gun fired three times, not three guns, and not three copies).
 8. **If a sound comes out as the wrong thing** (most often: anything near a weapon turns into a gunshot), describe the physical action with everyday objects instead of its game name, and leave out words like *launcher, fire, shot, blast, impact, recoil*. Saying "not a gun" tends to make it more gun-like; describe what it **is** instead. Tell Claude, and it will rewrite the prompt.
-9. **Where the files go:** Claude keeps the chosen takes as `<id>-01.mp3` … in `assets/audio-src/rogue/sfx/`, the unused ones in `spare/`, and replaced ones in `rejected/`; `python -I scripts/sfx_cut.py` cuts them into `assets/sfx/<id>-NN.wav`, which the game loads.
+9. **Where the files go:** `python -I scripts/sfx_inbox.py collect` moves the downloads into `assets/audio-src/rogue/sfx/inbox/`, naming each by the prompt stored in its tags; `analyze` measures them; `place <id> <takes>` makes the chosen ones `<id>-01.mp3` … in `assets/audio-src/rogue/sfx/`, the rest `spare/` and the replaced ones `rejected/`. `python -I scripts/sfx_cut.py <id>` then cuts them into `assets/sfx/<id>-NN.wav`, which the game loads. Keep a prompt's text in this file when it changes (quote the old one under the new): that's how a download finds its sound.
 
 ### What Claude does with each file
 
@@ -282,13 +282,18 @@ A thin porcelain Christmas ornament crushed in a fist, about 0.3 seconds: a cris
 
 ### massKill — many angels at once · keep 3
 
-One sound for a whole crowd dying in the same moment (a Silver Bullet line, a Falling Star crater, a blast).
+One sound for a whole crowd dying in the same moment (a Silver Bullet line, a Falling Star crater, a blast). **Still not satisfying** (2026-10-12): the takes in the game are two of this prompt (`-01`, `-02`) and one of the sledgehammer prompt below (`-03`). A next try could layer two sounds in the game, a deep boom and a crunch, instead of asking one prompt for both.
 
 ```text
-A tall shelf loaded with porcelain plates and vases toppling onto a stone floor all at once, about 0.7 seconds: a deep heavy thump of the impact and one big dense crash of shattering porcelain, then a short scatter of shards. Dry isolated sound effect for a dark-fantasy game: one event, instant start, short tail, then silence. No music, beat, voice, ambience or reverb.
+A heavy cinematic impact hit like those in movie trailers, about 0.6 seconds: a deep punchy sub-bass boom with a crunchy layer of shattering stone and ceramic debris, then a quick clean decay. Dry isolated sound effect for a dark-fantasy game: one event, instant start, short tail, then silence. No music, beat, voice, ambience or reverb.
 ```
 
-*First prompt, rejected 2026-10-12 (the "rush of feathers" sounded like people gasping, not powerful):* "A whole crowd of angels bursting into feathers and gold sparks at the same moment, about 0.5 seconds: one broad papery rush of many feathers, a crunchy cluster of small porcelain and gold cracks and a brief low punch under it. One single crowd event, not a sequence. No screams, no voices."
+Its takes swell up to the hit for 0.4–2.7 s; `scripts/sfx_cut.py` cuts from just before the hit.
+
+*Also tried, 2026-10-12:*
+- "A sledgehammer smashing down through a tall stack of ceramic roof tiles in one blow, about 0.6 seconds: a deep heavy punch of the hammer, a loud crunchy crack of many tiles breaking at once and a short rattle of falling pieces." (sounded like a gunshot; one take kept as `-03`)
+- "A tall shelf loaded with porcelain plates and vases toppling onto a stone floor all at once, about 0.7 seconds: a deep heavy thump of the impact and one big dense crash of shattering porcelain, then a short scatter of shards." (still not a multi-kill; rejected)
+- "A whole crowd of angels bursting into feathers and gold sparks at the same moment, about 0.5 seconds: one broad papery rush of many feathers, a crunchy cluster of small porcelain and gold cracks and a brief low punch under it. One single crowd event, not a sequence. No screams, no voices." (the first prompt: the "rush of feathers" sounded like people gasping, not powerful)
 
 ### porcelainBreak — an amphora shatters · keep 3
 
