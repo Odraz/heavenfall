@@ -100,7 +100,7 @@ export function floorLooks(map: GameMap): FloorLooks {
   const overlaps = (c0: number, r0: number) => medallions.some(([c, r]) => Math.abs(c - c0) < 4 && Math.abs(r - r0) < 4);
   const runners: FloorLooks['runners'] = [];
 
-  map.arenas.forEach((a, ai) => {
+  map.rooms.forEach((a, ai) => {
     const inRect = (c0: number, r0: number) => c0 >= a.rect.x0 && r0 >= a.rect.y0 && c0 + 3 <= a.rect.x1 && r0 + 3 <= a.rect.y1;
     const cx = (a.rect.x0 + a.rect.x1 + 1) / 2;
     const cy = (a.rect.y0 + a.rect.y1 + 1) / 2;
@@ -122,8 +122,8 @@ export function floorLooks(map: GameMap): FloorLooks {
     const colFrom = best ? best[0] : Math.round((cx - 2) / 4) * 4;
     runners.push({ zone: ai, axis: 'x', from: rowFrom }, { zone: ai, axis: 'y', from: colFrom });
 
-    // One in front of each door, inside the arena, touching the cells next to the door.
-    for (const door of [a.doors, a.exitDoors ?? []]) {
+    // One in front of each door, inside the room, touching the cells next to the door.
+    for (const { cells: door } of a.leaves) {
       if (door.length === 0) continue;
       const next = new Set<number>();
       for (const [c, r] of door) {
@@ -155,7 +155,7 @@ export function floorLooks(map: GameMap): FloorLooks {
   });
 
   // The Lobby and each corridor: one runner along its long axis, through its middle.
-  for (let z = map.arenas.length; z < hz.zoneCount; z++) {
+  for (let z = map.rooms.length; z < hz.zoneCount; z++) {
     let x0 = Infinity;
     let x1 = -Infinity;
     let y0 = Infinity;

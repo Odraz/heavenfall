@@ -29,13 +29,13 @@ import {
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
-import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_STUNNED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
+import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_STUNNED, FLAG_TAUNTED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
 import { aimDir, estimateSilverBullet, rayCylinder } from '../sim/combat';
 import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, PROJECTILE_SLOTS, TICK_DT, TICK_MS } from '../sim/constants';
 import { raycastTerrain } from '../sim/los';
-import { arenaPhaseOf, doorsClosed, overVoid, setArenaDoors, type GameMap } from '../sim/map';
+import { applyLeaves, leafOpen, overVoid, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
 import { BOSS_CAST_JUDGMENT, GLOBE_BLAST, GLOBE_SHOT_BLAST, PROJ_ARROW, PROJ_CENSER, PROJ_GLOBE } from '../sim/sim';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
@@ -407,8 +407,8 @@ export class Game {
   private soulHitAt = -Infinity;
   private soulHitId = -1;
   private hum: LoopHandle | null = null;
-  /** Each arena's phase its doors were last set for, or -1 before the first snapshot. */
-  private doorPhase: number[];
+  /** Each leaf's state its door was last drawn in (room by room, leaf by leaf): 1 closed, 0 open, -1 before the first snapshot. */
+  private leafDrawn: Int8Array;
   /** Smoothed Cherub heights per slot (§9.4). */
   private readonly cherubZ = new Float32Array(ENEMY_SLOTS);
   /** Frame number when each slot's Cherub height was last updated. */
@@ -529,9 +529,9 @@ export class Game {
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('visibilitychange', this.onVisibility);
 
-    const [sc, sr] = this.params.benchArena >= 0 ? this.map.arenas[this.params.benchArena].entryCells[0] : this.params.startArena > 0 ? this.map.arenas[this.params.startArena].entryCells[index] : this.map.spawns[index];
+    const [sc, sr] = this.params.benchArena >= 0 ? this.map.rooms[this.params.benchArena].entry[0].cells[0] : this.params.startArena > 0 ? this.map.rooms[this.params.startArena].entry[0].cells[index] : this.map.spawns[index];
     this.player = new LocalPlayer(sc + 0.5, sr + 0.5, this.map.floor[sr * this.map.w + sc], CLASSES[me.classId].speed);
-    this.doorPhase = this.map.arenas.map(() => -1);
+    this.leafDrawn = new Int8Array(this.map.rooms.reduce((n, a) => n + a.leaves.length, 0)).fill(-1);
 
     this.snaps = new SnapshotBuffer(o.host ? 1.5 : 4.5);
     this.snaps.onComplete = (s, prev) => this.onSnapshot(s, prev);
@@ -842,7 +842,7 @@ export class Game {
         this.hud.centerText('The doors are sealed', 2000, now);
         break;
       case 'arenaCleared':
-        this.hud.centerText('Arena cleared', 2000, now);
+        this.hud.centerText('Room cleared', 2000, now);
         break;
       case 'playerRevived': {
         // The hellfire pillar where the player rises (M8 §3.1); the soul sinks back into the body.
@@ -1143,16 +1143,21 @@ export class Game {
 
   private onSnapshot(s: Snapshot, prev: Snapshot | null): void {
     const now = performance.now();
-    // Doors follow from arenaIndex and arenaPhase (§8.2).
-    for (let ai = 0; ai < this.map.arenas.length; ai++) {
-      const phase = arenaPhaseOf(ai, s.arenaIndex, s.arenaPhase);
-      if (phase !== this.doorPhase[ai]) {
-        this.doorPhase[ai] = phase;
-        setArenaDoors(this.map, ai, phase);
-        const closed = doorsClosed(phase);
-        this.scene.setDoorsClosed(ai, closed.entry, closed.exit);
-      }
-    }
+    // Every leaf follows from the header's activeRoom, activePhase and clearedMask (rogue game.md §3.4).
+    let changed = false;
+    let k = 0;
+    this.map.rooms.forEach((room, ri) => {
+      room.leaves.forEach((leaf, li) => {
+        const closed = leafOpen(ri, leaf, s.activeRoom, s.activePhase, s.clearedMask) ? 0 : 1;
+        if (closed !== this.leafDrawn[k]) {
+          this.leafDrawn[k] = closed;
+          this.scene.setLeafClosed(ri, li, closed === 1);
+          changed = true;
+        }
+        k++;
+      });
+    });
+    if (changed) applyLeaves(this.map, s);
     this.souls.update(s.players, now);
     const me = s.players.find((p) => p.id === this.localId);
     const was = prev?.players.find((p) => p.id === this.localId);
@@ -1169,10 +1174,10 @@ export class Game {
         // The dead player's screen (M8 §4.5): a soul that joined gets an ember vignette instead of the
         // grey; outside the boss arena, clearing it also brings back a player who fell.
         this.canvas.classList.toggle('dead', this.dead && !this.joinedAsSoul);
-        const boss = this.map.arenas[s.arenaIndex]?.boss;
+        const boss = this.map.rooms[s.activeRoom]?.boss;
         if (!this.dead) this.hud.setDeath(null);
         else if (this.joinedAsSoul) this.hud.setDeath('Your party must revive you to join the fight', null, true);
-        else this.hud.setDeath('You have fallen — your party can revive you', boss ? null : 'or you rise when the arena is cleared');
+        else this.hud.setDeath('You have fallen — your party can revive you', boss ? null : 'or you rise when the room is cleared');
       }
       if (this.dead) {
         this.ownGround = me.z;
@@ -1274,10 +1279,11 @@ export class Game {
     debugState.lastSnapshotTick = s.tick;
     debugState.enemies = s.enemyCount;
     debugState.projectiles = s.projectileCount;
-    debugState.arenaIndex = s.arenaIndex;
-    debugState.arenaPhase = s.arenaPhase === PHASE_COMBAT ? 'combat' : s.arenaPhase === PHASE_CLEARED ? 'cleared' : s.arenaPhase === PHASE_COUNTDOWN ? 'countdown' : 'idle';
-    debugState.countdown = s.arenaPhase === PHASE_COUNTDOWN ? s.countdown / 10 : 0;
-    this.hud.setCountdown(s.arenaPhase === PHASE_COUNTDOWN ? s.countdown / 10 : null);
+    debugState.activeRoom = s.activeRoom;
+    debugState.activePhase = s.activePhase === PHASE_COMBAT ? 'combat' : s.activePhase === PHASE_COUNTDOWN ? 'countdown' : 'idle';
+    debugState.clearedMask = s.clearedMask;
+    debugState.countdown = s.activePhase === PHASE_COUNTDOWN ? s.countdown / 10 : 0;
+    this.hud.setCountdown(s.activePhase === PHASE_COUNTDOWN ? s.countdown / 10 : null);
     debugState.enemyCountsByTick = Object.fromEntries(this.snaps.enemyCountsByTick);
     debugState.players = s.players.map((p) => ({
       id: p.id,
@@ -1297,7 +1303,7 @@ export class Game {
           return r ? [{ id: p.id, name: r.name, classId: r.classId, hp: p.hp, shield: p.shield, dead: p.dead, revive: p.revive / 255 }] : [];
         }),
     );
-    this.hud.setRemaining(s.arenaPhase === PHASE_COMBAT ? s.enemiesRemaining : null);
+    this.hud.setRemaining(s.activePhase === PHASE_COMBAT ? s.enemiesRemaining : null);
     this.hud.setBoss(s.bossHp, s.bossMaxHp, s.bossCast === BOSS_CAST_JUDGMENT ? s.bossCastProgress / 255 : null);
     this.bossCast = s.bossCast;
     this.bossCastProgress = s.bossCastProgress / 255;
@@ -1307,12 +1313,12 @@ export class Game {
 
   /**
    * The spawn glow (M12 §2.4): an enemy slot that wasn't in the previous snapshot, within 2 m
-   * horizontally of a spawn or squad point of the snapshot's arena, flares that point when it appears on
+   * horizontally of a spawn or squad point of the snapshot's active room, flares that point when it appears on
    * screen (`at`, after the render delay). Gatekeeper summons glow the same way.
    */
   private spawnGlows(s: Snapshot, prev: Snapshot, at: number): void {
     // Squad points flare too (M12 follow-up §4.2).
-    const points = this.map.arenaSpawnPoints[s.arenaIndex]?.concat(this.map.arenaSquadPoints[s.arenaIndex]);
+    const points = this.map.roomSpawnPoints[s.activeRoom]?.concat(this.map.roomSquadPoints[s.activeRoom]);
     if (!points?.length) return;
     for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 1;
     const flared = new Set<number>();
@@ -1833,8 +1839,9 @@ export class Game {
         body: p.body,
         dead: this.dead,
         enemies: be,
-        arenaIndex: s?.arenaIndex ?? 0,
-        arenaPhase: s?.arenaPhase ?? 0,
+        activeRoom: s?.activeRoom ?? 255,
+        activePhase: s?.activePhase ?? 0,
+        clearedMask: s?.clearedMask ?? 0,
         // A client's bot follows the host's player (§2.5).
         hostPlayer: this.o.host ? null : (this.snaps.playersOut.find((q) => q.id === 0) ?? null),
         qReady: this.displayedCooldown('Q', now) <= 0,

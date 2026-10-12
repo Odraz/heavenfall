@@ -174,7 +174,7 @@ export function placeCards(map: GameMap): Card[] {
   place('spire', 6, [60, 120], [30, 80], (_base, s) => lowest - range(20, 30) + s / 2, false);
   // Banks of cloud behind the Heavenly Gate (M10 gate §3), after the others and without the seeded
   // random, so every other card stays where it is.
-  const gate = map.gate;
+  const gate = map.gate ? { x: map.gate.plane, yCenter: map.gate.uCenter } : null;
   if (gate) {
     const F = map.floor[gate.yCenter * w + gate.x];
     GATE_BANKS.forEach((d, k) => {
@@ -388,7 +388,7 @@ export class Atmosphere {
     // radiance over them, then the arena's own effects, so the light never washes over an effect.
     this.cards.renderOrder = -2;
     this.radiance = null;
-    const gate = map.gate;
+    const gate = map.gate ? { x: map.gate.plane, yCenter: map.gate.uCenter } : null;
     if (gate && RADIANCE) {
       // One quad facing the arena, fx-glow tinted warm gold, with normal alpha blending (decisions §11.1).
       const F = map.floor[gate.yCenter * map.w + gate.x];

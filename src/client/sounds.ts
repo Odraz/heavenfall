@@ -8,9 +8,9 @@ import type { ClassId } from '../data/classes';
 import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import type { TrackId } from '../data/music';
 import type { GameEvent } from '../net/messages';
-import { PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, PHASE_IDLE, type Snapshot } from '../net/protocol';
+import { PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import { ENEMY_SLOTS, TICK_MS } from '../sim/constants';
-import type { GameMap } from '../sim/map';
+import { roomCleared, type GameMap } from '../sim/map';
 import { BOSS_CAST_VOLLEY, PROJ_ARROW, PROJ_GLOBE } from '../sim/sim';
 import type { SfxName } from '../audio/sfx';
 import type { MassKillPlay } from './massKill';
@@ -112,7 +112,7 @@ export class GameSounds {
    */
   snapshot(s: Snapshot, prev: Snapshot | null, beamed = false): void {
     // The countdown's last 5 s: a tick with each number (M8 §5).
-    const second = s.arenaPhase === PHASE_COUNTDOWN ? Math.ceil(s.countdown / 10 - 1e-6) : 0;
+    const second = s.activePhase === PHASE_COUNTDOWN ? Math.ceil(s.countdown / 10 - 1e-6) : 0;
     if (second >= 1 && second <= 5 && second !== this.tickSecond) sfx('countdownTick');
     this.tickSecond = second;
     // Others' shots: the difference in each player's counter, spread over the time to the next snapshot.
@@ -230,17 +230,23 @@ export class GameSounds {
     }
   }
 
-  /** The arena's track in combat, the calm one otherwise; the next likely one is decoded ahead. */
+  /**
+   * The active room's track in combat, the calm one otherwise; the next likely one (the room counting
+   * down, or the first room not cleared) is decoded ahead.
+   */
   private music(s: Snapshot): void {
-    const combat = s.arenaPhase === PHASE_COMBAT;
-    const next = s.arenaPhase === PHASE_IDLE || s.arenaPhase === PHASE_COUNTDOWN ? s.arenaIndex : s.arenaPhase === PHASE_CLEARED ? s.arenaIndex + 1 : -1;
-    if (combat) setMusic(this.track(s.arenaIndex), 'calm');
-    else setMusic('calm', next >= 0 && next < this.map.arenas.length ? this.track(next) : null);
+    if (s.activePhase === PHASE_COMBAT) {
+      setMusic(this.track(s.activeRoom), 'calm');
+      return;
+    }
+    let next = s.activePhase === PHASE_COUNTDOWN ? s.activeRoom : -1;
+    for (let i = 0; next < 0 && i < this.map.rooms.length; i++) if (!roomCleared(s.clearedMask, i)) next = i;
+    setMusic('calm', next >= 0 && next < this.map.rooms.length ? this.track(next) : null);
   }
 
-  /** Arena i's track: 1–3 by order, the boss arena's own; the sandbox uses Arena 1's. */
+  /** Room i's track: 1–3 by order, the boss room's own; the sandbox uses Arena 1's. */
   private track(i: number): TrackId {
-    if (this.map.arenas[i]?.boss) return 'boss';
+    if (this.map.rooms[i]?.boss) return 'boss';
     if (this.map.id === 'sandbox') return 'arena-1';
     return (['arena-1', 'arena-2', 'arena-3'] as const)[Math.min(i, 2)];
   }

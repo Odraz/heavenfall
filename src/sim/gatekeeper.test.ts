@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ClassId } from '../data/classes';
 import { GridBuilder } from '../data/dungeons/build';
+import { adaptFixture } from '../data/dungeons/fixture';
 import type { DungeonDef } from '../data/dungeons/types';
 import { BLESSED, CHERUB, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import { decodeSnapshot } from '../net/protocol';
@@ -20,7 +21,7 @@ function dungeon(): DungeonDef {
   g.pillar(15, 13, 16, 18);
   for (const [x, y] of [[7, 1], [7, 20], [12, 1], [12, 20], [20, 1], [20, 20]] as const) g.marker(x, y, 'x');
   const grids = g.build();
-  return {
+  return adaptFixture({
     id: 'boss-test',
     name: 'Boss test',
     ...grids,
@@ -35,7 +36,7 @@ function dungeon(): DungeonDef {
         boss: true,
       },
     ],
-  };
+  });
 }
 
 const VISIBLE: [number, number] = [12.5, 4.5];
@@ -61,7 +62,7 @@ function startFight(sim: Simulation, spots: Array<[number, number]>): number {
   sim.step();
   sealNow(sim);
   // The arena start teleports nobody here (everyone is inside), so the spots hold.
-  expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
+  expect(sim.rooms[0].phase).toBe(PHASE_COMBAT);
   return sim.tick;
 }
 
@@ -274,11 +275,11 @@ describe('the Gatekeeper (§7.4)', () => {
     sim.volleyDue = Infinity;
     sim.judgmentDue = Infinity;
     runTo(sim, t0 + 899);
-    expect(sim.arenas[0].queue.length).toBe(0);
+    expect(sim.rooms[0].queue.length).toBe(0);
     expect(sim.living).toBe(0);
     sim.silence(sim.bossSlot, 4);
     sim.step();
-    const total = (t: number) => sim.arenas[0].queue.reduce((n, q) => n + q.counts[t], 0) + countType(sim, t);
+    const total = (t: number) => sim.rooms[0].queue.reduce((n, q) => n + q.counts[t], 0) + countType(sim, t);
     expect(total(0)).toBe(150);
     expect(total(2)).toBe(10);
     runTo(sim, t0 + 1800);

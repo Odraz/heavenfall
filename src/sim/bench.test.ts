@@ -8,16 +8,16 @@ import { Simulation } from './sim';
 describe('benchmark arena (M10 gate §4)', () => {
   it('starts the boss arena on the first tick and tops it up to 1 500 living enemies', () => {
     const dungeon = getDungeon('pearly-gates')!;
-    const boss = dungeon.arenas.findIndex((a) => a.boss);
-    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchArena: boss });
+    const boss = dungeon.rooms.findIndex((a) => a.boss);
+    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchRoom: boss });
     const p = sim.players[0];
-    const [ec, er] = dungeon.arenas[boss].entryCells[0];
+    const [ec, er] = dungeon.rooms[boss].entry[0].cells[0];
     expect([Math.floor(p.x), Math.floor(p.y)]).toEqual([ec, er]);
 
     sim.step();
-    expect(sim.arenas[boss].phase).toBe(PHASE_COMBAT);
+    expect(sim.rooms[boss].phase).toBe(PHASE_COMBAT);
     // The earlier arenas weren't cleared, and stay idle.
-    for (let i = 0; i < boss; i++) expect(sim.arenas[i].phase).toBe(PHASE_IDLE);
+    for (let i = 0; i < boss; i++) expect(sim.rooms[i].phase).toBe(PHASE_IDLE);
     expect(sim.bossSlot).toBeGreaterThanOrEqual(0);
     expect(sim.eType[sim.bossSlot]).toBe(GATEKEEPER);
     expect([Math.floor(sim.eX[sim.bossSlot]), Math.floor(sim.eY[sim.bossSlot])]).toEqual(sim.map.boss);
@@ -35,15 +35,15 @@ describe('benchmark arena (M10 gate §4)', () => {
 
   it('benches arena 0 by default', () => {
     const dungeon = getDungeon('pearly-gates')!;
-    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchArena: 0 });
+    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchRoom: 0 });
     sim.step();
-    expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
+    expect(sim.rooms[0].phase).toBe(PHASE_COMBAT);
     expect(sim.bossSlot).toBe(-1);
   });
 
   it('benchBurst: every 0.5 s, 40 damage credited to player 0 bursts the 20 Blessed nearest a point 8 m ahead of it (M12 §10)', () => {
     const dungeon = getDungeon('sandbox')!;
-    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchArena: 0, benchBurst: true });
+    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchRoom: 0, benchBurst: true });
     const p = sim.players[0];
     for (let t = 0; t < 600 && sim.living < 200; t++) sim.step();
     sim.events.length = 0;

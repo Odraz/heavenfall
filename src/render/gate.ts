@@ -100,9 +100,16 @@ export interface GateLayout {
 /** The crown's scale: meters per pixel of gate-post-top-2, where the base band spans the 4 m box. */
 const CROWN_SCALE = 4 / CROWN_BASE_PX;
 
+/** A west-facing gate's plane and rows, as the layout reads them. */
+function westGate(map: GameMap): { x: number; yCenter: number; y0: number; y1: number } | null {
+  const g = map.gate;
+  if (!g) return null;
+  return { x: g.plane, yCenter: g.uCenter, y0: g.u0, y1: g.u1 };
+}
+
 /** The gate's layout, or null for a map without one. */
 export function gateLayout(map: GameMap): GateLayout | null {
-  const g = map.gate;
+  const g = westGate(map);
   if (!g) return null;
   const F = map.floor[g.yCenter * map.w + g.x];
   const crownH = (POST_TOP_H - CROWN_TOP_ROW) * CROWN_SCALE;
@@ -141,7 +148,7 @@ export function gateLayout(map: GameMap): GateLayout | null {
 
 /** The cells the terrain and the relief skip (M10 gate §3): west of the plane, along the gate. */
 export function gateSkip(map: GameMap): ((c: number, r: number) => boolean) | null {
-  const g = map.gate;
+  const g = westGate(map);
   if (!g) return null;
   return (c, r) => c < g.x && r >= g.y0 && r < g.y1;
 }

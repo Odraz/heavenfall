@@ -3,7 +3,7 @@ import type { ArenaDef, WaveDef } from '../data/dungeons/types';
 import { BLESSED, CHERUB } from '../data/enemies';
 import { decodeSnapshot, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, PHASE_IDLE } from '../net/protocol';
 import { MAX_LIVING_ENEMIES } from './constants';
-import { scaleCount, Simulation, SPAWN_RATE } from './sim';
+import { ROOM_NONE, scaleCount, Simulation, SPAWN_RATE } from './sim';
 import { dungeonOf } from './testutil/maps';
 import { sealNow } from './testutil/sims';
 
@@ -69,27 +69,32 @@ function enterArena0(sim: Simulation): void {
 
 const wave = (blessed: number, cherubs = 0): WaveDef => ({ blessed, choristers: 0, cherubs });
 
+/** The snapshot header's room fields (rogue game.md §14.3). */
+const status = (sim: Simulation) => ({ activeRoom: sim.activeRoom, activePhase: sim.activePhase, clearedMask: sim.clearedMask() });
+const leafCells = (sim: Simulation, room: number) => sim.map.rooms[room].leaves.flatMap((l) => l.cells);
+
 describe('arenas', () => {
   it('seal after the countdown, and doors close', () => {
     const sim = makeSim([wave(10)]);
     sim.step();
-    expect(sim.arenas[0].phase).toBe(PHASE_IDLE);
-    expect(sim.arenaStatus()).toEqual({ arenaIndex: 0, arenaPhase: PHASE_IDLE });
+    expect(sim.rooms[0].phase).toBe(PHASE_IDLE);
+    expect(status(sim)).toEqual({ activeRoom: ROOM_NONE, activePhase: PHASE_IDLE, clearedMask: 0 });
     expect(sim.map.solid[1 * sim.map.w + 5]).toBe(0);
     // The exit door toward arena 1 is closed while arena 0 isn't cleared.
     expect(sim.map.solid[1 * sim.map.w + 13]).toBe(1);
     sim.players[0].x = 9.5;
     sim.players[0].y = 2.5;
     sim.step();
-    expect(sim.arenas[0].phase).toBe(PHASE_COUNTDOWN);
+    expect(sim.rooms[0].phase).toBe(PHASE_COUNTDOWN);
     expect(sim.map.solid[1 * sim.map.w + 5]).toBe(0);
     expect(sim.map.solid[1 * sim.map.w + 13]).toBe(1);
     enterArena0(sim);
-    expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
-    expect(sim.arenaStatus()).toEqual({ arenaIndex: 0, arenaPhase: PHASE_COMBAT });
-    for (const [c, r] of [...sim.map.arenas[0].doors, ...sim.map.arenas[0].exitDoors!]) expect(sim.map.solid[r * sim.map.w + c]).toBe(1);
-    // Arena 1's entry door stays open.
-    expect(sim.map.solid[1 * sim.map.w + 15]).toBe(0);
+    expect(sim.rooms[0].phase).toBe(PHASE_COMBAT);
+    expect(status(sim)).toEqual({ activeRoom: 0, activePhase: PHASE_COMBAT, clearedMask: 0 });
+    for (const [c, r] of leafCells(sim, 0)) expect(sim.map.solid[r * sim.map.w + c]).toBe(1);
+    // Arena 1's entry leaf opens only once arena 0 or arena 1 is cleared (the leaf rule); the corridor
+    // behind arena 0's closed exit can't be reached before then anyway.
+    expect(sim.map.solid[1 * sim.map.w + 15]).toBe(1);
     expect(sim.events.some((e) => e.event.type === 'arenaStarted' && e.event.arenaIndex === 0)).toBe(true);
   });
 
@@ -97,7 +102,7 @@ describe('arenas', () => {
     const sim = makeSim([wave(10)]);
     sim.players[0].dead = true;
     enterArena0(sim);
-    expect(sim.arenas[0].phase).toBe(PHASE_IDLE);
+    expect(sim.rooms[0].phase).toBe(PHASE_IDLE);
   });
 
   it('teleports stragglers, and players on door cells, to their entry cells', () => {
@@ -109,7 +114,7 @@ describe('arenas', () => {
     const teleports = sim.events.filter((e) => e.event.type === 'teleport');
     expect(teleports.map((e) => e.to).sort()).toEqual([1, 2, 3]);
     for (const p of sim.players.slice(1)) {
-      const [c, r] = sim.map.arenas[0].entryCells[p.index];
+      const [c, r] = sim.map.rooms[0].entry[0].cells[p.index];
       expect([p.x, p.y]).toEqual([c + 0.5, r + 0.5]);
       expect(p.teleportId).toBe(1);
     }
@@ -171,13 +176,13 @@ describe('arenas', () => {
     enterArena0(sim);
     for (let i = 0; i < 10; i++) sim.step();
     expect(sim.living).toBe(MAX_LIVING_ENEMIES);
-    expect(sim.arenas[0].alive).toBe(5);
-    expect(sim.arenas[0].queue.length).toBe(1);
+    expect(sim.rooms[0].alive).toBe(5);
+    expect(sim.rooms[0].queue.length).toBe(1);
     // Freeing room lets placement continue.
     sim.removeEnemy(sim.active[0]);
     sim.step();
     expect(sim.living).toBe(MAX_LIVING_ENEMIES);
-    expect(sim.arenas[0].alive).toBe(6);
+    expect(sim.rooms[0].alive).toBe(6);
   });
 
   it('clears when every wave has spawned and none are alive: doors open and the dead respawn', () => {
@@ -186,42 +191,43 @@ describe('arenas', () => {
     const dead = sim.players[3];
     dead.dead = true;
     dead.hp = 0;
-    while (!sim.arenas[0].waveFullySpawned[0]) sim.step();
+    while (!sim.rooms[0].waveFullySpawned[0]) sim.step();
     sim.killAll();
     sim.step(); // wave 2 starts: none of wave 1 is left (M12 §2.3)
-    expect(sim.arenas[0].wave).toBe(1);
-    while (!sim.arenas[0].waveFullySpawned[1]) sim.step();
-    expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
+    expect(sim.rooms[0].wave).toBe(1);
+    while (!sim.rooms[0].waveFullySpawned[1]) sim.step();
+    expect(sim.rooms[0].phase).toBe(PHASE_COMBAT);
     sim.events.length = 0;
     sim.killAll();
     sim.step();
-    expect(sim.arenas[0].phase).toBe(PHASE_CLEARED);
-    expect(sim.arenaStatus()).toEqual({ arenaIndex: 0, arenaPhase: PHASE_CLEARED });
-    for (const [c, r] of [...sim.map.arenas[0].doors, ...sim.map.arenas[0].exitDoors!]) expect(sim.map.solid[r * sim.map.w + c]).toBe(0);
+    expect(sim.rooms[0].phase).toBe(PHASE_CLEARED);
+    expect(status(sim)).toEqual({ activeRoom: ROOM_NONE, activePhase: PHASE_IDLE, clearedMask: 1 });
+    for (const [c, r] of leafCells(sim, 0)) expect(sim.map.solid[r * sim.map.w + c]).toBe(0);
+    // ...and arena 1's entry leaf with them.
+    expect(sim.map.solid[1 * sim.map.w + 15]).toBe(0);
     expect(sim.events.some((e) => e.event.type === 'arenaCleared')).toBe(true);
     expect(dead.dead).toBe(false);
     expect(dead.hp).toBe(dead.maxHp);
-    const [c, r] = sim.map.arenas[0].entryCells[dead.index];
+    const [c, r] = sim.map.rooms[0].entry[0].cells[dead.index];
     expect([dead.x, dead.y]).toEqual([c + 0.5, r + 0.5]);
     expect(sim.events.some((e) => e.event.type === 'playerRespawned' && e.event.playerId === dead.id)).toBe(true);
     expect(sim.events.some((e) => e.event.type === 'teleport' && e.to === dead.id)).toBe(true);
   });
 
-  it('arenaIndex is the highest-index arena that has left idle', () => {
+  it('activeRoom is the room in countdown or combat, and clearedMask has the cleared ones', () => {
     const sim = makeSim([wave(1)]);
     enterArena0(sim);
     for (let i = 0; i < 3; i++) sim.step();
     sim.killAll();
     sim.step();
-    expect(sim.arenaStatus()).toEqual({ arenaIndex: 0, arenaPhase: PHASE_CLEARED });
+    expect(status(sim)).toEqual({ activeRoom: ROOM_NONE, activePhase: PHASE_IDLE, clearedMask: 1 });
     const p = sim.players[0];
     p.x = 18.5;
     p.y = 2.5;
     sim.step();
-    // The countdown counts as having left idle (M8 §5).
-    expect(sim.arenaStatus()).toEqual({ arenaIndex: 1, arenaPhase: PHASE_COUNTDOWN });
+    expect(status(sim)).toEqual({ activeRoom: 1, activePhase: PHASE_COUNTDOWN, clearedMask: 1 });
     sealNow(sim, 1);
-    expect(sim.arenaStatus()).toEqual({ arenaIndex: 1, arenaPhase: PHASE_COMBAT });
+    expect(status(sim)).toEqual({ activeRoom: 1, activePhase: PHASE_COMBAT, clearedMask: 1 });
   });
 
   it('counts enemies remaining: living plus not yet spawned', () => {
@@ -264,14 +270,14 @@ describe('arena countdown (M8 §5)', () => {
     const sim = makeSim([wave(10)]);
     put(sim, 0, 9.5, 2.5);
     sim.step();
-    expect(sim.arenaStatus()).toEqual({ arenaIndex: 0, arenaPhase: PHASE_COUNTDOWN });
+    expect(status(sim)).toEqual({ activeRoom: 0, activePhase: PHASE_COUNTDOWN, clearedMask: 0 });
     expect(sim.countdownLeft()).toBeCloseTo(60, 6);
     for (let i = 0; i < 60; i++) sim.step();
     expect(sim.activeCount).toBe(0);
-    for (const [c, r] of sim.map.arenas[0].doors) expect(sim.map.solid[r * sim.map.w + c]).toBe(0);
+    for (const [c, r] of sim.map.rooms[0].leaves[0].cells) expect(sim.map.solid[r * sim.map.w + c]).toBe(0);
     expect(sim.countdownLeft()).toBeCloseTo(58, 6);
     const snap = decodeSnapshot(sim.encodeFor(0)[0])!;
-    expect(snap.arenaPhase).toBe(PHASE_COUNTDOWN);
+    expect([snap.activeRoom, snap.activePhase]).toEqual([0, PHASE_COUNTDOWN]);
     expect(snap.countdown).toBe(580);
   });
 
@@ -279,7 +285,7 @@ describe('arena countdown (M8 §5)', () => {
     const sim = makeSim([wave(10)]);
     put(sim, 0, 18.5, 2.5);
     sim.step();
-    expect(sim.arenas[1].phase).toBe(PHASE_IDLE);
+    expect(sim.rooms[1].phase).toBe(PHASE_IDLE);
   });
 
   it('drops to 5 s once every living player is inside, never rises, and never restarts', () => {
@@ -299,7 +305,7 @@ describe('arena countdown (M8 §5)', () => {
     put(sim, 0, 2.5, 2.5);
     put(sim, 1, 2.5, 1.5);
     for (let i = 0; i < 30; i++) sim.step();
-    expect(sim.arenaStatus()).toEqual({ arenaIndex: 0, arenaPhase: PHASE_COUNTDOWN });
+    expect(status(sim)).toEqual({ activeRoom: 0, activePhase: PHASE_COUNTDOWN, clearedMask: 0 });
     expect(sim.countdownLeft()).toBeCloseTo(4, 6);
   });
 
@@ -313,11 +319,11 @@ describe('arena countdown (M8 §5)', () => {
     expect(sim.countdownLeft()).toBeCloseTo(5, 6);
     // Player 1 walks back out before the seal.
     put(sim, 1, 2.5, 1.5);
-    while (sim.arenas[0].phase === PHASE_COUNTDOWN) sim.step();
-    expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
-    const [c, r] = sim.map.arenas[0].entryCells[1];
+    while (sim.rooms[0].phase === PHASE_COUNTDOWN) sim.step();
+    expect(sim.rooms[0].phase).toBe(PHASE_COMBAT);
+    const [c, r] = sim.map.rooms[0].entry[0].cells[1];
     expect([sim.players[1].x, sim.players[1].y]).toEqual([c + 0.5, r + 0.5]);
-    expect(sim.arenas[0].wave).toBe(0);
+    expect(sim.rooms[0].wave).toBe(0);
     expect(sim.events.some((e) => e.event.type === 'arenaStarted')).toBe(true);
   });
 });
@@ -333,7 +339,7 @@ describe('joining in progress (M8 §6.2)', () => {
     const p = join(sim, 2);
     expect(p.index).toBe(2);
     expect([p.dead, p.hp, p.revive]).toEqual([true, 0, 0]);
-    const [c, r] = sim.map.arenas[0].entryCells[2];
+    const [c, r] = sim.map.rooms[0].entry[0].cells[2];
     expect([p.x, p.y, p.z]).toEqual([c + 0.5, r + 0.5, 0]);
     expect(teleportTo(sim, 2)).toEqual({ type: 'teleport', teleportId: 1, x: c + 0.5, y: r + 0.5, z: 0 });
     expect(sim.soulBase(p)).toBeCloseTo(1, 6);
@@ -353,7 +359,7 @@ describe('joining in progress (M8 §6.2)', () => {
     sim.players[0].y = 2.5;
     sim.step();
     const p = join(sim, 3);
-    const [c, r] = sim.map.arenas[0].entryCells[3];
+    const [c, r] = sim.map.rooms[0].entry[0].cells[3];
     expect([p.dead, p.x, p.y]).toEqual([false, c + 0.5, r + 0.5]);
   });
 
@@ -369,14 +375,14 @@ describe('joining in progress (M8 §6.2)', () => {
   it('with no living player, enters on its entry cell of the next arena', () => {
     const sim = makeSim([wave(1)], 1);
     enterArena0(sim);
-    for (let i = 0; i < 90 && sim.arenas[0].phase !== PHASE_CLEARED; i++) {
+    for (let i = 0; i < 90 && sim.rooms[0].phase !== PHASE_CLEARED; i++) {
       sim.step();
       sim.killAll();
     }
-    expect(sim.arenas[0].phase).toBe(PHASE_CLEARED);
+    expect(sim.rooms[0].phase).toBe(PHASE_CLEARED);
     sim.players[0].dead = true;
     const p = join(sim, 1);
-    const [c, r] = sim.map.arenas[1].entryCells[1];
+    const [c, r] = sim.map.rooms[1].entry[0].cells[1];
     expect([p.dead, p.x, p.y]).toEqual([false, c + 0.5, r + 0.5]);
   });
 
@@ -401,7 +407,7 @@ describe('party-size scaling at the seal (M8 §6.3)', () => {
     sim.addPlayer({ id: 1, name: 'B', classId: 'heretic' });
     enterArena0(sim);
     // Two players at the seal: ceil(25 × 0.6) + ceil(3 × 0.6) = 15 + 2.
-    expect(sim.arenas[0].partySize).toBe(2);
+    expect(sim.rooms[0].partySize).toBe(2);
     expect(sim.enemiesRemaining()).toBe(17);
   });
 
@@ -411,7 +417,7 @@ describe('party-size scaling at the seal (M8 §6.3)', () => {
     sim.addPlayer({ id: 1, name: 'B', classId: 'heretic' });
     sim.addPlayer({ id: 2, name: 'C', classId: 'binder' });
     sim.removePlayer(0);
-    expect(sim.arenas[0].partySize).toBe(1);
+    expect(sim.rooms[0].partySize).toBe(1);
     // Both waves at 0.4: (10 + 2) × 2.
     expect(sim.enemiesRemaining()).toBe(24);
   });

@@ -99,8 +99,8 @@ export function computeArches(map: GameMap): Arches {
   });
 
   const doors: DoorArch[] = [];
-  for (const a of map.arenas) {
-    for (const cells of [a.doors, a.exitDoors ?? []]) {
+  for (const a of map.rooms) {
+    for (const { cells } of a.leaves) {
       if (cells.length === 0) continue;
       const xs = cells.map(([c]) => c);
       const ys = cells.map(([, r]) => r);

@@ -1,4 +1,5 @@
 /** Small hand-written test maps for unit tests. */
+import { adaptFixture } from '../../data/dungeons/fixture';
 import type { ArenaDef, DungeonDef } from '../../data/dungeons/types';
 import { loadMap, type GameMap } from '../map';
 
@@ -18,7 +19,7 @@ export function dungeonOf(heights: string[], opts: { markers?: string[]; arenas?
     );
     markers = cells.map((r) => r.join(''));
   }
-  return { id: 'test', name: 'Test', heights, markers, arenas: opts.arenas ?? [] };
+  return adaptFixture({ id: 'test', name: 'Test', heights, markers, arenas: opts.arenas ?? [] });
 }
 
 export function mapOf(heights: string[], opts: { markers?: string[]; arenas?: ArenaDef[] } = {}): GameMap {

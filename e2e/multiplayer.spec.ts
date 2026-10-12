@@ -80,9 +80,9 @@ test('multiplayer', async ({ page: a, browser }) => {
   await expect(start).toBeEnabled();
   await start.click();
 
-  // (4) Everyone reaches inGame within 30 s, and A's arenaPhase becomes combat within 60 s.
+  // (4) Everyone reaches inGame within 30 s, and A's activePhase becomes combat within 60 s.
   await Promise.all([a, b, c].map((p) => p.waitForFunction(() => window.__heavenfall.screen === 'inGame', null, { timeout: 30_000 })));
-  await a.waitForFunction(() => window.__heavenfall.arenaPhase === 'combat', null, { timeout: 60_000 });
+  await a.waitForFunction(() => window.__heavenfall.activePhase === 'combat', null, { timeout: 60_000 });
 
   // D joins the game in progress from an invite link, and picks the Betrayer (M8 §12.2). Until the
   // chat check, the three running games are drawn small: software rendering them at full size starves
@@ -115,14 +115,14 @@ test('multiplayer', async ({ page: a, browser }) => {
       () => {
         const s = window.__heavenfall;
         const p = s.players.find((q) => q.id === 3);
-        return p ? { arenaPhase: s.arenaPhase, ...p } : null;
+        return p ? { activePhase: s.activePhase, ...p } : null;
       },
       null,
       { polling: 50, timeout: 30_000 },
     )
   ).jsonValue())!;
   expect(atGo.classId).toBe('betrayer');
-  if (atGo.arenaPhase === 'combat') {
+  if (atGo.activePhase === 'combat') {
     expect(atGo.dead).toBe(true);
     expect(typeof atGo.revive).toBe('number');
   }

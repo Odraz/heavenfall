@@ -53,11 +53,11 @@ describe('URL parameters (§2.5)', () => {
   });
 
   it('benches the boss arena in the gate view (M10 gate §4)', () => {
-    const boss = getDungeon('pearly-gates')!.arenas.findIndex((a) => a.boss);
+    const boss = getDungeon('pearly-gates')!.rooms.findIndex((a) => a.boss);
     expect(boss).toBeGreaterThan(0);
     expect(parseParams('?bench=1&map=pearly-gates&view=gate')).toMatchObject({ benchView: 'gate', benchArena: boss });
     // A map with no boss arena benches arena 0.
-    expect(getDungeon('sandbox')!.arenas.some((a) => a.boss)).toBe(false);
+    expect(getDungeon('sandbox')!.rooms.some((a) => a.boss)).toBe(false);
     expect(parseParams('?bench=1&view=gate')).toMatchObject({ mapId: 'sandbox', benchView: 'gate', benchArena: 0 });
   });
 });

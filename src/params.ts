@@ -73,7 +73,7 @@ export function parseParams(search: string): Params {
   if (bench) {
     const view = q.get('view');
     const benchView: BenchView = view === 'arcade' || view === 'gate' ? view : 'turn';
-    const boss = benchView === 'gate' ? getDungeon(mapId)!.arenas.findIndex((a) => a.boss) : -1;
+    const boss = benchView === 'gate' ? getDungeon(mapId)!.rooms.findIndex((a) => a.boss) : -1;
     const benchArena = Math.max(0, boss);
     // The class the benchmark plays: the `class` parameter (M11 §5), the Betrayer by default.
     const cls = q.get('class');
@@ -91,7 +91,7 @@ export function parseParams(search: string): Params {
   if (dev && seedParam !== null && /^\d+$/.test(seedParam)) seed = Number(BigInt(seedParam) % 4294967296n);
   const bot = q.get('bot') === '1';
   const arenaParam = q.get('arena');
-  const arenas = getDungeon(mapId)!.arenas.length;
+  const arenas = getDungeon(mapId)!.rooms.length;
   const startArena = dev && arenaParam !== null && /^\d+$/.test(arenaParam) ? Math.min(Number(arenaParam), arenas - 1) : 0;
   const join = parseJoinId(q.get('join'));
   return {

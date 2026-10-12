@@ -1,10 +1,12 @@
+import { adaptFixture } from './fixture';
 import { pearlyGates } from './pearly-gates';
 import { sandbox } from './sandbox';
 import type { DungeonDef } from './types';
 
+/** The fixed dungeons (development fixtures), adapted to room records. */
 export const DUNGEONS: Record<string, DungeonDef> = {
-  sandbox,
-  'pearly-gates': pearlyGates,
+  sandbox: adaptFixture(sandbox),
+  'pearly-gates': adaptFixture(pearlyGates),
 };
 
 export function getDungeon(id: string | null | undefined): DungeonDef | undefined {

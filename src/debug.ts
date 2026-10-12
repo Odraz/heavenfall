@@ -34,9 +34,12 @@ export interface DebugState {
   enemies: number;
   enemyCountsByTick: Record<number, number>;
   projectiles: number;
-  arenaIndex: number;
-  arenaPhase: 'idle' | 'countdown' | 'combat' | 'cleared';
-  /** Seconds until the arena seals, 0 outside the countdown (M8 §10). */
+  /** The room in countdown or combat, 255 for none (rogue game.md §14.3). */
+  activeRoom: number;
+  activePhase: 'idle' | 'countdown' | 'combat';
+  /** Bit i: room i is cleared. */
+  clearedMask: number;
+  /** Seconds until the room seals, 0 outside the countdown (M8 §10). */
   countdown: number;
   netInKBps: number;
   netOutKBps: number;
@@ -78,8 +81,9 @@ export const debugState: DebugState = {
   enemies: 0,
   enemyCountsByTick: {},
   projectiles: 0,
-  arenaIndex: 0,
-  arenaPhase: 'idle',
+  activeRoom: 255,
+  activePhase: 'idle',
+  clearedMask: 0,
   countdown: 0,
   netInKBps: 0,
   netOutKBps: 0,
@@ -110,8 +114,9 @@ export function resetGameDebug(): void {
     enemies: 0,
     enemyCountsByTick: {},
     projectiles: 0,
-    arenaIndex: 0,
-    arenaPhase: 'idle',
+    activeRoom: 255,
+    activePhase: 'idle',
+    clearedMask: 0,
     countdown: 0,
     netInKBps: 0,
     netOutKBps: 0,

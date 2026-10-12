@@ -1,6 +1,6 @@
 import { isDecorId, type DecorId } from '../data/decor';
-import type { ArenaDef, DungeonDef, GateDef } from '../data/dungeons/types';
-import { PHASE_CLEARED, PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
+import type { DungeonDef, GateDef, RoomDef, RoomLeaf } from '../data/dungeons/types';
+import { PHASE_COMBAT } from '../net/protocol';
 import { HEIGHT_STEP, MAX_MAP_SIZE } from './constants';
 import { computeHeights, K_VOID, type Heights } from './heights';
 
@@ -25,8 +25,14 @@ export interface GameMap {
   floor: Float32Array;
   /** 1 for static wall cells. */
   wall: Uint8Array;
-  /** Index of the arena that owns this door cell, or -1. */
-  doorArena: Int16Array;
+  /** Index of the room that owns this door (leaf) cell, or -1. */
+  doorRoom: Int16Array;
+  /** Index of the room whose rect holds this cell, 255 elsewhere (vestibules, bands, void; rogue game.md §14.2). */
+  roomOf: Uint8Array;
+  /** Hazard per cell: 0 none, 1 `refiners-fire` (rogue game.md §14.2); stamped, inactive until R2. */
+  hazard: Uint8Array;
+  /** 1 where an open edge may form (rogue game.md §3.5); null: unrestricted. */
+  viewMask: Uint8Array | null;
   /** 1 for walls and closed doors. Changes as doors open and close. */
   solid: Uint8Array;
   /**
@@ -38,15 +44,15 @@ export interface GameMap {
   heights: Heights;
   /** Player spawn cells (`S`) in reading order. */
   spawns: Array<[number, number]>;
-  /** Enemy spawn cells (`x`) inside each arena's rect, per arena, in reading order. */
-  arenaSpawnPoints: Array<Array<[number, number]>>;
-  /** Each arena's squad points (M12 follow-up §4.2), every wave's together, without repeats. */
-  arenaSquadPoints: Array<Array<[number, number]>>;
+  /** Enemy spawn cells (`x`) inside each room's rect, per room, in reading order. */
+  roomSpawnPoints: Array<Array<[number, number]>>;
+  /** Each room's squad points (M12 follow-up §4.2), every wave's together, without repeats; fixtures only. */
+  roomSquadPoints: Array<Array<[number, number]>>;
   /** Gatekeeper cell (`B`), if any. */
   boss: [number, number] | null;
   /** Decorations in reading order; drawn only (§8.1). */
   decorations: Array<{ id: DecorId; c: number; r: number }>;
-  arenas: ArenaDef[];
+  rooms: RoomDef[];
   /** The Heavenly Gate (M10 gate §3), drawn only; null on maps without one. */
   gate: GateDef | null;
 }
@@ -82,7 +88,7 @@ export function loadMap(def: DungeonDef): GameMap {
   const n = w * h;
   const floor = new Float32Array(n);
   const wall = new Uint8Array(n);
-  const doorArena = new Int16Array(n).fill(-1);
+  const doorRoom = new Int16Array(n).fill(-1);
   const spawns: Array<[number, number]> = [];
   const xCells: Array<[number, number]> = [];
   const doorCells: Array<[number, number]> = [];
@@ -129,25 +135,53 @@ export function loadMap(def: DungeonDef): GameMap {
   }
   if (spawns.length !== 4) throw new MapError(0, 0, `expected exactly 4 S markers, found ${spawns.length}`);
 
-  def.arenas.forEach((arena, ai) => {
-    for (const [c, r] of [...arena.doors, ...(arena.exitDoors ?? [])]) {
-      if (c < 0 || r < 0 || c >= w || r >= h || markers[r][c] !== 'D') {
-        throw new MapError(r, c, `arena '${arena.id}' lists a door that isn't a D cell`);
+  def.rooms.forEach((room, ri) => {
+    for (const leaf of room.leaves) {
+      for (const [c, r] of leaf.cells) {
+        if (c < 0 || r < 0 || c >= w || r >= h || markers[r][c] !== 'D') {
+          throw new MapError(r, c, `room '${room.id}' lists a door that isn't a D cell`);
+        }
+        const i = r * w + c;
+        if (doorRoom[i] !== -1) throw new MapError(r, c, 'a D cell is in more than one room\'s doors');
+        doorRoom[i] = ri;
       }
-      const i = r * w + c;
-      if (doorArena[i] !== -1) throw new MapError(r, c, 'a D cell is in more than one arena\'s doors');
-      doorArena[i] = ai;
     }
   });
   for (const [c, r] of doorCells) {
-    if (doorArena[r * w + c] === -1) throw new MapError(r, c, 'a D cell isn\'t in any arena\'s doors');
+    if (doorRoom[r * w + c] === -1) throw new MapError(r, c, 'a D cell isn\'t in any room\'s doors');
   }
 
-  const arenaSpawnPoints = def.arenas.map((a) =>
+  const roomOf = new Uint8Array(n).fill(255);
+  def.rooms.forEach((a, ri) => {
+    for (let r = Math.max(0, a.rect.y0); r <= Math.min(h - 1, a.rect.y1); r++) {
+      for (let c = Math.max(0, a.rect.x0); c <= Math.min(w - 1, a.rect.x1); c++) roomOf[r * w + c] = ri;
+    }
+  });
+  const hazard = new Uint8Array(n);
+  for (const a of def.rooms) {
+    for (const hz of a.hazards ?? []) {
+      if (hz.hazard !== 'refiners-fire') throw new MapError(hz.rect.y0, hz.rect.x0, `unknown hazard '${hz.hazard}'`);
+      for (let r = Math.max(0, hz.rect.y0); r <= Math.min(h - 1, hz.rect.y1); r++) {
+        for (let c = Math.max(0, hz.rect.x0); c <= Math.min(w - 1, hz.rect.x1); c++) hazard[r * w + c] = 1;
+      }
+    }
+  }
+  let viewMask: Uint8Array | null = null;
+  if (def.viewMask) {
+    if (def.viewMask.length !== h) throw new MapError(Math.min(def.viewMask.length, h), 0, `the view mask has ${def.viewMask.length} rows, the height grid ${h}`);
+    viewMask = new Uint8Array(n);
+    for (let r = 0; r < h; r++) {
+      const row = def.viewMask[r];
+      if (row.length !== w) throw new MapError(r, Math.min(w, row.length), `view mask row length ${row.length} differs from ${w}`);
+      for (let c = 0; c < w; c++) viewMask[r * w + c] = row.charCodeAt(c) === 49 ? 1 : 0;
+    }
+  }
+
+  const roomSpawnPoints = def.rooms.map((a) =>
     xCells.filter(([c, r]) => c >= a.rect.x0 && c <= a.rect.x1 && r >= a.rect.y0 && r <= a.rect.y1),
   );
 
-  const arenaSquadPoints = def.arenas.map((a) => {
+  const roomSquadPoints = def.rooms.map((a) => {
     const out: Array<[number, number]> = [];
     for (const wv of a.waves) {
       for (const [c, r] of wv.squad?.at ?? []) {
@@ -159,40 +193,53 @@ export function loadMap(def: DungeonDef): GameMap {
   });
 
   const solid = new Uint8Array(wall);
-  const walls = computeHeights({ w, h, floor, wall, doorArena, boss, arenas: def.arenas });
+  const walls = computeHeights({ w, h, floor, wall, doorRoom, boss, rooms: def.rooms, viewMask });
   const top = new Float32Array(n);
   for (let i = 0; i < n; i++) top[i] = wall[i] ? walls.height[i] : floor[i];
 
-  return { id: def.id, name: def.name, w, h, floor, wall, doorArena, solid, top, heights: walls, spawns, arenaSpawnPoints, arenaSquadPoints, boss, decorations, arenas: def.arenas, gate: def.gate ?? null };
+  return {
+    id: def.id, name: def.name, w, h, floor, wall, doorRoom, roomOf, hazard, viewMask, solid, top, heights: walls, spawns,
+    roomSpawnPoints, roomSquadPoints, boss, decorations, rooms: def.rooms, gate: def.gate ?? null,
+  };
 }
 
-/** Opens or closes the doors of one arena. */
-export function setArenaDoors(map: GameMap, arenaIndex: number, phase: number): void {
-  const a = map.arenas[arenaIndex];
-  const closed = doorsClosed(phase);
-  setCells(map, a.doors, closed.entry);
-  setCells(map, a.exitDoors ?? [], closed.exit);
+/** The snapshot header's room fields every leaf derives from (rogue game.md §3.4, §14.3). */
+export interface LeafState {
+  /** The room in countdown or combat, 255 for none. */
+  activeRoom: number;
+  activePhase: number;
+  /** Bit i: room i is cleared. */
+  clearedMask: number;
 }
 
-function setCells(map: GameMap, cells: ReadonlyArray<[number, number]>, closed: boolean): void {
+/** Whether room `i` is cleared in the mask; -1 (outside every room) counts as cleared. */
+export function roomCleared(clearedMask: number, i: number): boolean {
+  return i < 0 || ((clearedMask >>> i) & 1) === 1;
+}
+
+/**
+ * The leaf rule (rogue game.md §3.4): room `r`'s leaf is open iff the room isn't in combat and either
+ * it or the room on the leaf's other side is cleared.
+ */
+export function leafOpen(r: number, leaf: Pick<RoomLeaf, 'to'>, activeRoom: number, activePhase: number, clearedMask: number): boolean {
+  if (r === activeRoom && activePhase === PHASE_COMBAT) return false;
+  return roomCleared(clearedMask, r) || roomCleared(clearedMask, leaf.to);
+}
+
+/** Sets every leaf's cells open or closed from the header's room fields; host and clients call it alike. */
+export function applyLeaves(map: GameMap, st: LeafState): void {
+  map.rooms.forEach((room, ri) => {
+    for (const leaf of room.leaves) setLeafCells(map, leaf.cells, !leafOpen(ri, leaf, st.activeRoom, st.activePhase, st.clearedMask));
+  });
+}
+
+/** Opens or closes the given door cells. */
+export function setLeafCells(map: GameMap, cells: ReadonlyArray<[number, number]>, closed: boolean): void {
   for (const [c, r] of cells) {
     const i = r * map.w + c;
     map.solid[i] = closed ? 1 : 0;
     map.top[i] = closed ? map.heights.height[i] : map.floor[i];
   }
-}
-
-/**
- * An arena's doors for its phase (§8.2 lifecycle): the entry door is closed only in combat; the exit
- * door, toward the next arena, stays closed until the arena is cleared.
- */
-export function doorsClosed(phase: number): { entry: boolean; exit: boolean } {
-  return { entry: phase === PHASE_COMBAT, exit: phase !== PHASE_CLEARED };
-}
-
-/** Arena `ai`'s phase, from the snapshot's `arenaIndex` and `arenaPhase`: arenas are entered in order. */
-export function arenaPhaseOf(ai: number, arenaIndex: number, arenaPhase: number): number {
-  return ai < arenaIndex ? PHASE_CLEARED : ai === arenaIndex ? arenaPhase : PHASE_IDLE;
 }
 
 /** Whether the cell is solid (wall, closed door, or outside the grid). */
@@ -209,7 +256,7 @@ export function overVoid(map: GameMap, x: number, y: number): boolean {
   return map.heights.kind[r * map.w + c] === K_VOID;
 }
 
-/** Whether the position is inside the arena's rect (§8.2). */
-export function insideRect(a: ArenaDef, x: number, y: number): boolean {
+/** Whether the position is inside the room's rect (§8.2). */
+export function insideRect(a: Pick<RoomDef, 'rect'>, x: number, y: number): boolean {
   return x >= a.rect.x0 && x < a.rect.x1 + 1 && y >= a.rect.y0 && y < a.rect.y1 + 1;
 }

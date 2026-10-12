@@ -67,15 +67,15 @@ describe('texture choice (M10 §5.1)', () => {
             }
           }
         }
-        map.arenas.forEach((a) => {
+        map.rooms.forEach((a) => {
           const cx = (a.rect.x0 + a.rect.x1 + 1) / 2;
           const cy = (a.rect.y0 + a.rect.y1 + 1) / 2;
           const center = looks.medallions.find(([c0, r0]) => Math.hypot(c0 + 2 - cx, r0 + 2 - cy) <= 6);
           expect(center, a.id).toBeDefined();
         });
         // Every other medallion is in front of a door: it touches a floor cell next to one.
-        const doors = map.arenas.flatMap((a) => [a.doors, a.exitDoors ?? []]).filter((d) => d.length > 0);
-        const centers = map.arenas.map((a) => {
+        const doors = map.rooms.flatMap((a) => a.leaves.map((l) => l.cells)).filter((d) => d.length > 0);
+        const centers = map.rooms.map((a) => {
           const cx = (a.rect.x0 + a.rect.x1 + 1) / 2;
           const cy = (a.rect.y0 + a.rect.y1 + 1) / 2;
           return looks.medallions.findIndex(([c0, r0]) => Math.hypot(c0 + 2 - cx, r0 + 2 - cy) <= 6);
@@ -86,10 +86,10 @@ describe('texture choice (M10 §5.1)', () => {
           expect(touching, `medallion ${c0},${r0}`).toBe(true);
         });
         // The Pearly Gates has door medallions (Arena 2's entry walkway is too narrow for one).
-        if (id === 'pearly-gates') expect(looks.medallions.length).toBeGreaterThan(map.arenas.length + 3);
+        if (id === 'pearly-gates') expect(looks.medallions.length).toBeGreaterThan(map.rooms.length + 3);
         // Nowhere else: one per arena center and at most one per door.
-        const doorCount = map.arenas.reduce((n, a) => n + (a.doors.length ? 1 : 0) + ((a.exitDoors ?? []).length ? 1 : 0), 0);
-        expect(looks.medallions.length).toBeLessThanOrEqual(map.arenas.length + doorCount);
+        const doorCount = map.rooms.reduce((n, a) => n + a.leaves.filter((l) => l.cells.length > 0).length, 0);
+        expect(looks.medallions.length).toBeLessThanOrEqual(map.rooms.length + doorCount);
       });
 
       it('tex-floor covers exactly the runners, whose edges lie on the 4 m grid', () => {
@@ -104,7 +104,7 @@ describe('texture choice (M10 §5.1)', () => {
           expect(looks.layer[i]).toBe(inRunner ? L_FLOOR : L_FLOOR_PLAIN);
         }
         // Every arena has a cross of two runners; the Lobby and corridors one each.
-        map.arenas.forEach((_, ai) => expect(looks.runners.filter((run) => run.zone === ai).map((run) => run.axis).sort()).toEqual(['x', 'y']));
+        map.rooms.forEach((_, ai) => expect(looks.runners.filter((run) => run.zone === ai).map((run) => run.axis).sort()).toEqual(['x', 'y']));
       });
     });
   }

@@ -2,9 +2,9 @@
 import { describe, expect, it } from 'vitest';
 import { DECOR } from '../data/decor';
 import { DUNGEONS } from '../data/dungeons';
-import { PHASE_CLEARED, PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
+import { PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
 import { PLAYER_EYE } from '../sim/constants';
-import { loadMap, setArenaDoors } from '../sim/map';
+import { applyLeaves, loadMap } from '../sim/map';
 import { mapOf } from '../sim/testutil/maps';
 import { arcClear, arcPoint, aimLanding, StarAim, starLanding, walkableCells } from './fallingStarAim';
 import { LocalPlayer } from './localPlayer';
@@ -84,27 +84,27 @@ describe('validity (M12 §5.2)', () => {
       const pedestals = map.decorations.filter((d) => DECOR[d.id].large);
       expect(pedestals.length).toBeGreaterThan(0);
       for (const d of pedestals) expect(at(d.c, d.r)).toBe(0);
-      for (const pts of map.arenaSpawnPoints) for (const [c, r] of pts) expect(at(c, r)).toBe(1);
-      const doors = [...map.doorArena.keys()].filter((i) => map.doorArena[i] >= 0);
+      for (const pts of map.roomSpawnPoints) for (const [c, r] of pts) expect(at(c, r)).toBe(1);
+      const doors = [...map.doorRoom.keys()].filter((i) => map.doorRoom[i] >= 0);
       expect(doors.length).toBeGreaterThan(0);
       expect(doors.every((i) => walk[i] === 1)).toBe(true);
     });
 
     it('an arc through a closed door is invalid, through the open doorway clear', () => {
       // A door cell with floor 3 m on either side along x (the doors are columns of cells across x).
-      const floorCell = (k: number) => !map.wall[k] && map.doorArena[k] < 0;
-      const i = [...map.doorArena.keys()].find((k) => map.doorArena[k] >= 0 && floorCell(k - 3) && floorCell(k + 3))!;
+      const floorCell = (k: number) => !map.wall[k] && map.doorRoom[k] < 0;
+      const i = [...map.doorRoom.keys()].find((k) => map.doorRoom[k] >= 0 && floorCell(k - 3) && floorCell(k + 3))!;
       expect(i).toBeDefined();
       const c = (i % map.w) + 0.5;
       const r = Math.floor(i / map.w) + 0.5;
-      const ai = map.doorArena[i];
+      const ai = map.doorRoom[i];
       const across = () => arcClear(map, c - 3, r, map.floor[i - 3], c + 3, r, map.floor[i + 3]);
       // Cleared, every door of the arena is open; in combat, every one is closed.
-      setArenaDoors(map, ai, PHASE_CLEARED);
+      applyLeaves(map, { activeRoom: 255, activePhase: PHASE_IDLE, clearedMask: 0xffff });
       const open = across();
-      setArenaDoors(map, ai, PHASE_COMBAT);
+      applyLeaves(map, { activeRoom: ai, activePhase: PHASE_COMBAT, clearedMask: 0 });
       const closed = across();
-      setArenaDoors(map, ai, PHASE_IDLE);
+      applyLeaves(map, { activeRoom: 255, activePhase: PHASE_IDLE, clearedMask: 0 });
       expect([open, closed]).toEqual([true, false]);
     });
   });

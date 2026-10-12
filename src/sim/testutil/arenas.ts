@@ -2,6 +2,7 @@
 import { expect } from 'vitest';
 import type { ClassId } from '../../data/classes';
 import { GridBuilder } from '../../data/dungeons/build';
+import { adaptFixture } from '../../data/dungeons/fixture';
 import type { DungeonDef, WaveDef } from '../../data/dungeons/types';
 import { PHASE_COMBAT } from '../../net/protocol';
 import { Simulation } from '../sim';
@@ -21,12 +22,12 @@ export function arenaDungeon(waves: WaveDef[], boss = false): DungeonDef {
   g.fillRect(6, 1, 32, 10, 0);
   for (const x of [WEST, MIDDLE, EAST]) for (const y of [2, 5, 8]) g.marker(x, y, 'x');
   const grids = g.build();
-  return {
+  return adaptFixture({
     id: 'director-test',
     name: 'Director test',
     ...grids,
     arenas: [{ id: 'a', name: 'A', rect: { x0: 6, y0: 1, x1: 32, y1: 10 }, doors: [], entryCells: [[8, 4], [8, 5], [8, 6], [9, 5]], waves, boss }],
-  };
+  });
 }
 
 const CLASSES: ClassId[] = ['betrayer', 'heretic', 'binder', 'fallen'];
@@ -51,5 +52,5 @@ export function sealAt(sim: Simulation, x = 8.5, y = 5.5): void {
   }
   sim.step();
   sealNow(sim);
-  expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
+  expect(sim.rooms[0].phase).toBe(PHASE_COMBAT);
 }

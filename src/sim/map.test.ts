@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { DungeonDef } from '../data/dungeons/types';
-import { loadMap, MapError } from './map';
+import { adaptFixture } from '../data/dungeons/fixture';
+import type { DungeonDef, FixtureDef } from '../data/dungeons/types';
+import { DUNGEONS } from '../data/dungeons/index';
+import { PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, PHASE_IDLE } from '../net/protocol';
+import { applyLeaves, leafOpen, loadMap, MapError } from './map';
 
-function def(heights: string[], markers: string[], arenas: DungeonDef['arenas'] = [], decor?: DungeonDef['decor']): DungeonDef {
-  return { id: 't', name: 'T', heights, markers, arenas, decor };
+function def(heights: string[], markers: string[], arenas: FixtureDef['arenas'] = [], decor?: DungeonDef['decor']): DungeonDef {
+  return adaptFixture({ id: 't', name: 'T', heights, markers, arenas, decor });
 }
 
 const H = ['#######', '#0123a#', '#00z00#', '#######'];
@@ -53,8 +56,11 @@ describe('map loader', () => {
         { id: 'a', name: 'A', rect: { x0: 4, y0: 1, x1: 5, y1: 2 }, doors: [[5, 1]], entryCells: [], waves: [], boss: false },
       ]),
     );
-    expect(m.doorArena[1 * 7 + 5]).toBe(0);
-    expect(m.doorArena[1 * 7 + 4]).toBe(-1);
+    expect(m.doorRoom[1 * 7 + 5]).toBe(0);
+    expect(m.doorRoom[1 * 7 + 4]).toBe(-1);
+    // roomOf: the room's rect, 255 elsewhere.
+    expect([m.roomOf[1 * 7 + 4], m.roomOf[2 * 7 + 5], m.roomOf[1 * 7 + 3]]).toEqual([0, 0, 255]);
+    expect(m.viewMask).toBeNull();
   });
 
   it('rejects an empty grid', () => expectError(def([], []), 0, 0));
@@ -92,5 +98,59 @@ describe('map loader', () => {
   it("rejects a D cell that's in two arenas' doors", () => {
     const a = { id: 'a', name: 'A', rect: { x0: 4, y0: 1, x1: 4, y1: 1 }, doors: [[5, 1]] as Array<[number, number]>, entryCells: [], waves: [], boss: false };
     expectError(def(H, [M[0], '.S.S.D.', M[2], M[3]], [a, { ...a, id: 'b', rect: { x0: 5, y0: 2, x1: 5, y1: 2 } }]), 1, 5);
+  });
+});
+
+describe('the leaf rule (rogue game.md §3.4)', () => {
+  const NONE = 255;
+  const mask = (...rooms: number[]) => rooms.reduce((m, i) => m | (1 << i), 0);
+
+  it('a leaf is shut while its room fights, else open when either side is cleared', () => {
+    const leaf = { to: 1 };
+    expect(leafOpen(0, leaf, NONE, PHASE_IDLE, 0)).toBe(false);
+    expect(leafOpen(0, leaf, NONE, PHASE_IDLE, mask(1))).toBe(true);
+    expect(leafOpen(0, leaf, NONE, PHASE_IDLE, mask(0))).toBe(true);
+    // A countdown leaves the leaves alone; combat shuts the room's own.
+    expect(leafOpen(0, leaf, 0, PHASE_COUNTDOWN, mask(1))).toBe(true);
+    expect(leafOpen(0, leaf, 0, PHASE_COMBAT, mask(0, 1))).toBe(false);
+    expect(leafOpen(0, leaf, 1, PHASE_COMBAT, mask(0))).toBe(true);
+    // Outside every room counts as cleared.
+    expect(leafOpen(0, { to: -1 }, NONE, PHASE_IDLE, 0)).toBe(true);
+  });
+
+  it("reproduces the fixed dungeon's doors through the whole run", () => {
+    // The old rule (§8.2): an arena's entry door is closed only in combat, its exit door until it's
+    // cleared; arenas are entered in order.
+    const def = DUNGEONS['pearly-gates'];
+    const n = def.rooms.length;
+    const steps: Array<[number, number]> = [];
+    for (let i = 0; i < n; i++) for (const ph of [PHASE_IDLE, PHASE_COUNTDOWN, PHASE_COMBAT, PHASE_CLEARED]) steps.push([i, ph]);
+    for (const [index, phase] of steps) {
+      const phaseOf = (ai: number) => (ai < index ? PHASE_CLEARED : ai === index ? phase : PHASE_IDLE);
+      let cleared = 0;
+      for (let ai = 0; ai < n; ai++) if (phaseOf(ai) === PHASE_CLEARED) cleared |= 1 << ai;
+      const active = phase === PHASE_COUNTDOWN || phase === PHASE_COMBAT ? index : NONE;
+      const activePhase = active === NONE ? PHASE_IDLE : phase;
+      // Every door the party can reach: the arenas up to the current one, and the next one's entry once it's cleared.
+      for (let ai = 0; ai <= Math.min(index + 1, n - 1); ai++) {
+        const p = phaseOf(ai);
+        def.rooms[ai].leaves.forEach((leaf) => {
+          const isEntry = leaf.to === ai - 1;
+          if (ai === index + 1 && (!isEntry || phase !== PHASE_CLEARED)) return;
+          const oldClosed = isEntry ? p === PHASE_COMBAT : p !== PHASE_CLEARED;
+          expect(!leafOpen(ai, leaf, active, activePhase, cleared), `arena ${ai} ${isEntry ? 'entry' : 'exit'} at ${index}/${phase}`).toBe(oldClosed);
+        });
+      }
+    }
+  });
+
+  it('applyLeaves sets solid and top for every leaf from the header fields', () => {
+    const map = loadMap(DUNGEONS['pearly-gates']);
+    applyLeaves(map, { activeRoom: 0, activePhase: PHASE_COMBAT, clearedMask: 0 });
+    for (const leaf of map.rooms[0].leaves) for (const [c, r] of leaf.cells) expect(map.solid[r * map.w + c]).toBe(1);
+    applyLeaves(map, { activeRoom: NONE, activePhase: PHASE_IDLE, clearedMask: mask(0) });
+    for (const leaf of map.rooms[0].leaves) {
+      for (const [c, r] of leaf.cells) expect([map.solid[r * map.w + c], map.top[r * map.w + c]]).toEqual([0, map.floor[r * map.w + c]]);
+    }
   });
 });

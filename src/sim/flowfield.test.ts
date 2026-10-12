@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FlowField, UNREACHABLE } from './flowfield';
-import { pearlyGates } from '../data/dungeons/pearly-gates';
+import { DUNGEONS } from '../data/dungeons/index';
+
+const pearlyGates = DUNGEONS['pearly-gates'];
 import { loadMap } from './map';
 import { mapOf } from './testutil/maps';
 

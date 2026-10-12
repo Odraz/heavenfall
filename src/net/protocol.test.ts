@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { sandbox } from '../data/dungeons/sandbox';
+import { DUNGEONS } from '../data/dungeons/index';
+
+const sandbox = DUNGEONS.sandbox;
 import { BLESSED } from '../data/enemies';
 import { FIRE_LEFT, FIRE_RIGHT, FIRE_RIGHT_LAST } from '../data/weapons';
 import { Simulation } from '../sim/sim';
@@ -28,8 +30,9 @@ import {
 
 const header: SnapshotHeader = {
   tick: 123456,
-  arenaIndex: 2,
-  arenaPhase: 3,
+  activeRoom: 2,
+  activePhase: 3,
+  clearedMask: 0x8001_0003,
   countdown: 473,
   enemiesRemaining: 777,
   bossHp: 31234,
@@ -142,7 +145,7 @@ describe('snapshot protocol', () => {
   it('round-trips header, players, enemies and projectiles', () => {
     const parts = encodeSnapshot(header, players(4), entities(100, 20));
     expect(parts.length).toBe(1);
-    expect(parts[0].byteLength).toBe(27 + 4 * 32 + 100 * 8 + 20 * 9);
+    expect(parts[0].byteLength).toBe(HEADER_BYTES + 4 * 32 + 100 * 8 + 20 * 9);
     const s = decodeSnapshot(parts[0])!;
     expect(s).toMatchObject({ ...header, partIndex: 0, partCount: 1, enemyCount: 100, projectileCount: 20 });
     expect(s.players).toEqual(players(4));
@@ -157,10 +160,10 @@ describe('snapshot protocol', () => {
     expect(s.projZ[5]).toBe(15.984375);
   });
 
-  it('fits the largest snapshot at the current caps in one part (15 763 bytes, M9 §10)', () => {
+  it('fits the largest snapshot at the current caps in one part (15 767 bytes, M9 §10)', () => {
     const parts = encodeSnapshot(header, players(4), entities(1501, 400));
     expect(parts.length).toBe(1);
-    expect(parts[0].byteLength).toBe(15763);
+    expect(parts[0].byteLength).toBe(15767);
   });
 
   it('splits snapshots above 16 000 bytes into parts that each carry the header and all players', () => {

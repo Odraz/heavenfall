@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DUNGEONS } from '../data/dungeons/index';
 import { pearlyGates } from '../data/dungeons/pearly-gates';
 import type { WaveDef } from '../data/dungeons/types';
 import { BLESSED, CHERUB, CHORISTER } from '../data/enemies';
@@ -38,7 +39,7 @@ describe('the waves (M12 §2.1)', () => {
   it('are scaled per party size, per type, rounding up', () => {
     for (const players of [1, 2, 3, 4]) {
       const sim = new Simulation({
-        dungeon: pearlyGates,
+        dungeon: DUNGEONS['pearly-gates'],
         players: Array.from({ length: players }, (_, id) => ({ id, name: `P${id}`, classId: 'binder' as const })),
         seed: 1,
         god: true,
@@ -49,7 +50,7 @@ describe('the waves (M12 §2.1)', () => {
       sim.players[0].z = sim.map.floor[r * sim.map.w + c];
       sim.step();
       sealNow(sim);
-      expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
+      expect(sim.rooms[0].phase).toBe(PHASE_COMBAT);
       // With Arena 1's Cherub squads (M12 follow-up §4.2).
       const expected = pearlyGates.arenas[0].waves.reduce((n, v) => n + scaleCount(v.blessed, players) + scaleCount(v.squad?.count ?? 0, players), 0);
       expect(sim.enemiesRemaining()).toBe(expected);
@@ -86,7 +87,7 @@ describe('a wave arrives from all sides, over 10 s (M12 §2.2)', () => {
     const log = logPlacements(sim);
     sealAt(sim, 8.5, 5.5);
     const sealed = sim.tick;
-    const st = sim.arenas[0];
+    const st = sim.rooms[0];
     // The seal's own tick placed nothing yet (250/300 of a placement).
     expect(log.length).toBe(0);
     while (sim.tick < sealed + 298) sim.step();
@@ -121,7 +122,7 @@ describe('a wave arrives from all sides, over 10 s (M12 §2.2)', () => {
       if (boss) {
         sim.killAll();
         log.length = 0;
-        sim.arenas[0].queue.push({ counts: [20, 0, 0], spawned: [0, 0, 0], wave: -1 });
+        sim.rooms[0].queue.push({ counts: [20, 0, 0], spawned: [0, 0, 0], wave: -1 });
         // Not paced either: all 20 within 1 s (at 10 per second from each of 6 points, 20 take 10 ticks).
         for (let i = 0; i < 10; i++) sim.step();
         expect(log.length).toBe(20);
@@ -131,10 +132,10 @@ describe('a wave arrives from all sides, over 10 s (M12 §2.2)', () => {
   });
 
   it('the benchmark keeps the 8 m rule and the old rate', () => {
-    const sim = new Simulation({ dungeon: arenaDungeon([w(60), w(60)]), players: [{ id: 0, name: 'B', classId: 'fallen' }], seed: 1, benchArena: 0 });
+    const sim = new Simulation({ dungeon: arenaDungeon([w(60), w(60)]), players: [{ id: 0, name: 'B', classId: 'fallen' }], seed: 1, benchRoom: 0 });
     const log = logPlacements(sim);
     for (let i = 0; i < 30; i++) sim.step();
-    expect(sim.arenas[0].director).toBeNull();
+    expect(sim.rooms[0].director).toBeNull();
     expect(log.length).toBe(60);
     expect(columns(log)).toEqual(new Set([MIDDLE, EAST]));
   });
@@ -172,7 +173,7 @@ describe('squads (M12 follow-up §4.2)', () => {
     const log = logTypes(sim);
     sealAt(sim);
     const t0 = sim.tick;
-    const st = sim.arenas[0];
+    const st = sim.rooms[0];
     expect(st.waveTotals[0]).toBe(30);
     expect(sim.enemiesRemaining()).toBe(50);
     for (let i = 0; i < 600 && !st.waveFullySpawned[0]; i++) sim.step();
@@ -195,10 +196,10 @@ describe('squads (M12 follow-up §4.2)', () => {
     sealAt(sim);
     for (let i = 0; i < 160; i++) sim.step();
     expect(log.filter((e) => e.type === CHORISTER)).toHaveLength(1);
-    expect(sim.arenas[0].waveFullySpawned[0]).toBe(false);
+    expect(sim.rooms[0].waveFullySpawned[0]).toBe(false);
     for (let i = 0; i < 20 && log.filter((e) => e.type === CHORISTER).length < 2; i++) sim.step();
-    expect(sim.arenas[0].waveFullySpawned[0]).toBe(log.filter((e) => e.type === BLESSED).length === 4);
-    for (let i = 0; i < 300 && !sim.arenas[0].waveFullySpawned[0]; i++) sim.step();
+    expect(sim.rooms[0].waveFullySpawned[0]).toBe(log.filter((e) => e.type === BLESSED).length === 4);
+    for (let i = 0; i < 300 && !sim.rooms[0].waveFullySpawned[0]; i++) sim.step();
     // Fully placed on its last Blessed's tick, not before.
     expect(sim.tick).toBe(log.filter((e) => e.type === BLESSED)[3].tick);
   });
@@ -207,7 +208,7 @@ describe('squads (M12 follow-up §4.2)', () => {
     const sim = arenaSim([squadWave([[MIDDLE, 5], [MIDDLE, 2]]), w(20)], { god: true });
     const log = logTypes(sim);
     sealAt(sim, MIDDLE + 0.5, 5.5);
-    for (let i = 0; i < 600 && !sim.arenas[0].waveFullySpawned[0]; i++) sim.step();
+    for (let i = 0; i < 600 && !sim.rooms[0].waveFullySpawned[0]; i++) sim.step();
     const squad = log.filter((e) => e.type === CHERUB);
     expect(squad).toHaveLength(10);
     // From the spawn points more than 8 m from the party in the middle: the west and east columns.
@@ -216,24 +217,24 @@ describe('squads (M12 follow-up §4.2)', () => {
     const sim2 = arenaSim([squadWave([[MIDDLE, 5], [EAST, 5]]), w(20)], { god: true });
     const log2 = logTypes(sim2);
     sealAt(sim2, MIDDLE + 0.5, 5.5);
-    for (let i = 0; i < 600 && !sim2.arenas[0].waveFullySpawned[0]; i++) sim2.step();
+    for (let i = 0; i < 600 && !sim2.rooms[0].waveFullySpawned[0]; i++) sim2.step();
     expect(log2.filter((e) => e.type === CHERUB).every((e) => e.c === EAST && e.r === 5)).toBe(true);
   });
 
   it('are scaled for the party size', () => {
     const sim = arenaSim([squadWave([[EAST, 5]]), w(20)], { players: 1, god: true });
     sealAt(sim);
-    expect(sim.arenas[0].waveTotals[0]).toBe(8 + 4);
+    expect(sim.rooms[0].waveTotals[0]).toBe(8 + 4);
   });
 });
 
 describe('dev arena=N', () => {
   it('starts on arena N’s entry cells with the arenas before it cleared, and N seals as usual', () => {
-    const sim = new Simulation({ dungeon: pearlyGates, players: [{ id: 0, name: 'P0', classId: 'binder' }], seed: 1, god: true, singleplayer: true, startArena: 2 });
-    expect(sim.arenas.map((a) => a.phase)).toEqual([PHASE_CLEARED, PHASE_CLEARED, PHASE_IDLE, PHASE_IDLE]);
+    const sim = new Simulation({ dungeon: DUNGEONS['pearly-gates'], players: [{ id: 0, name: 'P0', classId: 'binder' }], seed: 1, god: true, singleplayer: true, startRoom: 2 });
+    expect(sim.rooms.map((a) => a.phase)).toEqual([PHASE_CLEARED, PHASE_CLEARED, PHASE_IDLE, PHASE_IDLE]);
     const [c, r] = pearlyGates.arenas[2].entryCells[0];
     expect([sim.players[0].x, sim.players[0].y]).toEqual([c + 0.5, r + 0.5]);
-    for (let i = 0; i < 10 * 30 && sim.arenas[2].phase !== PHASE_COMBAT; i++) sim.step();
-    expect(sim.arenas[2].phase).toBe(PHASE_COMBAT);
+    for (let i = 0; i < 10 * 30 && sim.rooms[2].phase !== PHASE_COMBAT; i++) sim.step();
+    expect(sim.rooms[2].phase).toBe(PHASE_COMBAT);
   });
 });

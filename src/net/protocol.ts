@@ -59,8 +59,8 @@ export function decodeInput(buf: ArrayBuffer): InputMsg | null {
 
 // ---------------------------------------------------------------- snapshots
 
-/** The MVP's 25 bytes plus `countdown` (M8 §10). */
-export const HEADER_BYTES = 27;
+/** The MVP's 25 bytes plus `countdown` (M8 §10) and the rooms' `clearedMask` (rogue game.md §14.3). */
+export const HEADER_BYTES = 31;
 /** The MVP's 28 bytes plus `revive` and `shots` (M8 §10), `shots2` and `beam` (M9 §10). */
 export const PLAYER_BYTES = 32;
 export const ENEMY_BYTES = 8;
@@ -72,7 +72,7 @@ export const POS_SCALE = 64;
 export const PHASE_IDLE = 0;
 export const PHASE_COMBAT = 1;
 export const PHASE_CLEARED = 2;
-/** The arena countdown before it seals (M8 §5). */
+/** The room countdown before it seals (M8 §5). */
 export const PHASE_COUNTDOWN = 3;
 
 /** Enemy `flags` bits. */
@@ -87,9 +87,13 @@ export const FLAG_TAUNTED = 32;
 
 export interface SnapshotHeader {
   tick: number;
-  arenaIndex: number;
-  arenaPhase: number;
-  /** Tenths of a second until the arena seals, 0 outside the countdown (M8 §5). */
+  /** The room in countdown or combat, 255 for none (rogue game.md §14.3). */
+  activeRoom: number;
+  /** Its phase; PHASE_IDLE when no room is active. */
+  activePhase: number;
+  /** Bit i: room i is cleared. Every leaf derives from these three fields (rogue game.md §3.4). */
+  clearedMask: number;
+  /** Tenths of a second until the room seals, 0 outside the countdown (M8 §5). */
   countdown: number;
   enemiesRemaining: number;
   bossHp: number;
@@ -179,8 +183,8 @@ export function encodeSnapshot(
     v.setUint32(0, h.tick >>> 0, true);
     v.setUint8(4, partIndex);
     v.setUint8(5, ranges.length);
-    v.setUint8(6, h.arenaIndex);
-    v.setUint8(7, h.arenaPhase);
+    v.setUint8(6, h.activeRoom);
+    v.setUint8(7, h.activePhase);
     v.setUint16(8, Math.min(0xffff, h.countdown), true);
     v.setUint16(10, Math.min(0xffff, h.enemiesRemaining), true);
     v.setUint32(12, Math.max(0, Math.ceil(h.bossHp)), true);
@@ -190,6 +194,7 @@ export function encodeSnapshot(
     v.setUint8(22, players.length);
     v.setUint16(23, ne, true);
     v.setUint16(25, np, true);
+    v.setUint32(27, h.clearedMask >>> 0, true);
     let o = HEADER_BYTES;
     for (const p of players) {
       v.setUint8(o, p.id);
@@ -260,8 +265,9 @@ export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
     tick: v.getUint32(0, true),
     partIndex: v.getUint8(4),
     partCount: v.getUint8(5),
-    arenaIndex: v.getUint8(6),
-    arenaPhase: v.getUint8(7),
+    activeRoom: v.getUint8(6),
+    activePhase: v.getUint8(7),
+    clearedMask: v.getUint32(27, true),
     countdown: v.getUint16(8, true),
     enemiesRemaining: v.getUint16(10, true),
     bossHp: v.getUint32(12, true),

@@ -8,23 +8,25 @@ test('full solo run', async ({ page }) => {
 
   const cleared = new Set<number>();
   let combatSeen = -1;
-  // When the next arena should have entered combat by: 60 s after the start, then after each clear.
+  // When the next room should have entered combat by: 60 s after the start, then after each clear.
   let deadline = Date.now() + 60_000;
   for (;;) {
     const s = await state(page);
     if (s.gameResult !== null) break;
-    if (s.arenaPhase === 'combat') {
-      if (s.arenaIndex > combatSeen) {
-        expect(Date.now(), `arena ${s.arenaIndex} reaches combat within 60 s`).toBeLessThanOrEqual(deadline);
-        combatSeen = s.arenaIndex;
+    if (s.activePhase === 'combat') {
+      if (s.activeRoom > combatSeen) {
+        expect(Date.now(), `room ${s.activeRoom} reaches combat within 60 s`).toBeLessThanOrEqual(deadline);
+        combatSeen = s.activeRoom;
       }
       await page.keyboard.press('KeyK');
     } else {
-      if (s.arenaPhase === 'cleared' && !cleared.has(s.arenaIndex)) {
-        cleared.add(s.arenaIndex);
-        deadline = Date.now() + 60_000;
+      for (let i = 0; i < 32; i++) {
+        if (((s.clearedMask >>> i) & 1) === 1 && !cleared.has(i)) {
+          cleared.add(i);
+          deadline = Date.now() + 60_000;
+        }
       }
-      expect(Date.now(), `arena ${combatSeen + 1} reaches combat within 60 s`).toBeLessThanOrEqual(deadline);
+      expect(Date.now(), `room ${combatSeen + 1} reaches combat within 60 s`).toBeLessThanOrEqual(deadline);
     }
     await page.waitForTimeout(1000);
   }

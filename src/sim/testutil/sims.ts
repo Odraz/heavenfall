@@ -59,10 +59,10 @@ export function press(p: SimPlayer, key: 'Q' | 'E', allyTargetId = 255): void {
 }
 
 /**
- * Ends an arena's countdown (M8 §5) at the next tick, as if its timer ran out, and steps once.
- * The arena must be in its countdown.
+ * Ends a room's countdown (M8 §5) at the next tick, as if its timer ran out, and steps once.
+ * The room must be in its countdown.
  */
 export function sealNow(sim: Simulation, ai = 0): void {
-  sim.arenas[ai].sealTick = sim.tick + 1;
+  sim.rooms[ai].sealTick = sim.tick + 1;
   sim.step();
 }

@@ -46,7 +46,7 @@ export class GameScene {
     this.atmosphere = new Atmosphere(map, this.terrain.arches, textures.shaft, textures.atmosphere, textures.sky, glow);
     this.scene.add(this.atmosphere.cards, this.atmosphere.shafts);
     if (this.atmosphere.radiance) this.scene.add(this.atmosphere.radiance);
-    for (const d of this.terrain.doors) for (const m of [d.entry, d.exit]) if (m) this.scene.add(m);
+    for (const leaves of this.terrain.doors) for (const m of leaves) if (m) this.scene.add(m);
     this.resize();
     window.addEventListener('resize', this.resize);
   }
@@ -60,11 +60,10 @@ export class GameScene {
     setSkyLod(this.sky, this.renderer.getDrawingBufferSize(new THREE.Vector2()).y, this.camera.fov);
   };
 
-  /** Shows or hides an arena's closed entry and exit door columns. */
-  setDoorsClosed(arenaIndex: number, entry: boolean, exit: boolean): void {
-    const d = this.terrain.doors[arenaIndex];
-    if (d.entry) d.entry.visible = entry;
-    if (d.exit) d.exit.visible = exit;
+  /** Shows or hides the closed door column of one leaf of a room. */
+  setLeafClosed(room: number, leaf: number, closed: boolean): void {
+    const d = this.terrain.doors[room]?.[leaf];
+    if (d) d.visible = closed;
   }
 
   /**

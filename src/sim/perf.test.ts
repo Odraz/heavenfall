@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { sandbox } from '../data/dungeons/sandbox';
+import { DUNGEONS } from '../data/dungeons/index';
+
+const sandbox = DUNGEONS.sandbox;
 import { BLESSED } from '../data/enemies';
 import { Simulation } from './sim';
 
@@ -18,15 +20,15 @@ describe.skipIf(!!process.env.CI)('simulation performance', () => {
       noWaves: true,
     });
     // The 4 players stand on the arena's entry cells.
-    const arena = sim.map.arenas[0];
+    const arena = sim.map.rooms[0];
     for (const p of sim.players) {
-      const [c, r] = arena.entryCells[p.index];
+      const [c, r] = arena.entry[0].cells[p.index];
       p.x = c + 0.5;
       p.y = r + 0.5;
       p.z = sim.map.floor[r * sim.map.w + c];
     }
     // 1 500 Blessed on the spawn points at tick 0.
-    const points = sim.map.arenaSpawnPoints[0];
+    const points = sim.map.roomSpawnPoints[0];
     for (let i = 0; i < 1500; i++) {
       const [c, r] = points[i % points.length];
       expect(sim.placeEnemy(BLESSED, c, r, 0)).toBeGreaterThanOrEqual(0);

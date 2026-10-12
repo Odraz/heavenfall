@@ -103,7 +103,7 @@ function loop(): void {
 function start(players: SimPlayerInit[], dungeonId: string, seed: number, godMode: boolean, benchArena: number, singleplayer: boolean, localId: number, benchBurst = false, startArena = 0): void {
   const dungeon = getDungeon(dungeonId);
   if (!dungeon) throw new Error(`Unknown dungeon ${dungeonId}`);
-  sim = new Simulation({ dungeon, players, seed, god: godMode, benchArena, benchBurst, singleplayer, startArena });
+  sim = new Simulation({ dungeon, players, seed, god: godMode, benchRoom: benchArena, benchBurst, singleplayer, startRoom: startArena });
   localPlayerId = localId;
   for (const p of sim.players) p.lastAcceptMs = performance.now();
   running = true;

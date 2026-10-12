@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { sandbox } from '../data/dungeons/sandbox';
+import { DUNGEONS } from '../data/dungeons/index';
+
+const sandbox = DUNGEONS.sandbox;
 import { BLESSED, ENEMIES } from '../data/enemies';
 import { Simulation } from './sim';
 

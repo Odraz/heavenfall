@@ -3,11 +3,11 @@ import type { ClassId } from '../data/classes';
 import { ENEMIES } from '../data/enemies';
 import { FIRE_LEFT, FIRE_RIGHT, SCOURGE_HALF_ARC, SECONDARIES } from '../data/weapons';
 import { aimDir, rayCylinder } from '../sim/combat';
-import { PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, PHASE_IDLE } from '../net/protocol';
+import { PHASE_COMBAT, PHASE_COUNTDOWN } from '../net/protocol';
 import { PLAYER_EYE, PLAYER_HEIGHT, PLAYER_RADIUS } from '../sim/constants';
 import { FlowField } from '../sim/flowfield';
 import { lineOfSight, raycastTerrain } from '../sim/los';
-import type { GameMap } from '../sim/map';
+import { roomCleared, type GameMap } from '../sim/map';
 import { distToCylinder, type Body } from '../sim/movement';
 import { PITCH_LIMIT } from './localPlayer';
 
@@ -25,8 +25,10 @@ export interface BotView {
   body: Body;
   dead: boolean;
   enemies: BotEnemy[];
-  arenaIndex: number;
-  arenaPhase: number;
+  /** The snapshot's active room (255: none), its phase and the cleared rooms (rogue game.md §14.3). */
+  activeRoom: number;
+  activePhase: number;
+  clearedMask: number;
   /** The host's player position for a client's bot in multiplayer; null for the host's bot. */
   hostPlayer: { x: number; y: number } | null;
   qReady: boolean;
@@ -140,13 +142,13 @@ export class Bot {
 
     // Goal.
     let goal: { x: number; y: number } | null = null;
-    if (v.arenaPhase === PHASE_COUNTDOWN) {
-      // Every bot heads for its own entry cell in the arena counting down (M8 §6.4).
-      const cell = v.map.arenas[v.arenaIndex]?.entryCells[v.entryIndex];
+    if (v.activePhase === PHASE_COUNTDOWN) {
+      // Every bot heads for its own entry cell in the room counting down (M8 §6.4).
+      const cell = v.map.rooms[v.activeRoom]?.entry[0].cells[v.entryIndex];
       if (cell) goal = { x: cell[0] + 0.5, y: cell[1] + 0.5 };
     } else if (v.hostPlayer) {
       if (Math.hypot(v.hostPlayer.x - ex, v.hostPlayer.y - ey) > FOLLOW_HOST_DIST) goal = v.hostPlayer;
-    } else if (v.arenaPhase === PHASE_COMBAT) {
+    } else if (v.activePhase === PHASE_COMBAT) {
       if (!target) {
         let best = Infinity;
         for (const e of v.enemies) {
@@ -158,9 +160,10 @@ export class Bot {
         }
       }
     } else {
-      const next = v.arenaPhase === PHASE_IDLE ? v.arenaIndex : v.arenaPhase === PHASE_CLEARED ? v.arenaIndex + 1 : -1;
-      const arena = v.map.arenas[next];
-      if (arena) goal = { x: arena.entryCells[0][0] + 0.5, y: arena.entryCells[0][1] + 0.5 };
+      // The first room not cleared.
+      const next = v.map.rooms.findIndex((_, i) => !roomCleared(v.clearedMask, i));
+      const room = v.map.rooms[next];
+      if (room) goal = { x: room.entry[0].cells[0][0] + 0.5, y: room.entry[0].cells[0][1] + 0.5 };
     }
 
     if (goal) this.steer(now, v, goal, o);
