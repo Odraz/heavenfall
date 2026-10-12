@@ -1,6 +1,6 @@
 # R1 report: generated floor
 
-**Status: implementing; R1.3 implemented and tested, R1.4–R1.7 pending** (2026-10-12). Brief: [r01.md](r01.md). Branch `rogue` (as recorded in [r00-report.md](r00-report.md)); nothing pushed, merged or published. R1.3 is the doors-open walkthrough checkpoint, not the complete R1 lifecycle.
+**Status: implementing; R1.4 implemented and tested, awaiting-human-play; R1.5–R1.7 pending** (2026-10-12). Brief: [r01.md](r01.md). Branch `rogue` (as recorded in [r00-report.md](r00-report.md)); nothing pushed, merged or published. R1.4 enables the room lifecycle; map/discovery and the final protocol remain subsequent checkpoints.
 
 ## Git facts
 
@@ -13,7 +13,11 @@
 | R1.3 code SHA | `32a1747b34cb69579a3d4d41b60a985137c356c5` (*R1.3: play on a generated floor (doors open)*); followed by the checkpoint report commit |
 | R1.3 testing follow-up SHA | `f4e6225141369049b45b2f226ae9b495141dee56` (*R1.3: test coverage and tested handoff policy*), based on `fce0591`; followed by the commit recording these test results |
 | Main base checked at R1.3 | `fa9e3f5765cd09d5a315db6342107ff70ad159e8`, unchanged from R0 |
-| End SHA | not yet: R1.4–R1.7 remain |
+| R1.4 start SHA | `a0b22727d12feb36839552cffb3f1424a03dd36b` (*R1.3: record passing unit and browser checks*) |
+| R1.4 parent | `fd6bb3b6b60fb6a7bfd67c9946839ff35598b465` (*art: import rogue sources and update prompt checklist*), committed independently during this stage; preserved |
+| Main base checked at R1.4 | `fa9e3f5765cd09d5a315db6342107ff70ad159e8`, unchanged |
+| R1.4 code SHA | `0d52171afc902b780b320722659199a14b00a3b7` (*R1.4: room lifecycle, trickle and leash*); followed by the checkpoint report/decisions commit |
+| End SHA | not yet: R1.5–R1.7 remain |
 
 ## What changed
 
@@ -69,6 +73,34 @@
 | Gate facing | `src/sim/gate.ts` (new), `src/render/gate.ts`, `src/render/atmosphere.ts` |
 | Loading, menus and debug | `src/main.ts`, `src/params.ts`, `src/debug.ts`, `src/ui/debugOverlay.ts`, `src/ui/menus.ts`, `src/ui/multiplayer.ts`, `src/client/game.ts` |
 | Room music | `src/client/sounds.ts` |
+
+### R1.4 The room lifecycle
+
+- Generated floors now start with the Breach cleared and other rooms idle. `walkOnly` is removed. Pardoner/Confessional rooms clear on their first human visit; ordinary combat and the empty-wave boss dispatch by kind. Room starts no longer require lower-index rooms to be cleared. Content validation rejects ordinary combat with no waves in both floor and fixture modes.
+- Countdown: 20 seconds, held below half the living human quorum; vestibules count toward that quorum. Everyone inside shortens it to 3 seconds. Three seconds without a human in the room, or no living humans, cancels it and retains visited state. The nearest used entry centroid selects the socket, with lower-socket ties. Only one encounter counts down or fights.
+- Sealing teleports outsiders and souls to their own cell of the selected entry, using the existing correction/acknowledgement path. `P` is connected humans plus 0.5 per bot, at least 1, frozen at seal. Counts interpolate through the original integer multipliers. The director cap includes the previous wave's 30% carry-over and stays within 1,500. The inherited single-wave sandbox and benchmark retain their pacing exceptions.
+- Placement prefers markers beyond 10 m in a generated 1×1 and 15 m otherwise, then the inherited 8 m preference. The final marker fallback requires more than 3 m from every living player; otherwise its queue stays unfinished. Squads use the same minimum. The global cap includes the Gatekeeper. The crest's 10-second arrival/rate and lack of warned floor fallback remain R1 fixtures; R2 owns their replacements.
+- Ordinary clear heals each living connected player by 30% of max HP, capped at max, and respawns souls at 50% HP on the selected entry. Passive recovery is inferred from the current roster: true solo ordinary combat relax only, or the inherited solo boss baseline. Idle/countdown/cleared rooms and vestibules have none.
+- Cleared combat revisits can spend at most three refills: after ten human-free seconds, a returning human must stay three seconds; placement uses `floor(min(12, 4 + 2P))` Blessed. Hidden safe markers take priority, otherwise the farthest safe marker. Passing through, bots alone, another active encounter, or victory spends nothing. A refill waits for enough capacity for the whole batch. Enemies target only living players in their home room and fade after ten seconds without a living player there, without kill credit.
+- Typed-array `home`/`leashed` records apply the same home-cell check to ordinary movement, separation, knockback/launch and Chains' interpolated pull. Discord remains its inherited silence plus client visual gust; it introduces no authoritative displacement path to bypass that check.
+- Ground fields rebuild only for living players in rooms with enemies; the flood is clamped to the room rect plus four cells. Air fields rebuild only with flyers. Explicit dev/test refresh still supports roomless geometry fixtures. No generator, template, pool or pinned output changed.
+- Every five seconds, sealed-room enemies with no reachable living target accumulate unreachable time. After ten seconds, recovery selects the farthest safe reachable authored marker, retaining HP/state/accounting. Ten further seconds without a legal marker removes the enemy without credit and logs the defect. After the last wave is fully placed, individually motionless/unhurt survivors (at most ten total) receive the same handling. Recovery is instant; its beam belongs to R2.
+- First-time combat joiners arrive as souls on the selected entry; other joiners arrive beside the lowest-id living player. Lobby roster metadata now retains `bot` for human-follow/rescue choices. Solo `?bot=1` drives a human slot for the specified autopilot acceptance run; multiplayer bot admissions still count as half players and never start encounters themselves.
+- Bots use the selected countdown entry, follow the host human or lowest-id living human, and prioritize reachable human souls when all humans are down. Solo autopilot uses BFS through open cleared-room connections to the nearest frontier, ties by index, reaching the boss after other available rooms. Rescue searches retain the existing half-second cadence.
+- `roomState` replaces `arenaStarted`/`arenaCleared` now, with the existing seal/clear text and sounds and a small entry-socket cache for bots. Full discovery propagation, client room model, map/sigils, late-join `floorSync` and revision/run scoping remain R1.5/R1.6. The snapshot's shared header/leaf rule continues to control all doors.
+- Dev `room=N` clears every other generated room and places players on N's entry; fixture `arena=N` still clears only earlier rooms.
+
+**Autopilot regression found and fixed:** the first browser floor run stalled while leaving a cleared room. The deterministic bot/local-movement/simulation regression reproduced a diagonal stair oscillation: selecting a new neighbour at the intermediate orthogonal cell turned the bot back before it finished crossing. Steering now finishes a cell-centre waypoint before choosing another. That regression traverses the entire pinned floor through real collision, countdowns, waves, clears and the boss to victory. The corrected browser autopilot run passed in 8.7 minutes; it cleared every ordinary combat room and reached boss victory.
+
+**Changed files at R1.4:**
+
+| Area | Files |
+|---|---|
+| Authority and fields | `src/sim/sim.ts`, `src/sim/flowfield.ts`, `src/sim/worker.ts`, `src/data/dungeons/validate.ts` |
+| Events, roster and autopilot | `src/net/messages.ts`, `src/net/lobby.ts`, `src/main.ts`, `src/client/bot.ts`, `src/client/game.ts`, `src/client/sounds.ts` |
+| Unit coverage | new `src/sim/roomLifecycle.test.ts`, new `src/client/bot.test.ts`; updated `src/sim/arenas.test.ts`, `combat.test.ts`, `director.test.ts`, `runMap.test.ts`, `waves.test.ts`, `testutil/arenas.ts`, `testutil/sims.ts` |
+| Browser coverage | `e2e/rogue-floor.spec.ts`; `e2e/multiplayer.spec.ts` identifies its all-bot admission fixture and also renders D small for the chat deadline, restoring its original viewport afterward |
+| Records | this report and `implementation-decisions.md` |
 
 ## Design change made (needs your review)
 
@@ -139,7 +171,7 @@ The follow-up changes `src/net/lobby.test.ts`, `src/params.test.ts`, `e2e/menus.
 - negative cases prove the checks catch an untagged pillar, a broken composition, a lamp or marker on a threshold, and an unreachable spawn point;
 - notation tests cover rooms.md §2.1's stair examples and each rejected error.
 
-## R1.3 play checklist
+## R1.3 play checklist (historical walkthrough checkpoint)
 
 Run `npm run dev`, then:
 
@@ -151,8 +183,36 @@ Run `npm run dev`, then:
 
 ## Open items
 
-- R1.4–R1.7 remain. R1.3 now has unit, typecheck/build and browser evidence; the no-tests preference and obsolete lobby assertions have been replaced in the follow-up.
-- Generated floors currently have all rooms cleared solely to open the doors; no map/discovery, encounters, trickle, rewards or run completion yet. Leave through the Pause menu after walking. Fixture combat still uses the inherited timings/heals.
+- R1.5–R1.7 remain. R1.4 has passing unit/typecheck/build and all five selected browser checks. No unresolved R1.4 code defect remains; human play/feel acceptance is pending.
+- Generated floors have encounters, countdowns, clear sustain, trickle and inherited boss victory. The map/discovery UI, door sigils, rewards, props, pickups, new enemies, fire and progression remain later-stage work. The same countdown, fractional scaling, clear sustain and regeneration rules apply to fixed fixtures.
 - Binary inputs, snapshots and events are not run-scoped yet; the protocol/header/fingerprint change remains R1.6. The `runId` introduced here is currently loading/admission metadata.
 - Multiplayer runtime and Node/browser hash parity passed automated checks. Gate geometry/floor sampling/light queries/leaf and post hits passed for all four facings; its appearance across rotated floors and the floor's feel still need human play. No human feedback has been recorded for R1.3.
 - Allowed orientations are mostly identity and the transpose (0 and 7). The 1.5 m off-centre socket offsets mean a quarter-turn or a plain mirror moves the physical doorway off the authored strip, as rogue game.md §3.4 anticipates. The Breach and the Gate allow all 8.
+
+## R1.4 verification
+
+| Check | Result |
+|---|---|
+| `npm test` on final source | **729 passed, 61 files**; one worker, existing timing threshold unchanged; final run after all browser workers exited |
+| `npm run typecheck` | passed on final source |
+| `npm run build` | passed on final source, also rebuilt through every e2e command |
+| `git diff --check` | passed |
+| `npm run e2e -- e2e/rogue-floor.spec.ts e2e/full-run.spec.ts e2e/menus.spec.ts` initial run | Fixed-fixture full run (4.4 min), menus (10.6 s), pinned Node/browser floor and dev-entry parity (22.9 s) passed. Generated autopilot failed on the stair oscillation above; corrected before handoff. The runner was interrupted after the recorded failure to end cleanup. |
+| `npm run e2e -- e2e/rogue-floor.spec.ts e2e/full-run.spec.ts e2e/menus.spec.ts e2e/multiplayer.spec.ts` final-source combined run | **4 checks passed:** fixed full run (4.4 min), menus (14.7 s), pinned Node/browser parity and dev entry (18.5 s), generated solo autopilot through every combat room to boss victory (8.7 min). Multiplayer was blocked before hosting by `ERR_NETWORK_ACCESS_DENIED` on PeerJS. The runner was interrupted during cleanup after all five individual outcomes had been printed. |
+| `npm run e2e -- e2e/multiplayer.spec.ts` with network access | First retry reached matchmaking/admission/late join but missed the existing 3-second chat deadline (45 s total). D was still at its original viewport while A/B/C were small. After applying the same small viewport to D during chat and restoring it afterward, **passed** (2.0 min; process exit 0): four clients, password/classes, matching run/seeds/hash, late admission, chat, advancing/matching snapshots, upload bound and host disconnect. The 3-second chat and other timing/upload limits are unchanged. All five selected browser checks have therefore passed. |
+| `npm run test:gen`, benchmark | not run: generator/pool/pinned outputs unchanged; benchmark not requested |
+
+The new unit suites cover human-only start, one active encounter, majority holds/vestibules/all-in/cancel, selected-entry soul and bot corrections, join rules, empty-wave boss dispatch, header-derived leaves, capped clear heal and respawn, half-player scaling, shape-specific safe spawning and unfinished queues, refill sizes/limits/delay/passing through, hidden placement, leash/pull/knockback/separation/fade, victory suppression, complete-batch capacity at the global cap, field bounds/lazy air rebuild, unreachable relocation/removal diagnostics, individual stuck-enemy recovery, boss-only sustain, frontier ordering, selected countdown entry, human follow/rescue and the full generated-floor movement regression. Existing tests retain idle-regeneration denial and solo relax sustain coverage.
+
+## R1.4 play checklist
+
+Run `npm run dev`, then open `http://localhost:5173/?dev=1&map=rogue&seed=317434499&class=fallen`.
+
+1. Enter a combat room. Solo should shorten 20 seconds to 3, seal the room and spawn waves. Leave before sealing to cancel after three seconds; reenter for a fresh countdown.
+2. Clear a room normally, or add `&god=1` and use K repeatedly while waves arrive. Expect 30% max-HP healing, open doors and a route choice. Waiting in the Breach/corridor/cleared room must not regenerate HP.
+3. Leave a cleared combat room for at least ten seconds, then reenter and stay three seconds. A finite leashed Blessed trickle appears; walking straight through spends no refill. Pull/knock enemies toward a door and check they stay inside; leave them unattended for ten seconds to fade.
+4. Reach the Confessional and boss. The sanctuary is still an empty shell; the boss still ends the run at death. To isolate one encounter, add `&room=N`; all other rooms start cleared. `&room=10&god=1` isolates the pinned boss.
+5. Host/join with another human and a bot. A scout minority holds the countdown, everyone inside shortens it, and sealing gathers outsiders and souls. Joining sealed combat starts as a soul. Compare matching doors on both clients.
+6. For the automatic traversal, add `&bot=1&god=1` and press K during fights. For the old fixed dungeon use `?dev=1&map=pearly-gates&class=fallen&bot=1&god=1`.
+
+This checkpoint still needs human play/feel acceptance. It does not complete R1 or pass Gate A; map/discovery and the final run-scoped wire format remain R1.5/R1.6.
