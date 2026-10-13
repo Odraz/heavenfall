@@ -20,7 +20,7 @@ test('native arrivals warn, cancel on player proximity, then use the warned reac
   await page.waitForFunction(() => window.__heavenfall.enemies > 0, null, { timeout: 5000 });
 });
 
-test('the real generated horde announces its pure Blessed crest and finishes with the inherited base kit autopilot', async ({ page }) => {
+test('the real generated horde announces its Blessed crest with a commander and finishes with the inherited base kit autopilot', async ({ page }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 640, height: 360 });
   await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&room=3&class=betrayer&bot=1&god=1`);

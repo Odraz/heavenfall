@@ -126,6 +126,21 @@ describe('native damage against props', () => {
 });
 
 describe('prop effects and recovery', () => {
+  it('small effect props have matching attack heights and blasts respect shields, mitigation, walls and range', () => {
+    const sim = make([prop(1, 'blast', 10.5), prop(2, 'blessing', 20.5)], ['betrayer', 'fallen', 'heretic', 'binder']);
+    expect(PROP_HEIGHT).toMatchObject({ blast: 1.1, blessing: 1 });
+    expect(sim.props.ray(8.5, 5.5, 1.2, 1, 0, 0, 4)).toEqual([]);
+    expect(sim.props.ray(8.5, 5.5, 0.55, 1, 0, 0, 4)[0].prop.id).toBe(1);
+    const [shielded, fallen, behindWall, outside] = sim.players;
+    put(sim, shielded, 10.5, 7.5); sim.giveShield(shielded, 50, 10);
+    put(sim, fallen, 8.5, 5.5); put(sim, behindWall, 12.5, 5.5); put(sim, outside, 18.5, 5.5);
+    sim.map.solid[5 * sim.map.w + 11] = 1; sim.map.top[5 * sim.map.w + 11] = 16;
+    sim.props.break(1, sim.tick);
+    for (let i = 0; i < 6; i++) sim.step();
+    expect(shielded.shield).toBe(10); expect(shielded.hp).toBe(shielded.maxHp);
+    expect(fallen.hp).toBe(fallen.maxHp - 24);
+    expect(behindWall.hp).toBe(behindWall.maxHp); expect(outside.hp).toBe(outside.maxHp);
+  });
   it('loot tables follow combat/noncombat thresholds and the eight item weights total 100', () => {
     for (const [combat, cases] of [[true, [[0.74, -1], [0.75, COIN], [0.85, HEAL_MOTE], [0.95, ITEM_FIRST + 7]]],
       [false, [[0.84, -1], [0.85, COIN], [0.95, HEAL_MOTE], [0.999, HEAL_MOTE]]]] as const) {
@@ -149,7 +164,7 @@ describe('prop effects and recovery', () => {
     sim.props.break(1, 0); const sync = sim.floorSync(sim.runId);
     expect(sync.brokenProps).toEqual([1]); expect(sync.propBlasts).toEqual([{ id: 1, impactTick: 6 }]);
     for (let i = 0; i < 5; i++) sim.step(); expect(sim.eAlive[s]).toBe(1);
-    sim.step(); expect(sim.eAlive[s]).toBe(0); expect(sim.players[0].hp).toBe(sim.players[0].maxHp - 15);
+    sim.step(); expect(sim.eAlive[s]).toBe(0); expect(sim.players[0].hp).toBe(sim.players[0].maxHp - 40);
     expect(sim.players[0].kills).toBe(0); expect(sim.pickups.live.some((p) => p.kind === COIN)).toBe(true);
     const bursts = sim.events.find((e) => e.event.type === 'bursts')!.event;
     expect(bursts.type === 'bursts' && bursts.list[2]).toBe(-1); expect(bursts.type === 'bursts' && bursts.list[1]).toBeGreaterThanOrEqual(360);

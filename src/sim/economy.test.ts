@@ -21,9 +21,9 @@ describe('R2 exact halo ledger', () => {
     expect(new HaloLedger(12, 0).death(1)).toBe(0);
   });
   it('uses the authored shape/band income and encounter mote bounds', () => {
-    expect([1, 2, 3].map((b) => haloBudget('1x1', b))).toEqual([12, 15, 18]);
-    expect([1, 2, 3].map((b) => haloBudget('1x2', b))).toEqual([18, 21, 24]);
-    expect([2, 3].map((b) => haloBudget('2x2', b))).toEqual([30, 33]);
+    expect([1, 2, 3].map((b) => haloBudget('1x1', b))).toEqual([48, 60, 72]);
+    expect([1, 2, 3].map((b) => haloBudget('1x2', b))).toEqual([72, 84, 96]);
+    expect([2, 3].map((b) => haloBudget('2x2', b))).toEqual([120, 132]);
     expect(['1x1', '2x1', '2x2'].map((s) => moteCap(s as '1x1' | '2x1' | '2x2'))).toEqual([4, 6, 8]);
   });
 });

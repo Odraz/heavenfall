@@ -156,7 +156,12 @@ export function stampFloor(layout: Layout, a: Assignment, mode: ValidateMode = '
       rect,
       leaves: leaves[i],
       entry: r.doors.map((d) => ({ socket: d.socket, cells: entryCellsOf(r.shape, d.socket).map(w) as Quad })),
-      waves: r.kind === 'combat' ? t.waves.map((wv) => waveCounts(wv, roomBudget(r.shape, r.band!))) : [],
+      // A commander accompanies every generated wave, outside the authored minion TP.
+      // Elite-focused waves retain their extra Dominion; the crest retains all its Blessed.
+      waves: r.kind === 'combat' ? t.waves.map((wv) => {
+        const counts = waveCounts(wv, roomBudget(r.shape, r.band!));
+        return { ...counts, dominions: 1 + (counts.dominions ?? 0) };
+      }) : [],
       boss: r.kind === 'boss',
       shape: r.shape,
       templateId: t.id,

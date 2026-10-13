@@ -112,7 +112,7 @@ import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map'
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
 import { COIN, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, PICKUP_CAP, itemDrop, type PickupRecord } from '../data/pickups';
-import { PROP_HEIGHT, type PropDef } from '../data/props';
+import { PROP_HEIGHT, PROP_BLAST_PLAYER_DAMAGE, type PropDef } from '../data/props';
 import { Props, type Prop } from './props';
 import { HaloLedger, HALO_WEIGHT, haloBudget, moteCap } from './economy';
 import { Pickups } from './pickups';
@@ -1401,10 +1401,12 @@ export class Simulation {
     // Freeze P at the seal: connected humans plus half-player bots.
     st.partySize = this.partySize();
     if (a.kind === 'combat' && a.shape && a.band) {
-      const weight = a.waves.reduce((sum, w) => sum + scaleCount(w.blessed, st.partySize) +
-        10 * (scaleCount(w.choristers, st.partySize) + scaleCount(w.cherubs, st.partySize)), 0);
+      const weight = a.waves.reduce((sum, w) => sum + HALO_WEIGHT[BLESSED] * scaleCount(w.blessed, st.partySize) +
+        HALO_WEIGHT[CHORISTER] * scaleCount(w.choristers, st.partySize) + HALO_WEIGHT[CHERUB] * scaleCount(w.cherubs, st.partySize), 0);
       const counts = a.waves.map((w) => scaleCount(w.dominions ?? 0, st.partySize));
-      const ledger = new HaloLedger(haloBudget(a.shape, a.band), weight, counts.reduce((sum, n) => sum + n, 0));
+      const budget = haloBudget(a.shape, a.band);
+      // More commanders must not take the crowd's reward budget: reserve at most one quarter.
+      const ledger = new HaloLedger(budget, weight, Math.min(counts.reduce((sum, n) => sum + n, 0), Math.floor(budget / 24)));
       this.haloLedgers.set(ai, ledger);
       let gold = ledger.reservedElites;
       this.eliteGold.set(ai, counts.map((n) => { const granted = Math.min(gold, n); gold -= granted; return granted; }));
@@ -1929,6 +1931,9 @@ export class Simulation {
     let best = -1;
     let bestV = Infinity;
     const eliteCap = this.dominionAlive() >= DOMINION_ALIVE_CAP;
+    // Put the wave's first commander in the opening arrivals, not halfway through its minions.
+    const leader = SPAWN_TYPES.indexOf(DOMINION);
+    if (!eliteCap && batch.counts[leader] > 0 && batch.spawned[leader] === 0 && (!canSpawn || canSpawn[leader])) return leader;
     for (let t = 0; t < batch.counts.length; t++) {
       if (canSpawn && !canSpawn[t]) continue;
       if (SPAWN_TYPES[t] === DOMINION && eliteCap) continue;
@@ -2228,7 +2233,7 @@ export class Simulation {
       if (!this.livingTargetable(q) || this.roomAt(q.x, q.y) !== p.room ||
         distToCylinder(p.x, p.y, z, q.x, q.y, q.z, PLAYER_RADIUS, PLAYER_HEIGHT) > 4 ||
         !lineOfSight(this.map, p.x, p.y, z, q.x, q.y, q.z + PLAYER_HEIGHT / 2)) continue;
-      this.damagePlayer(q, 15);
+      this.damagePlayer(q, PROP_BLAST_PLAYER_DAMAGE);
     }
     this.props.area(p.x, p.y, z, 4, this.tick, 'world', (q) => q.room === p.room);
   }

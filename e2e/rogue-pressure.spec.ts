@@ -6,6 +6,28 @@ import { PROP_RECHARGE_TICKS, propDefs } from '../src/data/props';
 import { lineOfSight } from '../src/sim/los';
 import { shootProp } from './prop-fixtures';
 
+test('shooting a small candle inside its blast radius hurts the player without God mode', async ({ page }) => {
+  const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
+  const q = propDefs(g.floor).find((p) => p.family === 'blast')!;
+  const z = g.map.floor[Math.floor(q.y) * g.map.w + Math.floor(q.x)];
+  const at = Array.from({ length: 32 }, (_, i) => [q.x + 3 * Math.cos(i * Math.PI / 16), q.y + 3 * Math.sin(i * Math.PI / 16)])
+    .find(([x, y]) => {
+      const c = Math.floor(x), r = Math.floor(y), cell = r * g.map.w + c;
+      return c > 0 && r > 0 && c < g.map.w - 1 && r < g.map.h - 1 && !g.map.solid[cell] && !g.map.hazard[cell] &&
+        g.map.roomOf[cell] === q.room && g.map.floor[cell] === z &&
+        lineOfSight(g.map, x, y, z + 1.6, q.x, q.y, z + 0.55) && lineOfSight(g.map, q.x, q.y, z + 0.55, x, y, z + 0.9);
+    });
+  expect(at).toBeDefined();
+  await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&class=betrayer&god=0`);
+  await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
+  await page.evaluate(([x, y]) => window.__heavenfallTeleport!(x, y), at!);
+  await expect.poll(async () => Math.hypot((await state(page)).self.x - at![0], (await state(page)).self.y - at![1])).toBeLessThan(0.2);
+  const hp = (await state(page)).players[0].hp;
+  await shootProp(page, q.id);
+  await expect.poll(async () => (await state(page)).players[0].hp, { timeout: 3000 }).toBe(hp - 40);
+  await page.screenshot({ path: test.info().outputPath('small-candle-player-damage.png') });
+});
+
 for (const family of ['blessing', 'blast'] as const) test(`${family} stays visible while depleted and can be shot again after the host recharge`, async ({ page }) => {
   const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
   const q = propDefs(g.floor).find((p) => p.family === family)!;

@@ -9,7 +9,7 @@ import { arenaDungeon, sealAt } from './testutil/arenas';
 import { dungeonOf } from './testutil/maps';
 import { put, room } from './testutil/sims';
 import { PHASE_CLEARED, decodeSnapshot } from '../net/protocol';
-import { HaloLedger } from './economy';
+import { HaloLedger, HALO_WEIGHT } from './economy';
 
 const ready = { incarnation: 1, room: 0, grounded: true, stunned: false, silenced: false, inRange: true };
 function controller() {
@@ -137,7 +137,7 @@ describe('Dominion host geometry, controls and drops', () => {
     const { sim, slot } = fixture();
     const victim = sim.placeEnemy(CHORISTER, 13, 10, 0); sim.eWave[victim] = 0;
     sim.rooms[0].waveAlive[0]++;
-    sim.haloLedgers.set(0, new HaloLedger(12, 10));
+    sim.haloLedgers.set(0, new HaloLedger(12, HALO_WEIGHT[CHORISTER]));
     sim.random = () => 0.5;
     slam(sim, slot);
     expect(sim.eAlive[victim]).toBe(0); expect(sim.players[0].kills).toBe(0);
@@ -162,6 +162,36 @@ describe('Dominion host geometry, controls and drops', () => {
 });
 
 describe('Dominion authored group scaling and reservations', () => {
+  it('places a commander in the first arrivals while retaining the two-alive queue cap', () => {
+    const dungeon = arenaDungeon([{ blessed: 100, choristers: 0, cherubs: 0, dominions: 3 }]);
+    dungeon.rooms[0].shape = '1x1'; dungeon.rooms[0].band = 1;
+    const sim = new Simulation({ dungeon, players: Array.from({ length: 4 }, (_, id) => ({ id, name: `P${id}`, classId: 'betrayer' as const })), seed: 1, god: true });
+    sealAt(sim);
+    while (sim.activeCount === 0 && sim.tick < 1000) sim.step();
+    expect(sim.eType[sim.active[0]]).toBe(DOMINION);
+    expect(sim.tick - sim.rooms[0].sealTick).toBeLessThan(30);
+  });
+  for (const party of [1, 4]) it(`spreads substantially more halos through Blessed kills at party ${party}`, () => {
+    const dungeon = arenaDungeon([{ blessed: 200, choristers: 10, cherubs: 0, dominions: 8 }]);
+    dungeon.rooms[0].shape = '1x1'; dungeon.rooms[0].band = 1;
+    const sim = new Simulation({ dungeon, players: Array.from({ length: party }, (_, id) => ({ id, name: `P${id}`, classId: 'betrayer' as const })), seed: 1, god: true });
+    sim.random = () => 0.99; sealAt(sim);
+    const ledger = sim.haloLedgers.get(0)!;
+    expect(ledger.budget).toBe(48); expect(ledger.reservedElites).toBe(2);
+    expect(ledger.remainder).toBe(36);
+    let dry = 0, longestDry = 0;
+    for (let i = 0; i < scaleCount(200, party); i++) {
+      const before = ledger.paid, slot = sim.placeEnemy(BLESSED, 20, 5, 0); sim.eWave[slot] = 0;
+      sim.damageEnemy(slot, 10000, -1);
+      dry = ledger.paid === before ? dry + 1 : 0; longestDry = Math.max(longestDry, dry);
+    }
+    expect(ledger.paid).toBe(31); expect(longestDry).toBeLessThanOrEqual(6);
+    expect(sim.pickups.live.filter((p) => p.kind === COIN).reduce((sum, p) => sum + p.value, 0)).toBe(31);
+    for (let i = 0; i < scaleCount(10, party); i++) {
+      const slot = sim.placeEnemy(CHORISTER, 20, 5, 0); sim.eWave[slot] = 0; sim.damageEnemy(slot, 10000, -1);
+    }
+    expect(ledger.paid).toBe(36);
+  });
   it('filters tags before safety, prefers eligible affinity and never stalls fodder on a blocked elite point', () => {
     const dungeon = arenaDungeon([{ blessed: 12, choristers: 4, cherubs: 0, dominions: 1 }]);
     const r = dungeon.rooms[0]; r.shape = '1x1'; r.band = 1; r.dominion = [2]; r.chorister = [5];

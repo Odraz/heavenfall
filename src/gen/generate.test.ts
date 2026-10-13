@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { PEARLY_POOL_R1, PEARLY_POOL } from '../data/rooms/1/index';
+import { PEARLY_POOL_R1, PEARLY_POOL, poolTemplate } from '../data/rooms/1/index';
 import { PINNED as PINNED_R2 } from './pinned';
-import { stampFloor } from './stamp';
+import { stampFloor, waveCounts, roomBudget } from './stamp';
 import { fallbackLayout } from './fallback';
 import { attemptSeed, fmix32, makeRng } from './hash';
 import { floorHash, generateFloor, pinnedSeed, roomCount } from './index';
@@ -30,6 +30,18 @@ describe('seeds (rogue game.md §3.2)', () => {
 });
 
 describe('generateFloor (rogue game.md §3.3)', () => {
+  it('gives every generated combat wave a commander without replacing its authored minions or extra elites', () => {
+    const g = generateFloor(PINNED_R2.seed, 1, 1, PEARLY_POOL);
+    for (const room of g.def.rooms) {
+      if (room.kind !== 'combat') { expect(room.waves).toEqual([]); continue; }
+      const template = poolTemplate(PEARLY_POOL, room.templateId!);
+      room.waves.forEach((wave, index) => {
+        const authored = waveCounts(template.waves[index], roomBudget(room.shape!, room.band!));
+        expect(wave).toEqual({ ...authored, dominions: 1 + (authored.dominions ?? 0) });
+      });
+      if (room.shape === '2x2') expect(room.waves.at(-1)!.blessed).toBeGreaterThanOrEqual(1000);
+    }
+  });
   it('repins the complete R2 pool and restores the real fallback hazard/elite templates', () => {
     const g = generateFloor(PINNED_R2.seed, 1, 1, PEARLY_POOL);
     expect({ seed: g.floor.seed, attempts: g.floor.attempts, n: g.floor.n, floorHash: floorHash(g.def) }).toEqual(PINNED_R2);

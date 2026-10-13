@@ -20,6 +20,13 @@ test('uncollected gold retains its original host deadline through the quiet expi
   expect(at).toBeDefined();
   await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&room=${q.room}&class=betrayer&god=1`);
   await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
+  await page.waitForFunction(() => window.__heavenfall.activePhase === 'combat');
+  // Isolate this pickup's wallet effect: a live commander can kill minions and
+  // legitimately pay unrelated coins while we stand outside the gold's attraction range.
+  // The existing dev cleanup input grants no kill rewards and leaves props untouched.
+  while ((((await state(page)).clearedMask >>> q.room) & 1) === 0) {
+    await page.keyboard.press('KeyK'); await page.waitForTimeout(250);
+  }
   await page.evaluate(([x, y]) => window.__heavenfallTeleport!(x, y), at!);
   await expect.poll(async () => Math.hypot((await state(page)).self.x - at![0], (await state(page)).self.y - at![1])).toBeLessThan(0.2);
   await shootProp(page, q.id);
