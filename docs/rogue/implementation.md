@@ -2,6 +2,8 @@
 
 Revision 9, 2026-10-11. The development sequence for the one-dungeon Pearly Gates slice. [game.md](game.md), its catalogs and [slice-acceptance.md](slice-acceptance.md) remain the gameplay authority; this file decides **order**, not rules.
 
+**R3 checkpoint, 2026-10-14:** all five stages are implemented and verified, awaiting human play. See [R03 report](r03-report.md) for commits, exact checks, disposable item saves, the inherited-boss limitation and remaining art/balance acceptance. Tomas explicitly authorized R03; this does not mark Gate B accepted.
+
 ## The order in one sentence
 
 Make the floor first, then make the fight in it worth playing, then make the run worth keeping, then make builds, then everything that builds on builds, then the boss, then polish. Each milestone ends in something you can play and judge.
