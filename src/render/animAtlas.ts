@@ -1,3 +1,7 @@
+import cantorUrl from '../../assets/sprites/cantor/atlas.png';
+import cantorManifest from '../../assets/sprites/cantor/atlas.json';
+import carrierUrl from '../../assets/sprites/carrier/atlas.png';
+import carrierManifest from '../../assets/sprites/carrier/atlas.json';
 /**
  * Animated 8-direction sprites rendered from 3D models (scripts/blender/): one PNG atlas and a
  * manifest of frames per animation and direction for each character (§11.2).
@@ -20,7 +24,7 @@ import binderManifest from '../../assets/sprites/binder/atlas.json';
 import betrayerUrl from '../../assets/sprites/betrayer/atlas.png';
 import betrayerManifest from '../../assets/sprites/betrayer/atlas.json';
 import type { ClassId } from '../data/classes';
-import { BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER } from '../data/enemies';
+import { CANTOR, CARRIER, BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER } from '../data/enemies';
 import dominionUrl from '../../assets/sprites/dominion/atlas.png';
 import dominionManifest from '../../assets/sprites/dominion/atlas.json';
 import type { SpriteFrame } from './atlas';
@@ -100,15 +104,17 @@ async function loadAnimSet<N extends string>(url: string, manifest: Manifest, na
 export type EnemyAnimSet = AnimSet<string>;
 
 /** The atlases of every enemy type that has one, by type. */
-export async function loadEnemyAnims(includeDominion = true): Promise<Partial<Record<number, EnemyAnimSet>>> {
-  const [blessed, chorister, cherub, gatekeeper, dominion] = await Promise.all([
+export async function loadEnemyAnims(includeDominion = true, includeCantor = includeDominion, includeCarrier = includeDominion): Promise<Partial<Record<number, EnemyAnimSet>>> {
+  const [blessed, chorister, cherub, gatekeeper, cantor, carrier, dominion] = await Promise.all([
     loadAnimSet(blessedUrl, blessedManifest as Manifest, ANIM_NAMES),
     loadAnimSet(choristerUrl, choristerManifest as Manifest, CHORISTER_ANIM_NAMES),
     loadAnimSet(cherubUrl, cherubManifest as Manifest, CHERUB_ANIM_NAMES),
     loadAnimSet(gatekeeperUrl, gatekeeperManifest as Manifest, GATEKEEPER_ANIM_NAMES),
+    includeCantor ? loadAnimSet(cantorUrl, cantorManifest as Manifest, Object.keys(cantorManifest.anims)) : Promise.resolve(undefined),
+    includeCarrier ? loadAnimSet(carrierUrl, carrierManifest as Manifest, Object.keys(carrierManifest.anims)) : Promise.resolve(undefined),
     includeDominion ? loadAnimSet(dominionUrl, dominionManifest as Manifest, CHORISTER_ANIM_NAMES) : Promise.resolve(undefined),
   ]);
-  return { [BLESSED]: blessed, [CHORISTER]: chorister, [CHERUB]: cherub, [GATEKEEPER]: gatekeeper, ...(dominion ? { [DOMINION]: dominion } : {}) };
+  return { [BLESSED]: blessed, [CHORISTER]: chorister, [CHERUB]: cherub, [GATEKEEPER]: gatekeeper, ...(dominion ? { [DOMINION]: dominion } : {}), ...(cantor ? { [CANTOR]: cantor } : {}), ...(carrier ? { [CARRIER]: carrier } : {}) };
 }
 
 const PLAYER_ATLASES: Record<ClassId, { url: string; manifest: Manifest }> = {

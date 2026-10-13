@@ -1,5 +1,6 @@
 /** Lossless transport compression leaves the bounded snapshot layout/assembler and 10 Hz rate intact. */
 import { MAX_SNAPSHOT_BYTES, HEADER_BYTES, PLAYER_BYTES, DOMINION_CAST_BYTES, ENEMY_BYTES, PROJECTILE_BYTES, PICKUP_BYTES } from './protocol';
+import { COMMANDER_BYTES } from './commanderCodec';
 import { PROTOCOL_VERSION } from './version';
 const MAX_SNAPSHOT_PARTS = 4;
 const DEFLATE = 0xfe;
@@ -35,9 +36,9 @@ export async function unpackSnapshot(wire: ArrayBuffer): Promise<ArrayBuffer | n
 function transpose(raw: ArrayBuffer, reverse: boolean): ArrayBuffer | null {
   if (raw.byteLength < HEADER_BYTES || raw.byteLength > MAX_SNAPSHOT_BYTES) return null;
   const v = new DataView(raw); if (v.getUint8(0) !== PROTOCOL_VERSION) return null;
-  const counts = [v.getUint8(3), v.getUint8(66), v.getUint16(55, true), v.getUint16(57, true), v.getUint16(59, true)];
-  if (counts.some((n, i) => n > [4, 3, 1500, 400, 160][i])) return null;
-  const sizes = [PLAYER_BYTES, DOMINION_CAST_BYTES, ENEMY_BYTES, PROJECTILE_BYTES, PICKUP_BYTES];
+  const counts = [v.getUint8(3), v.getUint8(66), v.getUint8(68), v.getUint16(55, true), v.getUint16(57, true), v.getUint16(59, true)];
+  if (counts.some((n, i) => n > [4, 3, 3, 1500, 400, 160][i])) return null;
+  const sizes = [PLAYER_BYTES, DOMINION_CAST_BYTES, COMMANDER_BYTES, ENEMY_BYTES, PROJECTILE_BYTES, PICKUP_BYTES];
   if (HEADER_BYTES + counts.reduce((n, c, i) => n + c * sizes[i], 0) !== raw.byteLength) return null;
   const input = new Uint8Array(raw), output = new Uint8Array(raw.byteLength); output.set(input.subarray(0, HEADER_BYTES));
   let offset = HEADER_BYTES;

@@ -28,6 +28,15 @@ function part(p: Partial<SynthPart> & Pick<SynthPart, 'wave' | 'freq'>): SynthPa
 }
 
 export const SFX = {
+  cantorHum: { priority: PRIO_ENEMY, parts: [part({ wave: 'sine', freq: 130, attack: 0.2, hold: 0.6, release: 0.2, volume: 0.12 })] },
+  cantorBook: { priority: PRIO_ENEMY, parts: [part({ wave: 'noise', freq: 350, decay: 0.04, release: 0.12, volume: 0.22, lowpass: 600 })] },
+  cantorTell: { priority: PRIO_ABILITY, parts: [part({ wave: 'triangle', freq: 220, freqEnd: 440, attack: 0.1, hold: 2.2, release: 0.15, volume: 0.22 }), part({ wave: 'sine', freq: 330, freqEnd: 660, attack: 0.2, hold: 2.1, release: 0.15, volume: 0.15 })] },
+  cantorBeam: { priority: PRIO_ABILITY, parts: [part({ wave: 'triangle', freq: 440, attack: 0.05, hold: 2.8, release: 0.1, volume: 0.22 }), part({ wave: 'sine', freq: 660, attack: 0.05, hold: 2.8, release: 0.1, volume: 0.15 })] },
+  carrierHum: { priority: PRIO_ENEMY, parts: [part({ wave: 'sine', freq: 260, freqEnd: 220, attack: 0.2, hold: 0.6, release: 0.2, volume: 0.12 })] },
+  carrierMark: { priority: PRIO_ABILITY, parts: [part({ wave: 'triangle', freq: 330, freqEnd: 1320, attack: 0.1, hold: 0.7, release: 0.15, volume: 0.22 })] },
+  carrierSwoop: { priority: PRIO_ABILITY, parts: [part({ wave: 'noise', freq: 2200, attack: 0.15, hold: 0.15, release: 0.15, lowpass: 2200, volume: 0.25 })] },
+  carrierWings: { priority: PRIO_ABILITY, parts: [part({ wave: 'noise', freq: 500, attack: 0.12, decay: 0.12, hold: 0.25, release: 0.2, lowpass: 900, volume: 0.25 })] },
+  carrierRelease: { priority: PRIO_ENEMY, parts: [part({ wave: 'noise', freq: 900, attack: 0.1, release: 0.4, lowpass: 1200, volume: 0.16 })] },
   dominionStep: { priority: PRIO_ENEMY, parts: [part({ wave: 'noise', freq: 500, decay: 0.03, release: 0.09, volume: 0.15, lowpass: 900 }), part({ wave: 'sine', freq: 85, freqEnd: 45, decay: 0.06, release: 0.08, volume: 0.25 })] },
   spawnWarning: { priority: PRIO_OTHERS, parts: [part({ wave: 'triangle', freq: 440, freqEnd: 660, attack: 0.04, decay: 0.08, hold: 0.65, release: 0.12, volume: 0.2 })] },
   crest: { priority: PRIO_ABILITY, parts: [part({ wave: 'triangle', freq: 220, attack: 0.12, decay: 0.3, hold: 0.6, release: 0.3, volume: 0.2 }), part({ wave: 'sine', freq: 330, attack: 0.15, decay: 0.3, hold: 0.6, release: 0.3, volume: 0.18 })] },

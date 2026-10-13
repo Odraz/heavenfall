@@ -1,3 +1,4 @@
+import type { CommanderCast, CarrierCheck } from './data/commanders';
 /** The read-only debug object `window.__heavenfall` (§2.5). */
 import type { DirectorInfo } from './sim/director';
 import type { DominionLeap } from './data/dominion';
@@ -43,6 +44,8 @@ export interface DebugState {
   hazards: { activeRoom: number; activeCells: number };
   spawnWarnings: Array<{ id: number; room: number; x: number; y: number; z: number; startTick: number; readyTick: number }>;
   crests: number;
+  commanders: CommanderCast[];
+  carrierChecks: CarrierCheck[];
   dominion: { rendered: Array<{ slot: number; type: number; z: number; floor: number }>; actors: Array<{ slot: number; incarnation: number; x: number; y: number; z: number }>; casts: Array<{ slot: number; incarnation: number; castId: number; startTick: number; impactTick: number; room: number; x: number; y: number; z: number; leap?: DominionLeap }>; starts: number; startedCastIds: number[]; strikes: number; cancels: number };
   seed: number | null;
   simSeed: number | null;
@@ -109,6 +112,8 @@ export const debugState: DebugState = {
   brokenProps: [],
   propRecharges: [],
   hazards: { activeRoom: -1, activeCells: 0 },
+  commanders: [],
+  carrierChecks: [],
   dominion: { rendered: [], actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
   seed: null,
   simSeed: null,
@@ -159,6 +164,8 @@ export function resetGameDebug(): void {
     brokenProps: [],
     propRecharges: [],
     hazards: { activeRoom: -1, activeCells: 0 },
+    commanders: [],
+    carrierChecks: [],
     dominion: { rendered: [], actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
     seed: null,
     simSeed: null,

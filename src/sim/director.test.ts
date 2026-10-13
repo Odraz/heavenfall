@@ -328,7 +328,7 @@ describe('the director in the simulation (M12 §2.3)', () => {
 
   it("the local player's snap message carries the director", () => {
     const sim = arenaSim([w(30), w(20)], { players: 1 });
-    expect(localSnap(sim, 0, [], 1)).toEqual({ t: 'snap', to: 0, bufs: [], simMs: 1, director: null });
+    expect(localSnap(sim, 0, [], 1)).toEqual({ t: 'snap', to: 0, bufs: [], simMs: 1, director: null, carrierChecks: [] });
     sealAt(sim);
     for (let i = 0; i < 30; i++) sim.step();
     const m = localSnap(sim, 0, [], 1);

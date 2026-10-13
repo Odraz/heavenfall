@@ -1,3 +1,5 @@
+import type { CommanderCast } from '../data/commanders';
+import { beamSegment } from '../sim/commanders';
 /** The bot (`?bot=1`): replaces the local player's input in game (§2.5). */
 import type { ClassId } from '../data/classes';
 import { ENEMIES } from '../data/enemies';
@@ -29,6 +31,7 @@ export interface BotView {
   enemies: BotEnemy[];
   /** Already filtered by accepted cast deadline, room and incarnation. */
   dominionRings?: readonly DominionRing[];
+  commanderCasts?: readonly CommanderCast[];
   /** The snapshot's active room (255: none), its phase and the cleared rooms (rogue game.md §14.3). */
   activeRoom: number;
   activePhase: number;
@@ -202,6 +205,7 @@ export class Bot {
 
     if (goal) this.steer(now, v, goal, o);
     this.escapeDominion(v, o);
+    this.escapeCommander(v, o);
     o.jump = v.blockedLastFrame;
     return o;
   }
@@ -223,6 +227,41 @@ export class Bot {
       if (score > best + 1e-6) { best = score; dx = x; dy = y; }
     }
     o.dirX = dx; o.dirY = dy;
+  }
+
+  private escapeCommander(v: BotView, o: BotOutput): void {
+    const room = v.map.roomOf[Math.floor(v.body.y) * v.map.w + Math.floor(v.body.x)];
+    const casts = (v.commanderCasts ?? []).filter((c) => c.room === room && (c.kind === 'beam' || c.targetId === v.entryIndex && (c.phase === 'tell' || c.phase === 'active')));
+    if (!casts.length) return;
+    const score = (x: number, y: number) => {
+      let value = 0;
+      for (const c of casts) {
+        if (c.kind === 'beam') {
+          const dx = x - c.x, dy = y - c.y, d = Math.max(0.01, Math.hypot(dx, dy));
+          // Prefer a flank, and clear the visible beam perpendicularly or use cover.
+          value -= 2 * (dx * Math.cos(c.yaw) + dy * Math.sin(c.yaw)) / d;
+          if (c.phase === 'tell' || c.phase === 'active') {
+            const b = beamSegment(v.map, c), along = Math.max(0, Math.min(b.length, (x - b.x) * b.dx + (y - b.y) * b.dy));
+            value += Math.min(3, Math.hypot(x - b.x - b.dx * along, y - b.y - b.dy * along)) * 4;
+            if (!lineOfSight(v.map, b.x, b.y, b.z, x, y, v.body.z + PLAYER_HEIGHT / 2)) value += 8;
+          }
+        } else {
+          const dx = c.targetX - c.x, dy = c.targetY - c.y, length = Math.max(0.01, Math.hypot(dx, dy));
+          value += 4 * Math.abs((x - c.x) * dy - (y - c.y) * dx) / length;
+          if (v.teammates.length) value -= Math.min(...v.teammates.map((p) => Math.hypot(x - p.x, y - p.y))) * 0.5;
+        }
+      }
+      return value;
+    };
+    let best = score(v.body.x, v.body.y);
+    for (let k = 0; k < 16; k++) {
+      const dx = Math.cos(k * Math.PI / 8), dy = Math.sin(k * Math.PI / 8), probe = { ...v.body };
+      let legal = true;
+      for (let n = 0; n < 5; n++) if (!tryDisplace(v.map, probe, dx * 0.2, dy * 0.2)) { legal = false; break; }
+      if (!legal) continue;
+      const next = score(probe.x, probe.y);
+      if (next > best + 1e-6) { best = next; o.dirX = dx; o.dirY = dy; }
+    }
   }
 
   /** BFS through cleared rooms; closest frontier first, then room index. */
@@ -361,7 +400,7 @@ export class Bot {
     const list = v.enemies
       .map((e) => {
         const def = ENEMIES[e.type];
-        return { e, d: distToCylinder(ex, ey, ez, e.x, e.y, e.z, def.radius, def.height) };
+        return { e, d: (v.commanderCasts?.some((c) => c.slot === e.slot && c.phase === 'carry') ? -10000 : 0) + distToCylinder(ex, ey, ez, e.x, e.y, e.z, def.radius, def.height) };
       })
       .sort((a, b) => a.d - b.d);
     for (const { e } of list) {

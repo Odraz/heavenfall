@@ -143,7 +143,7 @@ const CHAIN_CONE_FADE_MS = 400;
 const CHAIN_CONE_RING = 0xff5a1e;
 
 /** Line segments drawn as strips that face the camera, the texture repeating along each one. */
-class Ribbon {
+export class Ribbon {
   readonly mesh: THREE.Mesh;
   /** Segment endpoints in three.js coordinates, two per segment. */
   private readonly ends: THREE.Vector3[];
@@ -156,7 +156,7 @@ class Ribbon {
 
   constructor(
     points: Array<[number, number, number]>,
-    private readonly width: number,
+    public width: number,
     material: THREE.Material,
     private readonly tileLength: number,
   ) {

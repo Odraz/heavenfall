@@ -6,11 +6,12 @@
  * the 8th tick in range, then every 1 s: M12 §3.2), and casts from when the wind-up began and when the shot fired. Cherubs flap their
  * wings on a clock instead of walking; the Gatekeeper's casts follow the boss cast in the snapshot.
  */
-import { BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_FALLING, ST_MOVING, ST_WINDUP } from '../data/enemies';
+import { CANTOR, CARRIER, BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_FALLING, ST_MOVING, ST_WINDUP } from '../data/enemies';
 import { BOSS_CAST_JUDGMENT, BOSS_CAST_VOLLEY } from '../sim/sim';
 import { ENEMY_SLOTS } from '../sim/constants';
+import { CANTOR_TELL } from '../data/commanders';
 
-export type EnemyAnimName = 'idle' | 'walk' | 'fly' | 'attack' | 'cast' | 'volley' | 'judgment' | 'pain' | 'death';
+export type EnemyAnimName = 'sing' | 'close' | 'mark' | 'swoop' | 'carry' | 'idle' | 'walk' | 'fly' | 'attack' | 'cast' | 'volley' | 'judgment' | 'pain' | 'death';
 
 /** Meters walked per walk cycle (two steps), so the feet keep pace with the ground: the Blessed's. */
 export const WALK_CYCLE_M = 1.6;
@@ -27,6 +28,8 @@ export interface CastTiming {
   releaseMs: number;
 }
 export const CAST_TIMINGS: Partial<Record<number, CastTiming>> = {
+  [CANTOR]: { windupFrames: 8, windupMs: CANTOR_TELL / 30 * 1000, releaseFrames: 0, releaseMs: 0 },
+  [CARRIER]: { windupFrames: 4, windupMs: 500, releaseFrames: 2, releaseMs: 200 },
   [DOMINION]: { windupFrames: 6, windupMs: 1500, releaseFrames: 2, releaseMs: 1000 },
   [CHORISTER]: { windupFrames: 6, windupMs: 1000, releaseFrames: 2, releaseMs: 250 },
   [CHERUB]: { windupFrames: 4, windupMs: 500, releaseFrames: 2, releaseMs: 200 },
@@ -196,7 +199,7 @@ export class EnemyAnimator {
       const t = (((now - this.stateSince[slot] + ATTACK_LEAD_MS) % ATTACK_CYCLE_MS) + ATTACK_CYCLE_MS) % ATTACK_CYCLE_MS;
       return { anim: 'attack', frame: Math.floor((t / ATTACK_CYCLE_MS) * ATTACK_FRAMES) };
     }
-    if (type === CHERUB) {
+    if (type === CHERUB || type === CARRIER) {
       // Wingbeats on a clock, offset per slot so a flock doesn't flap in unison.
       const t = (((now + slot * 0.618034 * FLY_CYCLE_MS) % FLY_CYCLE_MS) + FLY_CYCLE_MS) % FLY_CYCLE_MS;
       return { anim: 'fly', frame: Math.floor((t / FLY_CYCLE_MS) * FLY_FRAMES) % FLY_FRAMES };

@@ -7,7 +7,7 @@ import {
   CHERUB_CLIMB,
   CHERUB_HOVER,
   CHORISTER,
-  DOMINION,
+  DOMINION, CANTOR, CARRIER, isCommander,
   ENEMIES,
   GATEKEEPER,
   ST_ATTACKING,
@@ -117,6 +117,8 @@ import { Props, type Prop } from './props';
 import { HaloLedger, HALO_WEIGHT, haloBudget, moteCap } from './economy';
 import { Pickups } from './pickups';
 import { Dominions } from './dominion';
+import { Commanders, carryPathClear, type beamSegment } from './commanders';
+import { hymnalReduction } from '../data/commanders';
 import { directionalSpeedFactor } from '../data/movement';
 import { dominionLeapClear } from './dominionLeap';
 import { DOMINION_ALIVE_CAP, DOMINION_COOLDOWN_TICKS, DOMINION_REACH, DOMINION_RADIUS, DOMINION_HEIGHT_TOLERANCE, DOMINION_PLAYER_DAMAGE, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_VZ, DOMINION_LEAP_CHARGE_TICKS, DOMINION_LEAP_LEAD_SECONDS, DOMINION_LEAP_MIN_RANGE, DOMINION_LEAP_MAX_RANGE, DOMINION_TELL_TICKS, DOMINION_MELEE_RANGE, DOMINION_MELEE_DAMAGE, dominionLeapPosition, type DominionLeap, type DominionCast, type DominionPhase } from '../data/dominion';
@@ -413,6 +415,7 @@ const CASTERS: Record<number, CasterDef> = {
   // The globe leaves from the orb the Chorister holds above its head (2.3 m, as drawn) and flies at
   // 6 m/s, so it's seen coming and can be shot (M12 follow-up §1.3, after playtesting stage 9).
   [CHORISTER]: { castZ: GLOBE_CAST_Z, range: CHORISTER_RANGE, windup: 1.0, recovery: 1.5, kind: PROJ_GLOBE, speed: GLOBE_SPEED, damage: 12, radius: 0.3 },
+  [CARRIER]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 18, damage: 8, radius: 0.15 },
   [CHERUB]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 18, damage: 8, radius: 0.15 },
 };
 
@@ -550,6 +553,7 @@ export class Simulation {
   readonly pickups: Pickups;
   readonly props: Props;
   readonly dominions: Dominions;
+  readonly commanders = new Commanders(this);
   readonly eGoldEntitled = new Uint8Array(ENEMY_SLOTS);
   private readonly eliteGold = new Map<number, number[]>();
   private readonly elitePlaced = new Map<number, number[]>();
@@ -821,7 +825,7 @@ export class Simulation {
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
-      pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
+      pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), commanderCasts: this.commanders.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
   }
 
   private discoverNeighbours(ai: number): void {
@@ -893,8 +897,9 @@ export class Simulation {
       p.lastAcceptMs = nowMs;
       return;
     }
-    let x = m.x;
-    let y = m.y;
+    const carried = !!this.commanders.carriedBy(p.id);
+    let x = carried ? p.x : m.x;
+    let y = carried ? p.y : m.y;
     if (p.launchUntilMs === -1) p.launchUntilMs = nowMs + DOMINION_LAUNCH_SECONDS * 1000;
     if (nowMs >= p.speedCheckSkipUntil) {
       const elapsed = Math.max(0, nowMs - p.lastAcceptMs) / 1000;
@@ -909,7 +914,7 @@ export class Simulation {
         y = p.y + (dy / d) * maxD;
       }
     }
-    let z = m.z;
+    let z = carried ? p.z : m.z;
     const g = groundHeight(this.map, x, y, PLAYER_RADIUS, Infinity, false, true);
     if (g !== -Infinity && z < g) z = g;
     // A Shadowstep press starts its path where the Betrayer stood before this input (M12 §5.7).
@@ -945,7 +950,8 @@ export class Simulation {
   }
 
   /** Moves a player on the host and tells its client (§9.3). */
-  teleport(p: SimPlayer, x: number, y: number, z: number, launch?: { dx: number; dy: number }): void {
+  teleport(p: SimPlayer, x: number, y: number, z: number, launch?: { dx: number; dy: number }, carry?: boolean): void {
+    if (carry === undefined) this.commanders.releasePlayer(p.id, false);
     p.x = x;
     p.y = y;
     p.z = z;
@@ -953,7 +959,7 @@ export class Simulation {
     p.lastAcceptMs = this.nowMs;
     p.moveVx = p.moveVy = 0;
     p.launchUntilMs = launch ? -1 : 0;
-    this.emit(p.id, { type: 'teleport', teleportId: p.teleportId, x, y, z, ...(launch ? { launch } : {}) });
+    this.emit(p.id, { type: 'teleport', teleportId: p.teleportId, x, y, z, ...(launch ? { launch } : {}), ...(carry !== undefined ? { carry } : {}) });
   }
 
   /** Adds a player to the game in its slot, with its feet at (x, y, z). */
@@ -1097,6 +1103,7 @@ export class Simulation {
     this.updateEnemies();
     this.separate(0);
     this.separate(1);
+    this.commanders.pulse();
     this.updateProjectiles();
     this.updateClouds();
     this.props.update(this.tick, (p) => this.explodeProp(p), (p) => this.emit('all', { type: 'propReady', id: p.id, x: p.x, y: p.y, z: p.z }));
@@ -1142,7 +1149,7 @@ export class Simulation {
     this.finish('victory');
   }
 
-  private livingTargetable(p: SimPlayer | undefined): p is SimPlayer {
+  livingTargetable(p: SimPlayer | undefined): p is SimPlayer {
     return !!p && p.connected && !p.dead;
   }
 
@@ -1312,7 +1319,7 @@ export class Simulation {
       if (this.eRoom[s] !== ai || this.eType[s] === GATEKEEPER || this.leashed[s]) continue;
       if (this.recoveryArrivals.has(s)) continue;
       const avoids = !ENEMIES[this.eType[s]].flying && this.dryNavigation.room === ai;
-      const fields = this.eType[s] === CHERUB ? this.airFields : avoids ? this.dryNavigation.fields : this.groundFields;
+      const fields = ENEMIES[this.eType[s]].flying ? this.airFields : avoids ? this.dryNavigation.fields : this.groundFields;
       const c = Math.floor(this.eX[s]), r = Math.floor(this.eY[s]);
       const anchor = avoids && this.hazards.active[r * this.map.w + c] ? this.dryNavigation.project(r * this.map.w + c) : r * this.map.w + c;
       const reachable = anchor >= 0 && this.players.some((p) => this.livingTargetable(p) && this.fieldValid[p.index] && fields[p.index] && fields[p.index]!.targetCell >= 0 && fields[p.index]!.at(anchor % this.map.w, Math.floor(anchor / this.map.w)) !== UNREACHABLE);
@@ -1372,7 +1379,7 @@ export class Simulation {
   private updateRecoveryArrivals(): void {
     for (const [s, q] of this.recoveryArrivals) {
       const type = this.eType[s], cell = Math.floor(this.eY[s]) * this.map.w + Math.floor(this.eX[s]);
-      const fields = type === CHERUB ? this.airFields : this.dryNavigation.room === q.room ? this.dryNavigation.fields : this.groundFields;
+      const fields = ENEMIES[type].flying ? this.airFields : this.dryNavigation.room === q.room ? this.dryNavigation.fields : this.groundFields;
       const reachable = this.players.some((p) => this.livingTargetable(p) && this.fieldValid[p.index] && fields[p.index] && fields[p.index]!.at(cell % this.map.w, Math.floor(cell / this.map.w)) !== UNREACHABLE);
       const z = this.map.floor[q.r * this.map.w + q.c], def = ENEMIES[type];
       const cancel = !this.eAlive[s] || this.eIncarnation[s] !== q.incarnation || this.eRoom[s] !== q.room || this.activePhase !== PHASE_COMBAT || this.activeRoom !== q.room ||
@@ -1382,7 +1389,7 @@ export class Simulation {
       if (!cancel && !this.spawnWarnings.permit(q.room, q.c + 0.5, q.r + 0.5, z, this.tick, undefined, 'recovery')) continue;
       if (!cancel) {
         this.eX[s] = this.eStillX[s] = q.c + 0.5; this.eY[s] = this.eStillY[s] = q.r + 0.5;
-        this.eZ[s] = z + (type === CHERUB ? CHERUB_HOVER : 0); this.eStillSince[s] = this.eSpawnTick[s] = this.tick;
+        this.eZ[s] = z + (ENEMIES[type].flying ? CHERUB_HOVER : 0); this.eStillSince[s] = this.eSpawnTick[s] = this.tick;
         this.eUnreachableSince[s] = this.eRecoveryFailed[s] = -1; this.retarget(s);
       }
       this.recoveryArrivals.delete(s); const key = `${q.room}:${q.c}:${q.r}`, left = this.recoveryPointUsers.get(key)! - 1;
@@ -1391,7 +1398,7 @@ export class Simulation {
     }
   }
 
-  private roomAt(x: number, y: number): number {
+  roomAt(x: number, y: number): number {
     const c = Math.floor(x), r = Math.floor(y);
     return c >= 0 && r >= 0 && c < this.map.w && r < this.map.h ? this.map.roomOf[r * this.map.w + c] : ROOM_NONE;
   }
@@ -1627,7 +1634,7 @@ export class Simulation {
     let flyers = forceAir || room !== ROOM_NONE && (this.rooms[room].squad?.type === CHERUB || this.rooms[room].queue.some((b) => b.counts[2] > b.spawned[2]));
     for (let k = 0; k < this.activeCount && !flyers; k++) {
       const s = this.active[k];
-      flyers = this.eType[s] === CHERUB && (this.eRoom[s] === room || (this.eRoom[s] < 0 && this.roomAt(this.eX[s], this.eY[s]) === room));
+      flyers = ENEMIES[this.eType[s]].flying && (this.eRoom[s] === room || (this.eRoom[s] < 0 && this.roomAt(this.eX[s], this.eY[s]) === room));
     }
     if (flyers) this.airFields[p.index].compute(c, r, clamp);
     else this.airFields[p.index].targetCell = -1;
@@ -1824,11 +1831,18 @@ export class Simulation {
       if (this.activeCount >= MAX_LIVING_ENEMIES) return;
       if (paced && st.pace < 1 - 1e-9) return;
       const batch = st.queue[0];
-      const typeIndex = this.nextType(batch, eligibleByType.map((mask, k) => mask.some((ok, i) => !!ok && st.budgets[i] >= 1) || warned.get(SPAWN_TYPES[k]) === true));
+      const family = batch.wave >= 0 && batch.spawned[3] === 0 ? def.waves[batch.wave].commander : undefined;
+      const preferredType = family === 'cantor' ? CANTOR : family === 'carrier' ? CARRIER : DOMINION;
+      const leaderType = preferredType !== DOMINION && !this.commanders.hasFamily(preferredType, ai) ? preferredType : DOMINION;
+      eligibleByType[3] = maskFor(leaderType);
+      if (warned.get(leaderType) && !eligibleByType[3].some(Boolean)) {
+        const key = `${ai}:${leaderType}`; if (!this.spawnBlockedSince.has(key)) this.spawnBlockedSince.set(key, this.tick);
+      }
+      const typeIndex = this.nextType(batch, eligibleByType.map((mask, k) => mask.some((ok, i) => !!ok && st.budgets[i] >= 1) || warned.get(k === 3 ? leaderType : SPAWN_TYPES[k]) === true));
       if (typeIndex < 0) return; // Pending elites wait; fodder remains eligible while the cap is full.
       let found = -1;
-      const eligible = eligibleByType[typeIndex], type = SPAWN_TYPES[typeIndex];
-      const affinity = type === CHORISTER ? def.chorister : type === DOMINION ? def.dominion : undefined;
+      const eligible = eligibleByType[typeIndex], type = typeIndex === 3 ? leaderType : SPAWN_TYPES[typeIndex];
+      const affinity = (type === CHORISTER || type === CANTOR) ? def.chorister : type === DOMINION ? def.dominion : undefined;
       const preferred = affinity?.filter((i) => eligible[i] && st.budgets[i] >= 1);
       if (preferred?.length && !warned.get(type)) found = preferred[Math.floor(this.random() * preferred.length)];
       for (let k = 0; k < np; k++) {
@@ -1921,7 +1935,7 @@ export class Simulation {
     return points.map(([x, y]) => {
       const index = markers.findIndex(([c, r]) => x === c && y === r);
       const tag = tags.find((t) => t.index === index);
-      return !tag || tag.only.some((id) => type === (id === 'chorister' ? CHORISTER : DOMINION));
+      return !tag || tag.only.some((id) => (id === 'chorister' ? type === CHORISTER || type === CANTOR : type === DOMINION));
     });
   }
 
@@ -2008,6 +2022,7 @@ export class Simulation {
 
   private spawnAt(slot: number, type: number, c: number, r: number, room: number, wave: number): void {
     if (this.nextIncarnation > 0xffffffff) throw new Error('enemy incarnation exhausted');
+    if ((type === CANTOR || type === CARRIER) && this.commanders.hasFamily(type, room)) type = DOMINION;
     const def = ENEMIES[type];
     this.eIncarnation[slot] = this.nextIncarnation++;
     this.eSpawnTick[slot] = this.tick;
@@ -2016,17 +2031,17 @@ export class Simulation {
     this.eState[slot] = ST_IDLE;
     this.eX[slot] = c + 0.5;
     this.eY[slot] = r + 0.5;
-    this.eZ[slot] = this.map.floor[r * this.map.w + c] + (type === CHERUB ? CHERUB_HOVER : 0);
+    this.eZ[slot] = this.map.floor[r * this.map.w + c] + (ENEMIES[type].flying ? CHERUB_HOVER : 0);
     this.eStartX[slot] = this.eX[slot];
     this.eStartY[slot] = this.eY[slot];
     this.eVz[slot] = 0;
     this.eGrounded[slot] = 1;
     this.eHp[slot] = def.hp;
-    if (type === DOMINION) this.livingDominions++;
+    if (isCommander(type)) this.livingDominions++;
     this.eGoldEntitled[slot] = 0;
     this.dominions.reset(slot);
     this.dominions.leapReadyAt[slot] = this.tick + DOMINION_COOLDOWN_TICKS;
-    if (type === DOMINION && wave >= 0) {
+    if (isCommander(type) && wave >= 0) {
       const n4 = this.map.rooms[room].waves[wave].dominions ?? 0;
       const party = this.rooms[room].partySize, count = scaleCount(n4, party);
       if (count > 0) this.eHp[slot] *= n4 * partyMultiplier(party) / count;
@@ -2069,6 +2084,7 @@ export class Simulation {
       if (wave >= 0) st.waveAlive[wave]++;
     }
     this.retarget(slot);
+    this.commanders.spawn(slot);
   }
 
   /**
@@ -2078,10 +2094,11 @@ export class Simulation {
   removeEnemy(slot: number, sweep = false): void {
     if (!this.eAlive[slot]) return;
     this.dominions.cancel(slot, this.tick);
+    this.commanders.remove(slot);
     this.eAlive[slot] = 0;
     this.ePooled[slot] = 0;
     const type = this.eType[slot];
-    if (type === DOMINION) this.livingDominions--;
+    if (isCommander(type)) this.livingDominions--;
     const d = sweep || type === GATEKEEPER ? null : this.activeDirector();
     if (d) {
       for (const p of this.players) {
@@ -2132,8 +2149,14 @@ export class Simulation {
    * burst death (M12 §4.1), summed over the tick; a burst is blasted away from (fromX, fromY), by
    * default the credited player.
    */
-  damageEnemy(slot: number, amount: number, source: number, force = amount, fromX = NaN, fromY = NaN, worldBurst = false): void {
+  damageEnemy(slot: number, amount: number, source: number, force = amount, fromX = NaN, fromY = NaN, worldBurst = false, areaSource = Number.isFinite(fromX) && Number.isFinite(fromY)): void {
     if (!this.eAlive[slot] || amount <= 0) return;
+    const cast = this.commanders.active.get(slot);
+    if (cast?.kind === 'beam' && !worldBurst && (source >= 0 || Number.isFinite(fromX) && Number.isFinite(fromY))) {
+      const area = areaSource, attacker = this.slots[source];
+      const x = area ? fromX : attacker?.x, y = area ? fromY : attacker?.y;
+      if (x !== undefined && y !== undefined) { const factor = hymnalReduction(cast.yaw, x - this.eX[slot], y - this.eY[slot], area); amount *= factor; force *= factor; }
+    }
     // 1. Bound (M9 §3.6): a rooted enemy, during the pull too, takes double damage, and double force.
     if (this.isRooted(slot)) {
       amount *= BOUND_FACTOR;
@@ -2151,6 +2174,7 @@ export class Simulation {
     }
     const shooter = source >= 0 ? this.slots[source] : undefined;
     if (shooter) shooter.damage += Math.min(amount, this.eHp[slot]);
+    this.commanders.damaged(slot, Math.min(amount, this.eHp[slot]));
     this.eHp[slot] -= amount;
     this.eHurtTick[slot] = this.tick;
     // 5. Death and kill credit.
@@ -2172,13 +2196,13 @@ export class Simulation {
     if (this.eWave[slot] >= 0) {
       const coins = this.haloLedgers.get(room)?.death(HALO_WEIGHT[type as 0 | 1 | 2] ?? 0) ?? 0;
       for (let i = 0; i < coins; i++) this.pickups.drop(COIN, room, x, y, this.tick, 1);
-      if (type === DOMINION) {
+      if (isCommander(type)) {
         if (this.eGoldEntitled[slot]) this.pickups.drop(GOLD_HALO, room, x, y, this.tick);
         this.eGoldEntitled[slot] = 0;
         this.dropMote(room, x, y); this.dropMote(room, x, y);
       }
       // Reward ordinary wave kills too; cleanup, leashed enemies and boss adds never roll items.
-      const itemChance = type === DOMINION ? 0.5 : type === BLESSED ? 0.02 : 0.12;
+      const itemChance = isCommander(type) ? 0.5 : type === BLESSED ? 0.02 : 0.12;
       if (this.random() < itemChance) this.pickups.drop(itemDrop(this.random), room, x, y, this.tick);
     }
     if ((type === CHORISTER || type === CHERUB) && this.random() < 0.35) this.dropMote(room, x, y);
@@ -2369,6 +2393,7 @@ export class Simulation {
 
   root(slot: number, seconds: number): void {
     if (this.immune(slot)) return;
+    if (this.eType[slot] === CARRIER) this.commanders.cancel(slot);
     this.eRootUntil[slot] = Math.max(this.eRootUntil[slot], this.tick + ticks(seconds));
     if (this.dominions.active.get(slot)?.leap) this.dominions.cancel(slot, this.tick);
   }
@@ -2383,6 +2408,7 @@ export class Simulation {
     if (this.immune(slot)) return;
     this.eStunUntil[slot] = Math.max(this.eStunUntil[slot], this.tick + ticks(seconds));
     this.dominions.cancel(slot, this.tick);
+    this.commanders.cancel(slot);
     this.eCast[slot] = 0;
     this.eCastT[slot] = 0;
   }
@@ -2395,6 +2421,7 @@ export class Simulation {
   silence(slot: number, seconds: number): void {
     this.eSilenceUntil[slot] = Math.max(this.eSilenceUntil[slot], this.tick + ticks(seconds));
     this.dominions.cancel(slot, this.tick);
+    this.commanders.cancel(slot);
     this.eCast[slot] = 0;
     this.eCastT[slot] = 0;
   }
@@ -2430,6 +2457,7 @@ export class Simulation {
   /** Chains: moves linearly to (x, y) over 0.3 s ignoring collision, then roots for 1.5 s. */
   pull(slot: number, x: number, y: number, floorZ: number): void {
     if (this.immune(slot)) return;
+    if (this.eType[slot] === CARRIER) this.commanders.cancel(slot);
     const o = slot * 6;
     this.ePull[o] = this.eX[slot];
     this.ePull[o + 1] = this.eY[slot];
@@ -2437,7 +2465,7 @@ export class Simulation {
     this.ePull[o + 3] = x;
     this.ePull[o + 4] = y;
     // Ground enemies end on the floor there; flyers keep their hover height.
-    this.ePull[o + 5] = this.eType[slot] === CHERUB ? this.eZ[slot] : floorZ;
+    this.ePull[o + 5] = ENEMIES[this.eType[slot]].flying ? this.eZ[slot] : floorZ;
     this.ePullStart[slot] = this.tick;
     this.eKbUntil[slot] = 0;
   }
@@ -2897,6 +2925,7 @@ export class Simulation {
         p.dash = null;
         return;
       }
+      this.commanders.releasePlayer(p.id, false);
       if (p.classId === 'fallen') {
         // Falling Star (M12 §5.2): the leap goes wherever the Fallen aimed, so no ally is needed; it
         // lands 15 ticks later, invulnerable until then. `targets` is the ally it went to, if valid.
@@ -2959,6 +2988,7 @@ export class Simulation {
       else this.damageEnemy(s, FALLING_STAR_REACH_DAMAGE, p.index, FALLING_STAR_REACH_DAMAGE, cx, cy);
       if (!this.eAlive[s] || this.isRooted(s) || this.immune(s)) continue;
       this.knockAway(s, cx, cy, KNOCKBACK_DIST, FALLING_STAR_KNOCKBACK_TIME);
+      this.commanders.cancel(s);
       this.dominions.cancel(s, this.tick); // Falling Star's accepted launch, even though its arc is drawn only.
       launched.push(s);
     }
@@ -3013,7 +3043,7 @@ export class Simulation {
     // dash, from a point behind the enemy on the segment's direction (M12 §4.1).
     for (const s of hit) {
       dash.cut.add(s);
-      this.damageEnemy(s, SHADOWSTEP_CUT_DAMAGE, p.index, SHADOWSTEP_CUT_DAMAGE, this.eX[s] - ux, this.eY[s] - uy);
+      this.damageEnemy(s, SHADOWSTEP_CUT_DAMAGE, p.index, SHADOWSTEP_CUT_DAMAGE, this.eX[s] - ux, this.eY[s] - uy, false, false);
     }
   }
 
@@ -3226,7 +3256,7 @@ export class Simulation {
     this.pY[slot] = y;
     this.pZ[slot] = z;
     this.removeProjectile(slot);
-    if (direct >= 0) this.damageEnemy(direct, damage, owner);
+    if (direct >= 0) this.damageEnemy(direct, damage, owner, damage, x, y);
     const shooter = this.slots[owner];
     if (!shooter) return;
     // At most 6 clouds: a new one replaces the oldest.
@@ -3251,7 +3281,7 @@ export class Simulation {
     const pulsing = this.clouds.filter((c) => this.tick >= c.from && (this.tick - c.from) % CLOUD_PULSE_TICKS === 0);
     if (pulsing.length === 0) return;
     for (const c of pulsing) if (c.owner.connected) this.props.area(c.x, c.y, c.z, CLOUD_RADIUS, this.tick);
-    const hits: Array<[number, number]> = [];
+    const hits: Array<[number, number, number, number]> = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
       if (this.tick - this.eIncenseTick[s] < CLOUD_PULSE_TICKS) continue;
@@ -3260,13 +3290,13 @@ export class Simulation {
       for (let i = pulsing.length - 1; i >= 0; i--) {
         const c = pulsing[i];
         if (distToCylinder(c.x, c.y, c.z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > CLOUD_RADIUS) continue;
-        hits.push([s, c.owner.connected ? c.owner.index : -1]);
+        hits.push([s, c.owner.connected ? c.owner.index : -1, c.x, c.y]);
         this.eIncenseTick[s] = this.tick;
         break;
       }
     }
     // Applied after the scan: a kill removes the enemy from the active list.
-    for (const [s, source] of hits) this.damageEnemy(s, CLOUD_DAMAGE, source);
+    for (const [s, source, x, y] of hits) this.damageEnemy(s, CLOUD_DAMAGE, source, CLOUD_DAMAGE, x, y);
   }
 
   // ------------------------------------------------------------------ enemies
@@ -3292,7 +3322,7 @@ export class Simulation {
         return;
       }
     }
-    const air = this.eType[slot] === CHERUB;
+    const air = ENEMIES[this.eType[slot]].flying;
     const c = Math.floor(this.eX[slot]);
     const r = Math.floor(this.eY[slot]);
     let best = -1;
@@ -3385,6 +3415,8 @@ export class Simulation {
         this.updateBoss(slot);
         continue;
       }
+      const familyHolding = this.commanders.update(slot);
+      if (familyHolding && type === CARRIER) continue;
       if (type === DOMINION && this.updateDominionFlight(slot)) continue;
       if (this.ePullStart[slot] >= 0) {
         this.updatePull(slot);
@@ -3395,8 +3427,8 @@ export class Simulation {
       // doesn't strike or cast, and is idle.
       const stunned = this.isStunned(slot);
       if (tick > this.eKbFrom[slot] && tick <= this.eKbUntil[slot]) this.updateKnockback(slot);
-      else if (type === CHERUB) this.updateCherub(slot, stunned);
-      else this.updateWalker(slot, stunned);
+      else if (ENEMIES[type].flying) this.updateCherub(slot, stunned);
+      else this.updateWalker(slot, stunned, familyHolding);
       const thrown = tick <= this.eKbUntil[slot] && !this.eGrounded[slot];
       if (stunned || thrown) {
         this.eMeleeNext[slot] = -1;
@@ -3404,8 +3436,9 @@ export class Simulation {
         this.eCastT[slot] = 0;
         if (this.eCastCd[slot] > 0) this.eCastCd[slot] = Math.max(0, this.eCastCd[slot] - TICK_DT);
         this.eState[slot] = thrown ? ST_FALLING : ST_IDLE;
-      } else if (type === BLESSED) this.updateMelee(slot);
-      else if (type !== DOMINION) this.updateCast(slot);
+      } else if (type === CANTOR && familyHolding) { const phase = this.commanders.active.get(slot)?.phase; this.eState[slot] = phase === 'tell' ? ST_WINDUP : ST_ATTACKING; }
+      else if (type === BLESSED) this.updateMelee(slot);
+      else if (type !== DOMINION && type !== CANTOR) this.updateCast(slot);
     }
     this.updateDominions();
   }
@@ -3492,11 +3525,12 @@ export class Simulation {
     for (let k = 0; k < this.activeCount; k++) {
       const q = this.active[k], type = this.eType[q], def = ENEMIES[type];
       if (q === s || type === GATEKEEPER || !this.eGrounded[q]) continue;
-      if (type === CHERUB && Math.abs(this.eZ[q] - groundHeight(this.map, this.eX[q], this.eY[q], def.radius, Infinity, false, true)) > 0.05) continue;
+      if (def.flying && Math.abs(this.eZ[q] - groundHeight(this.map, this.eX[q], this.eY[q], def.radius, Infinity, false, true)) > 0.05) continue;
       if (eligible(this.eX[q], this.eY[q], this.eZ[q], def.height)) victims.push(q);
     }
     for (const q of victims) {
       this.dominions.cancel(q, this.tick);
+      this.commanders.cancel(q);
       this.ePullStart[q] = -1;
       this.knockAway(q, x, y, DOMINION_LAUNCH_SPEED * DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_SECONDS);
       this.eVz[q] = DOMINION_LAUNCH_VZ; this.eGrounded[q] = 0;
@@ -3728,14 +3762,14 @@ export class Simulation {
   private readonly steerOut = { dx: 0, dy: 0, dist: 0, direct: false };
 
   /** Blessed and Choristers: follow the ground field; Choristers stop to cast in range. A stunned one doesn't steer. */
-  private updateWalker(slot: number, stunned: boolean): void {
+  private updateWalker(slot: number, stunned: boolean, familyHolding = false): void {
     const type = this.eType[slot];
     const b = this.loadBody(slot);
     const t = this.eTarget[slot];
     let mx = 0;
     let my = 0;
     const rooted = this.tick < this.eRootUntil[slot];
-    const holds = type === DOMINION ? this.dominions.holding(slot, this.tick) : type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot));
+    const holds = familyHolding || (type === DOMINION ? this.dominions.holding(slot, this.tick) : type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot)));
     const p = t >= 0 ? this.slots[t] : undefined;
     const avoids = this.dryNavigation.room >= 0 && this.dryNavigation.room === this.roomAt(b.x, b.y);
     const cell = avoids ? this.hazards.cell(b.x, b.y) : -1, inFire = avoids && !!this.hazards.active[cell];
@@ -3777,7 +3811,11 @@ export class Simulation {
     const rooted = this.tick < this.eRootUntil[slot];
     const p = t >= 0 ? this.slots[t] : undefined;
     if (p && !rooted && !stunned) {
-      if (this.casterInRange(slot)) {
+      // A Carrier must approach inside its 20 m acquisition range. Strafing at the Cherub's
+      // 25 m arrow range otherwise leaves it circling forever without a chance to carry.
+      const carryApproach = this.eType[slot] === CARRIER && (Math.hypot(p.x - b.x, p.y - b.y) > 20 ||
+        !carryPathClear(this.map, this.eRoom[slot], b.x, b.y, b.z, b.x, b.y, b.z));
+      if (this.casterInRange(slot) && !carryApproach) {
         strafing = true;
         const base = Math.atan2(p.y - b.y, p.x - b.x);
         const a = base + (this.eStrafe[slot] * Math.PI) / 2;
@@ -3892,6 +3930,18 @@ export class Simulation {
     this.spawnProjectile(c.kind, ox, oy, oz, dx, dy, dz, c.speed, c.radius, c.damage, PROJECTILE_RANGE, -1);
   }
 
+  /** Candidate cells along the beam, padded for bodies/separation displacement. */
+  commanderBeamCandidates(b: ReturnType<typeof beamSegment>): number[] {
+    const cells = new Set<number>(), found = new Set<number>(), { w, h } = this.map;
+    for (let t = 0; t <= b.length + 0.5; t += 0.5) {
+      const x = b.x + b.dx * Math.min(t, b.length), y = b.y + b.dy * Math.min(t, b.length);
+      for (let r = Math.max(0, Math.floor(y - 1.5)); r <= Math.min(h - 1, Math.floor(y + 1.5)); r++)
+        for (let c = Math.max(0, Math.floor(x - 1.5)); c <= Math.min(w - 1, Math.floor(x + 1.5)); c++) cells.add(r * w + c);
+    }
+    for (const cell of cells) for (const layer of [0, 1] as const) for (let i = this.hashStart[layer][cell]; i < this.hashStart[layer][cell + 1]; i++) found.add(this.hashItems[layer][i]);
+    return [...found];
+  }
+
   /** Pushes overlapping enemies apart, half the overlap each, up to 8 neighbors (§7.3). */
   private separate(layer: 0 | 1): void {
     const { w, h } = this.map;
@@ -3901,7 +3951,7 @@ export class Simulation {
     start.fill(0);
     const isLayer = (slot: number) => {
       const t = this.eType[slot];
-      return t !== GATEKEEPER && (t === CHERUB) === (layer === 1);
+      return t !== GATEKEEPER && ENEMIES[t].flying === (layer === 1);
     };
     const cellOf = (slot: number) => {
       let c = Math.floor(this.eX[slot]);
@@ -3917,7 +3967,7 @@ export class Simulation {
       start[cellOf(s) + 1]++;
       n++;
     }
-    if (n < 2) return;
+    if (n === 0) return;
     for (let i = 0; i < cells; i++) start[i + 1] += start[i];
     const fill = this.hashFill;
     fill.set(start.subarray(0, cells));
@@ -3930,7 +3980,7 @@ export class Simulation {
     const b = this.body;
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
-      if (!isLayer(s) || this.ePullStart[s] >= 0 || this.dominions.active.get(s)?.leap) continue;
+      if (!isLayer(s) || this.ePullStart[s] >= 0 || this.dominions.active.get(s)?.leap || this.commanders.active.get(s)?.phase === 'carry' || this.commanders.active.get(s)?.phase === 'active') continue;
       const def = ENEMIES[this.eType[s]];
       const x = this.eX[s];
       const y = this.eY[s];
@@ -4022,6 +4072,7 @@ export class Simulation {
     this.preparedTick = this.tick;
     const e = this.ent;
     e.dominionCasts = this.dominions.checkpoint();
+    e.commanderCasts = this.commanders.checkpoint();
     const tick = this.tick;
     e.enemyCount = this.activeCount;
     for (let k = 0; k < this.activeCount; k++) {
@@ -4097,6 +4148,7 @@ export class Simulation {
         shots2: p.shots2 & 0xff,
         beam: this.tick < p.beamUntil ? p.beamId : ALLY_NONE,
         wallet: p.wallet,
+        carrySlot: this.commanders.carriedBy(p.id)?.slot ?? -1, teleportId: p.teleportId,
       });
     }
     return encodeSnapshot(header, players, e);

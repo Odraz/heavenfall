@@ -1,5 +1,6 @@
 /** Internal messages between the main thread and the simulation worker (not part of §9.2). */
 import type { CtrlMessage, RunConfig } from '../net/messages';
+import type { CarrierCheck } from '../data/commanders';
 import type { DirectorInfo } from './director';
 import type { Simulation, SimPlayerInit } from './sim';
 
@@ -38,7 +39,7 @@ export type WorkerToMain =
    * All parts of one tick's snapshot for one player, and that tick's simulation time. The local
    * player's also carry the director's state (M12 §2.3), null when no combat arena is in combat.
    */
-  | { t: 'snap'; to: number; bufs: ArrayBuffer[]; simMs: number; director?: DirectorInfo | null }
+  | { t: 'snap'; to: number; bufs: ArrayBuffer[]; simMs: number; director?: DirectorInfo | null; carrierChecks?: CarrierCheck[] }
   | { t: 'ctrl'; to: number | 'all'; msg: CtrlMessage }
   /** A `ctrl` message to a connection that has no player (the `reject` of a `hello`). */
   | { t: 'connCtrl'; conn: number; msg: CtrlMessage }
@@ -53,6 +54,6 @@ export type WorkerToMain =
   | { t: 'heartbeat'; loading: number[] };
 
 /** The `snap` message for the host's own player: it also carries the director's state (M12 §2.3). */
-export function localSnap(sim: Pick<Simulation, 'directorInfo'>, to: number, bufs: ArrayBuffer[], simMs: number): WorkerToMain {
-  return { t: 'snap', to, bufs, simMs, director: sim.directorInfo() };
+export function localSnap(sim: Pick<Simulation, 'directorInfo' | 'commanders'>, to: number, bufs: ArrayBuffer[], simMs: number): WorkerToMain {
+  return { t: 'snap', to, bufs, simMs, director: sim.directorInfo(), carrierChecks: sim.commanders.diagnostics() };
 }

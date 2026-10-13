@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { DUNGEONS } from '../data/dungeons/index';
 
 const sandbox = DUNGEONS.sandbox;
-import { BLESSED, DOMINION } from '../data/enemies';
+import { BLESSED, CANTOR, CARRIER, DOMINION } from '../data/enemies';
+import type { CommanderCast } from '../data/commanders';
+import { COMMANDER_BYTES } from './commanderCodec';
 import { FIRE_LEFT, FIRE_RIGHT, FIRE_RIGHT_LAST } from '../data/weapons';
 import { Simulation } from '../sim/sim';
 import type { GameEvent } from './messages';
@@ -67,7 +69,7 @@ function players(n: number): SnapshotPlayer[] {
     shots2: (100 + i * 50) & 0xff,
     // Player 1 is being healed by player 2's Sacrament (M9 §10).
     beam: i === 2 ? 1 : 255,
-    wallet: i * 999,
+    wallet: i * 999, carrySlot: -1, teleportId: 0,
   }));
 }
 
@@ -187,7 +189,7 @@ describe('snapshot protocol', () => {
     expect(parts.length).toBe(1);
     expect(parts[0].byteLength).toBe(HEADER_BYTES + 4 * PLAYER_BYTES + 100 * ENEMY_BYTES + 20 * 9);
     const s = decodeSnapshot(parts[0])!;
-    expect(HEADER_BYTES).toBe(67);
+    expect(HEADER_BYTES).toBe(69);
     const v = new DataView(parts[0]);
     expect([v.getUint8(0), v.getUint8(1), v.getUint8(2), v.getUint8(3)]).toEqual([PROTOCOL_VERSION, 0, 1, 4]);
     expect(Array.from(new Uint8Array(parts[0], 4, 16))).toEqual(Array.from(new Uint8Array(encodeInput({
@@ -448,7 +450,7 @@ describe('R2 Dominion snapshot control metadata', () => {
   it('reserves three 44-byte records in part zero at maximum capacity, even when their enemies are in part one', () => {
     const e = casting(), packets = encodeSnapshot(header, players(4), e);
     expect(packets).toHaveLength(2); expect(packets.every((p) => p.byteLength <= 16000)).toBe(true);
-    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (67 + 4 * 36) + 1500 * 14 + 400 * 9 + 160 * 9 + 3 * 44);
+    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (69 + 4 * 40) + 1500 * 14 + 400 * 9 + 160 * 9 + 3 * 44);
     const zero = decodeSnapshot(packets[0])!, one = decodeSnapshot(packets[1])!;
     expect(zero.dominionCasts).toEqual(e.dominionCasts); expect(one.dominionCasts).toEqual([]);
     expect(one.totalDominionCasts).toBe(3); expect(zero.enemySlot.includes(e.dominionCasts![0].slot)).toBe(false);
@@ -489,5 +491,39 @@ describe('R2 Dominion snapshot control metadata', () => {
     const packets = encodeSnapshot(header, players(4), e), a = new SnapshotAssembler(); a.reset(header.runId);
     a.add(decodeSnapshot(packets[0])!, 0);
     expect(a.add(decodeSnapshot(packets[1])!, 1)).toBeNull(); expect(a.newestCompleteTick).toBe(-1);
+  });
+});
+
+
+describe('family commander snapshot metadata', () => {
+  function familyEntities() {
+    const e = entities(1500, 400, 160);
+    e.commanderCasts = [CANTOR, CARRIER].map((type, k): CommanderCast => {
+      const i = 1498 + k; e.enemyTypeState[i] = type | (2 << 4);
+      return { slot: e.enemySlot[i], incarnation: e.enemyIncarnation[i], castId: 10 + k, room: 2, kind: k === 0 ? 'beam' : 'carry',
+        phase: 'tell', startTick: header.tick - 10, phaseTick: header.tick - 10, endTick: header.tick + 20,
+        targetId: k, yaw: 0.5, pitch: 0.25, x: 10, y: 10, z: 0, targetX: 20, targetY: 10, targetZ: 0, dropX: 22, dropY: 10 };
+    });
+    return e;
+  }
+  it('reassembles bounded beam/carry records with enemies in a later part at maximum occupancy', () => {
+    const e = familyEntities(), packets = encodeSnapshot(header, players(4), e), assembler = new SnapshotAssembler(); assembler.reset(header.runId);
+    expect(packets).toHaveLength(2); expect(packets.every((p) => p.byteLength <= MAX_SNAPSHOT_BYTES)).toBe(true);
+    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (HEADER_BYTES + 4 * PLAYER_BYTES) + 1500 * ENEMY_BYTES + 400 * 9 + 160 * PICKUP_BYTES + 2 * COMMANDER_BYTES);
+    expect(assembler.add(decodeSnapshot(packets[1])!)).toBeNull();
+    expect(assembler.add(decodeSnapshot(packets[0])!)?.commanderCasts).toEqual(e.commanderCasts);
+  });
+  it('rejects malformed phase, nonfinite orientation, cap, identity and carry-victim mismatches', () => {
+    const e = familyEntities(), packets = encodeSnapshot(header, players(4), e), offset = HEADER_BYTES + 4 * PLAYER_BYTES;
+    for (const [at, value] of [[67, 4], [offset + 23, 2], [offset + 24, 9], [offset + 25, 4]]) {
+      const bad = packets[0].slice(0); new DataView(bad).setUint8(at, value); expect(decodeSnapshot(bad)).toBeNull();
+    }
+    const bad = packets[0].slice(0); new DataView(bad).setFloat32(offset + 26, NaN, true); expect(decodeSnapshot(bad)).toBeNull();
+    const mismatch = familyEntities(); mismatch.enemyIncarnation[1498]++;
+    const a = new SnapshotAssembler(); a.reset(header.runId);
+    for (const p of encodeSnapshot(header, players(4), mismatch)) a.add(decodeSnapshot(p)!);
+    expect(a.newestCompleteTick).toBe(-1);
+    const p = players(1); p[0].carrySlot = 1;
+    expect(decodeSnapshot(encodeSnapshot(header, p, entities(1, 0))[0])).toBeNull();
   });
 });

@@ -3,7 +3,7 @@ import { packSnapshot, unpackSnapshot, SnapshotSender, SnapshotReceiver } from '
 import { decodeSnapshot, SnapshotAssembler } from './protocol';
 import { Simulation } from '../sim/sim';
 import { DUNGEONS } from '../data/dungeons';
-import { DOMINION } from '../data/enemies';
+import { DOMINION, CANTOR, CARRIER } from '../data/enemies';
 import { mulberry32 } from '../sim/rng';
 
 it('round-trips maximum moving crowds losslessly through the complete-tick assembler within the unchanged upload budget', async () => {
@@ -62,4 +62,15 @@ it('coalesces whole pending ticks, caps decoder waiting parts and suppresses wor
   waits.shift()!(); await new Promise((resolve) => setTimeout(resolve, 0)); expect(output).toEqual([1]);
   waits.shift()!(); await new Promise((resolve) => setTimeout(resolve, 0)); expect(output).toEqual([1, 5]);
   receiver.close(); waits.shift()!(); await new Promise((resolve) => setTimeout(resolve, 0)); expect(output).toEqual([1, 5]);
+});
+
+it('transposes both commander families and restores their exact metadata', async () => {
+  const sim = new Simulation({ dungeon: DUNGEONS.carrier, seed: 7, god: true, noWaves: true, players: [{ id: 0, classId: 'fallen', name: 'P' }] });
+  sim.placeEnemy(CANTOR, 14, 10, 0); sim.placeEnemy(CARRIER, 16, 10, 0);
+  for (let i = 0; i < 100; i++) sim.placeEnemy(0, 15, 15, 0);
+  const raw = sim.encodeFor(0)[0], packed = await packSnapshot(raw);
+  expect(new Uint8Array(packed)[3]).toBe(1);
+  const restored = await unpackSnapshot(packed);
+  expect(new Uint8Array(restored!)).toEqual(new Uint8Array(raw));
+  expect(decodeSnapshot(restored!)?.commanderCasts?.map((c) => c.kind)).toEqual(['beam', 'carry']);
 });

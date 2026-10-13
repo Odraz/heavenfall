@@ -13,6 +13,7 @@ export const MAX_FRAME_DT = 0.05;
 
 export class LocalPlayer {
   readonly body: Body;
+  carried = false;
   yaw = 0;
   pitch = 0;
   readonly moveResult: MoveResult = { blocked: false };
@@ -45,6 +46,7 @@ export class LocalPlayer {
     this.leap = { fx: b.x, fy: b.y, fz: b.z, tx, ty, tz, t: 0 };
     this.dash = null;
     this.launch = null;
+    this.carried = false;
   }
 
   /** Shadowstep (§6.4): 40 m/s for 0.2 s along the horizontal direction (dx, dy). */
@@ -53,6 +55,7 @@ export class LocalPlayer {
     if (len < 1e-9) return;
     this.dash = { dx: dx / len, dy: dy / len, t: 0 };
     this.launch = null;
+    this.carried = false;
   }
 
   get leaping(): boolean {
@@ -68,6 +71,7 @@ export class LocalPlayer {
    * (normalized, or zero to stand still).
    */
   update(map: GameMap, dt: number, dirX: number, dirY: number, wantJump: boolean): void {
+    if (this.carried) { this.moveResult.blocked = false; return; }
     dt = Math.min(dt, MAX_FRAME_DT);
     const b = this.body;
     if (this.launch) {
@@ -105,6 +109,7 @@ export class LocalPlayer {
 
   /** Moves the player instantly, as for a teleport. */
   teleport(x: number, y: number, z: number, launch?: { dx: number; dy: number }): void {
+    this.carried = false;
     this.leap = null;
     this.dash = null;
     this.launch = launch ? { ...launch, remaining: DOMINION_LAUNCH_SECONDS } : null;

@@ -37,7 +37,7 @@ describe('generateFloor (rogue game.md §3.3)', () => {
       const template = poolTemplate(PEARLY_POOL, room.templateId!);
       room.waves.forEach((wave, index) => {
         const authored = waveCounts(template.waves[index], roomBudget(room.shape!, room.band!));
-        expect(wave).toEqual({ ...authored, dominions: index });
+        expect(wave).toEqual({ ...authored, dominions: index, ...(authored.choristers ? { commander: 'cantor' } : authored.cherubs ? { commander: 'carrier' } : {}) });
       });
       if (room.shape === '2x2') expect(room.waves.at(-1)!.blessed).toBeGreaterThanOrEqual(1000);
     }

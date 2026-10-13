@@ -2,6 +2,7 @@
  * The host side on the main thread (§2.2): owns the simulation worker and the host player's
  * LocalTransport and, in multiplayer, relays between the worker and the clients' PeerJS connections.
  */
+import type { CarrierCheck } from '../data/commanders';
 import type { HostNet } from '../net/hostNet';
 import type { RunConfig } from '../net/messages';
 import { LocalTransport } from '../net/transport';
@@ -21,6 +22,7 @@ export class HostSession {
   private stopped = false;
   /** The director's state from the latest local snapshot (M12 §2.3). */
   director: DirectorInfo | null = null;
+  carrierChecks: CarrierCheck[] = [];
   /** Called with each tick's simulation time (ms). */
   onTickMs: (ms: number) => void = () => {};
 
@@ -113,6 +115,7 @@ export class HostSession {
           this.tickTimes.push([performance.now(), m.simMs]);
           this.onTickMs(m.simMs);
           this.director = m.director ?? null;
+          this.carrierChecks = m.carrierChecks ?? [];
           for (const buf of m.bufs) this.local.deliverSnapshot(buf);
         } else {
           // Forwarding is driven by worker messages, so it keeps full rate in a background tab (§2.2).

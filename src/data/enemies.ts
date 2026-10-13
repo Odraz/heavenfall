@@ -4,6 +4,10 @@ export const CHORISTER = 1;
 export const CHERUB = 2;
 export const GATEKEEPER = 3;
 export const DOMINION = 4;
+/** 5 is reserved for the Gatekeeper's generic boss parts. */
+export const CANTOR = 6;
+export const CARRIER = 7;
+export function isCommander(type: number): boolean { return type === DOMINION || type === CANTOR || type === CARRIER; }
 
 /** Enemy states, as encoded in snapshots (§9.4). */
 export const ST_IDLE = 0;
@@ -36,6 +40,9 @@ export const ENEMIES: readonly EnemyDef[] = [
   // one target fell to about 64% of M8's.
   { hp: 29000, radius: 2.0, height: 6.0, speed: 0, flying: false, draw: 1 },
   { hp: 1500, radius: 0.45, height: 3.2, speed: 3.5, flying: false, draw: 1.9 },
+  { hp: 1, radius: 0.4, height: 1, speed: 0, flying: false, draw: 1 }, // reserved boss part
+  { hp: 1200, radius: 0.45, height: 3, speed: 2.5, flying: false, draw: 1.4 },
+  { hp: 1000, radius: 0.4, height: 0.8, speed: 5, flying: true, draw: 2.5 },
 ];
 
 /** Falling Star's launched walking enemies fly an arc this high (M9 §3.2); drawn only. */

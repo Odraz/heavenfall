@@ -1,8 +1,10 @@
+import { CommanderProjection } from './commanders';
+import { CommanderView } from './commanderView';
 /** The in-game client: input or bot, local movement, snapshots, interpolation, rendering and feedback. */
 import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
-import { CHERUB, CHERUB_HOVER, CHORISTER, DOMINION, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_FALLING, ST_WINDUP } from '../data/enemies';
+import { CANTOR, CARRIER, isCommander, CHORISTER, DOMINION, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_FALLING, ST_WINDUP } from '../data/enemies';
 import { DOMINION_RADIUS } from '../data/dominion';
 import { DominionProjection } from './dominion';
 import { DominionView } from './dominionView';
@@ -395,6 +397,8 @@ export class Game {
   private readonly incense: IncenseClouds;
   private readonly pickups: PickupView;
   private readonly props: PropView;
+  private readonly commanders: CommanderProjection;
+  private readonly commanderView: CommanderView;
   private readonly dominion: DominionProjection;
   private readonly dominionView = new DominionView();
   private readonly hazards: HazardView;
@@ -512,6 +516,9 @@ export class Game {
     this.props = new PropView(this.map, o.runId, propDefs(o.floor), this.scene.terrain.lightmap, o.atlas);
     this.scene.scene.add(this.props.billboards.mesh);
     this.dominion = new DominionProjection(o.runId);
+    this.commanders = new CommanderProjection(o.runId);
+    this.commanderView = new CommanderView(o.textures.fx.beam);
+    this.scene.scene.add(this.commanderView.group);
     this.spawnWarnings = new SpawnProjection(o.runId, this.map);
     this.scene.scene.add(this.spawnView.group);
     this.scene.scene.add(this.dominionView.group);
@@ -879,6 +886,7 @@ export class Game {
   handleCtrl(msg: CtrlMessage): void {
     if (msg.type === 'floorSync' && !this.disposed) {
       this.dominion.sync(msg);
+      this.commanders.sync(msg);
       this.spawnWarnings.sync(msg);
       this.pickups.model.sync(msg);
       if (this.props.model.sync(msg)) {
@@ -945,7 +953,10 @@ export class Game {
         this.vfx.smoke(now, e.x, e.y, e.z + 0.6, 0x28252b, 0.3, 1.5, 500);
         break;
       case 'teleport':
+        if (((e.teleportId - this.lastTeleportId) & 0xffff) >= 0x8000 || e.teleportId === this.lastTeleportId) break;
         this.player.teleport(e.x, e.y, e.z, e.launch);
+        this.player.carried = e.carry === true;
+        if (e.carry === false) this.player.body.grounded = false;
         this.lastTeleportId = e.teleportId;
         break;
       case 'roomState':
@@ -1253,6 +1264,8 @@ export class Game {
     const now = performance.now();
     this.rooms.snapshot(s);
     this.dominion.snapshot(s);
+    this.commanders.sync(s);
+    debugState.commanders = [...this.commanders.active.values()].map((c) => ({ ...c }));
     debugState.dominion.actors = [];
     for (let i = 0; i < s.enemyCount; i++) if (s.enemyType[i] === DOMINION) debugState.dominion.actors.push({ slot: s.enemySlot[i], incarnation: s.enemyIncarnation[i], x: s.enemyX[i], y: s.enemyY[i], z: s.enemyZ[i] });
     // Every leaf follows from the header's activeRoom, activePhase and clearedMask (rogue game.md §3.4).
@@ -1276,6 +1289,12 @@ export class Game {
     // Healed by a Sacrament beam: its heals neither flash nor chime (M9 §5.1).
     const beamed = s.players.some((p) => p.beam === this.localId) || !!prev?.players.some((p) => p.beam === this.localId);
     if (me) {
+      const correction = me.teleportId ?? 0, forward = (correction - this.lastTeleportId) & 0xffff;
+      if ((me.carrySlot ?? -1) >= 0 && forward < 0x8000 && !this.player.leaping && !this.player.dashing) {
+        this.player.teleport(me.x, me.y, me.z); this.player.carried = true; this.lastTeleportId = correction;
+      } else if (this.player.carried && (me.carrySlot ?? -1) < 0 && forward < 0x8000) {
+        this.player.teleport(me.x, me.y, me.z); this.player.body.grounded = false; this.lastTeleportId = correction;
+      }
       // First seen already dead: joined during a fight, as a soul (M8 §6.2).
       if (!this.seenSelf && me.dead) this.joinedAsSoul = true;
       this.seenSelf = true;
@@ -1336,7 +1355,7 @@ export class Game {
         const g = groundHeight(this.map, prev.enemyX[i], prev.enemyY[i], def.radius, Infinity, false, true);
         const ground = g === -Infinity ? 0 : g;
         // A Cherub falls from its hover height to the ground while it dies (§11.1).
-        const feet = ground + (type === CHERUB ? CHERUB_HOVER : 0);
+        const feet = def.flying ? prev.enemyZ[i] : ground;
         this.pendingBursts.push({
           at: now + delay,
           censer: false,
@@ -1451,7 +1470,7 @@ export class Game {
           best = k;
         }
       }
-      if (best >= 0) flared.set(best, Math.max(flared.get(best) ?? 1, s.enemyType[i] === DOMINION ? 1.5 : 1));
+      if (best >= 0) flared.set(best, Math.max(flared.get(best) ?? 1, isCommander(s.enemyType[i]) ? 1.5 : 1));
     }
     for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 0;
     for (const [k, width] of flared) {
@@ -1768,7 +1787,7 @@ export class Game {
     this.particles.featherBurst(b.x, b.y, b.z);
     this.sounds.enemyDeath(b.type, b);
     if (this.o.enemyAnims[b.type]?.anims.death) {
-      const fallFrom = b.type === CHERUB ? b.feet : undefined;
+      const fallFrom = ENEMIES[b.type].flying ? b.feet : undefined;
       this.corpses.push({ start: now, x: b.x, y: b.y, z: b.ground, facing: b.facing, type: b.type, fallFrom });
       if (this.corpses.length > MAX_CORPSES) this.corpses.shift();
     }
@@ -1786,7 +1805,7 @@ export class Game {
     const rx = -Math.sin(yaw) * side;
     const ry = Math.cos(yaw) * side;
     // A Cherub stays at its hover height and flies level.
-    const lift = b.type === CHERUB ? 0 : tier.lift;
+    const lift = ENEMIES[b.type].flying ? 0 : tier.lift;
     const blast: Blast = { start: now, type: b.type, x: b.x, y: b.y, feet: b.feet, facing: b.facing, ex: dx * tier.blast + rx, ey: dy * tier.blast + ry, lift, swell: tier.swell };
     this.blasts.push(blast);
     const mine = info.playerId === this.localId;
@@ -1957,6 +1976,7 @@ export class Game {
         body: p.body,
         dead: this.dead,
         enemies: be,
+        commanderCasts: this.commanders.live(s, this.snaps.estimatedTick(simNow)),
         dominionRings: s ? this.dominion.rings(s, this.snaps.estimatedTick(simNow)) : [],
         activeRoom: s?.activeRoom ?? 255,
         activePhase: s?.activePhase ?? 0,
@@ -2137,6 +2157,9 @@ export class Game {
     const dominionTick = this.snaps.estimatedTick(simNow);
     const dominionRings = this.snaps.newest ? this.dominion.rings(this.snaps.newest, dominionTick) : [];
     this.dominionView.update(dominionRings, dominionTick);
+    const family = this.commanders.live(this.snaps.newest, dominionTick);
+    this.commanderView.update(family, this.map, dominionTick, this.scene.camera.position);
+    this.sounds.commanders(this.paused ? [] : family, dominionTick);
     debugState.spawnWarnings = this.spawnWarnings.live(dominionTick);
     this.spawnView.update(debugState.spawnWarnings, dominionTick);
     this.sounds.arrivals(this.paused ? [] : debugState.spawnWarnings, dominionTick);
@@ -2175,6 +2198,7 @@ export class Game {
     debugState.fps = this.fps.frame(now);
     debugState.simMs = this.o.host ? this.o.host.simMs(now) : 0;
     debugState.director = this.o.host?.director ?? null;
+    debugState.carrierChecks = this.o.host?.carrierChecks ?? [];
     debugState.netInKBps = this.o.net ? this.o.net.inKBps(now) : 0;
     debugState.netOutKBps = this.o.net ? this.o.net.outKBps(now) : 0;
     // Read-only own pose also supports the normal-menu multiplayer prop/catch-up fixture.
@@ -2267,6 +2291,20 @@ export class Game {
         const cast = this.dominion.active.get(slot);
         if (cast && cast.incarnation === this.snaps.newest?.enemyIncarnation[this.snaps.newest.enemySlot.indexOf(slot)]) {
           pick.anim = 'cast'; pick.frame = Math.max(0, Math.min(5, Math.floor((this.snaps.estimatedTick(now) - cast.startTick) / (cast.impactTick - cast.startTick) * 6)));
+        }
+      }
+      const commander = this.commanders.active.get(slot);
+      if (commander && commander.incarnation === this.snaps.newest?.enemyIncarnation[this.snaps.newest.enemySlot.indexOf(slot)]) {
+        if (type === CANTOR || commander.phase !== 'idle') this.animator.facing[slot] = commander.yaw;
+        if (!stunned && commander.phase !== 'idle') {
+          const age = Math.max(0, this.snaps.estimatedTick(now) - commander.phaseTick);
+          if (type === CANTOR) {
+            pick.anim = commander.phase === 'tell' ? 'cast' : commander.phase === 'active' ? 'sing' : 'close';
+            pick.frame = commander.phase === 'tell' ? Math.min(7, Math.floor(age / Math.max(1, commander.endTick - commander.phaseTick) * 8)) : commander.phase === 'active' ? Math.floor(age / 8) % 4 : Math.min(3, Math.floor(age / Math.max(1, commander.endTick - commander.phaseTick) * 4));
+          } else if (type === CARRIER) {
+            pick.anim = commander.phase === 'tell' ? 'mark' : commander.phase === 'active' ? 'swoop' : commander.phase === 'carry' ? 'carry' : 'fly';
+            pick.frame = commander.phase === 'tell' ? Math.min(5, Math.floor(age / 30 * 6)) : commander.phase === 'active' ? Math.min(3, Math.floor(age / 15 * 4)) : Math.floor(age / 5) % 6;
+          }
         }
       }
       const f = set.anims[pick.anim][spriteDirection(this.animator.facing[slot], eye.x - x, eye.y - y)][pick.frame];
@@ -2556,6 +2594,7 @@ export class Game {
     this.pickups.dispose();
     this.props.dispose();
     this.dominionView.dispose();
+    this.commanderView.dispose();
     this.spawnView.dispose();
     this.hazards.dispose();
     this.hum?.stop();

@@ -41,6 +41,7 @@ export class DebugOverlay {
       `pos ${this.position.x.toFixed(2)} ${this.position.y.toFixed(2)} ${this.position.z.toFixed(2)} yaw ${this.position.yaw.toFixed(3)}`,
       ...(this.dev ? [`Wading: ${d.wade.count} · ×${d.wade.factor.toFixed(2)}`] : []),
       ...(this.dev && dir ? [`Director: ${dir.phase} ${dir.phaseTime.toFixed(1)} s · ${Math.round(dir.intensity)} · ${dir.alive}/${dir.waveTotal}`] : []),
+      ...(this.dev ? d.carrierChecks.map((c) => `Carrier ${c.slot}: ${c.phase} · ${c.reason} · crowd ${c.crowdCount}/8 (${c.nearbyBlessed} nearby) · target ${c.distance.toFixed(1)} m · ready in ${Math.max(0, (c.readyTick - d.lastSnapshotTick) / 30).toFixed(1)} s`) : []),
     ].join('\n');
   }
 

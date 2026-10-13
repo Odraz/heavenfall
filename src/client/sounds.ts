@@ -1,3 +1,4 @@
+import type { CommanderCast } from '../data/commanders';
 /**
  * The game's sound effects and music (M8 §9.1, §9.2), driven by what the client already knows: its
  * own input, snapshot changes and events.
@@ -6,7 +7,7 @@ import { audio, setMusic, sfx, type SoundPos, type VoiceHandle } from '../audio/
 import { PRIO_ABILITY, PRIO_OTHERS } from '../audio/sfx';
 import type { ClassId } from '../data/classes';
 import { COIN, GOLD_HALO } from '../data/pickups';
-import { BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
+import { BLESSED, CARRIER, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import type { DominionRing } from './dominionView';
 import type { SpawnWarning } from '../data/spawns';
 import type { TrackId } from '../data/music';
@@ -58,6 +59,23 @@ export class GameSounds {
       if (this.tells.get(c.castId)?.playing()) continue;
       const handle = sfx('dominionTell', c, 1, 0, PRIO_ABILITY, 1, { elapsed: (tick - c.startTick) / 30, duration: (c.impactTick - c.startTick) / 30 });
       if (handle) this.tells.set(c.castId, handle);
+    }
+  }
+
+  private readonly familyVoices = new Map<number, { key: string; handle?: VoiceHandle }>();
+  commanders(casts: readonly CommanderCast[], tick: number): void {
+    for (const [slot, voice] of this.familyVoices) if (!casts.some((c) => c.slot === slot)) { voice.handle?.stop(); this.familyVoices.delete(slot); }
+    for (const c of casts) {
+      const key = `${c.incarnation}:${c.castId}:${c.phase}`, old = this.familyVoices.get(c.slot);
+      if (old?.key === key && (old.handle?.playing() || c.phase === 'recover')) continue;
+      old?.handle?.stop();
+      if (c.kind === 'beam' && c.phase === 'tell' && old?.key !== key) sfx('cantorBook', c);
+      const name: SfxName = c.kind === 'beam' ? c.phase === 'tell' ? 'cantorTell' : c.phase === 'active' ? 'cantorBeam' : c.phase === 'recover' ? 'cantorBook' : 'cantorHum'
+        : c.phase === 'tell' ? 'carrierMark' : c.phase === 'active' ? 'carrierSwoop' : c.phase === 'carry' ? 'carrierWings' : c.phase === 'recover' ? 'carrierRelease' : 'carrierHum';
+      const duration = c.phase === 'idle' ? 1 : Math.max(0.01, (c.endTick - c.phaseTick) / 30);
+      const handle = sfx(name, c, c.phase === 'idle' ? 0.35 : 1, 0, c.phase === 'idle' ? 0 : PRIO_ABILITY, 1,
+        c.phase === 'idle' || c.phase === 'carry' ? undefined : { elapsed: (tick - c.phaseTick) / 30, duration });
+      this.familyVoices.set(c.slot, { key, handle });
     }
   }
 
@@ -189,7 +207,7 @@ export class GameSounds {
       if (st === ST_WINDUP && this.enemyState[slot] !== ST_WINDUP) {
         const at = { x: s.enemyX[i], y: s.enemyY[i] };
         if (type === CHORISTER) sfx('choristerWindup', at);
-        else if (type === CHERUB) sfx('cherubWindup', at);
+        else if (type === CHERUB || type === CARRIER) sfx('cherubWindup', at);
       }
       this.enemyState[slot] = st;
     }
@@ -333,6 +351,7 @@ export class GameSounds {
   }
 
   dispose(): void {
+    for (const v of this.familyVoices.values()) v.handle?.stop(); this.familyVoices.clear();
     this.fireAmbient?.stop(); this.fireAmbient = undefined;
     for (const handle of this.tells.values()) handle.stop(); this.tells.clear(); this.steps.clear();
     for (const handle of this.arrivalTells.values()) handle.stop(); this.arrivalTells.clear();
