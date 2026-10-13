@@ -35,6 +35,8 @@ Product decision (confirmed): rogue becomes the main game; the fixed dungeon sta
 | **R8** Feedback and presentation ([brief](r08.md)) | Everything readable and every required sound recorded | Reconcile cues, hints and cards; remaining recordings; optional S9 re-recordings; asset manifest and provenance | "Which cue is unclear, which sound gets tiring?" Optional art B11. |
 | **R9** Acceptance and merge ([brief](r09.md)) | The complete slice | Evidence from [slice-acceptance.md](slice-acceptance.md); defects and tuning; merge preparation | Full runs, four-human crest, your final decision and a separate merge instruction. |
 
+**R2 commander follow-up (accepted 2026-10-13, before R3).** The Lectern Cantor, then the Stray-Carrier ([rooms.md §6.1–§6.3](rooms.md#61-the-commander-families)), one at a time, each tested and played before the next. Art A3 and A4; until their sprites exist, labeled coded fallbacks as for the Dominion. R3's XP preparation counts the final commander group.
+
 **Dependencies.** R1 needs only R0. R2 needs R1's room lifecycle. R3 needs R1 (runs) and R2 (pickups). R4 needs R3 (persistence: learned talents are saved). R5 needs R4. R6 needs R2 (elite/hazard for Bells), R3 (durable transactions) and R5 (Rites for exhausted collections). R7 needs R6 (settlement, deeds, pawns). Until R7, the boss room uses the inherited Gatekeeper as a labeled fixture; until R4, Rite rewards show their page but pay 6 halos (labeled).
 
 **What's public between milestones.** R2 is the first build worth showing friends for playtest 6 (new floors, pressure, breakables, recorded sounds); R3 adds keeping progress. That's the earliest point to test the playtest-5 complaints with the people who made them.

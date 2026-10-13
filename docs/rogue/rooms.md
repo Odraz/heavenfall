@@ -2,9 +2,9 @@
 
 **Purpose:** the room pool the floor generator draws from for the Pearly Gates, plus the heaven's new enemy, its hazard, its props and its fallback floor. Filled in by the content designer; the rules come from [game.md](game.md) §3–§4 and §6, which win over this file. All numbers are initial values.
 
-**2026-10-13 current follow-up:** generated commanders ramp 0/1/2/3/... by wave before party scaling, replacing prior baseline-plus-authored elite counts while preserving minions and the two-alive cap. First waves have none. Dominion leap/melee and nonlethal enemy throws are specified in §6. Candles/chalices remain 1.1/1 m; candle player damage is 40, chalices remain healing. Evidence is in [the follow-up report](r02-playtest-report.md).
+**2026-10-13 current follow-up:** generated commanders ramp 0/1/2/3/... by wave before party scaling, replacing prior baseline-plus-authored elite counts while preserving minions and the two-alive cap. First waves have none. Dominion leap/melee and nonlethal enemy throws are specified in §6. Candles/chalices remain 1.1/1 m; candle player damage is 40, chalices remain healing. Evidence is in [the follow-up report](r02-playtest-report.md). **Accepted, not implemented:** two more commanders, the Lectern Cantor and the Stray-Carrier, lead Chorister and Cherub waves (§6.1–§6.3).
 
-**Status:** complete authored pool; operational contracts revised 2026-10-11. Geometry measurements remain historical design data, not rerun tests. Contains: the notation (§2.1), 20 combat and 4 special templates with grids (§3–§4), the fallback floor (§5), the Dominion (§6), Refiner's Fire (§7), the props (§8), the checks (§9) and the playtest-in-head notes (§10).
+**Status:** complete authored pool; operational contracts revised 2026-10-11. Geometry measurements remain historical design data, not rerun tests. Contains: the notation (§2.1), 20 combat and 4 special templates with grids (§3–§4), the fallback floor (§5), the Dominion and the other commanders (§6), Refiner's Fire (§7), the props (§8), the checks (§9) and the playtest-in-head notes (§10).
 
 ---
 
@@ -22,7 +22,7 @@
 - A **1 m ledge redirects walking enemies toward its stair; it does not grant melee immunity**. The inherited Blessed strike reaches 1.2 m horizontally while feet differ by less than 1.5 m, so a Blessed below an edge can still hit a player standing at that edge. Hop farther inward or keep moving; the Dominion's longer 6 m ring can reach still farther onto a low dais. These are temporary route choices, never protected firing perches.
 
 **Fights (game.md §4.4–§4.6, §4.11)**
-- **Budgets** (TP at 4 players): 1×1 400, 2×1 700, **2×2 2 000** × band factor (band 1 0.85, 2 1.0, 3 1.15; a 2×2 is never band 1). TP: Blessed 1, Cherub 4, Chorister 6, the elite 60.
+- **Budgets** (TP at 4 players): 1×1 400, 2×1 700, **2×2 2 000** × band factor (band 1 0.85, 2 1.0, 3 1.15; a 2×2 is never band 1). TP: Blessed 1, Cherub 4, Chorister 6, each commander (elite) 60.
 - **Waves:** 1×1 3, 2×1 4, 2×2 5. Default shares 0.25/0.35/0.40; 0.15/0.25/0.28/0.32; **2×2 0.07/0.08/0.10/0.15/0.60**. Wave 1 fodder only; the focus from wave 2.
 - **The crest** (every 2×2's last wave): share ≥ 0.60, **Blessed only**, arrives in 6 s at up to 20 enemies per spawn point per second. At four players the base-kit encounter targets **≥ 1 000 alive** (1 200 Blessed at band 2). Design every 2×2 for that crowd: open floor, the crowd visible from a `high` spot, room to kite.
 - **Target clear times:** 1×1 60–90 s, 2×1 90–120 s, 2×2 120–180 s, at any party size.
@@ -41,7 +41,7 @@
   - 1×1 bands: at least 5 include band 1, 6 include band 2, 5 include band 3 (a floor has at most 4–5 1×1 rooms per band).
 - **4 special templates:** the Breach, the Pardoner's stall, the Confessional, the Gate (boss, with [bosses.md](bosses.md)).
 - **1 fallback floor** (§5).
-- **Enemies:** Blessed, Choristers, Cherubs and **the Dominion elite**. No second new ordinary combat enemy is included in the slice.
+- **Enemies:** Blessed, Choristers, Cherubs and three commanders: **the Dominion**, **the Lectern Cantor** and **the Stray-Carrier** (§6.1). No other new ordinary combat enemy is included in the slice.
 - **1 hazard. 3 prop families + the marked reliquary + the bell.**
 
 The existing Pearly Gates arenas (Courtyard of Clouds, the Cloudbridge, Cloister of Hymns, the Gate; MVP §8.3) are good first templates: re-cut them to the slot sizes.
@@ -1419,7 +1419,104 @@ The 2026-10-13 playtest adds short stairs at the marble hedge ends in the Open T
 - **Implementation additions:** this is more than a data-only enemy. It needs one enemy type (id 4 of 16), one cast (wind-up, ring check, the same ground decal as the boss telegraphs), one atlas (idle, walk, wind-up, strike, pain, death), 3 sounds. The ring check is one distance test per enemy per slam (at most 3 slams per 3 s), cheap at 1 500 enemies.
 - **Cast synchronization:** each accepted wind-up has `(runId, roomId, enemySlot, incarnation, castId, startTick, impactTick, phase)`; `impactTick = startTick +45`, and a normal slam's center follows that enemy's accepted feet position from the same snapshot tick. A leap instead carries immutable origin/destination coordinates; its ring stays at the destination throughout charge and flight. Each protocol-8 cast record uses 44 bytes (19 prior fields, one leap-kind byte, six float32 coordinates). Both checkpoints and complete snapshots carry this geometry; equality/validation includes it. Broadcast revisioned `dominionCast` start, strike and cancel records, and include all currently active records (at most three) in `floorSync` and snapshot control metadata. Rejoin draws the remaining tell from the authoritative ticks, never a fresh 1.5 s or an already-canceled decal. Slot reuse, cleanup and accepted cancellation remove the old record; a late record cannot attach to a new enemy incarnation. A repeated strike record plays no second hit or reward. The host alone performs the geometry/height/radius hit check; clients never submit a slam's victims. Bots avoid the same live ring using these accepted deadlines.
 
-The Dominion is the only new ordinary combat enemy in this slice. The authored pool uses Blessed, Choristers, Cherubs and Dominions; no second new ordinary enemy is included.
+### 6.1 The commander families
+
+**Accepted design, 2026-10-13 (R02 follow-up, before R03); not implemented.** Tomas accepted two more commanders, one per minion family, to reward teamplay and punish cowardly play: the Dominion leads the Blessed, the **Lectern Cantor** (§6.2) the Choristers and the **Stray-Carrier** (§6.3) the Cherubs. Each covers a habit the others leave alone: the Dominion punishes standing far away or at its feet, the Cantor punishes hanging back and rewards flanking, the Carrier punishes straying from the party and rewards rescue. Implement them one at a time, Cantor first, each with its own play check before the next. They replace the earlier "conducted volley" Cantor and dive-lane Seraph proposals in [the R02 playtest report](r02-playtest-report.md).
+
+- **The commander slot:** the per-wave commander count is unchanged (game.md §4.6: 0, 1, 2, 3, ... by wave index before party scaling). If a wave's authored mix includes Choristers, its **first** commander is a Lectern Cantor; if it includes Cherubs, its first is a Stray-Carrier; every other commander is a Dominion. Ranged + flyers is never an allowed pair (game.md §4.5), so a wave has at most one family master. The crest (Blessed only), Bell elites and Edict-of-the-Host elites remain Dominions.
+- **Caps:** all commanders share the existing alive cap (2; 3 under the Edict of the Host). At most **one Cantor and one Carrier** are alive in a room. A queued family master that reaches placement while another of its type is alive is placed as a Dominion instead; the ledger, TP and rewards are identical, so nothing else changes.
+- **Shared commander rules:** 60 TP each and XP from the actual final commander group (game.md §4.6); party HP scaling as the Dominion's (`n4 × mult(P) ÷ nP`, solo 40%); the Dominion's drops (a budget-reserved gold halo, none in a Bell; up to 2 heal motes within the encounter cap; the commander item roll of game.md §6.3); the visible spawn ray 1.5 × as wide; never behind the party unseen; every class can handle it, none needs it; it doesn't taunt or silence players. Enemy kills caused by a commander's attack are world deaths under the Dominion's rule (§6, *Hazard kills after its displacement*): no player killer, ordinary drop entitlements, streak assists only from real recent player setup.
+- **Placement:** the Cantor may use any marker a Chorister may use, including `chorister` tags, and prefers the template's `chorister` affinity. The Carrier uses unrestricted markers, as Cherubs do. Tags and affinity keys are unchanged (`chorister`, `dominion`).
+- **Enemy types:** `cantor` is type id 6 and `carrier` type id 7 of 16 (the boss part is 5).
+
+### 6.2 The Lectern Cantor
+
+**Rule:** *"It sings a turning beam at the farthest of you from behind its hymnal; hide or close in, and hit it from behind."*
+
+| Field | Value |
+|---|---|
+| id, role | `cantor` (type id 6), commander of the Choristers |
+| HP (4 players) | **1 200** (solo 480); its shielded front makes it last about as long as the Dominion |
+| Body | **0.45 × 3.0 m** sim body (under half a cell, like the Dominion's), drawn about 3.2 m tall; the closed hymnal stands about 1.4 m tall in front of its chest |
+| Speed | **2.5 m/s**, slower than a Chorister (3); it approaches like a Chorister and stops once a target is in line of sight within 25 m |
+| TP | 60 |
+| States | all seven. `bound`: rooted and double damage, but it still turns and sings. `airborne`, Blasphemy's stun and `silenced` cancel a wind-up or a beam. `taunted`: its target becomes the Fallen and it turns toward them at its current turn rate. It avoids Refiner's Fire like the Dominion. |
+
+**The hymnal (its defense).** It holds a huge closed hymnal in front of it like a tower shield. Damage whose source lies inside its **front 120°** (60° either side of its facing) is reduced by **80%**; everything else, including its back and sides, takes full damage. `bound`'s double damage applies after the reduction. The source point is the attacker's accepted position for hitscan and melee, and the impact or area center for projectiles, blasts, clouds and craters; an area centered within 1 m of its body counts as unshielded. World damage (hazards, candles) is never reduced. Outside a beam it turns at **90°/s** toward its target or its path.
+
+**The beam (its attack).**
+1. **Target:** the **farthest** living, targetable player in its room with line of sight (body center to body center) within **25 m**; ties go to the lowest player index. A taunted Cantor targets the Fallen. With no target it walks toward the nearest player.
+2. **Wind-up, 1.5 s:** it opens the hymnal toward the target. A thin gold ray (0.05 m) links the open pages to the target's body and thickens to 0.5 m by the end; it follows the target at the 90°/s turn rate, so everyone sees who is being sung at. A rising choir chord.
+3. **Beam, 3.0 s:** the full beam fires along the ray's last direction, then turns toward the current target at a capped **30°/s** (yaw); its pitch follows the target's body center, clamped to ±35°. It starts at the open pages (feet +2.0 m, 0.6 m in front), runs up to **30 m** and stops at the first geometry blocker under the shared LOS rule; walls, pillars, closed leaves and terrain block it, bodies don't. Every **0.333 s** (10 ticks) it hits everything inside its 0.5 m radius: **10 damage to players** (30 per second, 90 for a full beam) and **20 to enemies** (a Blessed dies at the first pulse). The caster, commanders, the boss body and boss parts are immune to it.
+4. **Recovery, 1.5 s:** it closes the hymnal; it cannot turn faster than 30°/s and cannot start a wind-up. The next wind-up can start **3.0 s** after the beam ends.
+
+**The party's job.** Hide or close in, and flank. At 30°/s a player running sideways outruns the beam within about 11 m at 6 m/s and 17 m at 9 m/s; at its full 25 m range no class outruns it, so the farthest player must use cover or push in. While it sings it is locked facing that player, so whoever is closest gets 3 s at its unshielded back. The beam also crosses teammates and crowds: the target leads it away from the party and through the Blessed. That burns a lane, a reason to keep it singing for one more beam.
+
+**Counters per class.**
+- **Fallen:** Blasphemy taunts it and its 1 s stun cancels the beam. Falling Star lands behind it.
+- **Binder:** Discord silences a wind-up or a beam; Chains of Tartarus roots it in place for double damage at its back (it still sings); Scourge's slow keeps it behind its crowd.
+- **Betrayer:** Shadowstep behind it; at 9 m/s it outruns the beam within 17 m; Silver Bullet through the line from the side.
+- **Heretic:** Martyr's Shroud on the targeted player absorbs the pulses; censers dropped behind it count as unshielded.
+
+**Rules around it.**
+- **Cancellation:** a launch, stun, silence, death or cleanup ends a wind-up or a beam immediately, with no further pulse. A surviving canceled caster enters the 1.5 s recovery and cannot start another wind-up until 3.0 s after cancellation. Refreshing a control effect never queues a hidden beam.
+- **Target loss:** if its target dies, disconnects, leaves the room or becomes untargetable, a wind-up is canceled (with the cancellation cooldown) and a beam keeps turning toward its last accepted target position until it ends. Breaking line of sight does not end a beam; the beam simply stops at the cover.
+- **Victims:** shields absorb pulses; invulnerability ignores them; Fallen mitigation applies. Each pulse is an ordinary hostile area hit for death and assist rules.
+- **Bots:** shoot it like any enemy, prefer positions outside its front 120°, and when a beam or ray is on or near them, move perpendicular to it or break line of sight with the same short collision probes used to escape the Dominion's ring.
+- **Cast synchronization:** reuse the Dominion's revisioned cast record with a kind byte for `beam`: `(runId, roomId, enemySlot, incarnation, castId, startTick, beamStartTick, endTick, targetId, phase)`. The host owns the beam's yaw and pitch; each snapshot carries the accepted yaw/pitch of at most one active beam per room, and clients draw the ray, beam length and pulses from the host's values. Rejoin draws the remaining tell or beam from the authoritative ticks. The host alone tests pulse victims.
+- **Cost:** one capsule test per pulse against at most four players, and against enemies only in the separation hash's cells along the beam (a 30 × 1 m strip). At most one beam per room.
+- **Why these numbers:** 1 200 HP with an 80% frontal reduction lasts about as long as the Dominion when the party flanks, and much longer when it shoots only from the front. 90 damage for a full beam is three quarters of the Betrayer's base 120 HP, so eating a whole beam is a real mistake, and the sixth or seventh pulse is the warning. 30°/s makes distance, not reflexes, the deciding factor. Initial values; human feel acceptance remains open.
+- **Implementation additions:** one enemy type, one cast (wind-up, beam, pulse test), the facing reduction, one atlas (idle, walk, hymnal opening, singing with the hymnal open, closing, pain, death; 8 directions so the front and back read), a beam and ray effect (the Heretic's Sacrament beam rendering can be adapted), 3 sounds.
+
+**Silhouette and sound.** A towering Chorister, a head taller than the Choristers (about 3.2 m drawn): the same white silk robes with broad gold bands and the high stiff collar, but a heavy embroidered cope over them, and a crown of lit candles that stands above the crowd. In front of it, held in both arms like a tower shield, a huge hymnal bound in **dark bronze** and gold: the bronze cover means "armored front", the same language as the Dominion's face plate. Its back is plain white silk with a long gold lacing, no armor: you can tell front from back at a glance. When it sings, the hymnal opens toward you and the glowing pages light the beam. **Sound:** a low sustained hum while it walks (positional, audible through the crowd at 25 m), a heavy book thud when the hymnal opens and closes, a rising choir chord for the 1.5 s wind-up, a sustained bright choir chord with a shimmer for the 3 s beam that cuts off when it ends or is canceled.
+
+### 6.3 The Stray-Carrier
+
+**Rule:** *"It carries whoever strays from the party into the crowd."*
+
+| Field | Value |
+|---|---|
+| id, role | `carrier` (type id 7), commander of the Cherubs |
+| HP (4 players) | **1 000** (solo 400) |
+| Body | **0.4 × 0.8 m** sim body, like a Cherub's (it sets no new headroom), drawn about 2.5 × a Cherub: a 2 m body under a 5 m wingspan |
+| Speed | **5 m/s** flying (Cherubs 7), hovering 4 m up like the Cherubs; **3.5 m/s** while carrying |
+| TP | 60 |
+| States | all seven, as a Cherub. `bound`, `airborne`, `taunted`, `silenced` and Blasphemy's stun cancel a mark or swoop and release a carry. |
+
+**Between swoops** it shoots a Cherub's arrows (8 damage, 25 m range, 0.5 s wind-up, 1.3 s recovery), so it is never idle while the party stays together.
+
+**The carry (its attack).**
+1. **A stray:** a living, targetable player in its room whose horizontal distance to **every other living player** (humans and bots, in any room) is at least **15 m**. In true solo there are no other players, so the player is always a stray. Every 0.5 s while it is off cooldown, it picks the stray within **20 m** with line of sight who is farthest from their nearest teammate (ties: lowest player index).
+2. **The crowd check:** before marking, it needs a drop point. Count the living grounded Blessed in the room in 4 × 4 m squares aligned to the room grid, within **10 m** (solo 7 m) of the stray. The square with the most Blessed, at least **8**, wins (ties: row-major); its drop point is the dry walkable cell nearest that square's Blessed centroid with a collision-clear carry path (1 m clearance for the carried body) from the stray. No square qualifies, or no clear path: no mark, and it keeps shooting. This is one pass over the room's living enemies, at most once per 0.5 s per Carrier and only while a stray exists.
+3. **Mark, 1.0 s:** a shriek; a white shroud marker hangs over the stray's head and a gold lane on the floor runs from under the Carrier to the stray, following them. At the end the lane locks on the stray's current position (no lead) and the drop point is recomputed from that position (the same crowd check; if it fails, the mark is canceled with the cooldown). A pale 2 m ring shows the locked drop point to everyone.
+4. **Swoop, 0.5 s:** it flies down the locked lane. At arrival, a stray whose body center is within **1.5 m** horizontally of the locked point (feet within 2 m vertically) and who isn't invulnerable is **grabbed**. A sidestep of 1.5 m in the 1.5 s from the mark's start is enough at every class speed. A miss leaves it hovering low (2 m) for its recovery.
+5. **Carry, up to 3.5 s (solo 2.5 s):** it climbs over 0.5 s until the victim's feet are 6 m above the ground, then flies straight to the drop point at 3.5 m/s, slower than every class, so teammates can follow it. Over the drop point (within 0.5 m horizontally) or at the time limit it lets go; the victim falls under ordinary gravity (there is no fall damage). The grab itself deals no damage: the crowd is the danger. The Blessed are already chasing the carried player, so they gather under the drop point.
+6. **Recovery, 1.5 s:** it hovers where it let go, then climbs back. The next mark can start **8 s** after a release, miss or cancellation; the first not before 3 s after it spawns.
+
+**Freeing.** Accepted damage to the Carrier during a carry, from anyone, counts toward **200** (scaled like its HP: solo 80); at 200 it lets go where it is. Its death, `bound`, `airborne`, `taunted` (it lets go and targets the Fallen), `silenced` and Blasphemy's stun also release the victim in place. The victim keeps aiming, shooting and using non-movement abilities while carried; ordinary movement and jumping are ignored. A movement ability (Shadowstep, Falling Star) or a later teleport frees them, as it replaces the Dominion's launch.
+
+**The party's job.** Stay within 15 m of each other, and when someone strays and is carried, shoot it down. The lone player can still dodge the 1 s lane, shoot the Carrier themself, or spend a movement ability. In co-op the carry is a rescue moment; solo it's a short, dodgeable punishment for standing far from the crowd it can find.
+
+**Counters per class.**
+- **Fallen:** stay with the party; Blasphemy taunts it out of a carry; Falling Star frees a carried Fallen and lands in the crowd it was carried to.
+- **Binder:** Chains of Tartarus or Discord releases the victim at once.
+- **Betrayer:** Shadowstep sidesteps the lane or frees them; the revolver's burst reaches the 200 fast.
+- **Heretic:** Martyr's Shroud and Communion keep the dropped teammate alive in the crowd; the Heretic's shots count toward the 200 like anyone's.
+
+**Rules around it.**
+- **One carry at a time:** a Carrier holds one victim; at most one Carrier is alive per room, so at most one player is carried at once.
+- **Victim safety:** the carry path and drop point are locked and checked for collision at the mark's end; if the path becomes obstructed, it lets go where it is. It never carries anyone across a room boundary, through a closed leaf or into Refiner's Fire (the drop point is dry; the path may pass over fire at height). If the victim dies, disconnects or becomes invulnerable, the carry ends.
+- **Authority:** the host selects the stray, the drop point and the grab, and owns the victim's position throughout the carry. The carry is a sustained forced movement: it extends the Dominion launch's acknowledged, revisioned correction rather than bypassing the speed check, and the client predicts none of it.
+- **Bots:** a bot targeted by a mark moves sideways off the lane and toward its nearest teammate; bots treat a Carrier that is carrying anyone as their first target. Bots following the host already keep within 15 m most of the time.
+- **Cast synchronization:** a revisioned `carrierCast` record `(runId, roomId, enemySlot, incarnation, castId, victimId, phase, markTick, swoopTick, grabTick, releaseDeadline, lane end x/y/z, drop x/y)`, included in `floorSync` and snapshot control metadata like the Dominion's; rejoin draws the remaining mark from the authoritative ticks. A repeated grab or release record does nothing twice.
+- **Why these numbers:** 15 m is about two Dominion rings: a party standing close enough to support each other never triggers it. 8 Blessed in a 4 × 4 m square is a real crowd, so it never "carries" anyone to a handful of stragglers. 3.5 s at 3.5 m/s is about 10 m: far enough to separate, close enough to rescue. 200 damage is under half a second of a four-party's single-target fire and about 2 s of one player's. Initial values; human feel acceptance remains open.
+- **Implementation additions (new engine technology):** sustained host-driven player movement (the carry), extending the launch's forced-movement correction; the crowd check (one bounded pass over the room's enemies); one enemy type; one atlas (fly, shoot, shriek, swoop, carrying, pain, death); the lane, marker and drop-ring decals drawn in code; 4 sounds.
+
+**Silhouette and sound.** A Cherub grown huge: the same polished gold armor and expressionless gold mask, but with **closed eyes**, as if asleep; very long arms that hang to its knees; enormous white wings; and a long white burial shroud hanging from its shoulders and trailing two meters below it like a tail, which it wraps around the carried player. It holds a Cherub's gold bow in its left hand between swoops. It is the only Cherub-family shape with a trailing white tail, readable against the sky. **Sound:** a soft hummed lullaby while it hunts (positional, audible at 25 m), a rising shriek for the 1 s mark, a rushing whoosh for the swoop, heavy slow wing beats with flapping cloth while carrying, and a sigh when it lets go.
+
+### 6.4 The roster
+
+The authored pool uses Blessed, Choristers, Cherubs and three commanders: the Dominion, the Lectern Cantor and the Stray-Carrier. Templates still author minions only; commanders are added by the wave stamping of game.md §4.6 and §6.1. No other new ordinary combat enemy is included.
 
 ## 7. The hazard
 

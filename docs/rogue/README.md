@@ -15,7 +15,7 @@ In the walkthroughs (game.md Appendix A, rooms.md §5) R0–R10 are **room numbe
 ## Read the specification
 
 1. [Core rules, economy, progression and authoritative contracts](game.md). This is the system authority, including the two paper walkthroughs in Appendix A.
-2. [Room catalog, Dominion elite, Refiner's Fire and fallback floor](rooms.md), then [Gatekeeper encounter](bosses.md).
+2. [Room catalog, the commanders (Dominion, Lectern Cantor, Stray-Carrier), Refiner's Fire and fallback floor](rooms.md), then [Gatekeeper encounter](bosses.md).
 3. [Consumables, relics, combinations and deeds](items-relics.md).
 4. Talent trees: [Fallen](classes-fallen.md), [Heretic Saint](classes-heretic.md), [Binder](classes-binder.md), [Betrayer](classes-betrayer.md).
 5. [Review coverage and implementation acceptance](slice-acceptance.md). This separates resolved design rules from evidence that requires a playable build.
@@ -40,7 +40,7 @@ Implementation planning: [milestones and branch workflow](implementation.md), [h
 |---|---|
 | Classes | 4 existing base kits, 12 trees, 84 talent nodes, 12 alternative Q/E abilities, 12 capstones |
 | Rooms | 20 combat templates, 4 special templates including the boss, one fixed fallback floor |
-| Enemies and terrain | Existing Blessed/Chorister/Cherub, Dominion elite, Refiner's Fire, breakable/loot/blast props |
+| Enemies and terrain | Existing Blessed/Chorister/Cherub, three commanders (Dominion; Lectern Cantor and Stray-Carrier accepted, not implemented), Refiner's Fire, breakable/loot/blast props |
 | Items | 8 consumables with complete prices, weights, targeting, stacking and rejection rules |
 | Relics | 12 relics: 8 chest and 4 deed; 6 named replacement combinations |
 | Progression | XP/levels, learned points, run Rites, collection, 4 deeds, 5 Edicts and Sentence |

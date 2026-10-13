@@ -4,6 +4,8 @@ The rules of the whole game after the rebuild described in [brief.md](brief.md):
 
 **Current baseline: revision 9 (2026-10-11)** reorders the milestones so each contract arrives with its first consumer, sets the verification policy (automated tests where the AI judges them useful; benchmarks on request after playtests) and rebuilds the art/audio prompt packs; it changes no rules, numbers or content quantities ([readiness-review.md](readiness-review.md)). **Revision 8 (2026-10-11):** [Development-readiness review](readiness-review.md) records repaired planning/runtime-boundary contradictions, current-code mappings and remaining playable evidence. Revision 8 aligns the milestone order, defines run-scoped held/targeted input and bounded synchronization, closes the persistent-admission handshake, and reconciles asset coverage. It changes no talent, item, relic or room quantities. Earlier revision reviews below are historical evidence, not reviews of these new clauses.
 
+**R02 commander families (2026-10-13, accepted design, not implemented):** the Lectern Cantor leads Chorister waves and the Stray-Carrier leads Cherub waves, beside the Dominion for the rest (§4.6, [rooms.md §6.1–§6.3](rooms.md#61-the-commander-families)). Implement the Cantor first, then the Carrier, each with its own play check, before R03.
+
 **R02 playtest movement override (2026-10-13):** ordinary movement directly backward relative to aim runs at 80% of class speed; backward diagonals interpolate toward full sideways speed. Forward/sideways speed is unchanged. The penalty multiplies wading and applies during ordinary jumps, but not Shadowstep, Falling Star or forced launches. The host speed allowance uses the same directional factor. Dominion flying slams lead recent ordinary motion by up to 1 s before locking a safe destination; see [rooms.md §6](rooms.md#6-the-new-elite) and [the follow-up evidence](r02-playtest-report.md).
 
 All numbers are **initial values** unless stated otherwise. Where this document deviates from the brief, it says so and why (summary in §16.1). **Revision 7 (2026-10-11)** repairs timed harvest, directional/area event identity, relic refusal, class and encounter interactions, effective-kit synchronization, developer-run isolation and implementation dependencies. [Revision-7 integration](../../research_notes/Isaac%20style%20roguelite/reviews/r7-integration.md) records the independent review and adversarial follow-up rounds. Revision 6's compatible composition and bounded provenance remain the foundation. The [slice acceptance checklist](slice-acceptance.md) separates specified behavior from implementation/playtest evidence. Historical prototype measurements below are evidence from revision 2, not measurements of this revision.
@@ -287,7 +289,7 @@ Replaces M8 §5's arena countdown. `H` below = living connected humans.
 
 ### 4.4 Threat budget
 
-- **TP per enemy:** Blessed 1, Cherub 4, Chorister 6, the Pearly Gates elite 60 (rooms.md), no second new enemy in this slice.
+- **TP per enemy:** Blessed 1, Cherub 4, Chorister 6, each Pearly Gates commander 60 (the Dominion, the Lectern Cantor and the Stray-Carrier, rooms.md §6); no other new enemy in this slice.
 - **Room budget** (TP at 4 players) = `base(shape) × band factor × heaven factor`:
 
   | Shape | base | Waves | Target clear time (any party size) |
@@ -319,7 +321,7 @@ A combat template has one **focus** and at most one **secondary** focus. Blessed
 
 ### 4.6 Waves inside a room
 
-**October 13 R02 Dominion pacing revision:** generated combat waves now use **0, 1, 2, 3, ... Dominions before party scaling**, determined by zero-based wave index. This replaces the earlier baseline-plus-authored elite counts, including in elite-focused rooms and the crest. The first wave has none; authored minions remain unchanged. Preserve existing group HP scaling, safe placement, the two-alive cap and retained queues; later queued commanders must spawn before their wave finishes. Templates/TP focus validators describe authored minions before this runtime commander ramp. XP preparation must count the actual final commander group at 60 unscaled TP each. Boss summons and legacy fixed encounters retain their explicit compositions. The current leap, melee and nonlethal enemy displacement rules are in rooms.md §6.
+**October 13 R02 Dominion pacing revision:** generated combat waves now use **0, 1, 2, 3, ... Dominions before party scaling**, determined by zero-based wave index. This replaces the earlier baseline-plus-authored elite counts, including in elite-focused rooms and the crest. The first wave has none; authored minions remain unchanged. Preserve existing group HP scaling, safe placement, the two-alive cap and retained queues; later queued commanders must spawn before their wave finishes. Templates/TP focus validators describe authored minions before this runtime commander ramp. XP preparation must count the actual final commander group at 60 unscaled TP each. **Commander families (accepted 2026-10-13, not implemented):** a wave whose authored mix includes Choristers gets a Lectern Cantor as its first commander, one with Cherubs a Stray-Carrier; every other commander, the crest's, Bell elites and Edict-of-the-Host elites are Dominions. At most one Cantor and one Carrier are alive per room, under the shared commander cap; an excess family master is placed as a Dominion (rooms.md §6.1). Boss summons and legacy fixed encounters retain their explicit compositions. The current leap, melee and nonlethal enemy displacement rules are in rooms.md §6.
 
 - A template lists its waves: `{ share, mix, elites }` (§4.7). `share` is the wave's fraction of the room budget (shares sum to 1). `elites` is a count at 4 players; its TP comes off the wave's share first. The rest is split by `mix` (fractions summing to 1) into whole enemies: `count = round(rest × mix[type] ÷ TP[type])`, at least 1 where the fraction isn't 0. Record each type's **exact assigned TP before rounding** for XP (§9.1). An Edict-added elite is an extra 60 TP at 4 players, outside the normal composition ledger; it does not replace fodder or enter a fodder-only crest. A Bell's two elites are also extra TP outside its 40% base mix.
 - **Default shares** (templates may override, except the crest's): 3 waves 0.25 / 0.35 / 0.40; 4 waves 0.15 / 0.25 / 0.28 / 0.32; **2×2: 0.07 / 0.08 / 0.10 / 0.15 / 0.60**. Wave 1 is fodder only (the party reads the room); the focus type enters from wave 2; the last wave is the room's peak.
@@ -541,7 +543,7 @@ Backtracking was a quarter of the run's time (r1-fun finding 5). The rule: **fro
 
 ### 6.3 Items from kills
 
-- Each ordinary wave Blessed kill has a **2%** chance, Chorister/Cherub **12%**, and Dominion **50%** to drop one item pickup (§7.3), drawn by the items' drop weights. Only accepted damage deaths roll; cleanup, leashed enemies, boss bodies/parts/adds and non-wave enemies do not. These October 13 playtest rates increase reward frequency; the existing pickup/pending caps remain authoritative, and currency budgets and mote caps are unchanged.
+- Each ordinary wave Blessed kill has a **2%** chance, Chorister/Cherub **12%**, and each commander (Dominion, Lectern Cantor, Stray-Carrier) **50%** to drop one item pickup (§7.3), drawn by the items' drop weights. Only accepted damage deaths roll; cleanup, leashed enemies, boss bodies/parts/adds and non-wave enemies do not. These October 13 playtest rates increase reward frequency; the existing pickup/pending caps remain authoritative, and currency budgets and mote caps are unchanged.
 
 ### 6.4 The clear reward and its preview
 
@@ -1095,7 +1097,7 @@ The whole-map Dijkstra (audit §3.2) is the trap of an open floor. Fields are co
 
 ### 14.6 Limits
 
-- **Enemy types:** 16 (4-bit type in the snapshot). The Pearly Gates uses six types: Blessed, Chorister, Cherub, Dominion elite, Gatekeeper body and generic boss part (eyes and Seal). No second new enemy is included.
+- **Enemy types:** 16 (4-bit type in the snapshot). The Pearly Gates uses eight types: Blessed, Chorister, Cherub, the Dominion (4), Gatekeeper body (3), generic boss part (5: eyes and Seal), the Lectern Cantor (6) and the Stray-Carrier (7). No other new enemy is included.
 - **Global caps:** 1 500 living enemies including boss parts and 400 projectiles, with hostile reservation and owned area caps of §14.12. Crest population is a reference target, not an upper bound calculated from an assumed kill rate (§4.6).
 - One room in countdown or combat at a time (§4.2), so one director and one horde.
 - Per-enemy streak-assist ticks (§10): 4 × u32 per slot.
@@ -1194,7 +1196,7 @@ These contracts apply to every content table. Numbers attached to an individual 
 |---|---|---|
 | Combat room templates | **20**: 1×1 ×12, 2×1 ×5, 2×2 ×3 (each 2×2 horde- or hazard-focused, ends in a crest, ≥ 24 spawn points); at least 5 horde, 4 ranged, 3 flyers, 3 elite, 3 hazard (a template counts for its focus and secondary); at least 4 with a secondary; 1×1 band coverage: ≥ 5 include band 1, ≥ 6 band 2, ≥ 5 band 3 (a floor has at most 4–5 1×1 rooms per band, so no fallback past the band filter) | rooms.md |
 | Special room templates | 4: Breach, Pardoner's stall, Confessional, the Gate (boss, gate wall inset to 50 cells); plus 1 fallback floor (A.1's layout) | rooms.md |
-| Enemy types | the existing Blessed, Chorister and Cherub + **1 Dominion elite** + Gatekeeper body and generic boss part; no second new enemy | rooms.md |
+| Enemy types | the existing Blessed, Chorister and Cherub + **3 commanders** (Dominion, Lectern Cantor, Stray-Carrier) + Gatekeeper body and generic boss part; no other new enemy | rooms.md |
 | Hazard types | 1 | rooms.md |
 | Prop types | 3 families + the marked reliquary; the bell (one model, §4.12) | rooms.md |
 | Enemy states | 7, with the looks of §4.11 (2 new: the `slowed` tint if not shown today, the `airborne` flag bit) | game.md, rooms.md |
@@ -1227,7 +1229,7 @@ The following are **adopted slice decisions**, retained to explain deviations fr
 3. **No XP for healing** (shared XP instead). *Default: as specified (§9.1).*
 4. **Learning new points in the Lobby too**, not only at the Confessional. *Default: yes (§9.5).*
 5. **Clients play the host's heavens even if they haven't unlocked them, and unlock the next on a win.** *Default: yes (§12.3).*
-6. **A second new enemy for the Pearly Gates** beyond the elite. *Decision: none in this slice; the Gatekeeper's Call supplies the rescue mechanic without adding a second regular special. A future enemy is a scope expansion.*
+6. **A second new enemy for the Pearly Gates** beyond the elite. *Decision: none in this slice; the Gatekeeper's Call supplies the rescue mechanic without adding a second regular special. A future enemy is a scope expansion.* **Superseded 2026-10-13:** Tomas expanded the scope with two family commanders, the Lectern Cantor and the Stray-Carrier (rooms.md §6.1–§6.3); the Carrier is a regular rescue moment.
 7. **Should the boss also give a relic?** *Default: no; relics come from the chest, the Advocate's bargain and deeds.*
 8. **The talent content volume** (84 nodes, 12 abilities) is the MVP's biggest job. *Default: all of it in the MVP; first build one complete pilot class, then the remaining classes (§14.10). Rites supply early run growth and unlock later choices through legal gates.*
 9. **Bots as tabs** (today's dev bot) rather than "Add bot" in the Lobby. *Default: tabs in the MVP.*

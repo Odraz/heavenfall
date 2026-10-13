@@ -14,6 +14,7 @@ Each step is a small batch. Make the **pilot** first, send Claude the file names
 |---|---|---|---|
 | **Now (during R0–R1)** | Pilots: `dominion-design`, `amphora-tall` | Pilot: `chaingun` ×3 | R2 |
 | **During R1** | A1 rest (`dominion-turnaround`, `-wings`, `-mace`); B1 rest; `gold-halo`, `heal-mote`; B10; optional B4 | S1 rest (16 families ×3); S2; S3 `goldPickup`, `motePickup`; S8 `refinerFire`, `incense` | R2 |
+| **R2 commander follow-up** | Pilots first: `cantor-design`, then A3 rest (`cantor-turnaround`, `-hymnal`); after the Cantor plays well, `carrier-design`, then A4 rest (`carrier-turnaround`, `-wings`, `-shroud`) | Cantor and Carrier sounds (to be written into audio-prompts.md) | the commander follow-up, before R3 |
 | **During R2** | B3 (Pardoner's stall); B7 (items, pilot `item-balm`) | S3 rest; S4; S5 `levelUp`, `state-bind`; S8 `lowHealth`, `reviveHum` | R3 |
 | **During R3** | B4 (Confessional) if not done; `rite-page`; B9 Betrayer's three (pilot `icon-judas-coin`) | S5 Rites and states; S6 Betrayer; S8 `confessionalAmbience`, `silverWire` | R4 |
 | **During R4** | B9 other nine | S6 rest; S8 ability loops | R5 |
@@ -21,7 +22,7 @@ Each step is a small batch. Make the **pilot** first, send Claude the file names
 | **During R6** | A2 (trumpet); B6 (boss parts) | S7 | R7 |
 | **During R7–R8** | Optional B11 | Recommended S9; optional S10 voices | R8 |
 
-Producing the next batch while the AI implements the current milestone keeps both moving. Until an asset arrives, the game uses a labeled placeholder or a synthesized cue; required assets (art B1–B10, A1–A2 and audio S1) must be in before R9 acceptance.
+Producing the next batch while the AI implements the current milestone keeps both moving. Until an asset arrives, the game uses a labeled placeholder or a synthesized cue; required assets (art B1–B10, A1–A4 and audio S1) must be in before R9 acceptance.
 
 ## The first request
 

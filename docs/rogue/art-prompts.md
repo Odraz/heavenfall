@@ -4,7 +4,7 @@ Every new image the Pearly Gates roguelite needs, each with a ready-to-paste pro
 
 There are two kinds of images, as before:
 
-- **Part A, model references (6 images).** For the one new enemy (the Dominion) and the Gatekeeper's trumpet. Claude builds them as 3D models and renders them into sprites; these images are never shown in the game. They follow the [Meshy guide](../meshy-guide.md) format (flat colors, grey background, A-pose), which also works for Claude's own Blender modeling.
+- **Part A, model references (13 images).** For the three commanders (the Dominion, the Lectern Cantor and the Stray-Carrier) and the Gatekeeper's trumpet. Claude builds them as 3D models and renders them into sprites; these images are never shown in the game. They follow the [Meshy guide](../meshy-guide.md) format (flat colors, grey background, A-pose), which also works for Claude's own Blender modeling.
 - **Part B, game assets.** Used in the game directly after Claude cuts out the background, crops and resizes them.
 
 Map icons, door sigils, reward plates, state markers, rings, lanes, timers, text and numbers are **drawn in code**, not generated. Do not make images for them.
@@ -20,6 +20,8 @@ Save every image as PNG with exactly this name: Part A in `assets/art-src/refere
 **Part A: model references** (`assets/art-src/reference/`)
 - [x] A1 The Dominion, needed by R2, required: `dominion-design.png` (do this first), `dominion-turnaround.png`, `dominion-wings.png`, `dominion-mace.png`
 - [ ] A2 The Gatekeeper's trumpet, needed by R7, required: `gatekeeper-trumpet.png`, `gatekeeper-trumpet-raised.png`
+- [x] A3 The Lectern Cantor, needed by the R2 commander follow-up, required: `cantor-design.png` (do this first), `cantor-turnaround.png`, `cantor-hymnal.png`
+- [x] A4 The Stray-Carrier, needed by the R2 commander follow-up (after the Cantor), required: `carrier-design.png` (do this first), `carrier-turnaround.png`, `carrier-wings.png`, `carrier-shroud.png`
 
 **Part B: game assets** (`assets/art-src/`)
 - [x] B1 Breakable props, needed by R2, required: `amphora-tall.png` (pilot, do it first), `amphora-squat.png`, `amphora-lily.png`, `amphora-marked.png`, `sanctuary-lamp.png`, `blessing-chalice.png`
@@ -34,7 +36,7 @@ Save every image as PNG with exactly this name: Part A in `assets/art-src/refere
 - [x] B10 Hazard and effect textures, needed by R2, required: `tex-refiner-channel.png`, `fx-flames.png`
 - [ ] B11 Optional: 6 combo emblems `combo-<id>.png` (R6) and 72 talent icons `talent-<class>-<tree>-<node>.png` (R4–R5). Without them the cards show the class glyph and the talent's name.
 
-**Totals:** 6 model references + 57 required game assets + 78 optional icons. Earlier drafts also listed `fx-embers`, `fx-incense-wisp` and `silent-trumpet`; the first two are covered by the existing `ember.png` and `fx-smoke.png`, and the trumpet is now the A2 model reference.
+**Totals:** 13 model references + 57 required game assets + 78 optional icons. Earlier drafts also listed `fx-embers`, `fx-incense-wisp` and `silent-trumpet`; the first two are covered by the existing `ember.png` and `fx-smoke.png`, and the trumpet is now the A2 model reference.
 
 ### Received sources — 2026-10-12
 
@@ -54,6 +56,18 @@ The original downloads are preserved byte for byte under `tmp/asset-originals-20
 - `item-frost.png` has violet plumes reaching the top edge; review the crop at 48 px before accepting it.
 - `confessional-grille.png` includes a stone surround; review the panel crop and how it joins the wood wall.
 - Tile seams (`tex-confessional-wood`, `tex-refiner-channel`, `fx-flames`), chroma-key edges and readability at gameplay size still need integration checks.
+
+### Received sources — commanders, 2026-10-13
+
+**A3 and A4 received: 7 model references.** The JPEG/JFIF downloads were converted to PNG at their original resolution, with decoded pixels verified unchanged; the originals are preserved byte for byte under `tmp/asset-originals-2026-10-13/commanders/` (`cantor-turnaround..jfif` had a doubled dot). This receipt does not approve the designs.
+
+**Preparation notes from source inspection** (decide before modeling):
+
+- **Cantor's book color:** `cantor-design.png` and `cantor-hymnal.png` show a **brown leather** book with gold fittings, not the dark bronze the prompt asked for. Bronze was meant to repeat the Dominion's "armored side" language; brown still reads as the front against the white robes. Accept it, or regenerate only the color (*"Same image, but the book cover is smooth dark bronze metal, not brown leather"*).
+- **Cantor's wings:** the design added large spread white wings, which the Choristers don't have; the turnaround keeps them. The silhouette still reads (candle crown above everything, book in front). If accepted, the wings need their own geometry: no `cantor-wings.png` exists, so either a wing sheet is generated or the Dominion's wing model is adapted and spread.
+- **Cantor's back:** plain white with one gold band down the spine, as asked: the front and back read differently.
+- **Carrier's proportions:** the shroud reaches just below the feet and pools to the sides, rather than trailing two body lengths; the arms are only slightly long in the design and normal in the turnaround. Both still read; the model can lengthen the shroud.
+- **Carrier's wings:** `carrier-wings.png` shows the pair from behind plus one more wing, half-spread rather than fully spread, and the third view is not a true side profile. Usable for feather texture and outline; the spread pose is set in Blender.
 
 ---
 
@@ -109,6 +123,8 @@ New objects share Heaven's palette with everything already in the arenas, so eac
 | **Blast** (sanctuary lamp) | **saturated red glass, black iron band** | a cup on a tripod, a flame inside | 1.3 m | "I explode" |
 | **Blessing** (chalice) | **all gold**, white marble stand | a cup on a slim stand | 1.2 m | "I heal" |
 | **Dominion** | white and gold armor, dark bronze face | twice a Blessed's height, a mace head above the crowd | 3.4 m | the elite |
+| **Lectern Cantor** | white silk and gold robes, a **dark bronze** book in front | a head taller than the Choristers, a crown of candles, a huge book held like a shield | 3.2 m | commander of the Choristers; bronze side = shielded front |
+| **Stray-Carrier** | gold armor and mask, white wings, a **long white shroud** | 2.5 × a Cherub, a white tail of cloth hanging 2 m below it | 2 m body, 5 m wings, flies 4 m up | commander of the Cherubs |
 | **Heal mote** | **green** | a small almond-shaped drop | 0.3 m | heals the collector |
 | **Halo** | gold | a thick ring | 0.4 m | money |
 | **Hazard** (Refiner's Fire) | red-orange flame in a sunk channel with a gold rim | a line on the floor | floor | "hurts enemies more than you" |
@@ -197,6 +213,106 @@ The colossal angel in the first attached image, copied exactly (same armor, sing
 ```
 
 **Check before saving:** the trumpet is the attached one; it isn't at the mouth; the key is still there; the design matches the existing Gatekeeper.
+
+### A3 The Lectern Cantor
+
+The commander of the Choristers ([rooms.md](rooms.md) §6.2): *"It sings a turning beam at the farthest of you from behind its hymnal; hide or close in, and hit it from behind."* A towering Chorister, a head taller than the Choristers (3.2 m drawn), slow (2.5 m/s), with a crown of lit candles above the crowd and a huge hymnal bound in **dark bronze** held in front like a tower shield. The bronze cover is its armored front, the same language as the Dominion's face plate; its back is plain white silk with no armor, so players can tell front from back at a glance. When it sings, the hymnal opens toward its target and the glowing pages fire the beam.
+
+Three images, in this order. The design sets the look; the other two copy it for modeling. As for the Dominion, the body model has **no hymnal**: the book is a separate reference that Claude attaches in Blender, because it opens and closes.
+
+#### The Cantor's design — `cantor-design.png` · 2:3
+
+Attach: `chorister-front.jpg`, `dominion-design.png`
+
+```text
+The Lectern Cantor, the choirmaster who leads Heaven's choir into battle: a towering singing angel a head taller than the first attached character and copied from it: the same brilliant white silk robes with broad gold bands, the same high stiff collar, the same calm face with the mouth open in song and the eyes closed, but older and sterner, and over the robes a heavy floor-length cope of white brocade embroidered with gold, fastened at the chest with a large gold clasp. On its head a tall crown of slender white candles in a gold ring, the small flames lit, standing above everything else. In both arms, held upright in front of the chest and belly like a tower shield, a huge closed hymnal almost as tall as its torso, bound in smooth dark bronze with heavy gold corner guards, gold clasps and a raised gold cross on the cover; the dark bronze matches the face plate of the armored angel in the second attached image. Calm, devout and certain, not monstrous: no horns, no spikes, no skulls, no blood. Art style: stylized 3D game art with a hand-inked graphic-novel finish, matching the attached reference images: bold black ink outlines (a thick outer contour, thinner inner lines), cel shading in 2–3 tones softened with painterly brush texture, light ink hatching in the deepest shadows, warm golden key light from the upper left, crisp clean edges. Palette: white, ivory and polished gold with pastel sky-blue accents and a dark bronze book cover. Full body, front view facing the viewer, centered, the whole figure, the candle crown and the whole book inside the frame, the robe hem on the bottom edge. Isolated on a flat pure green (#00FF00) background: no floor, no cast shadow, no scenery, no text, no glow or haze outside the outline. Aspect ratio 2:3.
+```
+
+**Check before saving:** clearly a Chorister's family (same robes, collar, singing face) but bigger and heavier; the book closed, held in front, its cover dark bronze, not gold or brown leather; the candle crown is the highest point; no glowing orb (that belongs to the ordinary Choristers); the candle flames small and inside the outline. Generate again until you like the look: everything after this copies it.
+
+#### The Cantor for modeling — `cantor-turnaround.png` · 16:9
+
+Attach: `cantor-design.png` only. Start a new chat.
+
+```text
+Character model sheet for 3D modeling, copying the character in the attached image: three full-body views side by side, from left to right: front, right side profile, back. Copy the attached design exactly: same proportions, robes, cope, collar, candle crown, face and colors in every view. Leave out the book: nothing held, both hands empty. The back of the cope is plain white silk with a single long gold lacing running down the spine and no embroidery, armor or ornament, so the back looks clearly different from the front. Pose in every view: a neutral A-pose: standing straight, arms straight and angled down and away from the body at about 45 degrees inside their wide sleeves, palms facing the thighs, so the arms and hands are clearly separated from the body; the floor-length robe hem touching the ground. All three views at the same scale, standing on one shared baseline, orthographic with no perspective, evenly spaced with a wide gap between them, nothing overlapping. Colors as a flat color reference for texturing: every surface in its own true color, evenly lit, with no cast shadows, no shading, no hatching, no highlights, no rim light, no glow and no light direction at all; thin dark lines only where two colors or parts meet, no thick outer contour. The candle flames painted as small flat yellow shapes. Plain flat medium grey (#808080) background, no floor, no shadows, no text, no labels, no arrows, no extra views or characters. Aspect ratio 16:9.
+```
+
+**Check before saving:**
+- three views of the same character (same cope, same collar, same candle crown);
+- no book, both hands empty, arms clearly away from the body;
+- the back view really shows the back: plain white silk with one gold lacing, no face, no clasp, no embroidery;
+- no shadows or shading: the white robes are the same color on the left and right of the body;
+- the whole figure inside each view, candle crown included, with grey around it.
+
+If one view is wrong, reply *"Fix only the <side/back> view: …"* rather than starting over.
+
+#### The Cantor's hymnal — `cantor-hymnal.png` · 16:9
+
+Attach: `cantor-design.png` only. Start a new chat.
+
+```text
+Prop model sheet for 3D modeling: the huge hymnal carried by the character in the attached image, alone, in three views side by side at the same scale, from left to right: closed, seen straight from the front cover; closed, seen in exact side profile from the spine; open flat, seen straight from above, both pages showing. Copy the attached design: a tall book bound in smooth dark bronze with heavy gold corner guards, gold clasps and a raised gold cross on the cover, a thick block of ivory pages. The open pages are covered in rows of gold musical notation drawn as simple abstract marks, with no readable letters, words or numbers. Orthographic with no perspective, the whole book inside each view with a margin around it. Colors as a flat color reference for texturing: every surface in its own true color, evenly lit, with no cast shadows, no shading, no highlights, no reflections, no glow; thin dark lines only where two parts meet. Plain flat medium grey (#808080) background, no hands, no text, no labels. Aspect ratio 16:9.
+```
+
+**Check before saving:** the same book as in the design (dark bronze, gold corners, gold cross); the open view really open with both pages flat; no readable letters or numbers on the pages; no shine on the bronze or gold.
+
+**After the three images,** Claude builds the model and renders its 8 directions (the front and back must read differently from every side) and the frames the game needs: idle, walk, hymnal opening (the wind-up), singing with the hymnal open (the beam), hymnal closing (the recovery), pain, death. The glowing pages, the ray and the beam are drawn by the game; the animation never decides when the beam starts or ends.
+
+### A4 The Stray-Carrier
+
+The commander of the Cherubs ([rooms.md](rooms.md) §6.3): *"It carries whoever strays from the party into the crowd."* A Cherub grown huge: about 2.5 × a Cherub (a 2 m body under a 5 m wingspan), flying 4 m up like the Cherubs, in the same polished gold armor and expressionless gold mask, but the mask's **eyes are carved closed** as if asleep, its arms are very long, and a long white burial shroud hangs from its shoulders and trails two meters below its feet like a tail. Between swoops it shoots with a Cherub's gold bow, held in its left hand; when it carries a player it wraps the shroud around them.
+
+Four images, in this order. As for the Dominion and the Cherub, the body model has **no wings, no bow and no shroud**: those are separate references that Claude attaches in Blender. The bow reuses the existing Cherub's bow, scaled up, so it needs no new image.
+
+#### The Carrier's design — `carrier-design.png` · 1:1
+
+Attach: `cherub-front.jpg`, `cherub-turnaround.png`, `concept-2.webp`
+
+```text
+The Stray-Carrier, the angel who carries lost souls away: a huge flying cherub copied from the character in the first attached image and grown to the size of a tall man: the same polished gold armor with engraved gold filigree and pastel sky-blue bands, the same smooth expressionless gold mask, but the mask's eyes are carved closed, calm and asleep, with no eye holes. Its arms are unnaturally long, hanging down to its knees, with long gold-gauntleted fingers; its bare feet dangle. Enormous white feathered wings spread fully to the sides, much larger than the first attached character's. A long white burial shroud of plain heavy linen is fastened to both shoulders with gold clasps and hangs down behind and below it, trailing far below its feet in long soft folds like a tail, twice as long as its body. In its left hand, held lowered, a gold bow like the first attached character's, with no arrow. Serene and unsettling, like a lullaby, not monstrous: no horns, no spikes, no skulls, no blood, no teeth. Art style: stylized 3D game art with a hand-inked graphic-novel finish, matching the attached reference images: bold black ink outlines (a thick outer contour, thinner inner lines), cel shading in 2–3 tones softened with painterly brush texture, light ink hatching in the deepest shadows, warm golden key light from the upper left, crisp clean edges. Palette: white, ivory and polished gold with pastel sky-blue accents. Full figure hovering, front view facing the viewer, centered, the whole figure, both wingtips, the bow and the whole trailing shroud inside the frame. Isolated on a flat pure green (#00FF00) background: no floor, no cast shadow, no scenery, no text, no glow or haze outside the outline. Aspect ratio 1:1.
+```
+
+**Check before saving:** clearly a Cherub (same gold armor and mask) but grown huge, not a baby; the mask's eyes closed, not open holes; the arms visibly too long; the white shroud hanging well below the feet, readable as one long white shape; wings white and spread; no arrow. Generate again until you like the look: everything after this copies it.
+
+#### The Carrier for modeling — `carrier-turnaround.png` · 16:9
+
+Attach: `carrier-design.png`, `cherub-turnaround.png`. Start a new chat.
+
+```text
+Character model sheet for 3D modeling, copying the character in the first attached image: three full-body views side by side, from left to right: front, right side profile, back, laid out like the second attached image. Copy the attached design exactly: same proportions, very long arms, gold armor, closed-eyed gold mask and colors in every view. Leave out the wings, the bow and the shroud: no wings, no weapon, no cloth, nothing held, only the two gold shoulder clasps where the shroud fastens and a smooth armored back where the wings attach. Pose in every view: hovering, the bare feet relaxed and pointing down, the legs slightly apart; the long arms straight and angled down and away from the body at about 45 degrees, palms facing the thighs, so the arms, hands and legs are clearly separated from the body and from each other; both hands empty. All three views at the same scale, on one shared baseline, orthographic with no perspective, evenly spaced with a wide gap between them, nothing overlapping. Colors as a flat color reference for texturing: every surface in its own true color, evenly lit, with no cast shadows, no shading, no hatching, no highlights, no rim light, no glow and no light direction at all; thin dark lines only where two colors or parts meet, no thick outer contour. Plain flat medium grey (#808080) background, no floor, no shadows, no text, no labels, no arrows, no extra views or characters. Aspect ratio 16:9.
+```
+
+**Check before saving:**
+- three views of the same character (same armor, same closed-eyed mask, same long arms);
+- no wings, no bow, no shroud, both hands empty, arms clearly away from the body;
+- the back view shows an armored back, not a second face;
+- no shadows or shading: the gold is the same color on the left and right of the body;
+- the whole figure inside each view, with grey around it.
+
+If one view is wrong, reply *"Fix only the <side/back> view: …"* rather than starting over.
+
+#### The Carrier's wings — `carrier-wings.png` · 16:9
+
+Attach: `carrier-design.png` only. Start a new chat.
+
+```text
+Model sheet for 3D modeling: the pair of wings of the character in the attached image, alone, without the body, in two views side by side: left, the pair seen from behind, spread fully to the sides from the shoulder joints; right, one spread wing in exact side profile. Copy the attached design: very large white feathers in clean overlapping rows, the long flight feathers at the tips and bottom, a thin gold edge along the top of each wing. Orthographic with no perspective, both views at the same scale, the whole wings inside the frame. Colors as a flat color reference for texturing: every surface in its own true color, evenly lit, with no cast shadows, no shading, no highlights, no glow; thin dark lines only where feathers or parts meet. Plain flat medium grey (#808080) background, no body, no text, no labels. Aspect ratio 16:9.
+```
+
+**Check before saving:** no body or armor in the image; both views the same wings; spread, not folded.
+
+#### The Carrier's shroud — `carrier-shroud.png` · 16:9
+
+Attach: `carrier-design.png` only. Start a new chat.
+
+```text
+Cloth model sheet for 3D modeling: the long burial shroud worn by the character in the attached image, alone, without the body, in two views side by side at the same scale: left, hanging straight down from its two gold shoulder clasps, seen from behind; right, the same in exact side profile. Copy the attached design: plain heavy white linen in long soft vertical folds, a narrow pale-gold border along its edges, two gold clasps at the top, its length about three times its width, the bottom edge slightly ragged. Orthographic with no perspective, the whole shroud inside the frame. Colors as a flat color reference for texturing: every surface in its own true color, evenly lit, with no cast shadows, no shading, no highlights, no glow; thin dark lines only where folds or parts meet. Plain flat medium grey (#808080) background, no body, no text, no labels. Aspect ratio 16:9.
+```
+
+**Check before saving:** no body; the same two clasps as the design; long and narrow, hanging straight; no stains, no writing, no face shapes in the folds.
+
+**After the four images,** Claude builds the model and renders its 8 directions and the frames the game needs: fly, shoot, shriek (the mark), swoop, carrying (long arms down, the shroud wrapped forward around where the player hangs; the game draws the carried player), pain, death. The lane, the marker over the stray and the drop ring are drawn by the game; the animation never decides when the grab happens.
 
 ---
 
