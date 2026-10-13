@@ -3,12 +3,16 @@ import { pearlyGates } from './pearly-gates';
 import { sandbox } from './sandbox';
 import { dominionLab } from './dominion';
 import { refinerLab } from './refiner';
+import { arrivalLab } from './arrival';
+import { crestLab } from './crest';
 import type { DungeonDef } from './types';
 
 /** The fixed dungeons (development fixtures), adapted to room records. */
 export const DUNGEONS: Record<string, DungeonDef> = {
   dominion: dominionLab,
   refiner: refinerLab,
+  arrival: arrivalLab,
+  crest: crestLab,
   sandbox: adaptFixture(sandbox),
   'pearly-gates': adaptFixture(pearlyGates),
 };

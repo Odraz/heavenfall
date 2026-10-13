@@ -22,6 +22,9 @@ export class Props {
     this.byRoom = map.rooms.map((_r, i) => this.all.filter((p) => p.room === i));
   }
   get(id: number): Prop | undefined { return this.byId.get(id); }
+  blocksSpawn(room: number, x: number, y: number, z: number, radius: number, height: number): boolean {
+    return this.byRoom[room]?.some((p) => !p.broken && z < p.z + PROP_HEIGHT[p.family] && z + height > p.z && (p.x - x) ** 2 + (p.y - y) ** 2 < (PROP_RADIUS + radius) ** 2) ?? false;
+  }
   break(id: number, tick: number, origin: 'player' | 'world' = 'player'): boolean {
     const p = this.byId.get(id);
     if (!p || p.broken || (origin === 'world' && p.family === 'blessing')) return false;

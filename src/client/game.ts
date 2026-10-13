@@ -7,6 +7,8 @@ import { DOMINION_RADIUS } from '../data/dominion';
 import { DominionProjection } from './dominion';
 import { DominionView } from './dominionView';
 import { HazardView } from './hazards';
+import { SpawnProjection } from './spawns';
+import { SpawnView } from './spawnView';
 import {
   ABILITIES,
   ATTACK_NONE,
@@ -396,6 +398,8 @@ export class Game {
   private readonly dominion: DominionProjection;
   private readonly dominionView = new DominionView();
   private readonly hazards: HazardView;
+  private readonly spawnWarnings: SpawnProjection;
+  private readonly spawnView = new SpawnView();
   /** When each enemy slot's Falling Star launch arc starts (M9 §3.2). */
   private readonly launchAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
   /** Wading (M12 §3.1): launched enemies don't press until then (ms), and the applied speed factor. */
@@ -512,6 +516,8 @@ export class Game {
     this.props = new PropView(this.map, o.runId, propDefs(o.floor), this.scene.terrain.lightmap);
     this.scene.scene.add(this.props.billboards.mesh);
     this.dominion = new DominionProjection(o.runId);
+    this.spawnWarnings = new SpawnProjection(o.runId, this.map);
+    this.scene.scene.add(this.spawnView.group);
     this.scene.scene.add(this.dominionView.group);
     this.hazards = new HazardView(this.map); this.scene.scene.add(this.hazards.group);
     this.billboards = new Billboards(o.atlas.texture);
@@ -580,8 +586,9 @@ export class Game {
     debugState.props = this.props.defs.map((p) => ({ id: p.id, room: p.room, family: p.family, x: p.x, y: p.y,
       z: this.map.floor[Math.floor(p.y) * this.map.w + Math.floor(p.x)], marked: p.marked }));
     debugState.brokenProps = [];
-    debugState.dominion = { actors: [], casts: [], starts: 0, strikes: 0, cancels: 0 };
+    debugState.dominion = { actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 };
     debugState.hazards = { activeRoom: -1, activeCells: 0 };
+    debugState.spawnWarnings = []; debugState.crests = 0;
     this.sounds.renderDelay = (this.snaps.delayTicks * TICK_MS) / 1000;
   }
 
@@ -875,6 +882,7 @@ export class Game {
   handleCtrl(msg: CtrlMessage): void {
     if (msg.type === 'floorSync' && !this.disposed) {
       this.dominion.sync(msg);
+      this.spawnWarnings.sync(msg);
       this.pickups.model.sync(msg);
       if (this.props.model.sync(msg)) debugState.brokenProps = [...this.props.model.broken];
       if (this.rooms.sync(msg)) {
@@ -891,9 +899,11 @@ export class Game {
       if (msg.event.phase === PHASE_COMBAT) this.hazards.seal(msg.event.room, msg.tick);
     }
     if (msg.event.type === 'pickupState') this.pickups.model.state(msg.event.pickup, msg.tick, msg.revision);
+    if (msg.event.type === 'spawnWarning' && !this.spawnWarnings.event(msg.event, msg.tick, msg.revision)) return;
     if (msg.event.type === 'dominionCast') {
       if (!this.dominion.event(msg.event, msg.tick, msg.revision)) return;
       const phase = msg.event.phase; debugState.dominion[phase === 'start' ? 'starts' : phase === 'strike' ? 'strikes' : 'cancels']++;
+      if (phase === 'start') { debugState.dominion.startedCastIds.push(msg.event.cast.castId); if (debugState.dominion.startedCastIds.length > 6) debugState.dominion.startedCastIds.shift(); }
     }
     if (msg.event.type === 'propBroken' || msg.event.type === 'propBlast') {
       if (!this.props.model.event(msg.event, msg.revision)) return;
@@ -905,6 +915,10 @@ export class Game {
 
   private onEvent(e: GameEvent, now: number): void {
     switch (e.type) {
+      case 'crest':
+        debugState.crests++;
+        this.hud.centerText('The crest is coming', 2000, now);
+        break;
       case 'dominionCast':
         if (e.phase === 'strike') {
           this.vfx.ring(now, e.x, e.y, e.z, 0xffedaa, 0, DOMINION_RADIUS, 220);
@@ -2116,6 +2130,9 @@ export class Game {
     const dominionTick = this.snaps.estimatedTick(simNow);
     const dominionRings = this.snaps.newest ? this.dominion.rings(this.snaps.newest, dominionTick) : [];
     this.dominionView.update(dominionRings, dominionTick);
+    debugState.spawnWarnings = this.spawnWarnings.live(dominionTick);
+    this.spawnView.update(debugState.spawnWarnings, dominionTick);
+    this.sounds.arrivals(this.paused ? [] : debugState.spawnWarnings, dominionTick);
     this.sounds.dominions(this.paused ? [] : dominionRings, dominionTick);
     debugState.dominion.casts = dominionRings;
     const fireCells = this.hazards.update(this.snaps.newest, this.scene.camera, dominionTick, this.over);
@@ -2556,6 +2573,7 @@ export class Game {
     this.pickups.dispose();
     this.props.dispose();
     this.dominionView.dispose();
+    this.spawnView.dispose();
     this.hazards.dispose();
     this.hum?.stop();
     this.hud.dispose();

@@ -29,6 +29,8 @@ function part(p: Partial<SynthPart> & Pick<SynthPart, 'wave' | 'freq'>): SynthPa
 
 export const SFX = {
   dominionStep: { priority: PRIO_ENEMY, parts: [part({ wave: 'noise', freq: 500, decay: 0.03, release: 0.09, volume: 0.15, lowpass: 900 }), part({ wave: 'sine', freq: 85, freqEnd: 45, decay: 0.06, release: 0.08, volume: 0.25 })] },
+  spawnWarning: { priority: PRIO_OTHERS, parts: [part({ wave: 'triangle', freq: 440, freqEnd: 660, attack: 0.04, decay: 0.08, hold: 0.65, release: 0.12, volume: 0.2 })] },
+  crest: { priority: PRIO_ABILITY, parts: [part({ wave: 'triangle', freq: 220, attack: 0.12, decay: 0.3, hold: 0.6, release: 0.3, volume: 0.2 }), part({ wave: 'sine', freq: 330, attack: 0.15, decay: 0.3, hold: 0.6, release: 0.3, volume: 0.18 })] },
   dominionTell: { priority: PRIO_ABILITY, parts: [part({ wave: 'triangle', freq: 150, freqEnd: 540, attack: 0.08, decay: 0.2, hold: 1.02, release: 0.2, volume: 0.35 }), part({ wave: 'noise', freq: 3000, attack: 0.08, decay: 0.15, release: 0.15, volume: 0.12, lowpass: 1400 })] },
   dominionSlam: { priority: PRIO_ABILITY, parts: [part({ wave: 'noise', freq: 2600, decay: 0.1, release: 0.2, volume: 0.55, lowpass: 2400 }), part({ wave: 'sine', freq: 110, freqEnd: 32, decay: 0.1, release: 0.3, volume: 0.65 })] },
   refinerIgnite: { priority: PRIO_ABILITY, parts: [part({ wave: 'noise', freq: 4000, attack: 0.05, decay: 0.3, release: 0.5, volume: 0.3, lowpass: 2500 })] },

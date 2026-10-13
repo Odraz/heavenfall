@@ -95,7 +95,7 @@ async function lateEntry(a: Page, browser: Browser, four: boolean): Promise<void
     const joined = await (await b.waitForFunction((id) => window.__heavenfall.dominion.casts.find((c) => c.castId === id) ?? null, cast!.castId, { polling: 20, timeout: 3000 })).jsonValue();
     expect([joined!.startTick, joined!.impactTick, joined!.incarnation]).toEqual([cast!.startTick, cast!.impactTick, cast!.incarnation]);
     expect((await state(b)).floorSyncTick).toBeGreaterThanOrEqual(cast!.startTick);
-    expect((await state(b)).dominion.starts).toBe(0);
+    expect((await state(b)).dominion.startedCastIds, 'the caught-up cast never replays a reliable start cue').not.toContain(cast!.castId);
     expect((await state(b)).players.find((p) => p.classId === 'betrayer')?.dead).toBe(true);
     expect(await b.evaluate(() => typeof window.__heavenfallReady)).toBe('undefined');
     await Promise.all(throttles.map((t) => t.send('Emulation.setCPUThrottlingRate', { rate: 1 })));

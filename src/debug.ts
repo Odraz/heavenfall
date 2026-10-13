@@ -39,7 +39,9 @@ export interface DebugState {
   props: Array<{ id: number; room: number; family: string; x: number; y: number; z: number; marked: boolean }>;
   brokenProps: number[];
   hazards: { activeRoom: number; activeCells: number };
-  dominion: { actors: Array<{ slot: number; incarnation: number; x: number; y: number; z: number }>; casts: Array<{ slot: number; incarnation: number; castId: number; startTick: number; impactTick: number; room: number; x: number; y: number; z: number }>; starts: number; strikes: number; cancels: number };
+  spawnWarnings: Array<{ id: number; room: number; x: number; y: number; z: number; startTick: number; readyTick: number }>;
+  crests: number;
+  dominion: { actors: Array<{ slot: number; incarnation: number; x: number; y: number; z: number }>; casts: Array<{ slot: number; incarnation: number; castId: number; startTick: number; impactTick: number; room: number; x: number; y: number; z: number }>; starts: number; startedCastIds: number[]; strikes: number; cancels: number };
   seed: number | null;
   simSeed: number | null;
   runId: string | null;
@@ -98,11 +100,13 @@ export const debugState: DebugState = {
   enemyCountsByTick: {},
   projectiles: 0,
   wallet: 0,
+  spawnWarnings: [],
+  crests: 0,
   pickups: [],
   props: [],
   brokenProps: [],
   hazards: { activeRoom: -1, activeCells: 0 },
-  dominion: { actors: [], casts: [], starts: 0, strikes: 0, cancels: 0 },
+  dominion: { actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
   seed: null,
   simSeed: null,
   runId: null,
@@ -151,7 +155,7 @@ export function resetGameDebug(): void {
     props: [],
     brokenProps: [],
     hazards: { activeRoom: -1, activeCells: 0 },
-    dominion: { actors: [], casts: [], starts: 0, strikes: 0, cancels: 0 },
+    dominion: { actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
     seed: null,
     simSeed: null,
     runId: null,

@@ -194,8 +194,10 @@ describe('R1.4 trickle and bounded fields', () => {
     const sim = make(bots); sim.rooms[1].phase = PHASE_CLEARED; run(sim, 10); return sim;
   }
 
-  it.each([[false], [false, true], [false, false, false, false]])('spends a refill after three seconds and sizes the trickle using P: %j', (...bots: boolean[]) => {
+  it.each([[false], [false, true], [false, false, false, false]])('warns a visible revisit after three seconds, then spends a refill only on arrival, sized using P: %j', (...bots: boolean[]) => {
     const sim = cleared(bots); put(sim, 0, 12.5); sim.step(); run(sim, 3);
+    expect(sim.living).toBe(0); expect(sim.rooms[1].refills).toBe(3);
+    expect(sim.floorSync('run').spawnWarnings).toHaveLength(1); run(sim, 1);
     expect(sim.living).toBe(Math.floor(Math.min(12, 4 + 2 * sim.partySize())));
     expect(sim.rooms[1].refills).toBe(2);
     expect(sim.activeRoom).toBe(ROOM_NONE);
@@ -210,14 +212,14 @@ describe('R1.4 trickle and bounded fields', () => {
     // Cancel the other countdown before exercising three revisits.
     put(sim, 0, 2.5); run(sim, 11);
     for (let i = 0; i < 4; i++) {
-      put(sim, 0, 12.5); sim.step(); run(sim, 3); sim.killAll();
+      put(sim, 0, 12.5); sim.step(); run(sim, 4); sim.killAll();
       put(sim, 0, 2.5); run(sim, 11);
     }
     expect(sim.rooms[1].refills).toBe(0);
   });
 
   it('targets only players at home, refuses pull/knockback/separation across its boundary, and fades without credit', () => {
-    const sim = cleared(); put(sim, 0, 12.5); sim.step(); run(sim, 3);
+    const sim = cleared(); put(sim, 0, 12.5); sim.step(); run(sim, 4);
     const s = sim.active[0]; sim.eX[s] = 23.8; sim.eY[s] = 10.5;
     sim.pull(s, 30.5, 10.5, 0); run(sim, 1);
     expect(Math.floor(sim.eX[s])).toBeLessThanOrEqual(23);
@@ -269,6 +271,7 @@ describe('R1.4 trickle and bounded fields', () => {
     expect(sim.activeCount).toBe(1500); expect(sim.rooms[1].refills).toBe(3);
     while (sim.activeCount > 0) sim.removeEnemy(sim.active[sim.activeCount - 1], true);
     sim.step();
+    expect(sim.living).toBe(0); expect(sim.rooms[1].refills).toBe(3); run(sim, 1);
     expect(sim.living).toBe(6); expect(sim.rooms[1].refills).toBe(2);
   });
 });
@@ -282,7 +285,10 @@ describe('R1.4 anti-softlock', () => {
     const s = sim.placeEnemy(BLESSED, 8, 10, 1);
     sim.eRootUntil[s] = 2000;
     sim.placeEnemy(CHORISTER, 20, 18, 1);
-    while (sim.tick < 25 * TICK_HZ) sim.step(); // Inspect the sampling tick, before separation resumes.
+    while (sim.tick < 25 * TICK_HZ) sim.step();
+    expect([sim.eX[s], sim.eY[s]]).toEqual([8.5, 10.5]);
+    expect(sim.floorSync('run').spawnWarnings?.some((w) => w.readyTick - w.startTick === TICK_HZ)).toBe(true);
+    run(sim, 1); // R2 warns for a full second before the same recovery.
     expect([sim.eX[s], sim.eY[s]]).toEqual([20.5, 18.5]);
     expect(sim.eRootUntil[s]).toBe(2000);
     expect(sim.eAlive[s]).toBe(1);
@@ -296,14 +302,37 @@ describe('R1.4 anti-softlock', () => {
     for (const [x, y] of [[24, 10], [26, 10], [25, 9], [25, 11]]) sim.map.solid[y * sim.map.w + x] = 1;
     run(sim, 15);
     expect(sim.eHp[s]).toBe(7); expect(sim.eSilenceUntil[s]).toBe(2000);
+    const incarnation = sim.eIncarnation[s];
+    expect(sim.eX[s]).toBe(25.5); expect(sim.floorSync('run').spawnWarnings).toHaveLength(1);
+    run(sim, 1); expect(sim.eIncarnation[s]).toBe(incarnation);
     expect(sim.eX[s]).toBe(20.5); expect(sim.eY[s]).toBe(18.5);
     expect(sim.eAlive[s]).toBe(1); expect(sim.players[0].kills).toBe(0);
   });
 
-  it('removes without credit and logs a defect only after another ten seconds without a legal marker', () => {
+  it('uses a warned reachable floor when authored markers are absent', () => {
+    const sim = make(); put(sim, 0, 12.5); sim.step(); sealNow(sim, 1);
+    sim.rooms[1].queue.length = 0; sim.map.roomSpawnPoints[1] = [];
+    const s = sim.placeEnemy(CHORISTER, 25, 10, 1); sim.eRootUntil[s] = 2000;
+    for (const [x, y] of [[24, 10], [26, 10], [25, 9], [25, 11]]) sim.map.solid[y * sim.map.w + x] = 1;
+    run(sim, 15); const w = sim.floorSync('run').spawnWarnings![0]; expect(w).toBeDefined();
+    expect(sim.eX[s]).toBe(25.5); run(sim, 1);
+    expect([sim.eX[s], sim.eY[s]]).toEqual([w.x, w.y]); expect(sim.players[0].kills).toBe(0);
+  });
+
+  it('cancels recovery when the player occupies the warned point and retains the original actor and statuses', () => {
+    const sim = make(); put(sim, 0, 12.5); sim.step(); sealNow(sim, 1); sim.rooms[1].queue.length = 0;
+    const s = sim.placeEnemy(CHORISTER, 25, 10, 1); sim.eRootUntil[s] = sim.eSilenceUntil[s] = 2000; sim.eHp[s] = 7;
+    for (const [x, y] of [[24, 10], [26, 10], [25, 9], [25, 11]]) sim.map.solid[y * sim.map.w + x] = 1;
+    run(sim, 15); const w = sim.floorSync('run').spawnWarnings![0]; put(sim, 0, w.x, w.y); run(sim, 1);
+    expect(sim.eX[s]).toBe(25.5); expect(sim.eHp[s]).toBe(7); expect(sim.eSilenceUntil[s]).toBe(2000);
+    expect(sim.floorSync('run').spawnWarnings?.some((q) => q.id === w.id)).toBe(false);
+  });
+
+  it('removes without credit and logs a defect only after another ten seconds without a legal floor point', () => {
     const sim = make(); put(sim, 0, 12.5); sim.step(); sealNow(sim, 1);
     sim.rooms[1].queue.length = 0; sim.map.roomSpawnPoints[1] = [];
     const s = sim.placeEnemy(BLESSED, 25, 10, 1);
+    for (let y = 1; y <= 21; y++) for (let x = 7; x <= 23; x++) if (Math.abs(x - 12) > 2 || Math.abs(y - 10) > 2) sim.map.solid[y * sim.map.w + x] = 1;
     for (const [x, y] of [[24, 10], [26, 10], [25, 9], [25, 11]]) sim.map.solid[y * sim.map.w + x] = 1;
     const log = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

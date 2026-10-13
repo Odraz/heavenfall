@@ -21,10 +21,15 @@ export class DominionProjection {
     return true;
   }
   sync(s: FloorSync): boolean {
-    if (s.runId !== this.runId) return false;
-    if (!this.replace(s.dominionCasts ?? [], s.tick, s.revision)) return false;
+    const casts = s.dominionCasts ?? [];
+    if (s.runId !== this.runId || !Number.isInteger(s.revision) || s.revision < 0 || s.revision > 0xffffffff ||
+      s.revision < this.checkpointRevision || s.tick < this.tick && s.revision > this.revision || s.tick > this.tick && s.revision < this.revision ||
+      !validCasts(casts, s.tick) || casts.some((c) => this.known.has(c.castId) && !sameCast(this.known.get(c.castId)!.cast, c))) return false;
+    // The unordered snapshot can win the state race before the reliable admission checkpoint.
+    // Its newer state stays, but the checkpoint still suppresses pre-admission reliable cues.
     this.checkpointRevision = Math.max(this.checkpointRevision, s.revision);
     this.cueRevision = Math.max(this.cueRevision, s.revision);
+    if (!this.replace(casts, s.tick, s.revision)) return false;
     this.known.clear(); for (const c of this.active.values()) this.remember(c);
     return true;
   }

@@ -176,6 +176,8 @@ describe('arenas', () => {
     for (let i = 0; i < 1495; i++) sim.placeEnemy(BLESSED, 1 + (i % 4), 1 + (Math.floor(i / 4) % 4), -1);
     enterArena0(sim);
     for (let i = 0; i < 10; i++) sim.step();
+    expect(sim.living).toBe(1495); expect(sim.floorSync('run').spawnWarnings!.length).toBeGreaterThan(0);
+    for (let i = 0; i < 30; i++) sim.step();
     expect(sim.living).toBe(MAX_LIVING_ENEMIES);
     expect(sim.rooms[0].alive).toBe(5);
     expect(sim.rooms[0].queue.length).toBe(1);
@@ -219,6 +221,10 @@ describe('arenas', () => {
     const sim = makeSim([wave(1)]);
     enterArena0(sim);
     for (let i = 0; i < 3; i++) sim.step();
+    expect(sim.rooms[0].waveFullySpawned[0]).toBe(false);
+    const warning = sim.floorSync('run').spawnWarnings![0]; expect(warning.readyTick - warning.startTick).toBe(30);
+    while (sim.tick < warning.readyTick) sim.step();
+    expect(sim.rooms[0].waveFullySpawned[0]).toBe(true);
     sim.killAll();
     sim.step();
     expect(status(sim)).toEqual({ activeRoom: ROOM_NONE, activePhase: PHASE_IDLE, clearedMask: 1 });

@@ -8,6 +8,7 @@ import type { ClassId } from '../data/classes';
 import { COIN, GOLD_HALO } from '../data/pickups';
 import { BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import type { DominionRing } from './dominionView';
+import type { SpawnWarning } from '../data/spawns';
 import type { TrackId } from '../data/music';
 import type { GameEvent } from '../net/messages';
 import { PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
@@ -41,6 +42,7 @@ export class GameSounds {
   private readonly enemyState = new Uint8Array(ENEMY_SLOTS).fill(NO_STATE);
   private tickSecond = 0;
   private readonly tells = new Map<number, VoiceHandle>();
+  private readonly arrivalTells = new Map<number, VoiceHandle>();
   private fireAmbient: VoiceHandle | undefined;
   /** Ambient fire uses an admitted finite voice, so it shares the unchanged caps/stealing rules. */
   hazard(at: SoundPos | null): void {
@@ -56,6 +58,15 @@ export class GameSounds {
       if (this.tells.get(c.castId)?.playing()) continue;
       const handle = sfx('dominionTell', c, 1, 0, PRIO_ABILITY, 1, { elapsed: (tick - c.startTick) / 30, duration: (c.impactTick - c.startTick) / 30 });
       if (handle) this.tells.set(c.castId, handle);
+    }
+  }
+
+  arrivals(warnings: readonly SpawnWarning[], tick: number): void {
+    for (const [id, handle] of this.arrivalTells) if (!warnings.some((w) => w.id === id && tick < w.readyTick)) { handle.stop(); this.arrivalTells.delete(id); }
+    for (const w of warnings) {
+      if (this.arrivalTells.has(w.id) || tick < w.startTick || tick >= w.readyTick) continue;
+      const handle = sfx('spawnWarning', w, 1, 0, PRIO_OTHERS, 1, { elapsed: (tick - w.startTick) / 30, duration: 1 });
+      if (handle) this.arrivalTells.set(w.id, handle);
     }
   }
 
@@ -214,6 +225,9 @@ export class GameSounds {
   /** A game event's sound. `pose` gives a player's position. */
   event(e: GameEvent, pose: (id: number) => SoundPos | undefined): void {
     switch (e.type) {
+      case 'crest':
+        sfx('crest');
+        break;
       case 'abilityUsed': {
         const key = `${this.classOf(e.playerId)}:${e.slot}`;
         const at = { x: e.x, y: e.y };
@@ -321,6 +335,7 @@ export class GameSounds {
   dispose(): void {
     this.fireAmbient?.stop(); this.fireAmbient = undefined;
     for (const handle of this.tells.values()) handle.stop(); this.tells.clear(); this.steps.clear();
+    for (const handle of this.arrivalTells.values()) handle.stop(); this.arrivalTells.clear();
     audio()?.music.keepStings(false);
   }
 }

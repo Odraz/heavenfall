@@ -106,6 +106,7 @@ import { Director, ENGAGED_HIT_TICKS, ENGAGED_RADIUS, KILL_NEAR_RADIUS, type Dir
 import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } from './field';
 import { FlowField, UNREACHABLE } from './flowfield';
 import { DryNavigation, FIRE_ENEMY_DAMAGE, FIRE_PLAYER_DAMAGE, Hazards } from './hazards';
+import { SpawnWarnings } from './spawnWarnings';
 import { lineOfSight, raycastTerrain } from './los';
 import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
@@ -357,6 +358,8 @@ const SPAWN_FAR_DIST = 15;
 const SPAWN_MIN_DIST = 3;
 /** A combat arena's wave arrives over this many ticks (M12 §2.2). */
 const WAVE_ARRIVAL_TICKS = 10 * TICK_HZ;
+export const CREST_ARRIVAL_TICKS = 6 * TICK_HZ;
+export const CREST_SPAWN_RATE = 20;
 /** A wave's squad starts this long after the wave, one every SQUAD_EVERY_TICKS (M12 follow-up §4.2). */
 const SQUAD_DELAY_TICKS = 5 * TICK_HZ;
 const SQUAD_EVERY_TICKS = TICK_HZ / 2;
@@ -535,6 +538,7 @@ export class Simulation {
   // Enemies, structure of arrays indexed by slot.
   readonly eAlive = new Uint8Array(ENEMY_SLOTS);
   readonly eIncarnation = new Uint32Array(ENEMY_SLOTS);
+  readonly eSpawnTick = new Uint32Array(ENEMY_SLOTS);
   private nextIncarnation = 1;
   readonly pickups: Pickups;
   readonly props: Props;
@@ -668,6 +672,13 @@ export class Simulation {
   readonly airFields: FlowField[] = [];
   readonly hazards: Hazards;
   readonly dryNavigation: DryNavigation;
+  readonly spawnWarnings: SpawnWarnings;
+  private readonly floorSpawnPoints = new Map<string, { room: number; c: number; r: number; budget: number }>();
+  private readonly spawnBlockedSince = new Map<string, number>();
+  private readonly spawnFloorCells = new Map<number, Uint32Array>();
+  private floorScanTick = -1;
+  private readonly recoveryArrivals = new Map<number, { incarnation: number; room: number; c: number; r: number; x: number; y: number; tick: number; unreachable: boolean }>();
+  private readonly recoveryPointUsers = new Map<string, number>();
   private readonly hazardVictims = new Uint16Array(ENEMY_SLOTS);
   private readonly fieldValid: boolean[] = new Array(PLAYER_SLOTS).fill(false);
 
@@ -714,6 +725,7 @@ export class Simulation {
     this.map = opts.map ?? loadMap(opts.dungeon);
     this.hazards = new Hazards(this.map);
     this.dryNavigation = new DryNavigation(this.map, this.hazards.active);
+    this.spawnWarnings = new SpawnWarnings((phase, warning) => this.emit('all', { type: 'spawnWarning', phase, warning }));
     this.pickups = new Pickups(this.map, (p) => this.emit('all', { type: 'pickupState', pickup: { ...p } }));
     this.props = new Props(this.map, opts.props ?? [], (p, origin) => this.propBroken(p, origin));
     this.dominions = new Dominions((phase, cast) => this.dominionPhase(phase, cast));
@@ -800,7 +812,7 @@ export class Simulation {
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
-      pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint() };
+      pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
   }
 
   private discoverNeighbours(ai: number): void {
@@ -1053,6 +1065,7 @@ export class Simulation {
     this.nowMs = nowMs ?? this.tick * TICK_MS;
     this.checkRoomStarts();
     this.syncHazards();
+    this.updateSpawnWarnings();
     this.updateTrickle();
     this.updateFlowFields();
     this.updateSpawning();
@@ -1071,6 +1084,7 @@ export class Simulation {
     this.checkRoomClears();
     this.checkDefeat();
     this.syncHazards();
+    this.updateSpawnWarnings();
     if (this.benchBurst && this.tick % BENCH_BURST_TICKS === 0) this.benchBurstHit();
     this.flushBursts();
   }
@@ -1213,7 +1227,14 @@ export class Simulation {
       if (!this.canAlloc(count)) continue;
       const points = this.map.roomSpawnPoints[ai];
       const safe = new Uint8Array(points.length);
-      if (!this.markEligible(points, SPAWN_MIN_DIST, safe, this.spawnEligibility(ai, points, BLESSED))) continue;
+      const markerSafe = this.markEligible(points, SPAWN_MIN_DIST, safe, this.spawnEligibility(ai, points, BLESSED));
+      const key = `${ai}:${BLESSED}`;
+      let temporary: { room: number; c: number; r: number; budget: number } | undefined;
+      if (!markerSafe) {
+        if (!this.spawnBlockedSince.has(key)) this.spawnBlockedSince.set(key, this.tick);
+        if (this.tick - this.spawnBlockedSince.get(key)! < 2 * TICK_HZ) continue;
+        temporary = this.floorSpawn(ai, BLESSED); if (!temporary) continue;
+      } else this.spawnBlockedSince.delete(key);
       const hidden: number[] = [];
       let farthest = -1, farDist = -1;
       for (let i = 0; i < points.length; i++) {
@@ -1228,10 +1249,14 @@ export class Simulation {
         if (!seen) hidden.push(i);
         if (distance > farDist) { farDist = distance; farthest = i; }
       }
+      if (!temporary && hidden.length === 0) {
+        const [c, r] = points[farthest];
+        if (!this.spawnWarnings.permit(ai, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c], this.tick)) continue;
+      }
       let placed = 0;
       for (; placed < count; placed++) {
         const i = hidden.length > 0 ? hidden[placed % hidden.length] : farthest;
-        const [c, r] = points[i];
+        const [c, r] = temporary ? [temporary.c, temporary.r] : points[i];
         const slot = this.allocSlot();
         if (slot < 0) break;
         this.spawnAt(slot, BLESSED, c, r, ai, -1);
@@ -1243,7 +1268,7 @@ export class Simulation {
     }
   }
 
-  /** R1 recovery is instant; the warned beam belongs to R2. No kill credit on removal. */
+  /** Warned anti-softlock relocation keeps identity, HP, statuses and reward entitlement. */
   private recoverEnemies(): void {
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
@@ -1253,12 +1278,15 @@ export class Simulation {
         this.eStillY[s] = this.eY[s];
       }
     }
+    this.updateRecoveryArrivals();
     if (this.tick % ticks(5) !== 0 || this.activePhase !== PHASE_COMBAT) return;
     const ai = this.activeRoom, st = this.rooms[ai];
     const lastPlaced = st.wave === this.map.rooms[ai].waves.length - 1 && st.waveFullySpawned[st.wave];
+    const fallback = new Map<number, [number, number] | null>();
     for (let k = this.activeCount - 1; k >= 0; k--) {
       const s = this.active[k];
       if (this.eRoom[s] !== ai || this.eType[s] === GATEKEEPER || this.leashed[s]) continue;
+      if (this.recoveryArrivals.has(s)) continue;
       const avoids = (this.eType[s] === CHORISTER || this.eType[s] === DOMINION) && this.dryNavigation.room === ai;
       const fields = this.eType[s] === CHERUB ? this.airFields : avoids ? this.dryNavigation.fields : this.groundFields;
       const c = Math.floor(this.eX[s]), r = Math.floor(this.eY[s]);
@@ -1268,6 +1296,7 @@ export class Simulation {
       else if (this.eUnreachableSince[s] < 0) this.eUnreachableSince[s] = this.tick;
       const unreachable = this.eUnreachableSince[s] >= 0 && this.tick - this.eUnreachableSince[s] >= ticks(10);
       const stuck = lastPlaced && st.alive <= 10 && this.tick - this.eStillSince[s] >= ticks(20);
+      if (reachable && !stuck) { this.eRecoveryFailed[s] = -1; continue; }
       if (!unreachable && !stuck && this.eRecoveryFailed[s] < 0) continue;
       const points = this.map.roomSpawnPoints[ai], safe = new Uint8Array(points.length);
       this.markEligible(points, SPAWN_MIN_DIST, safe, this.spawnEligibility(ai, points, this.eType[s]));
@@ -1284,19 +1313,57 @@ export class Simulation {
         }
         if (reachableMarker && nearest > distance) { distance = nearest; best = i; }
       }
-      if (best >= 0) {
-        const [x, y] = points[best];
-        this.eX[s] = this.eStillX[s] = x + 0.5;
-        this.eY[s] = this.eStillY[s] = y + 0.5;
-        this.eZ[s] = this.map.floor[y * this.map.w + x] + (this.eType[s] === CHERUB ? CHERUB_HOVER : 0);
-        this.eStillSince[s] = this.tick;
-        this.eUnreachableSince[s] = this.eRecoveryFailed[s] = -1;
-        this.retarget(s);
+      let point = best >= 0 ? points[best] : null;
+      if (!point) {
+        const type = this.eType[s];
+        if (!fallback.has(type)) {
+          let cell = -1, far = -1; const def = ENEMIES[type];
+          for (const i of this.fallbackSpawnCells(ai)) {
+            const x = i % this.map.w, y = Math.floor(i / this.map.w), z = this.map.floor[i];
+            if (this.map.solid[i] || this.props.blocksSpawn(ai, x + 0.5, y + 0.5, z, def.radius, def.height) || !this.spawnClearance(x + 0.5, y + 0.5, z, SPAWN_MIN_DIST)) continue;
+            let distance = Infinity, target = false;
+            for (const p of this.players) if (this.livingTargetable(p)) {
+              distance = Math.min(distance, (p.x - x - 0.5) ** 2 + (p.y - y - 0.5) ** 2);
+              if (this.fieldValid[p.index] && fields[p.index] && fields[p.index]!.at(x, y) !== UNREACHABLE) target = true;
+            }
+            if (target && distance > far) { far = distance; cell = i; }
+          }
+          fallback.set(type, cell >= 0 ? [cell % this.map.w, Math.floor(cell / this.map.w)] : null);
+        }
+        point = fallback.get(this.eType[s])!;
+      }
+      if (point) {
+        const [x, y] = point, key = `${ai}:${x}:${y}`;
+        this.recoveryArrivals.set(s, { incarnation: this.eIncarnation[s], room: ai, c: x, r: y, x: this.eX[s], y: this.eY[s], tick: this.tick, unreachable });
+        this.recoveryPointUsers.set(key, (this.recoveryPointUsers.get(key) ?? 0) + 1);
+        this.spawnWarnings.permit(ai, x + 0.5, y + 0.5, this.map.floor[y * this.map.w + x], this.tick, undefined, 'recovery');
       } else if (this.eRecoveryFailed[s] < 0) this.eRecoveryFailed[s] = this.tick;
       else if (this.tick - this.eRecoveryFailed[s] >= ticks(10)) {
         console.warn('diagnostic: unreachable enemy removed', { room: ai, slot: s });
         this.removeEnemy(s, true);
       }
+    }
+  }
+
+  private updateRecoveryArrivals(): void {
+    for (const [s, q] of this.recoveryArrivals) {
+      const type = this.eType[s], cell = Math.floor(this.eY[s]) * this.map.w + Math.floor(this.eX[s]);
+      const fields = type === CHERUB ? this.airFields : (type === CHORISTER || type === DOMINION) && this.dryNavigation.room === q.room ? this.dryNavigation.fields : this.groundFields;
+      const reachable = this.players.some((p) => this.livingTargetable(p) && this.fieldValid[p.index] && fields[p.index] && fields[p.index]!.at(cell % this.map.w, Math.floor(cell / this.map.w)) !== UNREACHABLE);
+      const z = this.map.floor[q.r * this.map.w + q.c], def = ENEMIES[type];
+      const cancel = !this.eAlive[s] || this.eIncarnation[s] !== q.incarnation || this.eRoom[s] !== q.room || this.activePhase !== PHASE_COMBAT || this.activeRoom !== q.room ||
+        !this.spawnClearance(q.c + 0.5, q.r + 0.5, z, SPAWN_MIN_DIST) || this.map.solid[q.r * this.map.w + q.c] ||
+        this.props.blocksSpawn(q.room, q.c + 0.5, q.r + 0.5, z, def.radius, def.height) ||
+        reachable && (q.unreachable || (this.eX[s] - q.x) ** 2 + (this.eY[s] - q.y) ** 2 >= 1 || this.eHurtTick[s] >= q.tick);
+      if (!cancel && !this.spawnWarnings.permit(q.room, q.c + 0.5, q.r + 0.5, z, this.tick, undefined, 'recovery')) continue;
+      if (!cancel) {
+        this.eX[s] = this.eStillX[s] = q.c + 0.5; this.eY[s] = this.eStillY[s] = q.r + 0.5;
+        this.eZ[s] = z + (type === CHERUB ? CHERUB_HOVER : 0); this.eStillSince[s] = this.eSpawnTick[s] = this.tick;
+        this.eUnreachableSince[s] = this.eRecoveryFailed[s] = -1; this.retarget(s);
+      }
+      this.recoveryArrivals.delete(s); const key = `${q.room}:${q.c}:${q.r}`, left = this.recoveryPointUsers.get(key)! - 1;
+      if (left) this.recoveryPointUsers.set(key, left);
+      else { this.recoveryPointUsers.delete(key); this.spawnWarnings.cancel(q.room, q.c + 0.5, q.r + 0.5, 'recovery'); }
     }
   }
 
@@ -1428,7 +1495,8 @@ export class Simulation {
     st.waveAlive[n] = 0;
     st.waveFullySpawned[n] = st.waveTotals[n] === 0;
     st.pace = 0;
-    st.paceRate = queued / WAVE_ARRIVAL_TICKS;
+    st.paceRate = queued / (this.isCrest(ai, n) ? CREST_ARRIVAL_TICKS : WAVE_ARRIVAL_TICKS);
+    if (this.isCrest(ai, n)) this.emit('all', { type: 'crest', room: ai, wave: n, total: queued });
     if (queued > 0) st.queue.push({ counts, spawned: [0, 0, 0, 0], wave: n });
     st.squad = squad > 0 ? { type: w.squad!.type === 'cherubs' ? CHERUB : CHORISTER, at: w.squad!.at, left: squad, next: this.tick + SQUAD_DELAY_TICKS, rr: 0, wave: n } : null;
     st.director?.waveStarted(n);
@@ -1496,7 +1564,7 @@ export class Simulation {
         if (this.livingTargetable(p) && this.activeCount > 0) this.computeFields(p, ROOM_NONE);
         continue;
       }
-      if (!this.livingTargetable(p) || room === ROOM_NONE || !this.hasEnemies(room)) {
+      if (!this.livingTargetable(p) || room === ROOM_NONE || !this.hasEnemies(room) && this.rooms[room].queue.length === 0 && !this.rooms[room].squad && this.rooms[room].trickleAt < 0) {
         this.fieldValid[p.index] = false;
         this.dryNavigation.release(p.index);
         continue;
@@ -1530,7 +1598,7 @@ export class Simulation {
     const rect = room === ROOM_NONE ? undefined : this.map.rooms[room].rect;
     const clamp = rect ? { x0: rect.x0 - 4, y0: rect.y0 - 4, x1: rect.x1 + 4, y1: rect.y1 + 4 } : undefined;
     this.groundFields[p.index].compute(c, r, clamp);
-    let flyers = forceAir;
+    let flyers = forceAir || room !== ROOM_NONE && (this.rooms[room].squad?.type === CHERUB || this.rooms[room].queue.some((b) => b.counts[2] > b.spawned[2]));
     for (let k = 0; k < this.activeCount && !flyers; k++) {
       const s = this.active[k];
       flyers = this.eType[s] === CHERUB && (this.eRoom[s] === room || (this.eRoom[s] < 0 && this.roomAt(this.eX[s], this.eY[s]) === room));
@@ -1573,13 +1641,20 @@ export class Simulation {
   // ------------------------------------------------------------------ spawning
 
   private updateSpawning(): void {
+    for (const p of this.floorSpawnPoints.values()) p.budget = Math.min(BUDGET_MAX, p.budget + (this.isCrest(p.room) ? CREST_SPAWN_RATE : SPAWN_RATE) / TICK_HZ);
     this.rooms.forEach((st, ai) => {
       const b = st.budgets;
-      for (let i = 0; i < b.length; i++) b[i] += BUDGET_PER_TICK;
+      const rate = this.isCrest(ai) ? CREST_SPAWN_RATE / TICK_HZ : BUDGET_PER_TICK;
+      for (let i = 0; i < b.length; i++) b[i] += rate;
       if (st.phase === PHASE_COMBAT) this.updateRoomSpawning(ai);
       // The cap applies to the budget carried into the next tick, so a busy point sustains its rate.
       for (let i = 0; i < b.length; i++) if (b[i] > BUDGET_MAX) b[i] = BUDGET_MAX;
     });
+  }
+
+  private isCrest(ai: number, wave = this.rooms[ai].wave): boolean {
+    const room = this.map.rooms[ai];
+    return room.kind === 'combat' && room.shape === '2x2' && wave === room.waves.length - 1;
   }
 
   private updateRoomSpawning(ai: number): void {
@@ -1610,8 +1685,7 @@ export class Simulation {
   /**
    * A wave's squad (M12 follow-up §4.2): from 5 s after the wave starts, one every 0.5 s, round-robin
    * over its points more than 8 m from every living player. When none is (a player stands among
-   * them), it comes from the arena's spawn points instead, by the wave's rule (more than 15 m, else
-   * 8 m, else any), so the wave still arrives in full.
+   * them), it uses the same distant-marker or warned safe-floor fallback as its ordinary wave.
    */
   private placeSquad(ai: number): void {
     const st = this.rooms[ai];
@@ -1620,28 +1694,40 @@ export class Simulation {
     let points = q.at;
     let eligible = new Uint8Array(points.length);
     const own = this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible, this.spawnEligibility(ai, points, q.type));
+    let warned = false;
+    let temporary: { room: number; c: number; r: number; budget: number } | undefined;
     if (!own) {
       points = this.map.roomSpawnPoints[ai];
-      if (points.length === 0) return;
       eligible = new Uint8Array(points.length);
       const allowed = this.spawnEligibility(ai, points, q.type);
-      if (!this.markEligible(points, this.map.rooms[ai].shape === '1x1' ? 10 : SPAWN_FAR_DIST, eligible, allowed) && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible, allowed) && !this.markEligible(points, SPAWN_MIN_DIST, eligible, allowed)) return;
+      if (!this.markEligible(points, this.map.rooms[ai].shape === '1x1' ? 10 : SPAWN_FAR_DIST, eligible, allowed) && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible, allowed)) {
+        warned = true;
+        if (!this.markEligible(points, SPAWN_MIN_DIST, eligible, allowed)) {
+          const key = `${ai}:${q.type}`; if (!this.spawnBlockedSince.has(key)) this.spawnBlockedSince.set(key, this.tick);
+          if (this.tick - this.spawnBlockedSince.get(key)! < 2 * TICK_HZ) return;
+          temporary = this.floorSpawn(ai, q.type); if (!temporary) return;
+        }
+      }
     }
+    if (own || eligible.some(Boolean)) this.spawnBlockedSince.delete(`${ai}:${q.type}`);
     let found = -1;
     const rr = own ? q.rr : st.rr;
     for (let k = 0; k < points.length; k++) {
       const i = (rr + k) % points.length;
       if (eligible[i]) {
+        const [x, y] = points[i];
+        if (warned && !this.spawnWarnings.permit(ai, x + 0.5, y + 0.5, this.map.floor[y * this.map.w + x], this.tick)) continue;
         found = i;
         break;
       }
     }
-    if (found < 0) return;
+    if (found < 0 && !temporary) return;
     const slot = this.allocSlot();
     if (slot < 0) return;
-    const [c, r] = points[found];
+    const [c, r] = temporary ? [temporary.c, temporary.r] : points[found];
     this.spawnAt(slot, q.type, c, r, ai, q.wave);
-    if (own) q.rr = (found + 1) % points.length;
+    if (temporary) temporary.budget--;
+    else if (own) q.rr = (found + 1) % points.length;
     else st.rr = (found + 1) % points.length;
     q.left--;
     q.next = this.tick + SQUAD_EVERY_TICKS;
@@ -1686,41 +1772,51 @@ export class Simulation {
     if (st.queue.length === 0) return;
     const points = this.map.roomSpawnPoints[ai];
     const np = points.length;
-    if (np === 0) return;
-    // Eligible: more than 15 m from every living player in a combat arena (M12 §2.2), else more
-    // than 8 m; if no point is, every point.
+    // Preferred markers stay distant. Exhaustion falls back to a one-second warning,
+    // with the three-metre body clearance rechecked on every tick and placement.
     const paced = st.director !== null;
     const def = this.map.rooms[ai];
+    const warned = new Map<number, boolean>();
     const maskFor = (type: number) => {
       const allowed = this.spawnEligibility(ai, points, type);
       const eligible = new Uint8Array(np);
       const far = paced && this.markEligible(points, def.shape === '1x1' ? 10 : SPAWN_FAR_DIST, eligible, allowed);
-      if (!far && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible, allowed)) this.markEligible(points, SPAWN_MIN_DIST, eligible, allowed);
+      if (!far && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible, allowed)) { this.markEligible(points, SPAWN_MIN_DIST, eligible, allowed); warned.set(type, true); }
       return eligible;
     };
     const shared = def.spawnTags?.length ? null : maskFor(BLESSED);
     const eligibleByType = SPAWN_TYPES.map((type) => shared ?? maskFor(type));
+    if (shared && warned.get(BLESSED)) for (const type of SPAWN_TYPES) warned.set(type, true);
+    for (let k = 0; k < SPAWN_TYPES.length; k++) {
+      const key = `${ai}:${SPAWN_TYPES[k]}`;
+      if (warned.get(SPAWN_TYPES[k]) && !eligibleByType[k].some(Boolean)) {
+        if (!this.spawnBlockedSince.has(key)) this.spawnBlockedSince.set(key, this.tick);
+      } else this.spawnBlockedSince.delete(key);
+    }
 
     while (st.queue.length > 0) {
       if (this.activeCount >= MAX_LIVING_ENEMIES) return;
       if (paced && st.pace < 1 - 1e-9) return;
       const batch = st.queue[0];
-      const typeIndex = this.nextType(batch, eligibleByType.map((mask) => mask.some((ok, i) => !!ok && st.budgets[i] >= 1)));
+      const typeIndex = this.nextType(batch, eligibleByType.map((mask, k) => mask.some((ok, i) => !!ok && st.budgets[i] >= 1) || warned.get(SPAWN_TYPES[k]) === true));
       if (typeIndex < 0) return; // Pending elites wait; fodder remains eligible while the cap is full.
       let found = -1;
       const eligible = eligibleByType[typeIndex], type = SPAWN_TYPES[typeIndex];
       const affinity = type === CHORISTER ? def.chorister : type === DOMINION ? def.dominion : undefined;
       const preferred = affinity?.filter((i) => eligible[i] && st.budgets[i] >= 1);
-      if (preferred?.length) found = preferred[Math.floor(this.random() * preferred.length)];
+      if (preferred?.length && !warned.get(type)) found = preferred[Math.floor(this.random() * preferred.length)];
       for (let k = 0; k < np; k++) {
         if (found >= 0) break;
         const i = (st.rr + k) % np;
         if (eligible[i] && st.budgets[i] >= 1) {
+          if (warned.get(type)) { const [c, r] = points[i]; if (!this.spawnWarnings.permit(ai, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c], this.tick, () => { st.budgets[i] = Math.min(1, st.budgets[i]); })) continue; }
           found = i;
           break;
         }
       }
-      if (found < 0) return;
+      let temporary: { room: number; c: number; r: number; budget: number } | undefined;
+      if (found < 0 && warned.get(type) && !eligible.some(Boolean) && this.tick - this.spawnBlockedSince.get(`${ai}:${type}`)! >= 2 * TICK_HZ) temporary = this.floorSpawn(ai, type);
+      if (found < 0 && !temporary) return;
       const slot = this.allocSlot();
       if (slot < 0) return;
       batch.spawned[typeIndex]++;
@@ -1729,13 +1825,66 @@ export class Simulation {
         // Fully placed once its squad is too (M12 follow-up §4.2).
         if (batch.wave >= 0 && st.squad?.wave !== batch.wave) st.waveFullySpawned[batch.wave] = true;
       }
-      const [c, r] = points[found];
+      const [c, r] = temporary ? [temporary.c, temporary.r] : points[found];
       this.spawnAt(slot, type, c, r, ai, batch.wave);
-      st.budgets[found] -= 1;
-      st.rr = (found + 1) % np;
+      if (temporary) temporary.budget -= 1;
+      else { st.budgets[found] -= 1; st.rr = (found + 1) % np; }
       // Budget left when the wave is fully placed is dropped.
       if (paced) st.pace = st.queue.length > 0 ? st.pace - 1 : 0;
     }
+  }
+
+  private updateSpawnWarnings(): void {
+    const active = (room: number) => !this.result && (this.activePhase === PHASE_COMBAT && this.activeRoom === room || this.activeRoom === ROOM_NONE && this.rooms[room]?.trickleAt >= 0);
+    this.spawnWarnings.update(this.tick, active, (w) => this.spawnClearance(w.x, w.y, w.z, SPAWN_MIN_DIST));
+    for (const [key, p] of this.floorSpawnPoints) if (!active(p.room)) this.floorSpawnPoints.delete(key);
+    for (const key of this.spawnBlockedSince.keys()) if (!active(Number(key.split(':')[0]))) this.spawnBlockedSince.delete(key);
+  }
+
+  private floorSpawn(ai: number, type: number): { room: number; c: number; r: number; budget: number } | undefined {
+    const key = `${ai}:${type}`, def = ENEMIES[type];
+    let p = this.floorSpawnPoints.get(key);
+    const legal = (c: number, r: number) => {
+      const i = r * this.map.w + c, z = this.map.floor[i];
+      if (this.map.solid[i] || this.map.roomOf[i] !== ai || this.map.hazard[i] || this.props.blocksSpawn(ai, c + 0.5, r + 0.5, z, def.radius, def.height)) return false;
+      if (!this.spawnClearance(c + 0.5, r + 0.5, z, SPAWN_MIN_DIST)) return false;
+      const fields = this.groundFields;
+      return this.players.some((q) => this.livingTargetable(q) && this.fieldValid[q.index] && fields[q.index].at(c, r) !== UNREACHABLE);
+    };
+    if (p && !legal(p.c, p.r)) { this.floorSpawnPoints.delete(key); p = undefined; }
+    if (!p && this.floorScanTick !== this.tick) {
+      this.floorScanTick = this.tick; let best = -1, distance = -1;
+      for (const cell of this.fallbackSpawnCells(ai)) {
+        const c = cell % this.map.w, r = Math.floor(cell / this.map.w);
+        if (!legal(c, r)) continue;
+        let d = Infinity;
+        for (const q of this.players) if (this.livingTargetable(q)) d = Math.min(d, (q.x - c - 0.5) ** 2 + (q.y - r - 0.5) ** 2);
+        if (d > distance) { distance = d; best = r * this.map.w + c; }
+      }
+      if (best >= 0) { p = { room: ai, c: best % this.map.w, r: Math.floor(best / this.map.w), budget: 1 }; this.floorSpawnPoints.set(key, p); }
+    }
+    if (!p || p.budget < 1) return undefined;
+    return this.spawnWarnings.permit(ai, p.c + 0.5, p.r + 0.5, this.map.floor[p.r * this.map.w + p.c], this.tick) ? p : undefined;
+  }
+
+  private fallbackSpawnCells(ai: number): Uint32Array {
+    let cells = this.spawnFloorCells.get(ai); if (cells) return cells;
+    const room = this.map.rooms[ai], rect = room.rect, out: number[] = [];
+    const rewards = [room.points?.reward, room.points?.advocate, ...(room.points?.pedestals ?? [])].filter((p): p is [number, number] => !!p);
+    const entries = room.entry.flatMap((e) => e.cells);
+    for (let r = rect.y0; r <= rect.y1; r++) for (let c = rect.x0; c <= rect.x1; c++) {
+      const i = r * this.map.w + c;
+      if (this.map.wall[i] || this.map.hazard[i] || this.map.doorRoom[i] >= 0 || this.map.roomOf[i] !== ai ||
+        rewards.some(([x, y]) => Math.abs(x - c) <= 1 && Math.abs(y - r) <= 1) ||
+        entries.some(([x, y]) => Math.abs(x - c) <= 1 && Math.abs(y - r) <= 1)) continue;
+      out.push(i);
+    }
+    cells = Uint32Array.from(out); this.spawnFloorCells.set(ai, cells); return cells;
+  }
+
+  private spawnClearance(x: number, y: number, z: number, distance: number): boolean {
+    for (const p of this.players) if (this.livingTargetable(p) && distToCylinder(x, y, z, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) <= distance) return false;
+    return true;
   }
 
   /** Authored marker tags also apply when squads or trickles borrow ordinary points. */
@@ -1832,6 +1981,7 @@ export class Simulation {
     if (this.nextIncarnation > 0xffffffff) throw new Error('enemy incarnation exhausted');
     const def = ENEMIES[type];
     this.eIncarnation[slot] = this.nextIncarnation++;
+    this.eSpawnTick[slot] = this.tick;
     this.eAlive[slot] = 1;
     this.eType[slot] = type;
     this.eState[slot] = ST_IDLE;
@@ -3188,6 +3338,7 @@ export class Simulation {
       const slot = this.active[k];
       this.eStartX[slot] = this.eX[slot];
       this.eStartY[slot] = this.eY[slot];
+      if (this.eSpawnTick[slot] === tick) continue;
       const t = this.eTarget[slot];
       const targetGone = t >= 0 && (!this.livingTargetable(this.slots[t]) || !this.enemyMayTarget(slot, this.slots[t]!));
       if (targetGone || t < 0 || slot % RETARGET_TICKS === tick % RETARGET_TICKS) this.retarget(slot);
@@ -3234,7 +3385,7 @@ export class Simulation {
     const slots: number[] = [];
     for (let k = 0; k < this.activeCount; k++) if (this.eType[this.active[k]] === DOMINION) slots.push(this.active[k]);
     for (const s of slots) {
-      if (!this.eAlive[s]) continue; // A prior slam may trigger an owned Shroud burst that kills this caster.
+      if (!this.eAlive[s] || this.eSpawnTick[s] === this.tick) continue; // A prior slam may trigger an owned Shroud burst that kills this caster.
       this.dominions.update(s, this.tick, { incarnation: this.eIncarnation[s], room: this.roomAt(this.eX[s], this.eY[s]),
         grounded: this.eGrounded[s] === 1, stunned: this.isStunned(s), silenced: this.tick < this.eSilenceUntil[s], inRange: this.dominionInRange(s) });
       if (!this.eAlive[s]) continue;

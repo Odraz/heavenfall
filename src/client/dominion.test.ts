@@ -12,6 +12,15 @@ const snapshot = (incarnation = 10): Snapshot => ({ runId: 'run', tick: 120, sta
 const event = (phase: 'start' | 'strike' | 'cancel'): Extract<GameEvent, { type: 'dominionCast' }> => ({ type: 'dominionCast', phase, cast: { ...cast }, x: 7, y: 8, z: 1 });
 
 describe('Dominion accepted projection', () => {
+  it('installs the admission cue watermark when a newer unordered snapshot already won the state race', () => {
+    const p = new DominionProjection('run'); expect(p.snapshot({ ...snapshot(), tick: 125, stateRevision: 8 })).toBe(true);
+    expect(p.sync(checkpoint(5))).toBe(false); // State 8 remains; reliable checkpoint 5 still owns the cue baseline.
+    expect(p.event(event('start'), 100, 4)).toBe(false);
+    expect(p.rings({ ...snapshot(), tick: 125, stateRevision: 8 }, 125)).toHaveLength(1);
+    expect(p.event(event('strike'), 145, 9)).toBe(true);
+    expect(p.sync({ ...checkpoint(99), dominionCasts: [{ ...cast, impactTick: 146 }] })).toBe(false);
+    expect(p.event({ type: 'dominionCast', phase: 'start', cast: { ...cast, castId: 4, startTick: 150, impactTick: 195 }, x: 7, y: 8, z: 1 }, 150, 10)).toBe(true);
+  });
   it('admits each reliable cue once when its complete snapshot already applied the transition', () => {
     const p = new DominionProjection('run'); p.snapshot({ ...snapshot(), tick: 110 });
     expect(p.event(event('start'), 110, 99)).toBe(false); // Start emission must match its immutable cast start.

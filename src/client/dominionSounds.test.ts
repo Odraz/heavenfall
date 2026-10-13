@@ -8,6 +8,14 @@ vi.mock('../audio/audio', () => ({ audio: () => null, setMusic: vi.fn(), sfx: mo
 const ring: DominionRing = { slot: 1, incarnation: 2, castId: 3, startTick: 100, impactTick: 145, room: 0, x: 7, y: 8, z: 2 };
 beforeEach(() => { vi.clearAllMocks(); mocks.playing.mockReturnValue(true); mocks.sfx.mockReturnValue({ stop: mocks.stop, playing: mocks.playing }); });
 describe('accepted Dominion sound lifetime', () => {
+  it('uses only the remaining arrival warning, stops it on cancellation and never restarts an ended admitted cue', () => {
+    const sounds = new GameSounds(loadMap(dominionLab), 0, () => 'fallen');
+    const w = { id: 1, room: 0, x: 7, y: 8, z: 0, startTick: 100, readyTick: 130 };
+    sounds.arrivals([w], 120); expect(mocks.sfx.mock.calls[0][6]).toEqual({ elapsed: 2 / 3, duration: 1 });
+    mocks.playing.mockReturnValue(false); sounds.arrivals([w], 121); expect(mocks.sfx).toHaveBeenCalledTimes(1);
+    sounds.arrivals([], 122); expect(mocks.stop).toHaveBeenCalledTimes(1);
+    sounds.arrivals([w], 130); expect(mocks.sfx).toHaveBeenCalledTimes(1); sounds.dispose();
+  });
   it('shares admitted finite fire voices, retries only ended playback and stops on room exit/disposal', () => {
     const sounds = new GameSounds(loadMap(dominionLab), 0, () => 'fallen');
     sounds.hazard({ x: 7, y: 8 }); sounds.hazard({ x: 8, y: 8 }); expect(mocks.sfx).toHaveBeenCalledTimes(1);
