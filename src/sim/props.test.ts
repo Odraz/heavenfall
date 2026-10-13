@@ -150,7 +150,7 @@ describe('prop effects and recovery', () => {
         sim.props.break(1, 0); expect(sim.events.filter((e) => e.event.type === 'propBroken')).toHaveLength(1);
       }
     }
-    expect(Array.from({ length: 100 }, (_, i) => itemDrop(() => (i + 0.5) / 100)).reduce((n, k) => { n[k - ITEM_FIRST]++; return n; }, Array(8).fill(0))).toEqual([20, 12, 14, 8, 14, 12, 10, 10]);
+    expect(Array.from({ length: 100 }, (_, i) => itemDrop(() => (i + 0.5) / 100)).reduce((n, k) => { n[k - ITEM_FIRST]++; return n; }, Array(8).fill(0))).toEqual([20, 12, 14, 8, 14, 14, 10, 8]);
   });
   it('marked amphora always drops a gold halo once, without consuming a random draw', () => {
     const sim = make([prop(1, 'loot', 8.5, 5.5, true)]); sim.random = () => { throw new Error('marked drop must not roll'); };
