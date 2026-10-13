@@ -125,7 +125,7 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 
 Each family needs 3 accepted takes (51 keepers); runtime WAVs load through `src/audio/recorded.ts` and play from `src/client/sounds.ts` while the Recorded SFX setting is on (default on; F8 toggles).
 
-R2.3 runtime inventory: all **17 families / 51 WAVs** exist and are connected. Nine prop WAVs were cut from the received keepers with the existing tool; all sources/spares are preserved. Runtime audit found mono 48-kHz 16-bit, nonempty, <=1-second files; the nine MP3 SHA-256 hashes match their committed LFS OIDs. No new provider generation or paid request ran. Listening/readability acceptance remains pending. S2 Dominion/fire, S3 pickups/chalice and S8 fire/incense recordings are still missing; their named synthesized entries exist in `src/audio/sfx.ts`. Pickup/chalice events are connected; Dominion/fire event and ambient consumers follow in R2.4/R2.5.
+R2.3 runtime inventory: all **17 families / 51 WAVs** exist and are connected. Nine prop WAVs were cut from the received keepers with the existing tool; all sources/spares are preserved. Runtime audit found mono 48-kHz 16-bit, nonempty, <=1-second files; the nine MP3 SHA-256 hashes match their committed LFS OIDs. No new provider generation or paid request ran. Listening/readability acceptance remains pending. S2 Dominion/fire, S3 pickups/chalice and S8 fire/incense recordings are still missing; their named synthesized entries exist in `src/audio/sfx.ts`. Pickup/chalice, Dominion and fire event consumers are connected as of R2.5, including the room-local fire ambient fallback. R2.7 rechecked the 51-file runtime inventory; no new asset was processed or accepted.
 
 | assetId | kind | required | neededBy | status | sourcePath | runtimePath | events | generator | generatedAt | plan | notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -299,7 +299,7 @@ Drawn in code by Claude; no image is generated for them.
 | reward-sigils | coded | yes | R3 | requested | — | — | Pardoner halo coin, Confessional horned eye behind grille, Rite burning page | code | — | — | — |
 | rest-sigils | coded | yes | R6 | requested | — | — | Reliquary chest (gold closed, grey open), key, bell, Sundial gnomon | code | — | — | — |
 | edict-marks | coded | yes | R6 | requested | — | — | Host mace and ranks, Penance crossed droplet, Swift Hymns fast orb, Poverty fading halo, Trumpet eye on a trumpet | code | — | — | — |
-| marked-amphora-glint | coded | yes | R2 | requested | — | — | glint every 3 s on amphora-marked | code | — | — | — |
+| marked-amphora-glint | coded | yes | R2 | integrated-review | `src/client/props.ts` | `src/client/props.ts` | glint every 3 s on amphora-marked | code | — | — | R2.2 implemented; R2.7 status audit corrected the stale requested row; human readability acceptance pending |
 | bell-chain-shaft | coded | yes | R6 | requested | — | — | Bell chain (fx-chain gold) and light shaft (fx-lightshaft) | code | — | — | — |
 | watcher-rims-tethers | coded | yes | R7 | requested | — | — | Watcher red/grey rims, tethers, held player's lift | code | — | — | — |
 | combo-badge | coded | yes | R6 | requested | — | — | combo card: its two relic icons + name | code | — | — | replaced by optional combo-* emblems |

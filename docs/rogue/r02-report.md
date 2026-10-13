@@ -1,6 +1,6 @@
 # R2 report: pressure and pickups
 
-**Status: R2.6 ready for manual review; R2.7 pending a new session** (2026-10-13). Brief: [r02.md](r02.md). R2.1–R2.6 are implemented. The final combined source passed 931 unit tests, typecheck/build and all32 production browser/multiplayer checks with D3D11. Earlier default SwiftShader failures remain documented below. Tomas requested stopping here for manual review; overnight automation is paused. Prepared Gate B selections do not mark R2.7 executed, and human Gate B remains pending. Local branch `rogue`; nothing pushed, merged or published.
+**Status: R2.1–R2.7 implemented and verified; awaiting-human-play (Gate B)** (2026-10-13). Brief: [r02.md](r02.md). This session independently confirmed stages 1–6 and completed the Gate B checkpoint at `bb5f4d8`: 931 unit tests, full-pool generator acceptance, typecheck/build and all 53 production browser/multiplayer checks passed with D3D11. Reproducible room/class links and the human play checklist are below. Historical default SwiftShader failures, unsupported-compression peak bandwidth and asset fallbacks remain documented limitations. No human Gate B acceptance was supplied. Overnight automation remains paused. Local branch `rogue`; nothing pushed, merged or published.
 
 ## Authorization and Git facts
 
@@ -211,33 +211,77 @@ Anti-softlock recovery now announces the same accepted one-second beam before re
 
 No threshold or deadline was loosened and no benchmark ran. The optional D3D11 config inherits every test, deadline and existing per-test viewport; the default SwiftShader config is unchanged. Native driver captures were read, and crest/Gate screenshots inspected. The arrival screenshot faces away from its destination and does not establish beam readability; human presentation/feel acceptance remains pending. The default software-renderer Gate-approach and connection failures remain unresolved; passing the same checks on hardware does not establish their cause or claim a green default-renderer suite. Peak upload without native compression is also unestablished. R2.6 is ready for the requested manual stage review, not an accepted R2 milestone.
 
-## Prepared selection for next-session R2.7 (not executed)
+## R2.7: Gate B checkpoint
 
-Tomas requested finishing only the current R2.6 stage, then stopping for manual review. The selections below are preparation already recorded during R2.6; they do not mark R2.7 started or complete.
+Tomas authorized finishing R02 in this new session on 2026-10-13. Start SHA `ba3ce40d4a305408152c8449712309f1ec8a7ba5`. Inspection of the stage commits, runtime full-pool owners, economy/props/cast/fire/warning paths and current checks confirmed R2.1–R2.6 are implemented. R2.7 adds checkpoint verification and a concrete play handoff; it makes no gameplay or protocol change. Human Gate B remains pending.
+
+New `e2e/r02-checkpoint.spec.ts` protects the published seed/hash/template/index/band pairs and exercises all five selected rooms with all four base classes and God off. It also prepares a real PeerJS late joiner before a native marked-amphora break, checks the still-live gold pickup and broken prop after admission, collects it for both human wallets, leaves through the menus, and starts a fresh solo run in the same page to check that wallet/pickups/breaks/casts/warnings do not survive. The prepared client's existing held-ready hook keeps the original 20-second loading deadline; no host entities or rewards are fabricated. Existing Dominion checks cover original cast deadlines and absence of replayed start cues with two and four real clients.
+
+R2.7 test checkpoint SHA: `bb5f4d8f22be073ba9d62c5bb95e36857fc24066`. Gameplay source remains the verified R2.6 source; protocol/rules remain **5/5** and the full-pool pin remains **317434499 / 43dfb2f9**. Local `main` remains `fa9e3f5765cd09d5a315db6342107ff70ad159e8`; no fetch, push, merge or ref replacement ran. User-supplied untracked art was preserved and excluded from the checkpoint commits.
+
+Changed files: new `e2e/r02-checkpoint.spec.ts`; updated `r02.md`, this report, the rogue README/workflow status and two stale asset-manifest entries (already-connected Dominion/fire consumers and the coded marked-amphora glint). No game/UI code or assets changed in R2.7.
+
+Logs and browser artifacts for this stage are under `C:/Users/TPouzar/.codex/visualizations/2026/10/13/01a133ff-4c98-7060-9401-63e336e620b9/`.
+
+| Exact command | Result |
+|---|---|
+| `npm test` | **931 passed / 87 files**, exit 0, 103.40 s; one worker, existing simulation/dry-field/encoding timing limits unchanged. This is the final gameplay source: R2.7 changes only browser checks and documentation. Log `r02-unit-baseline.log`. |
+| `npm run test:gen` | **Passed**, exit 0, 114.18 s: 1,000 valid full-pool floors; 997/1000 within 20 attempts (99.7%), zero fallbacks, max 25, mean 3.882 attempts. Log `r02-generator.log`. |
+| `npm run typecheck`; `npm run build -- --logLevel error`; `git diff --check` | **Passed**, exit 0, after the corrected checkpoint tests. Production build repeated at the test checkpoint SHA before the complete browser run. |
+| `npx --no-install playwright test --config playwright.hardware.config.ts e2e/r02-checkpoint.spec.ts --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/13/01a133ff-4c98-7060-9401-63e336e620b9/r02-checkpoint'` | Restricted first attempt: four horde checks passed; 16 new fixture assertions omitted the catalog's leading “The” and failed before browser entry. Corrected the expected names. The live-pickup check was blocked by Chromium `ERR_NETWORK_ACCESS_DENIED` to public PeerJS; runner interrupted during preview teardown. Log `r02-checkpoint.log`; not counted as a passed suite. |
+| `npx --no-install playwright test --config playwright.hardware.config.ts e2e/r02-checkpoint.spec.ts --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/13/01a133ff-4c98-7060-9401-63e336e620b9/r02-checkpoint-network'` | **21 passed**, exit 0, 2.7 min, with permitted network access: all 20 God-off room/class links, native marked prop/live pickup late entry/shared 6-halo collection, host exit and a fresh menu run. Log `r02-checkpoint-network.log`. |
+| `npx --no-install playwright test --config playwright.hardware.config.ts --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/13/01a133ff-4c98-7060-9401-63e336e620b9/r02-stage7-final'` | **53 passed / 16 files**, exit 0, 25.2 min, one worker, committed checkpoint `bb5f4d8`. Includes the full fixed route (3.9 min), generated route through all ordinary rooms/Gatekeeper/victory (8.4 min), native crest/warnings, compressed PeerJS crowd, two/four-client original cast deadlines/no replayed starts, ordinary four-client menus/password/classes/chat/late broken prop/30 snapshot and upload samples/host exit, all 20 God-off room/class links, live pickup/shared collection/menu reset, 51-take decode and synth fallback, fire, floor parity, all four class smoke/weapon checks. Actual renderer: ANGLE Intel Iris Xe / Direct3D11. Log `r02-stage7-final.log`. |
+
+No benchmark ran and no deadline, cadence, viewport policy, upload bound or performance threshold was relaxed. Native room-entry captures were inspected; they face the entry leaves and show the seal message, so they establish entry/state, not threat or fallback-art readability. The named D3D11 checks do not erase the historical default SwiftShader failures. Unsupported native compression peak bandwidth, supplied art preparation and human audio/readability/feel acceptance remain explicit limitations.
+
+### Reproducible play selection
 
 Run `npm run dev -- --port 5173 --strictPort`. These links use the complete pool, seed **317434499**, hash **43dfb2f9**, the Fallen base kit and **God off**. Repeat each with `class=heretic`, `class=binder`, `class=betrayer`. Change `god=1` only for inspection; record acceptance observations from ordinary combat. `room=N` is a dev encounter selector that clears other rooms, so use the full route link for a run.
 
 | Selection | Template / index | Play URL |
 |---|---|---|
-| Small / flyers | Ziggurat, `pg-c-1x1-flyers-03`, room 7, band 3 | [Play small room](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=7&class=fallen&god=0) |
+| Small / flyers | The Ziggurat, `pg-c-1x1-flyers-03`, room 7, band 3 | [Play small room](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=7&class=fallen&god=0) |
 | Horde / crest | Courtyard of Clouds, `pg-c-2x2-horde-flyers-01`, room 3, band 2 | [Play horde room](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=3&class=fallen&god=0) |
-| Ranged / fire | Burning Aisle, `pg-c-1x1-ranged-hazard-01`, room 6, band 3 | [Play ranged room](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=6&class=fallen&god=0) |
-| Elite | Fountain Court, `pg-c-1x1-elite-02`, room 4, band 2 | [Play elite room](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=4&class=fallen&god=0) |
-| Hazard | Gridiron, `pg-c-1x1-hazard-01`, room 1, band 1 | [Play hazard room](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=1&class=fallen&god=0) |
+| Ranged / fire | The Burning Aisle, `pg-c-1x1-ranged-hazard-01`, room 6, band 3 | [Play ranged room](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=6&class=fallen&god=0) |
+| Elite | The Fountain Court, `pg-c-1x1-elite-02`, room 4, band 2 | [Play elite room](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=4&class=fallen&god=0) |
+| Hazard | The Gridiron, `pg-c-1x1-hazard-01`, room 1, band 1 | [Play hazard room](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=1&class=fallen&god=0) |
 | Complete route | All eleven rooms, inherited Gatekeeper | [Play full route](http://localhost:5173/?dev=1&map=rogue&seed=317434499&class=fallen&god=0) |
+
+Direct links for the other base classes, also with God off:
+
+| Selection | Heretic Saint | Binder | Betrayer |
+|---|---|---|---|
+| Small | [Heretic](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=7&class=heretic&god=0) | [Binder](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=7&class=binder&god=0) | [Betrayer](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=7&class=betrayer&god=0) |
+| Horde | [Heretic](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=3&class=heretic&god=0) | [Binder](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=3&class=binder&god=0) | [Betrayer](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=3&class=betrayer&god=0) |
+| Ranged | [Heretic](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=6&class=heretic&god=0) | [Binder](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=6&class=binder&god=0) | [Betrayer](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=6&class=betrayer&god=0) |
+| Elite | [Heretic](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=4&class=heretic&god=0) | [Binder](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=4&class=binder&god=0) | [Betrayer](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=4&class=betrayer&god=0) |
+| Hazard | [Heretic](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=1&class=heretic&god=0) | [Binder](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=1&class=binder&god=0) | [Betrayer](http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=1&class=betrayer&god=0) |
+| Full route | [Heretic](http://localhost:5173/?dev=1&map=rogue&seed=317434499&class=heretic&god=0) | [Binder](http://localhost:5173/?dev=1&map=rogue&seed=317434499&class=binder&god=0) | [Betrayer](http://localhost:5173/?dev=1&map=rogue&seed=317434499&class=betrayer&god=0) |
 
 For co-op, use the ordinary Multiplayer menus (generated full pool), record the seed shown by F3, and test on the same freshly restarted build. The dev solo selectors do not pin an ordinary multiplayer host's random seed. The shortened `map=dominion`, `map=refiner`, `map=arrival`, `map=crest` fixtures are diagnostics, not substitutes for Gate B's full-pool rooms.
 
 Play each fresh class through the five selected rooms and one co-op run. Record a moment a threat, pickup or prop changed position/target; bait a Dominion slam into its crowd; check whether the same backward circle still wins; identify the first tiring sound and whether the tell is audible in a crest. Automated K-assisted traversal is routing/lifecycle evidence. Solo native crest and automated clients establish mechanics, not your fight-feel acceptance or a four-human 1000-living observation. **Human Gate B remains pending; R3 is not authorized here.**
 
+### Human play record
+
+No new human play feedback or Gate B acceptance was supplied in this session. Use the links above with each fresh base kit, then one ordinary multiplayer run; keep God/bot/dev kills off for the observations. Record:
+
+1. Class, checkpoint SHA, seed, browser/device and human/bot count.
+2. A specific threat, pickup or prop that made you move or change target, and the room where it happened.
+3. Whether you baited a Dominion slam into the crowd and could read/hear its wind-up during the crest.
+4. Whether the same safe backward circle still won, the first tiring sound, and any unclear fire, spawn beam or pickup.
+5. Your decision: accept Gate B, or fix the listed pressure/readability defects first.
+
+Entry/reset/network assertions do not establish survival, balance, audio fatigue or human feel. A four-human 1000-living observation still belongs to final slice acceptance.
+
 ## Remaining fixture limits and next stage
 
-R2.6's final hardware-rendered production suite passed. Default software-renderer failures and unsupported-compression peak bandwidth remain the specific technical limitations described above. This checkpoint is ready for stage review and must not be labeled an accepted R2 milestone. Marked props supply gold halos; legitimate elite deaths use the R2.4 ledger entitlement. No shop, profile, durable money, XP, inventory or build mechanics have been added. A1/B1/B2/B10 runtime art and unintegrated S2/S3/S8 cues retain the documented coded/synthesized fallbacks; received sources are not claimed as visually or aurally accepted. S1's 51 runtime takes remain integrated.
+R2.7's final hardware-rendered production suite passed. Default software-renderer failures and unsupported-compression peak bandwidth remain the specific technical limitations described above. All seven R2 stages are implemented; the milestone is **awaiting-human-play**, not accepted. Marked props supply gold halos; legitimate elite deaths use the R2.4 ledger entitlement. No shop, profile, durable money, XP, inventory or build mechanics have been added. A1/B1/B2/B10 runtime art and unintegrated S2/S3/S8 recordings retain the documented coded/synthesized fallbacks; received sources are not claimed as visually or aurally accepted. S1's 51 runtime takes remain integrated.
 
-Stop here as Tomas requested. After manual R2.6 review, the next session may start R2.7's formal Gate B checkpoint/report/play checklist using the prepared selection above. Human Gate B and asset acceptance remain pending; R3 is outside this authorization.
+The R2 implementation and formal Gate B checkpoint are complete. Play the selected rooms and one co-op run, then supply the observations/decision in the human play record above. Human Gate B and asset acceptance remain pending; R3 is outside this authorization.
 
 For a quick R2.1 check: run `npm run dev`, open a generated room with `?dev=1&map=rogue&seed=317434499&room=1&class=betrayer&god=1`, shoot the room's enemies and collect halos before they fade. Watch the wallet and motes; move onto a mote at full HP and confirm it waits. These dev/god runs do not establish balance or human Gate B acceptance.
 
 ## Overnight continuation
 
-Automation `r02-overnight-implementation` was paused through the app's automation tool on 2026-10-13 at 07:07 Europe/Prague; the saved status was independently read back as `PAUSED`. Tomas requested finishing the currently active R2.6 stage for manual review and starting the next stage in a new session. No automatic continuation into R2.7 or R3 is authorized. Nothing was pushed, merged, published or benchmarked. Human Gate B remains pending.
+Automation `r02-overnight-implementation` was paused through the app's automation tool on 2026-10-13 at 07:07 Europe/Prague; the saved status was independently read back as `PAUSED`. Tomas subsequently authorized finishing R02 in this new session, which completed R2.7. The automation was not changed or resumed. No automatic continuation into R3 is authorized. Nothing was pushed, merged, published or benchmarked. Human Gate B remains pending.
