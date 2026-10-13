@@ -117,7 +117,7 @@ export class HostSession {
         } else {
           // Forwarding is driven by worker messages, so it keeps full rate in a background tab (§2.2).
           const conn = this.playerConn.get(m.to);
-          if (net && conn !== undefined) for (const buf of m.bufs) net.sendSnap(conn, buf);
+          if (net && conn !== undefined) net.sendSnaps(conn, m.bufs);
         }
         break;
       case 'ctrl':

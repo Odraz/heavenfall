@@ -8,6 +8,7 @@ import { hostPeerId, randomGameId, REGISTER_ATTEMPTS } from './gameId';
 import type { CtrlMessage } from './messages';
 import { jsonBytes, NetStats } from './netStats';
 import { FLUSH_MS, PEER_OPTIONS, PEER_TIMEOUT_MS, SNAP_BUFFER_LIMIT, STALL_MS } from './peerConfig';
+import { SnapshotSender } from './snapshotCodec';
 
 /** How long the host waits for the signaling server to confirm a game ID. */
 const REGISTER_TIMEOUT_MS = 10000;
@@ -23,6 +24,7 @@ interface Remote {
   /** performance.now() when anything last arrived on either channel. */
   lastHeard: number;
   closed: boolean;
+  sender?: SnapshotSender;
 }
 
 /** Thrown when the game can't be created: `Couldn't reach the matchmaking server` (§3). */
@@ -151,6 +153,7 @@ export class HostNet {
   private lose(r: Remote): void {
     if (r.closed) return;
     r.closed = true;
+    r.sender?.close();
     this.remotes.delete(r.conn);
     r.ctrl?.close();
     r.snap?.close();
@@ -168,13 +171,16 @@ export class HostNet {
    * Sends a snapshot part, unless the client's `snap` channel has more than 64 KB buffered, so a slow
    * connection can't build up lag (§9.1).
    */
-  sendSnap(conn: number, buf: ArrayBuffer): void {
-    const dc = this.remotes.get(conn)?.snap;
-    if (!dc?.open) return;
-    // Raw connections are buffered ones: PeerJS queues sends itself once the channel is full.
-    if (dc.dataChannel.bufferedAmount > SNAP_BUFFER_LIMIT || (dc as BufferedConnection).bufferSize > 0) return;
-    dc.send(buf);
-    this.stats.sent(buf.byteLength);
+  sendSnaps(conn: number, parts: readonly ArrayBuffer[]): void {
+    const remote = this.remotes.get(conn); if (!remote?.snap?.open || remote.closed) return;
+    remote.sender ??= new SnapshotSender((packed) => {
+      const dc = remote.snap;
+      if (remote.closed || !dc?.open) return;
+      // Admit a whole tick, so buffer pressure cannot deliberately leave a half-sent group.
+      if (dc.dataChannel.bufferedAmount + packed.reduce((n, b) => n + b.byteLength, 0) > SNAP_BUFFER_LIMIT || (dc as BufferedConnection).bufferSize > 0) return;
+      for (const buf of packed) { dc.send(buf); this.stats.sent(buf.byteLength); }
+    });
+    remote.sender.offer(parts);
   }
 
   /**
@@ -185,6 +191,7 @@ export class HostNet {
     const r = this.remotes.get(conn);
     if (!r || r.closed) return;
     r.closed = true;
+    r.sender?.close();
     this.remotes.delete(conn);
     setTimeout(() => {
       r.ctrl?.close();
@@ -220,7 +227,7 @@ export class HostNet {
     if (sendLeave) for (const r of this.remotes.values()) this.sendCtrl(r.conn, { type: 'leave' });
     this.destroyed = true;
     clearTimeout(this.reconnectTimer);
-    for (const r of this.remotes.values()) r.closed = true;
+    for (const r of this.remotes.values()) { r.closed = true; r.sender?.close(); }
     this.remotes.clear();
     const peer = this.peer;
     if (sendLeave) setTimeout(() => peer.destroy(), FLUSH_MS);

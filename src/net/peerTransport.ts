@@ -8,6 +8,7 @@ import type { CtrlMessage, LobbyState, RejectReason } from './messages';
 import { jsonBytes, NetStats } from './netStats';
 import { FLUSH_MS, LOADING_PEER_TIMEOUT_MS, PEER_OPTIONS, PEER_TIMEOUT_MS, PING_MS, STALL_MS } from './peerConfig';
 import type { Transport } from './transport';
+import { SnapshotReceiver } from './snapshotCodec';
 
 /** `Join` fails if there's no `welcome` within this long (§3). */
 const WELCOME_TIMEOUT_MS = 10000;
@@ -50,6 +51,7 @@ export class PeerTransport implements Transport {
   private closed = false;
   /** Between `start` and `go`: the host may be loading too, so a longer silence is allowed. */
   loading = false;
+  private readonly snapshots = new SnapshotReceiver((raw) => this.onSnapshot(raw));
 
   constructor(
     private readonly peer: Peer,
@@ -74,7 +76,7 @@ export class PeerTransport implements Transport {
       const now = performance.now();
       this.lastHeard = now;
       this.stats.received(data.byteLength, now);
-      this.onSnapshot(data);
+      this.snapshots.offer(data);
     });
     for (const dc of [ctrl, snap]) {
       dc.on('close', () => this.hostLeft());
@@ -135,6 +137,7 @@ export class PeerTransport implements Transport {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.snapshots.close();
     clearInterval(this.pingTimer);
     this.queued.length = 0;
     const peer = this.peer;
