@@ -7,7 +7,7 @@ export const BASE_ABILITIES: Record<ClassId, [string, string]> = {
   fallen: ['blasphemy', 'fallingStar'], heretic: ['communion', 'shroud'],
   binder: ['chains', 'discord'], betrayer: ['field', 'shadowstep'],
 };
-export const RELIC_IDS = ['usher', 'thurible', 'link', 'tile', 'qseal', 'eseal', 'comb', 'wheel', 'quill', 'wax', 'fragment', 'counterseal'];
+export const RELIC_IDS = ['usher', 'thurible', 'link', 'tile', 'qseal', 'eseal', 'comb', 'wheel', 'unbroken', 'mercy', 'armageddon', 'sentence3'];
 export const DEED_IDS = ['unbroken', 'mercy', 'armageddon', 'sentence3'];
 export type Outcome = 'victory' | 'defeat' | 'leave' | 'hostLeft' | 'admissionAborted';
 export interface Character {

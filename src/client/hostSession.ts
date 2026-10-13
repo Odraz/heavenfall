@@ -9,6 +9,7 @@ import { LocalTransport } from '../net/transport';
 import type { DirectorInfo } from '../sim/director';
 import type { SimPlayerInit } from '../sim/sim';
 import type { MainToWorker, WorkerToMain } from '../sim/workerMessages';
+import type { Profile } from '../profile/model';
 
 export class HostSession {
   readonly worker: Worker;
@@ -42,7 +43,7 @@ export class HostSession {
   }
 
   /** Multiplayer: opens the lobby in the worker and connects the clients' connections to it. */
-  hostLobby(net: HostNet, fixture: string | null, password: string, name: string, god: boolean, bot: boolean): void {
+  hostLobby(net: HostNet, fixture: string | null, password: string, name: string, god: boolean, bot: boolean, profile?: Profile, progressionEnabled = false): void {
     this.net = net;
     net.onCtrl = (conn, msg) => this.post({ t: 'connCtrl', conn, msg });
     net.onInput = (conn, buf) => {
@@ -53,7 +54,7 @@ export class HostSession {
       this.unbind(conn);
       this.post({ t: 'connClosed', conn });
     };
-    this.post({ t: 'host', heaven: 1, fixture, password, name, god, bot });
+    this.post({ t: 'host', heaven: 1, fixture, password, name, god, bot, profile, progressionEnabled });
   }
 
   /** The host's `Start` in the Lobby. */

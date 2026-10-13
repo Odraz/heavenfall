@@ -6,6 +6,7 @@
 import { isClassId, type ClassId } from '../data/classes';
 import type { CtrlMessage, LobbyPlayer, RejectReason, RunConfig } from './messages';
 import { newRunIdentity } from './version';
+import type { Profile } from '../profile/model';
 
 export const MAX_PLAYERS = 4;
 export const NAME_MAX = 16;
@@ -26,6 +27,8 @@ export interface LobbyOptions {
   version: string;
   hostName: string;
   hostBot?: boolean;
+  progressionEnabled?: boolean;
+  profile?: Profile;
 }
 
 export type JoinResult = { ok: true; playerId: number; inProgress: boolean } | { ok: false; reason: RejectReason };
@@ -39,6 +42,7 @@ export type StartPlayer = Extract<CtrlMessage, { type: 'start' }>['players'][num
 type MemberState = 'lobby' | 'loading' | 'game' | 'results';
 
 interface Member extends LobbyPlayer {
+  profile?: Profile;
   bot: boolean;
   state: MemberState;
   /** Host time (ms) of this player's `start`. */
@@ -68,12 +72,15 @@ export class Lobby {
   /** Connected players by id; the host is 0. */
   private readonly players = new Map<number, Member>();
   private readonly readyIds = new Set<number>();
+  private readonly retained = new Map<string, Member>();
+  readonly progressionEnabled: boolean;
 
   constructor(o: LobbyOptions) {
     this.fixture = o.fixture;
     this.password = o.password;
     this.version = o.version;
-    this.players.set(0, { id: 0, name: cleanName(o.hostName), classId: null, bot: !!o.hostBot, isHost: true, inResults: false, state: 'lobby', startedAt: 0 });
+    this.progressionEnabled = o.progressionEnabled ?? false;
+    this.players.set(0, { id: 0, name: cleanName(o.hostName), classId: null, bot: !!o.hostBot, isHost: true, inResults: false, state: 'lobby', startedAt: 0, profile: o.profile });
   }
 
   /**
@@ -81,13 +88,20 @@ export class Lobby {
    * password, full (M8 §6.2). An accepted client gets the lowest free id from 1 to 3; during the game
    * it waits in the in-progress Lobby.
    */
-  join(name: unknown, password: unknown, version: unknown, bot: unknown = false): JoinResult {
+  join(name: unknown, password: unknown, version: unknown, bot: unknown = false, profile?: Profile): JoinResult {
     if (version !== this.version) return { ok: false, reason: 'version' };
     if (this.phase === 'loading') return { ok: false, reason: 'in_progress' };
     if (password !== this.password) return { ok: false, reason: 'bad_password' };
+    if (profile && [...this.players.values()].some(p => p.profile?.id === profile.id)) return { ok: false, reason: 'full' };
+    const retained = profile && this.retained.get(profile.id);
+    if (retained) {
+      retained.state = 'lobby'; retained.profile = profile;
+      this.players.set(retained.id, retained); this.retained.delete(profile.id);
+      return { ok: true, playerId: retained.id, inProgress: this.phase === 'game' };
+    }
     for (let id = 1; id < MAX_PLAYERS; id++) {
-      if (this.players.has(id)) continue;
-      this.players.set(id, { id, name: cleanName(name), classId: null, bot: bot === true, isHost: false, inResults: false, state: 'lobby', startedAt: 0 });
+      if (this.players.has(id) || [...this.retained.values()].some(p => p.id === id)) continue;
+      this.players.set(id, { id, name: cleanName(name), classId: null, bot: bot === true, isHost: false, inResults: false, state: 'lobby', startedAt: 0, profile });
       return { ok: true, playerId: id, inProgress: this.phase === 'game' };
     }
     return { ok: false, reason: 'full' };
@@ -118,15 +132,26 @@ export class Lobby {
       return true;
     }
     for (const q of this.players.values()) if (q.classId === classId) return false;
+    for (const q of this.retained.values()) if (q.classId === classId) return false;
     p.classId = classId;
     return true;
   }
 
   /** A player left or disconnected: frees their slot and class, and drops them from Loading. */
-  remove(id: number): boolean {
-    if (id === 0 || !this.players.delete(id)) return false;
+  remove(id: number, retain = false): boolean {
+    const member = this.players.get(id);
+    if (id === 0 || !member || !this.players.delete(id)) return false;
+    if (retain && member.profile) this.retained.set(member.profile.id, member);
     this.readyIds.delete(id);
     return true;
+  }
+
+  profile(id: number): Profile | undefined { return this.players.get(id)?.profile; }
+  setProfile(id: number, profile: Profile): boolean {
+    const p = this.players.get(id);
+    if (!p || p.bot || p.state !== 'lobby' || this.phase === 'loading' || p.profile && p.profile.id !== profile.id) return false;
+    if ([...this.players.values()].some(q => q.id !== id && q.profile?.id === profile.id)) return false;
+    p.profile = profile; p.name = profile.name; return true;
   }
 
   /**
@@ -135,7 +160,7 @@ export class Lobby {
    */
   canStart(): boolean {
     if (this.phase !== 'lobby') return false;
-    for (const p of this.players.values()) if (!p.classId || p.state !== 'lobby') return false;
+    for (const p of this.players.values()) if (!p.classId || p.state !== 'lobby' || this.progressionEnabled && !p.bot && !p.profile) return false;
     return true;
   }
 
@@ -158,7 +183,7 @@ export class Lobby {
   /** Starts Loading: returns the `start` message, or null if the lobby can't start. */
   start(nowMs: number): Extract<CtrlMessage, { type: 'start' }> | null {
     if (!this.canStart()) return null;
-    this.runConfig = { ...newRunIdentity(), heaven: this.heaven, floor: 1, edicts: 0, progressionEnabled: false, fixture: this.fixture };
+    this.runConfig = { ...newRunIdentity(), heaven: this.heaven, floor: 1, edicts: 0, progressionEnabled: this.progressionEnabled, fixture: this.fixture };
     this.phase = 'loading';
     for (const p of this.players.values()) {
       p.state = 'loading';
@@ -229,6 +254,7 @@ export class Lobby {
   endGame(): void {
     if (this.phase !== 'game') return;
     this.phase = 'lobby';
+    this.retained.clear();
     for (const p of this.players.values()) p.state = p.state === 'game' ? 'results' : 'lobby';
   }
 

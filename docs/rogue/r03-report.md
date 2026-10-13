@@ -10,4 +10,14 @@ Changed files: `src/data/items.ts`, `src/data/pickups.ts`, `src/profile/model.ts
 
 Validation: `npm test -- --pool=threads` passed **1,045 tests in 94 files** in 68.75 s, with the configured one worker and unchanged timing limits. Two earlier default-fork `npm test` runs stalled after the first file and were interrupted; that file exposed the old 12/10 assertion, which was corrected. `npm run typecheck` and `npm run build` passed. No browser session/loading behavior changed in this foundation stage, so browser integration checks are deferred to stage 2.
 
-Checks and completion SHAs will be recorded when each stage is verified. No human play, transport/storage observation, benchmark or asset acceptance is claimed.
+Stage-1 commit: `58e08dc`.
+
+## Stage 2 — admission, recovery and XP
+
+Implemented: three locked profile slots with import/export/delete; normal versus disposable practice admission; durable stake rejection before placement; retained profile/class/token and life state; absolute XP and terminal settlement; a sixteen-run host settlement cache; exact pre-rounding generated wave XP (including actual commander groups); developer-command refusal in progression-enabled simulation. Gameplay still has the temporary immediate boss ending until stage 5. The explicit Practice button clones the selected profile's carried inventory in memory and suppresses every progression write.
+
+Host/worker, lobby, transport, main entry and profile lifecycle modules carry the contract. The generated floor's new XP metadata changes pinned hashes to `4d45505c` (R1 pool) and `74928d57` (full pool), without changing geometry or spawn counts. Protocol/rules: 10/13. No talents, relic awards, deeds or best-time achievements are granted.
+
+Checks: `npm test -- --pool=threads` passed **1,058 tests in 96 files**, 71.27 s. `npm run typecheck` and `npm run build` passed. `npx playwright test --config playwright.hardware.config.ts e2e/profiles.spec.ts e2e/menus.spec.ts e2e/multiplayer.spec.ts` passed all **6 checks** (1.5 min); after final profile/menu hardening, `npx playwright test --config playwright.hardware.config.ts e2e/profiles.spec.ts e2e/menus.spec.ts` passed all **5 checks** (38.4 s). These exercised actual browser storage/Web Locks and real PeerJS host/guest reconnect, plus the inherited four-client snapshots. One earlier sandboxed browser run passed its four assertions but stalled during shutdown and was interrupted; the successful complete runs used process escalation. Initial unit failures were stale hash/version expectations, corrected with the intentional content/handshake changes.
+
+The browser tests use fresh isolated contexts and generated disposable exports. No user profile was read or modified during testing. Human fight/feel acceptance, asset acceptance and benchmarks remain unclaimed.

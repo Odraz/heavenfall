@@ -37,7 +37,10 @@ describe('generateFloor (rogue game.md §3.3)', () => {
       const template = poolTemplate(PEARLY_POOL, room.templateId!);
       room.waves.forEach((wave, index) => {
         const authored = waveCounts(template.waves[index], roomBudget(room.shape!, room.band!));
-        expect(wave).toEqual({ ...authored, dominions: index, ...(authored.choristers ? { commander: 'cantor' } : authored.cherubs ? { commander: 'carrier' } : {}) });
+        const { xp, ...counts } = wave;
+        expect(counts).toEqual({ ...authored, dominions: index, ...(authored.choristers ? { commander: 'cantor' } : authored.cherubs ? { commander: 'carrier' } : {}) });
+        const templateWave = template.waves[index], budget = roomBudget(room.shape!, room.band!);
+        expect(xp?.reduce((a, b) => a + b, 0)).toBeCloseTo(templateWave.share * budget - (templateWave.elites ?? 0) * 60 + index * 60, 8);
       });
       if (room.shape === '2x2') expect(room.waves.at(-1)!.blessed).toBeGreaterThanOrEqual(1000);
     }

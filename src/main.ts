@@ -24,9 +24,51 @@ import { hostSetupScreen, joinScreen, lobbyScreen, multiplayerScreen, type Lobby
 import { showResults, type ResultsData, type ResultsView } from './ui/results';
 import { hideTooltip } from './ui/tooltip';
 import { initAudio, setMusic, sfx } from './audio/audio';
+import { profilesScreen, saveCodeButton } from './ui/profiles';
+import { ProfileSession } from './profile/storage';
+import { abandonAttempt, applyProgress, stakeProfile, type ProgressState } from './profile/lifecycle';
 
 const params = parseParams(window.location.search);
 const root = document.getElementById('app')!;
+let profileSession: ProfileSession | null = null;
+let lastProgress: ProgressState | null = null;
+let requestedPersistence = false;
+const disposable = params.dev || params.benchArena >= 0 || params.bot;
+
+function profileMessage(msg: CtrlMessage, transport: Transport): boolean {
+  if (msg.type === 'admission') {
+    const admission = msg.admission;
+    try {
+      if (admission.progressionEnabled) {
+        if (!profileSession) throw new Error('Select a persistent profile first');
+        const next = stakeProfile(profileSession.profile, admission);
+        if (admission.kind === 'new' && !profileSession.save(next, true)) throw new Error(profileSession.message);
+      } else if (profileSession?.profile.run) throw new Error('Recover the normal attempt before starting a disposable run');
+      transport.sendCtrl({ type: 'admissionReady', runId: admission.runId, admissionId: admission.admissionId });
+    } catch (error) {
+      transport.sendCtrl({ type: 'admissionRejected', runId: admission.runId, admissionId: admission.admissionId, reason: String(error) });
+      if (screenEl) { const p = document.createElement('p'); p.textContent = String(error); screenEl.appendChild(p); }
+    }
+    return true;
+  }
+  if (msg.type === 'progress') {
+    if (!lastProgress || lastProgress.runId !== msg.state.runId || msg.state.revision > lastProgress.revision) lastProgress = msg.state;
+    if (profileSession) {
+      const next = applyProgress(profileSession.profile, msg.state);
+      if (next) profileSession.save(next);
+      if (next && msg.state.outcome && msg.state.outcome !== 'admissionAborted' && !requestedPersistence) {
+        requestedPersistence = true; void navigator.storage?.persist?.().catch(() => {});
+      }
+    }
+    return true;
+  }
+  return false;
+}
+function localExit(outcome: 'leave' | 'hostLeft'): void {
+  if (!profileSession?.profile.run || !lastProgress || lastProgress.runId !== profileSession.profile.run.runId) return;
+  const next = applyProgress(profileSession.profile, { ...lastProgress, revision: 0xfffffffe, outcome });
+  if (next) profileSession.save(next);
+}
 
 /** The DOM screen currently shown over `#app`, if any. */
 let screenEl: HTMLElement | null = null;
@@ -50,9 +92,15 @@ let inviteId = params.join;
 /** Title (§3). `message` is the message line, cleared by the next button press. */
 function toTitle(message = ''): void {
   resetGameDebug();
+  if (!disposable && !profileSession) {
+    show('title', profilesScreen(session => { profileSession = session; toTitle(); })); return;
+  }
   show(
     'title',
     titleScreen({
+      profileName: profileSession?.profile.name,
+      onChangeProfile: profileSession ? () => { profileSession?.close(); profileSession = null; lastProgress = null; toTitle(); } : undefined,
+      onPractice: profileSession ? () => toSingleplayerSetup(profileSession!.profile.name, true) : undefined,
       message,
       joinId: inviteId,
       onJoinInvite: (name) => toJoin(name, inviteId),
@@ -62,11 +110,11 @@ function toTitle(message = ''): void {
   );
 }
 
-function toSingleplayerSetup(name: string): void {
+function toSingleplayerSetup(name: string, practice = false): void {
   show(
     'singleplayerSetup',
     singleplayerSetupScreen({
-      onStart: (classId, dungeonId) => void startSingleplayer(name, classId, dungeonId, null),
+      onStart: (classId, dungeonId) => void startSingleplayer(name, classId, dungeonId, null, practice),
       onBack: () => toTitle(),
     }),
   );
@@ -102,18 +150,23 @@ async function loadGameAssets(run: RunConfig, roster: RosterEntry[], localId: nu
  * A singleplayer game: from Singleplayer Setup's `Start`, or straight from the page load with `dev=1`
  * or `bench=1`. Loading builds the map and sprite atlas, then enters the game (§3).
  */
-async function startSingleplayer(name: string, classId: ClassId, dungeonId: string, seed: number | null): Promise<void> {
+async function startSingleplayer(name: string, classId: ClassId, dungeonId: string, seed: number | null, practice = false): Promise<void> {
+  if (practice && profileSession?.profile.run) { toTitle('Recover the normal attempt before starting a disposable run'); return; }
+  if (!disposable && profileSession?.profile.run) {
+    // No live solo host survives leaving/reloading its tab. Its unmatched stake is a loss.
+    if (!profileSession.save(abandonAttempt(profileSession.profile), true)) { toTitle(profileSession.message); return; }
+  }
   // The worker starts when the player clicks Start, or the page loads with dev=1 or bench=1 (§2.2).
   const host = new HostSession(0);
   const loading = loadingScreen();
   show('loading', loading.el);
   await loading.ready;
   const run: RunConfig = {
-    ...newRunIdentity(seed ?? undefined), heaven: 1, floor: 1, edicts: 0, progressionEnabled: false,
+    ...newRunIdentity(seed ?? undefined), heaven: 1, floor: 1, edicts: 0, progressionEnabled: !practice && !disposable && !!profileSession && dungeonId === 'rogue',
     fixture: dungeonId === 'rogue' ? null : dungeonId,
   };
   // Solo autopilot drives the human slot; half-player bots are multiplayer admissions.
-  const roster = [{ id: 0, name, classId, bot: false }];
+  const roster = [{ id: 0, name, classId, bot: false, profile: profileSession?.profile }];
   const assets = await loadGameAssets(run, roster, 0, false, loading.set);
   const requestedRoom = run.fixture === null ? params.startRoom : params.startArena > 0 ? params.startArena : null;
   const startRoom = requestedRoom === null ? undefined : Math.min(requestedRoom, assets.map.rooms.length - 1);
@@ -125,7 +178,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   const game = new Game({
     root,
     ...assets,
-    params,
+    params: practice ? { ...params, dev: true } : params,
     transport: host.local,
     host,
     localPlayerId: 0,
@@ -135,18 +188,23 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
     net: null,
     onResults: (data) => {
       end();
-      show('results', showResults(data, { onLeave: () => toTitle() }).el);
+      const view = showResults(data, { onLeave: () => toTitle() });
+      if (profileSession) saveCodeButton(view.el, () => profileSession!.profile);
+      show('results', view.el);
     },
     onLeave: () => {
+      localExit('leave');
       end();
       toTitle();
     },
   });
-  host.local.onCtrl = (msg) => game.handleCtrl(msg);
+  host.local.onCtrl = (msg) => {
+    if (profileMessage(msg, host.local)) return;
+    if (msg.type === 'go') { show('inGame', null); game.start(); }
+    game.handleCtrl(msg);
+  };
   await game.prepare();
   host.start(run, roster, params.god, params.benchArena, params.benchBurst, startRoom);
-  show('inGame', null);
-  game.start();
 }
 
 // ------------------------------------------------------------------ multiplayer (§3, §9)
@@ -175,7 +233,7 @@ function toHostSetup(name: string): void {
       const host = new HostSession(0);
       createHostNet(() => left).then(
         (net) => {
-          host.hostLobby(net, dungeonId === 'rogue' ? null : dungeonId, password, name, params.god, params.bot);
+          host.hostLobby(net, dungeonId === 'rogue' ? null : dungeonId, password, name, params.god, params.bot, profileSession?.profile, !disposable && dungeonId === 'rogue');
           enterLobby({ transport: host.local, playerId: 0, host, client: null, gameId: net.gameId, net: net.stats }, null, false);
         },
         (e: unknown) => {
@@ -204,7 +262,7 @@ function toJoin(name: string, prefillId: string | null = null, auto = false): vo
     if (joining) return;
     joining = true;
     view.setStatus('Connecting…', true);
-    joinGame(gameId, name, password, () => left, params.bot).then(
+    joinGame(gameId, name, password, () => left, params.bot, profileSession?.profile).then(
       (j) =>
         enterLobby(
           { transport: j.transport, playerId: j.playerId, host: null, client: j.transport, gameId, net: j.transport.stats },
@@ -298,6 +356,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
   const end = (message: string, left: boolean): void => {
     if (ended) return;
     ended = true;
+    localExit(left ? 'leave' : 'hostLeft');
     if (left) s.transport.sendCtrl({ type: 'leave' });
     disposeGame();
     s.host?.stop(left);
@@ -383,11 +442,13 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
     nextRound();
     const backToLobby = (): void => {
       s.transport.sendCtrl({ type: 'backToLobby' });
+      if (profileSession) s.transport.sendCtrl({ type: 'loadout', profile: profileSession.profile });
       resetGameDebug();
       debugState.chat = chat.map(({ playerId, text }) => ({ playerId, text }));
       showLobby(false);
     };
     const view = showResults(data, { onLeave: () => (ended ? toTitle() : end('', true)), onBackToLobby: backToLobby });
+    if (profileSession) saveCodeButton(view.el, () => profileSession!.profile);
     results = view;
     show('results', view.el);
     if (auto) setTimeout(() => results === view && !ended && backToLobby(), BOT_RESULTS_MS);
@@ -436,7 +497,15 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
 
   s.transport.onCtrl = (msg) => {
     if (ended) return;
+    if (profileMessage(msg, s.transport)) return;
     switch (msg.type) {
+      case 'recovery':
+        if (profileSession?.profile.run?.runId === msg.runId) {
+          if (msg.state) profileMessage({ type: 'progress', state: msg.state }, s.transport);
+          else profileSession.save(abandonAttempt(profileSession.profile));
+          s.transport.sendCtrl({ type: 'loadout', profile: profileSession.profile });
+        }
+        break;
       case 'lobby':
         updateLobby(msg);
         break;
@@ -475,6 +544,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
         break;
     }
   };
+  if (profileSession?.profile.run) s.transport.sendCtrl({ type: 'recover', runId: profileSession.profile.run.runId, profileId: profileSession.profile.id });
   if (s.client) {
     s.client.onHostLeft = () => {
       // On Results the numbers stay up, and `Leave` returns to Title.

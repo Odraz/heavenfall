@@ -6,6 +6,8 @@ import type { PropFamily } from '../data/rooms/types';
 import type { DominionCast, DominionPhase } from '../data/dominion';
 import type { SpawnWarning } from '../data/spawns';
 import type { RunIdentity } from './version';
+import type { Profile } from '../profile/model';
+import type { Admission, ProgressState } from '../profile/lifecycle';
 
 /** The host's choice, carried by both welcome and lobby. Fixed maps are development fixtures. */
 export interface LobbyState {
@@ -19,7 +21,7 @@ export interface RunConfig extends RunIdentity {
   heaven: 1;
   floor: 1;
   edicts: 0;
-  progressionEnabled: false;
+  progressionEnabled: boolean;
   fixture: string | null;
 }
 
@@ -105,7 +107,14 @@ export type RejectReason = 'bad_password' | 'full' | 'in_progress' | 'version' |
 
 export type CtrlMessage =
   | FloorSync
-  | { type: 'hello'; name: string; password: string; version: string; bot: boolean }
+  | { type: 'hello'; name: string; password: string; version: string; bot: boolean; profile?: Profile }
+  | { type: 'loadout'; profile: Profile }
+  | { type: 'admission'; admission: Admission }
+  | { type: 'admissionReady'; runId: string; admissionId: number }
+  | { type: 'admissionRejected'; runId: string; admissionId: number; reason: string }
+  | { type: 'progress'; state: ProgressState }
+  | { type: 'recover'; runId: string; profileId: string }
+  | { type: 'recovery'; runId: string; state: ProgressState | null }
   /** `inProgress`: the game is running, so the client waits in the in-progress Lobby (M8 §6.2). */
   | { type: 'welcome'; playerId: number; lobby: LobbyState; inProgress: boolean }
   | { type: 'reject'; reason: RejectReason }

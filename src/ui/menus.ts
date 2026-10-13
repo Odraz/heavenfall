@@ -59,6 +59,9 @@ export function button(label: string, parent: HTMLElement, onClick: () => void, 
 }
 
 export interface TitleActions {
+  profileName?: string;
+  onChangeProfile?: () => void;
+  onPractice?: () => void;
   /** The message line, empty unless set by a return to Title; the next button press clears it. */
   message: string;
   /** The game ID of an invite link (M8 §6.1): Title offers `Join game <ID>`. */
@@ -85,6 +88,7 @@ export function titleScreen(a: TitleActions): HTMLElement {
   input.autocomplete = 'off';
   input.spellcheck = false;
   input.value = loadName();
+  if (a.profileName) { input.value = a.profileName; input.readOnly = true; }
   const message = el('div', 'message', panel, a.message);
 
   const buttons = el('div', 'buttons', panel);
@@ -121,6 +125,8 @@ export function titleScreen(a: TitleActions): HTMLElement {
   });
   update();
   settingsButton(panel, buttons);
+  if (a.onChangeProfile) button('Change profile', buttons, a.onChangeProfile);
+  if (a.onPractice) button('Practice (disposable)', buttons, a.onPractice);
   el('div', 'version', screen, `v${__BUILD_VERSION__}`);
   queueMicrotask(() => input.focus());
   return screen;

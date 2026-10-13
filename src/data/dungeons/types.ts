@@ -1,6 +1,8 @@
 import type { DecorId } from '../decor';
 
 export interface WaveDef {
+  /** Exact pre-rounding XP allocation: Blessed, Chorister, Cherub, commander. */
+  xp?: [number, number, number, number];
   blessed: number;
   choristers: number;
   cherubs: number;

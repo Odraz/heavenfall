@@ -49,7 +49,7 @@ test('multiplayer', async ({ page: a, browser }) => {
     const [b, c, d] = clients;
 
     // (1) A hosts with password `pw` and reads the game ID.
-    await toMultiplayer(a, '/?god=1', 'Alice');
+    await toMultiplayer(a, '/?dev=1&menu=1&map=rogue&god=1', 'Alice');
     await a.getByRole('button', { name: 'Host game' }).click();
     await a.getByLabel('Password').fill('pw');
     await a.getByRole('button', { name: 'Create' }).click();

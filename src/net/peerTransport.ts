@@ -9,6 +9,7 @@ import { jsonBytes, NetStats } from './netStats';
 import { FLUSH_MS, LOADING_PEER_TIMEOUT_MS, PEER_OPTIONS, PEER_TIMEOUT_MS, PING_MS, STALL_MS } from './peerConfig';
 import type { Transport } from './transport';
 import { SnapshotReceiver } from './snapshotCodec';
+import type { Profile } from '../profile/model';
 
 /** `Join` fails if there's no `welcome` within this long (§3). */
 const WELCOME_TIMEOUT_MS = 10000;
@@ -150,7 +151,7 @@ export class PeerTransport implements Transport {
  * `welcome` once both channels are open. Rejects with a `JoinError` carrying the Join screen's text.
  * `cancelled` stops the attempt (the player pressed `Back`).
  */
-export function joinGame(gameId: string, name: string, password: string, cancelled: () => boolean = () => false, bot = false): Promise<Joined> {
+export function joinGame(gameId: string, name: string, password: string, cancelled: () => boolean = () => false, bot = false, profile?: Profile): Promise<Joined> {
   return new Promise((resolve, reject) => {
     const peer = new Peer(PEER_OPTIONS);
     let settled = false;
@@ -199,7 +200,7 @@ export function joinGame(gameId: string, name: string, password: string, cancell
           maybeDone();
         } else if (msg.type === 'reject') fail(REJECT_TEXT[msg.reason] ?? 'Connection failed');
       };
-      ctrl.on('open', () => transport!.sendCtrl({ type: 'hello', name, password, version: __BUILD_VERSION__, bot }));
+      ctrl.on('open', () => transport!.sendCtrl({ type: 'hello', name, password, version: __BUILD_VERSION__, bot, profile }));
       snap.on('open', () => maybeDone());
     });
   });

@@ -1,5 +1,7 @@
 /** The host simulation: pure TypeScript, no three.js or DOM (§2.2). */
 import { CLASSES, type ClassId } from '../data/classes';
+import { copyInventory, emptyInventory, type Inventory, type ItemId } from '../data/items';
+import type { Profile } from '../profile/model';
 import type { DungeonDef, WaveDef } from '../data/dungeons/types';
 import {
   BLESSED,
@@ -148,6 +150,7 @@ export function scaleCount(count: number, partySize: number): number {
 }
 
 export interface SimPlayerInit {
+  profile?: Profile;
   /** The player ID, which is also its index: its spawn and entry cells (M8 §6.2). */
   id: number;
   name: string;
@@ -157,6 +160,7 @@ export interface SimPlayerInit {
 }
 
 export interface SimOptions {
+  progressionEnabled?: boolean;
   dungeon: DungeonDef;
   /** Real sessions always supply it; standalone simulation fixtures use the zero identity. */
   runId?: string;
@@ -187,6 +191,10 @@ export interface SimEvent {
 }
 
 export interface SimPlayer {
+  inventory: Inventory;
+  runXp: number;
+  xpCorrection: number;
+  itemsTried: ItemId[];
   id: number;
   /** Equal to the ID (M8 §6.2). */
   index: number;
@@ -520,6 +528,10 @@ export function segmentDistance(
 }
 
 export class Simulation {
+  readonly progressionEnabled: boolean;
+  readonly retainedPlayers = new Map<number, { player: SimPlayer; tick: number }>();
+  readonly eXp = new Float64Array(ENEMY_SLOTS);
+  halosCredited = 0;
   readonly map: GameMap;
   readonly runId: string;
   /** The players in the game, sorted by ID. */
@@ -734,6 +746,7 @@ export class Simulation {
   private readonly lastSentTick = new Map<number, number>();
 
   constructor(opts: SimOptions) {
+    this.progressionEnabled = opts.progressionEnabled ?? false;
     this.runId = opts.runId ?? '00000000000000000000000000000000';
     this.map = opts.map ?? loadMap(opts.dungeon);
     this.hazards = new Hazards(this.map);
@@ -975,6 +988,8 @@ export class Simulation {
       maxHp: cls.hp,
       hp: cls.hp,
       wallet: 0,
+      inventory: init.bot ? emptyInventory() : copyInventory(init.profile?.inventory ?? emptyInventory()),
+      runXp: 0, xpCorrection: 0, itemsTried: [],
       itemReadyTick: 0,
       shield: 0,
       shieldUntil: 0,
@@ -1039,6 +1054,7 @@ export class Simulation {
    */
   addPlayer(init: SimPlayerInit): SimPlayer | null {
     if (init.id < 0 || init.id >= PLAYER_SLOTS || this.slots[init.id] || this.result) return null;
+    const saved = this.retainedPlayers.get(init.id);
     const phase = this.activePhase;
     const lead = this.players.find((q) => this.livingTargetable(q));
     const p = this.insertPlayer(init, 0, 0, 0);
@@ -1050,7 +1066,13 @@ export class Simulation {
       const a = next >= 0 ? this.map.rooms[next] : undefined;
       const [c, r] = a ? this.entry(next).cells[p.index] : this.map.spawns[p.index];
       [x, y, z] = [c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]];
-    } else [x, y, z] = [lead.x, lead.y, lead.z];
+    } else {
+      [x, y, z] = [lead.x, lead.y, lead.z];
+      if (saved && this.activeRoom === ROOM_NONE) {
+        const old = saved.player, cell = Math.floor(old.y) * this.map.w + Math.floor(old.x), room = this.map.roomOf[cell];
+        if (!this.map.solid[cell] && this.rooms[room]?.phase === PHASE_CLEARED && Number.isFinite(this.map.floor[cell])) [x, y, z] = [old.x, old.y, this.map.floor[cell]];
+      }
+    }
     if (phase === PHASE_COMBAT) {
       // A soul with progress 0 that starts already floating (M8 §4.1).
       p.dead = true;
@@ -1058,6 +1080,15 @@ export class Simulation {
       p.soulTick = this.tick - ticks(SOUL_RISE_TIME);
     }
     this.teleport(p, x, y, z);
+    if (saved) {
+      const old = saved.player, elapsed = (this.tick - saved.tick) / TICK_HZ;
+      Object.assign(p, old, { connected: true, x, y, z, lastSeq: -1, lastAcceptMs: this.nowMs,
+        cdQ: Math.max(0, old.cdQ - elapsed), cdE: Math.max(0, old.cdE - elapsed),
+        shield: 0, shieldCaster: null, invulUntil: 0, fire: 0, pendingQ: false, pendingE: false,
+        dash: null, landingTick: -1, teleportId: p.teleportId,
+        revive: old.dead ? Math.max(0, old.revive - elapsed * REVIVE_DECAY) : 0 });
+      this.retainedPlayers.delete(init.id);
+    } else if (!p.bot) p.wallet = this.halosCredited;
     return p;
   }
 
@@ -1065,10 +1096,11 @@ export class Simulation {
    * A player left or timed out (§9.4, M8 §6.2): their player is removed, with their soul, and the game
    * continues. Enemies retarget at once, and the run is a defeat if every player left is dead.
    */
-  removePlayer(playerId: number): void {
+  removePlayer(playerId: number, retain = false): void {
     const p = this.playerById(playerId);
     if (!p) return;
     p.connected = false;
+    if (retain) this.retainedPlayers.set(playerId, { player: p, tick: this.tick });
     this.activeDirector()?.clear(p.index);
     this.players.splice(this.players.indexOf(p), 1);
     this.slots[p.index] = undefined;
@@ -1082,6 +1114,7 @@ export class Simulation {
 
   /** Dev key G: toggles invulnerability for one player. */
   toggleDevGod(playerId: number): void {
+    if (this.progressionEnabled) return;
     const p = this.playerById(playerId);
     if (p) p.devGod = !p.devGod;
   }
@@ -1371,6 +1404,7 @@ export class Simulation {
       } else if (this.eRecoveryFailed[s] < 0) this.eRecoveryFailed[s] = this.tick;
       else if (this.tick - this.eRecoveryFailed[s] >= ticks(10)) {
         console.warn('diagnostic: unreachable enemy removed', { room: ai, slot: s });
+        this.settleEnemyXp(s);
         this.removeEnemy(s, true);
       }
     }
@@ -1542,6 +1576,10 @@ export class Simulation {
       const allWavesStarted = this.noWaves || st.wave >= a.waves.length - 1;
       if (!allWavesStarted || st.queue.length > 0 || st.squad || st.alive > 0) return;
       st.phase = PHASE_CLEARED;
+      this.awardXp(100);
+      for (const { player } of this.retainedPlayers.values()) if (player.dead) {
+        player.dead = false; player.hp = player.maxHp * 0.5; player.revive = 0; player.shield = 0;
+      }
       if (this.activeRoom === ai) this.activeRoom = ROOM_NONE;
       this.updateLeaves();
       this.invalidateFields();
@@ -2039,6 +2077,14 @@ export class Simulation {
     this.eHp[slot] = def.hp;
     if (isCommander(type)) this.livingDominions++;
     this.eGoldEntitled[slot] = 0;
+    this.eXp[slot] = 0;
+    if (wave >= 0) {
+      const w = this.map.rooms[room].waves[wave], party = this.rooms[room].partySize;
+      const group = isCommander(type) ? 3 : type;
+      const counts = [w.blessed, w.choristers, w.cherubs, w.dominions ?? 0];
+      const count = scaleCount(counts[group] ?? 0, party);
+      if (count > 0) this.eXp[slot] = (w.xp?.[group] ?? counts[group] * [1, 6, 4, 60][group]) / count;
+    }
     this.dominions.reset(slot);
     this.dominions.leapReadyAt[slot] = this.tick + DOMINION_COOLDOWN_TICKS;
     if (isCommander(type) && wave >= 0) {
@@ -2130,6 +2176,7 @@ export class Simulation {
 
   /** Dev key K: kills every living enemy, including the Gatekeeper, without kill credit. */
   killAll(blessedOnly = false): void {
+    if (this.progressionEnabled) return;
     if (!blessedOnly) {
       while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1]);
       return;
@@ -2179,6 +2226,7 @@ export class Simulation {
     this.eHurtTick[slot] = this.tick;
     // 5. Death and kill credit.
     if (this.eHp[slot] <= 0) {
+      this.settleEnemyXp(slot);
       this.enemyDrops(slot);
       if (shooter) {
         shooter.kills++;
@@ -2217,6 +2265,7 @@ export class Simulation {
 
   private collectPickup(drop: PickupRecord, p: SimPlayer): boolean {
     if (drop.kind === COIN || drop.kind === GOLD_HALO) {
+      this.halosCredited += drop.value;
       for (const human of this.players) if (human.connected && !human.bot) human.wallet += drop.value;
     } else if (drop.kind === HEAL_MOTE) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.08);
     else if (drop.kind === ITEM_FIRST && this.tick >= p.itemReadyTick && p.hp < p.maxHp && !p.bot) {
@@ -2224,6 +2273,18 @@ export class Simulation {
     } else return false; // R3 owns other item effects and inventory storage.
     this.emit('all', { type: 'pickupCollected', id: drop.id, kind: drop.kind, playerId: p.id, x: drop.x, y: drop.y, z: this.pickups.floor(drop.x, drop.y) });
     return true;
+  }
+
+  private awardXp(amount: number): void {
+    for (const p of this.players) if (p.connected && !p.bot) {
+      const adjusted = amount - p.xpCorrection, sum = p.runXp + adjusted;
+      p.xpCorrection = (sum - p.runXp) - adjusted; p.runXp = sum;
+    }
+  }
+  private settleEnemyXp(slot: number): void {
+    if (this.eType[slot] === GATEKEEPER) this.awardXp(1500);
+    else if (this.eXp[slot] > 0) { this.awardXp(this.eXp[slot]); this.eXp[slot] = 0; }
+    else if (this.leashed[slot] && this.eType[slot] === BLESSED) this.awardXp(1);
   }
 
   /** A credited kill bursts when its tick's force reaches 2× the type's max HP, heavy at 4× (M12 §4.1). */

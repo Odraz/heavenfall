@@ -5,7 +5,8 @@ test('menus', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => window.__heavenfall?.screen === 'title');
 
-  await page.getByLabel('Player name').fill('Tester');
+  await page.getByLabel('Slot 1 name').fill('Tester');
+  await page.getByRole('button', { name: 'New', exact: true }).first().click();
   await page.getByRole('button', { name: 'Singleplayer' }).click();
   await page.waitForFunction(() => window.__heavenfall.screen === 'singleplayerSetup');
   await page.getByRole('button', { name: /The Fallen/ }).click();

@@ -3,6 +3,7 @@ import type { CtrlMessage, RunConfig } from '../net/messages';
 import type { CarrierCheck } from '../data/commanders';
 import type { DirectorInfo } from './director';
 import type { Simulation, SimPlayerInit } from './sim';
+import type { Profile } from '../profile/model';
 
 export type MainToWorker =
   /** Singleplayer (and dev and bench modes): starts the game at once. */
@@ -19,7 +20,7 @@ export type MainToWorker =
       startRoom?: number;
     } & RunConfig)
   /** Multiplayer: the host clicked `Create`; the worker opens the lobby with the host as player 0. */
-  | { t: 'host'; heaven: 1; fixture: string | null; password: string; name: string; god: boolean; bot: boolean }
+  | { t: 'host'; heaven: 1; fixture: string | null; password: string; name: string; god: boolean; bot: boolean; profile?: Profile; progressionEnabled?: boolean }
   /** The host clicked `Start` in the Lobby. */
   | { t: 'startGame' }
   /** A `ctrl` message from the host's own player, through `LocalTransport`. */

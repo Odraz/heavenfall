@@ -159,7 +159,9 @@ export function stampFloor(layout: Layout, a: Assignment, mode: ValidateMode = '
       // Keep authored minions; ramp commanders 0, 1, 2, ... before ordinary party scaling.
       waves: r.kind === 'combat' ? t.waves.map((wv, index) => {
         const counts = waveCounts(wv, roomBudget(r.shape, r.band!));
-        return { ...counts, dominions: index, ...(wv.mix.chorister ? { commander: 'cantor' as const } : wv.mix.cherub ? { commander: 'carrier' as const } : {}) };
+        const rest = wv.share * roomBudget(r.shape, r.band!) - (wv.elites ?? 0) * ELITE_TP;
+        const xp: WaveDef['xp'] = [rest * (wv.mix.blessed ?? 0), rest * (wv.mix.chorister ?? 0), rest * (wv.mix.cherub ?? 0), index * ELITE_TP];
+        return { ...counts, xp, dominions: index, ...(wv.mix.chorister ? { commander: 'cantor' as const } : wv.mix.cherub ? { commander: 'carrier' as const } : {}) };
       }) : [],
       boss: r.kind === 'boss',
       shape: r.shape,
