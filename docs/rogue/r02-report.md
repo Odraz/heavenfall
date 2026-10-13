@@ -12,6 +12,7 @@
 - R2.3 code end SHA: `5755024eda5b404c29f8651256e5abc2d8e51740` (all 51 S1 runtime takes, bounded loader and cosmetic shuffle bags).
 - R2.4 authority/wire component end SHA: `65e4384861ddb038c8d38d755fe573316c8c18b8`. Client component and its verification limitations are recorded below.
 - R2.4 client/bot/encounter component end SHA: `78cc0b0f74f0e4b6c6f51088da1a1a3a1a939f02`. Five final scoped browser/audio checks and 860 unit tests passed; four-client failures remain explicitly unresolved.
+- R2.5 fire/dry-navigation end SHA: `93a0c7c0dd0035d06a360bc016e70dec81f1d172`. 880 unit tests and five final production checks passed; full-pool adoption and final broader-session verification remain next.
 - Protocol version **4**, rules version **4** after R2.5 (R2.4 used 4/3; R2.1–R2.3 used 3/2). Floor layout/pool/pinned hash remain the R1 fixture until R2.6 introduces the full pool. Restart the dev server after a commit so every participant uses the same artifact fingerprint.
 
 ## R2.1: pickups, halo ledger and bounded snapshots
