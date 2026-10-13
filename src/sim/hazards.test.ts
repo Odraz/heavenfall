@@ -58,7 +58,7 @@ describe('accepted fire contact and world damage', () => {
     aimAt(sim, sim.players[0], s); sim.players[0].fire = 1; sim.random = () => 0.5;
     sim.step(); expect(sim.eAlive[s]).toBe(0); expect(sim.ePooled[s]).toBe(0); expect(sim.players[0].kills).toBe(0);
     expect(sim.events.some((m) => m.event.type === 'bursts' && m.event.list[2] === -1)).toBe(true);
-    expect(sim.haloLedgers.get(0)?.paid).toBe(3); expect(sim.pickups.live).toHaveLength(1);
+    expect(sim.haloLedgers.get(0)?.paid).toBe(3); expect(sim.pickups.live).toHaveLength(3);
     const count = sim.pickups.live.length; sim.step(); expect(sim.pickups.live).toHaveLength(count);
   });
 });
@@ -78,7 +78,7 @@ describe('bounded dry fields and shared nearest-dry routing', () => {
     sim[control](s, 100); for (let i = 0; i < 20; i++) sim.step();
     expect(sim.eX[s]).toBe(10.5); expect(sim.ePooled[s]).toBe(1);
   });
-  it('keeps fodder straight paths, routes avoiders through a dry bridge and rejects corner cutting', () => {
+  it('routes the shared dry field through a bridge and rejects corner cutting', () => {
     const map = loadMap(dungeon()), fire = new Hazards(map); fire.setRoom(0);
     const normal = new FlowField(map, false); normal.compute(16, 8);
     const nav = new DryNavigation(map, fire.active); nav.setRoom(0); const dry = nav.compute(0, 16, 8)!;
@@ -120,5 +120,16 @@ describe('bounded dry fields and shared nearest-dry routing', () => {
     sim.eX[s] = 10.5; sim.eY[s] = 8.5; sim.eZ[s] = 0; sim.eGrounded[s] = 1;
     for (let i = 0; i < 30; i++) sim.step(); expect(sim.eX[s]).toBeLessThan(10); expect(sim.ePooled[s]).toBe(0); expect(sim.dryNavigation.builds).toBe(1);
     sim.removeEnemy(s); sim.step(); expect(sim.dryNavigation.fields).toHaveLength(0); expect(sim.dryNavigation.room).toBe(-1);
+  });
+  it('routes Blessed around fire and lets a pushed Blessed climb out of a half-metre channel', () => {
+    const sim = fixture(); put(sim, sim.players[0], 17.5, 8.5);
+    for (let r = 1; r <= 20; r++) for (const c of [10, 11]) sim.map.floor[r * sim.map.w + c] = -0.5;
+    const s = sim.placeEnemy(BLESSED, 5, 8, 0); sim.eHp[s] = 1000; sim.refreshFields();
+    for (let i = 0; i < 100; i++) { sim.step(); expect(sim.ePooled[s]).toBe(0); }
+    expect(sim.dryNavigation.builds).toBe(1);
+    sim.eX[s] = 10.5; sim.eY[s] = 8.5; sim.eZ[s] = -0.5; sim.eGrounded[s] = 1;
+    for (let i = 0; i < 20; i++) sim.step();
+    expect(sim.eX[s]).toBeLessThan(10); expect(sim.eZ[s]).toBe(0); expect(sim.ePooled[s]).toBe(0);
+    expect(sim.eHp[s]).toBeLessThan(1000); expect(sim.dryNavigation.builds).toBe(1);
   });
 });

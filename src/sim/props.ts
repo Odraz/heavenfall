@@ -1,11 +1,11 @@
 /** Finite floor props, attack cylinders and stable delayed blast order (game.md §4.9). */
-import { PROP_HEIGHT, PROP_RADIUS, type PropDef } from '../data/props';
+import { PROP_HEIGHT, PROP_RADIUS, PROP_RECHARGE_TICKS, type PropDef } from '../data/props';
 import { rayCylinder } from './combat';
 import { distToCylinder } from './movement';
 import { lineOfSight } from './los';
 import type { GameMap } from './map';
 
-export interface Prop extends PropDef { z: number; broken: boolean; blastTick: number; }
+export interface Prop extends PropDef { z: number; broken: boolean; blastTick: number; readyTick: number; }
 export class Props {
   readonly all: readonly Prop[];
   private readonly byId: Map<number, Prop>;
@@ -16,7 +16,7 @@ export class Props {
       const c = Math.floor(p.x), r = Math.floor(p.y), i = r * map.w + c;
       if (!Number.isInteger(p.id) || p.id <= 0 || p.id > 0xffffffff || !Number.isInteger(p.variant) || p.variant < 0 || p.variant > 2 ||
         !Object.hasOwn(PROP_HEIGHT, p.family) || c < 0 || r < 0 || c >= map.w || r >= map.h || map.wall[i] || map.roomOf[i] !== p.room) throw new Error('invalid prop body');
-      return { ...p, z: map.floor[i], broken: false, blastTick: -1 };
+      return { ...p, z: map.floor[i], broken: false, blastTick: -1, readyTick: -1 };
     }).sort((a, b) => a.id - b.id);
     this.byId = new Map(this.all.map((p) => [p.id, p]));
     this.byRoom = map.rooms.map((_r, i) => this.all.filter((p) => p.room === i));
@@ -29,6 +29,7 @@ export class Props {
     const p = this.byId.get(id);
     if (!p || p.broken || (origin === 'world' && p.family === 'blessing')) return false;
     p.broken = true;
+    if (p.family !== 'loot') p.readyTick = tick + PROP_RECHARGE_TICKS;
     if (p.family === 'blast') p.blastTick = tick + 6;
     this.broken(p, origin);
     return true;
@@ -52,13 +53,17 @@ export class Props {
     for (const p of this.all) if (!p.broken && accepts(p) && this.inArea(p, x, y, z, radius)) this.break(p.id, tick, origin);
   }
   /** Mark terminal before callback: damage may break another lamp, but never explode it early. */
-  update(tick: number, explode: (p: Prop) => void): void {
+  update(tick: number, explode: (p: Prop) => void, recharge: (p: Prop) => void = () => {}): void {
     for (const p of this.all) if (p.blastTick >= 0 && tick >= p.blastTick) {
       p.blastTick = -1; explode(p);
     }
+    for (const p of this.all) if (p.readyTick >= 0 && tick >= p.readyTick) {
+      p.readyTick = -1; p.broken = false; recharge(p);
+    }
   }
-  checkpoint(): { brokenProps: number[]; propBlasts: Array<{ id: number; impactTick: number }> } {
+  checkpoint(): { brokenProps: number[]; propBlasts: Array<{ id: number; impactTick: number }>; propRecharges: Array<{ id: number; readyTick: number }> } {
     return { brokenProps: this.all.filter((p) => p.broken).map((p) => p.id),
-      propBlasts: this.all.filter((p) => p.blastTick >= 0).map((p) => ({ id: p.id, impactTick: p.blastTick })) };
+      propBlasts: this.all.filter((p) => p.blastTick >= 0).map((p) => ({ id: p.id, impactTick: p.blastTick })),
+      propRecharges: this.all.filter((p) => p.readyTick >= 0).map((p) => ({ id: p.id, readyTick: p.readyTick })) };
   }
 }

@@ -13,7 +13,7 @@ import type { TerrainTextures } from './textures';
 /** Stand-ins for the loaded textures: building the terrain only needs their kinds. */
 function fakeTextures(gate: boolean): TerrainTextures {
   const array = () => new THREE.DataArrayTexture(new Uint8Array(4), 1, 1, 1);
-  return { array: array(), door: new THREE.Texture(), sky: new THREE.Texture(), shaft: new THREE.Texture(), atmosphere: new THREE.Texture(), gate: gate ? array() : null };
+  return { array: array(), door: new THREE.Texture(), refiner: new THREE.Texture(), sky: new THREE.Texture(), shaft: new THREE.Texture(), atmosphere: new THREE.Texture(), gate: gate ? array() : null };
 }
 
 function lightOf(map: GameMap) {

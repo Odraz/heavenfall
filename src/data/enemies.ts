@@ -35,7 +35,7 @@ export const ENEMIES: readonly EnemyDef[] = [
   // The Gatekeeper: 29 000 HP (M9 §4; M8's 45 000): Field of Blood replaced Kiss, and party damage on
   // one target fell to about 64% of M8's.
   { hp: 29000, radius: 2.0, height: 6.0, speed: 0, flying: false, draw: 1 },
-  { hp: 1500, radius: 0.45, height: 3.2, speed: 3.5, flying: false, draw: 1 },
+  { hp: 1500, radius: 0.45, height: 3.2, speed: 3.5, flying: false, draw: 1.9 },
 ];
 
 /** Falling Star's launched walking enemies fly an arc this high (M9 §3.2); drawn only. */

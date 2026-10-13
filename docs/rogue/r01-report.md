@@ -1,5 +1,7 @@
 # R1 report: generated floor
 
+**2026-10-13 playtest follow-up:** [analysis, fixes and current verification](r02-playtest-report.md). The checkpoint results below are historical; the follow-up is awaiting another human play session.
+
 **Status: accepted** (2026-10-13). Brief: [r01.md](r01.md). Stages R1.1–R1.6 and the R1.7 checkpoint are implemented on `rogue`; nothing pushed, merged or published. Final verification passes: **755 unit tests, 9 browser tests, typecheck, production build and 1,000-seed generator acceptance (99.7% within 20 attempts)**. The previously failing four-client path passed twice at this checkpoint without a protocol or timeout change. Tomas accepted the R1 checkpoint `de0f8ae` on 2026-10-13 ("R01 looks good") and requested the Gate clipping repair before R2. Historical stage results are retained below.
 
 ## Git facts

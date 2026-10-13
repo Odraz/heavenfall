@@ -21,7 +21,8 @@ import betrayerUrl from '../../assets/sprites/betrayer/atlas.png';
 import betrayerManifest from '../../assets/sprites/betrayer/atlas.json';
 import type { ClassId } from '../data/classes';
 import { BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER } from '../data/enemies';
-import { dominionAtlas } from './dominionAtlas';
+import dominionUrl from '../../assets/sprites/dominion/atlas.png';
+import dominionManifest from '../../assets/sprites/dominion/atlas.json';
 import type { SpriteFrame } from './atlas';
 
 export const ANIM_NAMES = ['idle', 'walk', 'attack', 'pain', 'death'] as const;
@@ -100,13 +101,14 @@ export type EnemyAnimSet = AnimSet<string>;
 
 /** The atlases of every enemy type that has one, by type. */
 export async function loadEnemyAnims(includeDominion = true): Promise<Partial<Record<number, EnemyAnimSet>>> {
-  const [blessed, chorister, cherub, gatekeeper] = await Promise.all([
+  const [blessed, chorister, cherub, gatekeeper, dominion] = await Promise.all([
     loadAnimSet(blessedUrl, blessedManifest as Manifest, ANIM_NAMES),
     loadAnimSet(choristerUrl, choristerManifest as Manifest, CHORISTER_ANIM_NAMES),
     loadAnimSet(cherubUrl, cherubManifest as Manifest, CHERUB_ANIM_NAMES),
     loadAnimSet(gatekeeperUrl, gatekeeperManifest as Manifest, GATEKEEPER_ANIM_NAMES),
+    includeDominion ? loadAnimSet(dominionUrl, dominionManifest as Manifest, CHORISTER_ANIM_NAMES) : Promise.resolve(undefined),
   ]);
-  return { [BLESSED]: blessed, [CHORISTER]: chorister, [CHERUB]: cherub, [GATEKEEPER]: gatekeeper, ...(includeDominion ? { [DOMINION]: dominionAtlas() } : {}) };
+  return { [BLESSED]: blessed, [CHORISTER]: chorister, [CHERUB]: cherub, [GATEKEEPER]: gatekeeper, ...(dominion ? { [DOMINION]: dominion } : {}) };
 }
 
 const PLAYER_ATLASES: Record<ClassId, { url: string; manifest: Manifest }> = {

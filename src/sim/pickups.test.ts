@@ -7,7 +7,7 @@ import type { SimOptions } from './sim';
 import { Pickups } from './pickups';
 import { decodeSnapshot } from '../net/protocol';
 import { HaloLedger } from './economy';
-import { BLESSED, CHORISTER } from '../data/enemies';
+import { BLESSED, CHORISTER, CHERUB, DOMINION } from '../data/enemies';
 
 function makeSim(heights: string[], classes: ClassId[], opts: Partial<SimOptions> = {}) {
   const dungeon = dungeonOf(heights);
@@ -18,6 +18,24 @@ function makeSim(heights: string[], classes: ClassId[], opts: Partial<SimOptions
 }
 
 describe('R2 pickups', () => {
+  it.each([[BLESSED, 0.02], [CHORISTER, 0.12], [CHERUB, 0.12], [DOMINION, 0.5]])(
+    'rolls consumables for wave enemy %i at its exact chance, once per accepted death', (type, chance) => {
+      const sim = makeSim(room(20, 20), ['fallen'], { noWaves: true });
+      put(sim, sim.players[0], 18, 18);
+      for (const roll of [chance - 0.0001, chance]) {
+        sim.random = () => roll;
+        const s = sim.placeEnemy(type, 5, 5, 0); sim.eWave[s] = 0;
+        sim.damageEnemy(s, 10000, -1); sim.damageEnemy(s, 10000, -1);
+      }
+      expect(sim.pickups.live.filter((p) => p.kind >= ITEM_FIRST)).toHaveLength(1);
+      sim.random = () => 0;
+      const cleanup = sim.placeEnemy(type, 5, 5, 0); sim.eWave[cleanup] = 0; sim.removeEnemy(cleanup);
+      const add = sim.placeEnemy(type, 5, 5, 0); sim.eWave[add] = -1; sim.damageEnemy(add, 10000, -1);
+      const leashed = sim.placeEnemy(type, 5, 5, 0); sim.eWave[leashed] = 0; sim.leashed[leashed] = 1;
+      sim.damageEnemy(leashed, 10000, -1);
+      expect(sim.pickups.live.filter((p) => p.kind >= ITEM_FIRST)).toHaveLength(1);
+    });
+
   it('attracts collision-safely and bots credit all connected humans exactly once', () => {
     const sim = makeSim(room(20, 20), ['fallen', 'heretic', 'binder'], { noWaves: true });
     const [a, b, bot] = sim.players; b.dead = true; bot.bot = true;
@@ -92,7 +110,8 @@ describe('R2 pickups', () => {
       const s = sim.placeEnemy(BLESSED, 5, 5, 0); sim.eWave[s] = 0;
       sim.damageEnemy(s, 100, -1); sim.damageEnemy(s, 100, -1);
     }
-    expect(sim.pickups.live.filter((p) => p.kind === COIN)).toHaveLength(4);
+    expect(sim.pickups.live.filter((p) => p.kind === COIN)).toHaveLength(12);
+    expect(sim.pickups.live.filter((p) => p.kind === COIN).reduce((sum, p) => sum + p.value, 0)).toBe(12);
     expect(sim.players[0].kills).toBe(0);
     for (let i = 0; i < 6; i++) sim.damageEnemy(sim.placeEnemy(CHORISTER, 5, 5, 0), 100, -1);
     expect(sim.pickups.live.filter((p) => p.kind === HEAL_MOTE)).toHaveLength(4);

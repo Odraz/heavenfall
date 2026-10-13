@@ -17,12 +17,12 @@ export class HaloLedger {
     this.reservedElites = Math.min(eliteCount, Math.floor(budget / 6));
     this.remainder = budget - 6 * this.reservedElites;
   }
-  /** Number of three-halo coin entities earned by this death. All operands are exact integers. */
+  /** One-halo coins make rewards three times as frequent without inflating the room budget. */
   death(weight: number): number {
     if (this.weight <= 0 || weight <= 0 || this.paid >= this.remainder) return 0;
     this.numerator += this.remainder * weight;
-    const total = Math.min(this.remainder, Math.floor(this.numerator / (3 * this.weight)) * 3);
-    const coins = (total - this.paid) / 3;
+    const total = Math.min(this.remainder, Math.floor(this.numerator / this.weight));
+    const coins = total - this.paid;
     this.paid = total;
     return coins;
   }

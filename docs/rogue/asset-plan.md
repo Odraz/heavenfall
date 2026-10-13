@@ -35,11 +35,11 @@ Don't start with the 84 talent icons, voices or music.
 
 | Kind | Source (what you save) | Runtime (what Claude exports) |
 |---|---|---|
-| Art | `assets/art-src/rogue/` | `assets/sprites/`, `assets/textures/`, `assets/ui/` as today |
-| Model references | `assets/art-src/reference/rogue/` | rendered atlases in `assets/sprites/` |
-| Sound effects | `assets/audio-src/rogue/sfx/` | decided at integration (R2), with a fallback |
-| Loops | `assets/audio-src/rogue/loops/` | same |
-| Voices (optional) | `assets/audio-src/rogue/voice/` | same |
+| Art | `assets/art-src/` | `assets/sprites/`, `assets/textures/`, `assets/ui/` as today |
+| Model references | `assets/art-src/reference/` | rendered atlases in `assets/sprites/` |
+| Sound effects | `assets/audio-src/sfx/` | decided at integration (R2), with a fallback |
+| Loops | `assets/audio-src/loops/` | same |
+| Voices (optional) | `assets/audio-src/voice/` | same |
 
 Use the prompt ID as the file name; takes add `-01`, `-02`, `-03`. Never overwrite an approved file: a replacement gets the next number. Keep the original download untouched; Claude's cuts and exports are separate files. The repository's `.gitattributes` already stores images, audio and models with Git LFS.
 

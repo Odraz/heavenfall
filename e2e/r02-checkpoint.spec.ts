@@ -7,7 +7,7 @@ import { shootProp } from './prop-fixtures';
 
 // These are the published Gate B selections, deliberately independent of future repins.
 const seed = 317434499;
-const hash = '43dfb2f9';
+const hash = 'ad5d1609';
 const selections = [
   { label: 'small', room: 7, templateId: 'pg-c-1x1-flyers-03', name: 'The Ziggurat', band: 3 },
   { label: 'horde', room: 3, templateId: 'pg-c-2x2-horde-flyers-01', name: 'Courtyard of Clouds', band: 2 },

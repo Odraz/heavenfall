@@ -69,7 +69,7 @@ Each has an owner; none blocks R1.
 | The asset plan's first request and the S1 checklist name `.wav` sources; every installed source is `.mp3` (allowed elsewhere in audio-prompts.md). | R2 preparation |
 | [readiness-review.md](readiness-review.md)'s *Current audio workflow* paragraph says new SFX use ElevenLabs. [audio-prompts.md](audio-prompts.md) says the ElevenLabs trial was rejected and Suno is installed, with either provider allowed for future keepers. audio-prompts.md is current. | R2 preparation |
 | B4 (Confessional grille and wood) is "required" in art-prompts.md but "optional" in the asset plan's R1 row and in r01.md. The fallback (existing wall texture) makes optional workable for R1. | R4 (the Advocate's room) |
-| Five chaingun pilot artifacts in `assets/audio-src/rogue/sfx/cut/` are tracked but not mentioned in any doc. | R2 |
+| Five chaingun pilot artifacts in `assets/audio-src/sfx/cut/` are tracked but not mentioned in any doc. | R2 |
 
 ## What R1 starts with
 

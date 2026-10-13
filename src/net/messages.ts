@@ -38,6 +38,7 @@ export interface FloorSync {
   pickups?: PickupRecord[];
   brokenProps?: number[];
   propBlasts?: Array<{ id: number; impactTick: number }>;
+  propRecharges?: Array<{ id: number; readyTick: number }>;
   dominionCasts?: DominionCast[];
   spawnWarnings?: SpawnWarning[];
 }
@@ -46,7 +47,8 @@ export type GameEvent =
   | { type: 'spawnWarning'; phase: 'start' | 'cancel'; warning: SpawnWarning }
   | { type: 'crest'; room: number; wave: number; total: number }
   | { type: 'dominionCast'; phase: DominionPhase; cast: DominionCast; x: number; y: number; z: number }
-  | { type: 'propBroken'; id: number; family: PropFamily; x: number; y: number; z: number; marked: boolean; impactTick: number; targets: number[] }
+  | { type: 'propBroken'; id: number; family: PropFamily; x: number; y: number; z: number; marked: boolean; impactTick: number; readyTick: number; targets: number[] }
+  | { type: 'propReady'; id: number; x: number; y: number; z: number }
   | { type: 'propBlast'; id: number; x: number; y: number; z: number }
   | { type: 'pickupState'; pickup: PickupRecord }
   | { type: 'pickupCollected'; id: number; kind: number; playerId: number; x: number; y: number; z: number }

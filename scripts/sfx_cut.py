@@ -1,6 +1,6 @@
 """Finishes all 17 S1 sound-effect families for the game (docs/rogue/audio-prompts.md).
 
-Reads every take assets/audio-src/rogue/sfx/<name>-NN.mp3 (or .wav) whose <name> is listed in
+Reads every take assets/audio-src/sfx/<name>-NN.mp3 (or .wav) whose <name> is listed in
 SOUNDS, writes assets/sfx/<name>-NN.wav: mono, 48 kHz, 16-bit. The originals stay untouched.
 
 For each take:
@@ -30,7 +30,7 @@ import wave
 import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SRC = ROOT / "assets" / "audio-src" / "rogue" / "sfx"
+SRC = ROOT / "assets" / "audio-src" / "sfx"
 OUT = ROOT / "assets" / "sfx"
 SR = 48000
 HOP = SR // 1000  # 1 ms

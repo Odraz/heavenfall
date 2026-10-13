@@ -511,15 +511,15 @@ export class Game {
     this.canvas.className = 'game-canvas';
     o.root.appendChild(this.canvas);
     this.scene = new GameScene(this.canvas, this.map, o.textures.terrain, o.textures.fx.glow, o.floor);
-    this.pickups = new PickupView(this.map, o.runId);
+    this.pickups = new PickupView(this.map, o.runId, o.textures.fx.glow, o.atlas);
     this.scene.scene.add(this.pickups.group);
-    this.props = new PropView(this.map, o.runId, propDefs(o.floor), this.scene.terrain.lightmap);
+    this.props = new PropView(this.map, o.runId, propDefs(o.floor), this.scene.terrain.lightmap, o.atlas);
     this.scene.scene.add(this.props.billboards.mesh);
     this.dominion = new DominionProjection(o.runId);
     this.spawnWarnings = new SpawnProjection(o.runId, this.map);
     this.scene.scene.add(this.spawnView.group);
     this.scene.scene.add(this.dominionView.group);
-    this.hazards = new HazardView(this.map); this.scene.scene.add(this.hazards.group);
+    this.hazards = new HazardView(this.map, o.textures.terrain.refiner); this.scene.scene.add(this.hazards.group);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
     for (const [type, set] of Object.entries(o.enemyAnims)) {
@@ -586,6 +586,7 @@ export class Game {
     debugState.props = this.props.defs.map((p) => ({ id: p.id, room: p.room, family: p.family, x: p.x, y: p.y,
       z: this.map.floor[Math.floor(p.y) * this.map.w + Math.floor(p.x)], marked: p.marked }));
     debugState.brokenProps = [];
+    debugState.propRecharges = [];
     debugState.dominion = { actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 };
     debugState.hazards = { activeRoom: -1, activeCells: 0 };
     debugState.spawnWarnings = []; debugState.crests = 0;
@@ -884,7 +885,10 @@ export class Game {
       this.dominion.sync(msg);
       this.spawnWarnings.sync(msg);
       this.pickups.model.sync(msg);
-      if (this.props.model.sync(msg)) debugState.brokenProps = [...this.props.model.broken];
+      if (this.props.model.sync(msg)) {
+        debugState.brokenProps = [...this.props.model.broken];
+        debugState.propRecharges = [...this.props.model.recharges].map(([id, readyTick]) => ({ id, readyTick }));
+      }
       if (this.rooms.sync(msg)) {
         debugState.floorSyncTick = this.rooms.syncTick;
         debugState.roomKnowledge = this.rooms.states.map((r) => r.knowledge);
@@ -905,9 +909,10 @@ export class Game {
       const phase = msg.event.phase; debugState.dominion[phase === 'start' ? 'starts' : phase === 'strike' ? 'strikes' : 'cancels']++;
       if (phase === 'start') { debugState.dominion.startedCastIds.push(msg.event.cast.castId); if (debugState.dominion.startedCastIds.length > 6) debugState.dominion.startedCastIds.shift(); }
     }
-    if (msg.event.type === 'propBroken' || msg.event.type === 'propBlast') {
+    if (msg.event.type === 'propBroken' || msg.event.type === 'propBlast' || msg.event.type === 'propReady') {
       if (!this.props.model.event(msg.event, msg.revision)) return;
       debugState.brokenProps = [...this.props.model.broken];
+      debugState.propRecharges = [...this.props.model.recharges].map(([id, readyTick]) => ({ id, readyTick }));
     }
     this.onEvent(msg.event, performance.now());
     this.sounds.event(msg.event, (id) => this.playerPose(id));
@@ -927,10 +932,11 @@ export class Game {
         break;
       case 'propBroken':
         if (e.family === 'blessing') {
-          this.vfx.ring(now, e.x, e.y, e.z, 0xffdc75, 0, 6, 300);
+          this.vfx.ring(now, e.x, e.y, e.z, 0x55ff88, 0, 6, 450);
+          this.vfx.glow(now, e.x, e.y, e.z + 1.8, 0x55ff88, 0.5, 2, 400);
           for (const id of e.targets) { const p = this.playerPose(id); if (p) this.particles.healColumn(p.x, p.y, p.z); }
         } else if (e.family === 'loot') {
-          this.particles.globeShards(e.x, e.y, e.z + 0.5, 8);
+          this.particles.globeShards(e.x, e.y, e.z + 0.75, 18);
           this.vfx.glow(now, e.x, e.y, e.z + 0.5, 0xffe4b5, 0.2, e.marked ? 1 : 0.5, 300);
           if (e.marked) this.vfx.beam(now, [[e.x, e.y, e.z], [e.x, e.y, e.z + 2]], 0xffda68, 0.25, 500);
         }

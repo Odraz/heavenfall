@@ -4,6 +4,7 @@ import { GOLD_HALO, HEAL_MOTE, PICKUP_CAP, PICKUP_KIND_COUNT, PICKUP_NAMES, type
 import type { FloorSync } from '../net/messages';
 import type { Snapshot } from '../net/protocol';
 import type { GameMap } from '../sim/map';
+import type { Atlas } from '../render/atlas';
 
 export class PickupProjection {
   readonly records = new Map<number, { pickup: PickupRecord; tick: number }>();
@@ -37,17 +38,26 @@ export class PickupView {
   private readonly meshes = new Map<number, THREE.InstancedMesh>();
   private readonly pose = new THREE.Object3D();
   private readonly counts = new Map<number, number>();
-  constructor(readonly map: GameMap, runId: string) {
+  private readonly glows: THREE.InstancedMesh;
+  private readonly glowColor = new THREE.Color();
+  constructor(readonly map: GameMap, runId: string, glow: THREE.Texture, private readonly atlas: Atlas) {
     this.model = new PickupProjection(runId);
+    this.glows = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.1, 1.1), new THREE.MeshBasicMaterial({ map: glow,
+      transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false }), PICKUP_CAP);
+    this.glows.count = 0; this.glows.frustumCulled = false; this.glows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.group.add(this.glows);
     for (let kind = 0; kind <= 10; kind++) {
       let geometry: THREE.BufferGeometry;
       let material: THREE.MeshBasicMaterial;
-      if (kind <= GOLD_HALO) {
-        geometry = new THREE.TorusGeometry(kind === GOLD_HALO ? 0.32 : 0.23, 0.05, 4, 16);
-        material = new THREE.MeshBasicMaterial({ color: kind === GOLD_HALO ? 0xffcc33 : 0xe6d89b });
-      } else if (kind === HEAL_MOTE) {
-        geometry = new THREE.OctahedronGeometry(0.16);
-        material = new THREE.MeshBasicMaterial({ color: 0x77ff99 });
+      if (kind <= HEAL_MOTE) {
+        const frame = atlas.frames[kind === HEAL_MOTE ? 'heal-mote' : 'gold-halo'];
+        const height = kind === GOLD_HALO ? 0.85 : 0.65;
+        geometry = new THREE.PlaneGeometry(height * frame.aspect, height);
+        const uv = geometry.getAttribute('uv');
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, frame.u0 + uv.getX(i) * (frame.u1 - frame.u0), frame.v0 + uv.getY(i) * (frame.v1 - frame.v0));
+        // Soft alpha avoids sparkling cutout edges. Overlapping rewards must not fight over depth.
+        material = new THREE.MeshBasicMaterial({ map: atlas.texture, alphaTest: 0.02, transparent: true,
+          depthWrite: false, color: kind === 0 ? 0xc5b987 : kind === GOLD_HALO ? 0xdfc584 : 0xffffff });
       } else {
         const canvas = document.createElement('canvas'); canvas.width = 384; canvas.height = 128;
         const ctx = canvas.getContext('2d')!;
@@ -67,27 +77,43 @@ export class PickupView {
   }
   update(s: Snapshot | null, camera: THREE.Camera, tick: number): void {
     for (const kind of this.meshes.keys()) this.counts.set(kind, 0);
+    let glowCount = 0;
     if (s) {
       this.model.snapshot(s);
       for (let i = 0; i < s.pickupCount; i++) {
         const kind = s.pickupKind[i], id = s.pickupId[i], mesh = this.meshes.get(kind);
         if (!mesh) continue;
         const expiry = this.model.records.get(id)?.pickup.expiresTick ?? -1;
-        if (expiry >= 0 && expiry - tick <= 90 && Math.floor(tick / 5) % 2 === 0) continue;
         const x = s.pickupX[i], y = s.pickupY[i], c = Math.floor(x), r = Math.floor(y);
         if (c < 0 || r < 0 || c >= this.map.w || r >= this.map.h) continue;
-        this.pose.position.set(x, this.map.floor[r * this.map.w + c] + 0.45 + 0.06 * Math.sin(tick / 8 + id), y);
+        // A steady, gentle shrink signals expiry without strobing during the final three seconds.
+        const scale = expiry < 0 ? 1 : 0.65 + 0.35 * Math.min(1, Math.max(0, (expiry - tick) / 90));
+        this.pose.scale.setScalar(scale);
+        this.pose.position.set(x, this.map.floor[r * this.map.w + c] + 0.85 + 0.08 * Math.sin(tick / 18 + id), y);
+        // Small stable offsets separate the several rewards an elite can leave at one anchor.
+        this.pose.position.x += 0.16 * Math.cos(id * 2.399963);
+        this.pose.position.z += 0.16 * Math.sin(id * 2.399963);
         this.pose.quaternion.copy(camera.quaternion); this.pose.updateMatrix();
         const index = this.counts.get(kind)!; mesh.setMatrixAt(index, this.pose.matrix); this.counts.set(kind, index + 1);
+        if (kind === HEAL_MOTE) {
+          // Keep the healing glow in front of its sprite, never coplanar with it.
+          this.pose.translateZ(0.02); this.pose.updateMatrix();
+          this.glows.setMatrixAt(glowCount, this.pose.matrix);
+          this.glowColor.setHex(0x44ff88);
+          this.glows.setColorAt(glowCount++, this.glowColor);
+        }
       }
     }
     for (const [kind, mesh] of this.meshes) { mesh.count = this.counts.get(kind)!; mesh.instanceMatrix.needsUpdate = true; }
+    this.glows.count = glowCount; this.glows.instanceMatrix.needsUpdate = true;
+    if (this.glows.instanceColor) this.glows.instanceColor.needsUpdate = true;
   }
   dispose(): void {
     for (const mesh of this.meshes.values()) {
       mesh.geometry.dispose(); const material = mesh.material as THREE.MeshBasicMaterial;
-      material.map?.dispose(); material.dispose();
+      if (material.map !== this.atlas.texture) material.map?.dispose(); material.dispose();
     }
     this.group.clear();
+    this.glows.geometry.dispose(); (this.glows.material as THREE.Material).dispose(); this.glows.dispose();
   }
 }

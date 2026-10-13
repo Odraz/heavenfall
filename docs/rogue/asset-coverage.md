@@ -1,19 +1,19 @@
 # Rogue asset coverage
 
-Revision 9, 2026-10-11. **Which game feature or event uses which file.** For implementers: every row has a source (a prompt in [art-prompts.md](art-prompts.md) / [audio-prompts.md](audio-prompts.md), or a reused/derived/coded treatment), a milestone and a fallback. R0 copies these rows into `asset-manifest.md`, which then tracks the real files. [game.md](game.md) and the catalogs own the mechanics.
+Revision 10, 2026-10-13. **Which game feature or event uses which file.** For implementers: every row has a source (a prompt in [art-prompts.md](art-prompts.md) / [audio-prompts.md](audio-prompts.md), or a reused/derived/coded treatment), a milestone and a fallback/current integration. `asset-manifest.md` tracks the real files. [game.md](game.md) and the catalogs own the mechanics. R02 art integration below awaits human review; see [the playtest follow-up](r02-playtest-report.md).
 
 ## Art coverage
 
 | Feature | Files (prompt section) or treatment | Milestone | Fallback until delivered |
 |---|---|---|---|
-| Dominion | `dominion-design`, `-turnaround`, `-wings`, `-mace` (A1) → model → 8-direction atlas: idle, walk, mace raised (tell), strike, recovery, pain, death | R2 | tall labeled coded ivory/bronze armor, folded wings and gold mace; `src/render/dominionAtlas.ts`; received references have no runtime model/atlas approval |
-| Loot props | `amphora-tall`, `-squat`, `-lily` (B1); variant = canonical loot-socket index mod 3 (rooms.md §8); shards cut from the same sprite | R2 | a coded ivory cylinder |
-| Marked amphora | `amphora-marked` (B1) + coded glint every 3 s | R2 (look), R6 (Chart) | `amphora-tall` with a coded gold cross |
-| Blast prop | `sanctuary-lamp` (B1); fireball ring = `fx-ring` tinted, smoke = `fx-smoke` | R2 | coded red cylinder with black band |
-| Blessing prop | `blessing-chalice` (B1); heal ring = `fx-ring` gold | R2 | coded gold cylinder |
-| Halos (coin 3, gold halo 6) | `gold-halo` (B2), coin drawn smaller and paler | R2 | existing `fx-ring` tinted gold |
-| Heal mote | `heal-mote` (B2, magenta background) | R2 | existing `spark` tinted green |
-| Refiner's Fire | `tex-refiner-channel` + scrolling `fx-flames` (B10); gold rim = existing riser texture; embers = existing `ember` | R2 | `tex-floor` tinted red + `fx-glow` |
+| Dominion | `dominion-design`, `-turnaround`, `-wings`, `-mace` (A1) → model → directional atlas | R2 | Integrated `scripts/blender/dominion.py` and 140 frames in `assets/sprites/dominion`; five angles mirror to eight, idle/walk/cast/pain/death. |
+| Loot props | `amphora-tall`, `-squat`, `-lily` (B1); variant = canonical loot-socket index mod 3 (rooms.md §8); shared porcelain shards | R2 | Original cutouts integrated in the world atlas. |
+| Marked amphora | `amphora-marked` (B1) + coded glint | R2 (look), R6 (Chart) | Original cutout integrated. |
+| Blast prop | `sanctuary-lamp` (B1); fireball ring = `fx-ring` tinted, smoke = `fx-smoke` | R2 | Original cutout, extinguished/depleted tint and active glow; 15-second recharge. |
+| Blessing prop | `blessing-chalice` (B1); heal ring = `fx-ring` green | R2 | Original cutout, green liquid fill/overflow and active glow; 15-second recharge. |
+| Halos (ordinary coin 1, vase coin 3, gold halo 6) | `gold-halo` (B2), coin drawn smaller and paler | R2 | Original cutout with soft alpha, gentle bob/shrink and no additive glow. |
+| Heal mote | `heal-mote` (B2, magenta background) | R2 | Magenta-keyed original cutout, bobbing and pooled green glow integrated. |
+| Refiner's Fire | `tex-refiner-channel` (B10); gold rim = existing riser texture; pooled flames/embers = existing effects | R2 | Painted channel texture integrated; supplied `fx-flames` remains a future refinement. |
 | All fire effects (Rain/Trial by Fire, burning floor, fire talents) | `fx-flames` + `ember` + `fx-glow`, tinted red-orange | R4–R5 | `fx-glow` |
 | Incense (Cloud of Witnesses, talents) | existing `fx-smoke` tinted rusty gold | R2–R5 | — |
 | The Pardoner's stall | `npc-pardoner`, `pardoner-box`, `shop-pedestal`, `chart-scroll` (B3); item on pedestal = the item's B7 sprite | R3 | coded pedestal; no figure |

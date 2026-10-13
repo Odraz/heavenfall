@@ -7,7 +7,7 @@ describe('R2 exact halo ledger', () => {
       const weights = [...Array(Math.ceil(333 * factor)).fill(1), ...Array(Math.ceil(11 * factor)).fill(10)];
       for (const order of [weights, [...weights].reverse()]) {
         const ledger = new HaloLedger(33, order.reduce((n, w) => n + w, 0));
-        expect(order.reduce((n, w) => n + ledger.death(w) * 3, 0)).toBe(33);
+        expect(order.reduce((n, w) => n + ledger.death(w), 0)).toBe(33);
         expect(ledger.death(10)).toBe(0); expect(ledger.paid).toBe(33);
       }
     }

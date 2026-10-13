@@ -38,6 +38,7 @@ export interface DebugState {
   pickups: Array<{ id: number; kind: number; x: number; y: number }>;
   props: Array<{ id: number; room: number; family: string; x: number; y: number; z: number; marked: boolean }>;
   brokenProps: number[];
+  propRecharges: Array<{ id: number; readyTick: number }>;
   hazards: { activeRoom: number; activeCells: number };
   spawnWarnings: Array<{ id: number; room: number; x: number; y: number; z: number; startTick: number; readyTick: number }>;
   crests: number;
@@ -105,6 +106,7 @@ export const debugState: DebugState = {
   pickups: [],
   props: [],
   brokenProps: [],
+  propRecharges: [],
   hazards: { activeRoom: -1, activeCells: 0 },
   dominion: { actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
   seed: null,
@@ -154,6 +156,7 @@ export function resetGameDebug(): void {
     pickups: [],
     props: [],
     brokenProps: [],
+    propRecharges: [],
     hazards: { activeRoom: -1, activeCells: 0 },
     dominion: { actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
     seed: null,

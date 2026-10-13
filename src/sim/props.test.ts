@@ -31,6 +31,22 @@ function aim(sim: Simulation, id: number) {
   p.pitch = Math.atan2(q.z + PROP_HEIGHT[q.family] / 2 - (p.z + 1.6), Math.hypot(q.x - p.x, q.y - p.y));
 }
 
+it('recharges effect props at fifteen seconds, never loot or repeated shots during depletion', () => {
+  const sim = make([prop(1, 'blessing', 4.5), prop(2, 'blast', 15.5), prop(3, 'loot', 25.5)]);
+  sim.players[0].hp = 20;
+  for (const id of [1, 2, 3]) expect(sim.props.break(id, 0)).toBe(true);
+  expect(sim.players[0].hp).toBe(50);
+  for (let i = 0; i < 449; i++) sim.step();
+  expect(sim.props.break(1, 449)).toBe(false);
+  expect(sim.props.checkpoint().propRecharges).toEqual([{ id: 1, readyTick: 450 }, { id: 2, readyTick: 450 }]);
+  sim.step();
+  expect(sim.props.checkpoint().brokenProps).toEqual([3]);
+  expect(sim.events.filter((m) => m.event.type === 'propReady')).toHaveLength(2);
+  expect(sim.props.break(1, sim.tick)).toBe(true); expect(sim.players[0].hp).toBe(80);
+  expect(sim.props.break(2, sim.tick)).toBe(true); expect(sim.props.get(2)!.blastTick).toBe(456);
+  expect(sim.props.break(3, sim.tick)).toBe(false);
+});
+
 describe('R2.2 seeded prop bodies', () => {
   it('keeps canonical socket identity and loot variants through generated orientations and unfilled sockets', () => {
     for (const seed of [1, 2, 3, 317434499]) {
@@ -58,8 +74,8 @@ describe('R2.2 seeded prop bodies', () => {
   it('uses exact ray cylinders, including a downward ray onto their top, and skips broken bodies', () => {
     const sim = make([prop(1, 'loot', 8.5)]);
     expect(sim.props.ray(2.5, 5.5, 0.5, 1, 0, 0, 10)[0].distance).toBe(5.5);
-    expect(sim.props.ray(2.5, 5.5, 1.1, 1, 0, 0, 10)).toEqual([]);
-    expect(sim.props.ray(8.5, 5.5, 2, 0, 0, -1, 10)[0].distance).toBe(1);
+    expect(sim.props.ray(2.5, 5.5, 1.6, 1, 0, 0, 10)).toEqual([]);
+    expect(sim.props.ray(8.5, 5.5, 2, 0, 0, -1, 10)[0].distance).toBe(0.5);
     sim.props.break(1, 0); expect(sim.props.ray(2.5, 5.5, 0.5, 1, 0, 0, 10)).toEqual([]);
   });
 });

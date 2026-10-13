@@ -11,6 +11,14 @@ export const COST_DIAG = 14;
 const DX = [1, -1, 0, 0, 1, 1, -1, -1];
 const DY = [0, 0, 1, -1, 1, -1, 1, -1];
 
+/** Adjacent steering must obey the same ledges and corner rules as the field. */
+export function directStepAllowed(field: FlowField, c: number, r: number, tc: number, tr: number): boolean {
+  const dx = tc - c, dy = tr - r;
+  if (dx === 0 && dy === 0) return field.at(c, r) !== UNREACHABLE;
+  const k = DX.findIndex((x, i) => x === dx && DY[i] === dy);
+  return k >= 0 && stepAllowed(field.map, c, r, k, field.air, field.excluded);
+}
+
 /**
  * Whether a one-way step from cell `a` to the orthogonal neighbor at offset (dx, dy) is allowed.
  * Ground: the target is floor and at most 0.5 m higher; dropping is allowed. Air: any floor.

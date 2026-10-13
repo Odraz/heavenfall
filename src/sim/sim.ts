@@ -104,7 +104,7 @@ import {
 import { aimDir, burstAngle, burstTier, rayCylinder, silverBulletHits } from './combat';
 import { Director, ENGAGED_HIT_TICKS, ENGAGED_RADIUS, KILL_NEAR_RADIUS, type DirectorInfo } from './director';
 import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } from './field';
-import { FlowField, UNREACHABLE } from './flowfield';
+import { directStepAllowed, FlowField, UNREACHABLE } from './flowfield';
 import { DryNavigation, FIRE_ENEMY_DAMAGE, FIRE_PLAYER_DAMAGE, Hazards } from './hazards';
 import { SpawnWarnings } from './spawnWarnings';
 import { lineOfSight, raycastTerrain } from './los';
@@ -563,6 +563,8 @@ export class Simulation {
   readonly ePooled = new Uint8Array(ENEMY_SLOTS);
   readonly eHp = new Float64Array(ENEMY_SLOTS);
   readonly eTarget = new Int8Array(ENEMY_SLOTS);
+  private readonly eWaypoint = new Int32Array(ENEMY_SLOTS).fill(-1);
+  private readonly eWaypointGoal = new Int32Array(ENEMY_SLOTS).fill(-1);
   readonly eRoom = new Int8Array(ENEMY_SLOTS);
   readonly eWave = new Int16Array(ENEMY_SLOTS);
   readonly home = new Uint8Array(ENEMY_SLOTS).fill(ROOM_NONE);
@@ -1075,7 +1077,7 @@ export class Simulation {
     this.separate(1);
     this.updateProjectiles();
     this.updateClouds();
-    this.props.update(this.tick, (p) => this.explodeProp(p));
+    this.props.update(this.tick, (p) => this.explodeProp(p), (p) => this.emit('all', { type: 'propReady', id: p.id, x: p.x, y: p.y, z: p.z }));
     this.updateHazardDamage();
     this.updateSouls();
     this.pickups.update(this.tick, this.players, (drop, collector) => this.collectPickup(drop, this.slots[collector.id]!));
@@ -1287,7 +1289,7 @@ export class Simulation {
       const s = this.active[k];
       if (this.eRoom[s] !== ai || this.eType[s] === GATEKEEPER || this.leashed[s]) continue;
       if (this.recoveryArrivals.has(s)) continue;
-      const avoids = (this.eType[s] === CHORISTER || this.eType[s] === DOMINION) && this.dryNavigation.room === ai;
+      const avoids = !ENEMIES[this.eType[s]].flying && this.dryNavigation.room === ai;
       const fields = this.eType[s] === CHERUB ? this.airFields : avoids ? this.dryNavigation.fields : this.groundFields;
       const c = Math.floor(this.eX[s]), r = Math.floor(this.eY[s]);
       const anchor = avoids && this.hazards.active[r * this.map.w + c] ? this.dryNavigation.project(r * this.map.w + c) : r * this.map.w + c;
@@ -1348,7 +1350,7 @@ export class Simulation {
   private updateRecoveryArrivals(): void {
     for (const [s, q] of this.recoveryArrivals) {
       const type = this.eType[s], cell = Math.floor(this.eY[s]) * this.map.w + Math.floor(this.eX[s]);
-      const fields = type === CHERUB ? this.airFields : (type === CHORISTER || type === DOMINION) && this.dryNavigation.room === q.room ? this.dryNavigation.fields : this.groundFields;
+      const fields = type === CHERUB ? this.airFields : this.dryNavigation.room === q.room ? this.dryNavigation.fields : this.groundFields;
       const reachable = this.players.some((p) => this.livingTargetable(p) && this.fieldValid[p.index] && fields[p.index] && fields[p.index]!.at(cell % this.map.w, Math.floor(cell / this.map.w)) !== UNREACHABLE);
       const z = this.map.floor[q.r * this.map.w + q.c], def = ENEMIES[type];
       const cancel = !this.eAlive[s] || this.eIncarnation[s] !== q.incarnation || this.eRoom[s] !== q.room || this.activePhase !== PHASE_COMBAT || this.activeRoom !== q.room ||
@@ -1615,7 +1617,7 @@ export class Simulation {
     const changed = this.hazards.setRoom(room);
     let avoiding = false;
     if (this.hazards.room >= 0) for (let k = 0; k < this.activeCount && !avoiding; k++) {
-      const s = this.active[k]; avoiding = (this.eType[s] === CHORISTER || this.eType[s] === DOMINION) && this.roomAt(this.eX[s], this.eY[s]) === this.hazards.room;
+      const s = this.active[k]; avoiding = !ENEMIES[this.eType[s]].flying && this.eType[s] !== GATEKEEPER && this.roomAt(this.eX[s], this.eY[s]) === this.hazards.room;
     }
     if (this.dryNavigation.setRoom(avoiding ? this.hazards.room : -1) || changed) this.invalidateFields();
   }
@@ -2014,6 +2016,7 @@ export class Simulation {
     this.eStillY[slot] = this.eY[slot];
     this.eLos[slot] = 0;
     this.eTarget[slot] = -1;
+    this.eWaypoint[slot] = this.eWaypointGoal[slot] = -1;
     this.eStrafe[slot] = 1;
     this.eStrafeT[slot] = 0;
     this.eHurtTick[slot] = -1;
@@ -2140,15 +2143,17 @@ export class Simulation {
     const x = this.eX[slot], y = this.eY[slot];
     if (this.eWave[slot] >= 0) {
       const coins = this.haloLedgers.get(room)?.death(HALO_WEIGHT[type as 0 | 1 | 2] ?? 0) ?? 0;
-      for (let i = 0; i < coins; i++) this.pickups.drop(COIN, room, x, y, this.tick);
+      for (let i = 0; i < coins; i++) this.pickups.drop(COIN, room, x, y, this.tick, 1);
       if (type === DOMINION) {
         if (this.eGoldEntitled[slot]) this.pickups.drop(GOLD_HALO, room, x, y, this.tick);
         this.eGoldEntitled[slot] = 0;
         this.dropMote(room, x, y); this.dropMote(room, x, y);
-        if (this.random() < 0.25) this.pickups.drop(itemDrop(this.random), room, x, y, this.tick);
       }
+      // Reward ordinary wave kills too; cleanup, leashed enemies and boss adds never roll items.
+      const itemChance = type === DOMINION ? 0.5 : type === BLESSED ? 0.02 : 0.12;
+      if (this.random() < itemChance) this.pickups.drop(itemDrop(this.random), room, x, y, this.tick);
     }
-    if ((type === CHORISTER || type === CHERUB) && this.random() < 0.2) this.dropMote(room, x, y);
+    if ((type === CHORISTER || type === CHERUB) && this.random() < 0.35) this.dropMote(room, x, y);
   }
 
   private dropMote(room: number, x: number, y: number): void {
@@ -2204,7 +2209,7 @@ export class Simulation {
       }
     }
     this.emit('all', { type: 'propBroken', id: p.id, family: p.family, x: p.x, y: p.y, z: p.z,
-      marked: p.marked, impactTick: p.blastTick, targets });
+      marked: p.marked, impactTick: p.blastTick, readyTick: p.readyTick, targets });
   }
 
   private explodeProp(p: Prop): void {
@@ -3264,9 +3269,11 @@ export class Simulation {
     let bestD = Infinity;
     for (const p of this.players) {
       if (!this.livingTargetable(p) || !this.enemyMayTarget(slot, p) || !this.fieldValid[p.index]) continue;
-      const field = air ? this.airFields[p.index] : this.groundFields[p.index];
-      if (field.targetCell < 0) continue;
-      let d = field.at(c, r);
+      const avoids = !air && this.dryNavigation.room >= 0 && this.dryNavigation.room === this.roomAt(this.eX[slot], this.eY[slot]);
+      const field = air ? this.airFields[p.index] : avoids ? this.dryNavigation.fields[p.index] : this.groundFields[p.index];
+      if (!field || field.targetCell < 0) continue;
+      const cell = r * this.map.w + c, anchor = avoids ? this.dryNavigation.project(cell) : cell;
+      let d = anchor < 0 ? UNREACHABLE : field.at(anchor % this.map.w, Math.floor(anchor / this.map.w));
       if (d === UNREACHABLE) continue;
       if (p.classId === 'fallen') d *= 0.5;
       if (d < bestD) {
@@ -3594,12 +3601,20 @@ export class Simulation {
     const tr = projected ? Math.floor(field.targetCell / this.map.w) : Math.floor(p.y);
     let gx: number;
     let gy: number;
-    if (Math.abs(c - tc) <= 1 && Math.abs(r - tr) <= 1) {
+    if (Math.abs(c - tc) <= 1 && Math.abs(r - tr) <= 1 && directStepAllowed(field, c, r, tc, tr)) {
       gx = projected ? tc + 0.5 : p.x;
       gy = projected ? tr + 0.5 : p.y;
       out.direct = true;
+      this.eWaypoint[slot] = -1;
     } else {
-      const n = field.bestNeighbor(c, r);
+      let n = this.eWaypoint[slot];
+      const distance = n < 0 ? Infinity : Math.hypot(n % this.map.w + 0.5 - x, Math.floor(n / this.map.w) + 0.5 - y);
+      // Finish the cell-centre waypoint before replanning at a diagonal's intermediate cell.
+      if (n < 0 || this.eWaypointGoal[slot] !== field.targetCell || field.dist[n] === UNREACHABLE || distance < 0.12 || distance > 2 ||
+        !directStepAllowed(field, c, r, n % this.map.w, Math.floor(n / this.map.w))) {
+        n = field.bestNeighbor(c, r);
+        this.eWaypoint[slot] = n; this.eWaypointGoal[slot] = field.targetCell;
+      }
       if (n < 0) return false;
       gx = (n % this.map.w) + 0.5;
       gy = Math.floor(n / this.map.w) + 0.5;
@@ -3627,9 +3642,9 @@ export class Simulation {
     const rooted = this.tick < this.eRootUntil[slot];
     const holds = type === DOMINION ? this.dominions.holding(slot, this.tick) : type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot));
     const p = t >= 0 ? this.slots[t] : undefined;
-    const avoids = this.hazards.room >= 0 && (type === CHORISTER || type === DOMINION) && this.hazards.room === this.roomAt(b.x, b.y);
+    const avoids = this.dryNavigation.room >= 0 && this.dryNavigation.room === this.roomAt(b.x, b.y);
     const cell = avoids ? this.hazards.cell(b.x, b.y) : -1, inFire = avoids && !!this.hazards.active[cell];
-    if (p && !rooted && (!holds || inFire) && !stunned) {
+    if ((p || inFire) && !rooted && (!holds || inFire) && !stunned) {
       const s = this.steerOut;
       const field = avoids ? this.dryNavigation.fields[t] : this.groundFields[t];
       let steered = false;
@@ -3639,11 +3654,11 @@ export class Simulation {
           const dx = next % this.map.w + 0.5 - b.x, dy = Math.floor(next / this.map.w) + 0.5 - b.y, d = Math.hypot(dx, dy);
           if (d > 1e-9) { s.dx = dx / d; s.dy = dy / d; s.dist = d; s.direct = false; steered = true; }
         }
-      } else if (field && (!avoids || field.targetCell >= 0)) steered = this.steer(slot, field, p, s);
+      } else if (p && field && (!avoids || field.targetCell >= 0)) steered = this.steer(slot, field, p, s);
       if (steered) {
         let step = this.speedOf(slot) * TICK_DT;
         if (s.direct && type === BLESSED) step = Math.min(step, s.dist - BLESSED_STOP);
-        else if (s.direct) step = Math.min(step, s.dist);
+        else step = Math.min(step, s.dist);
         if (step > 0) {
           mx = s.dx * step;
           my = s.dy * step;

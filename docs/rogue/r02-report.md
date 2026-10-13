@@ -1,5 +1,7 @@
 # R2 report: pressure and pickups
 
+**2026-10-13 playtest follow-up:** [analysis, fixes and current verification](r02-playtest-report.md). The checkpoint results below are historical; the follow-up is awaiting another human play session.
+
 **Status: R2.1–R2.7 implemented and verified; awaiting-human-play (Gate B)** (2026-10-13). Brief: [r02.md](r02.md). This session independently confirmed stages 1–6 and completed the Gate B checkpoint at `bb5f4d8`: 931 unit tests, full-pool generator acceptance, typecheck/build and all 53 production browser/multiplayer checks passed with D3D11. Reproducible room/class links and the human play checklist are below. Historical default SwiftShader failures, unsupported-compression peak bandwidth and asset fallbacks remain documented limitations. No human Gate B acceptance was supplied. Overnight automation remains paused. Local branch `rogue`; nothing pushed, merged or published.
 
 ## Authorization and Git facts
@@ -107,7 +109,7 @@ Protocol 4 keeps offsets 0–64 and appends total/local cast counts at 65/66: 67
 
 `src/client/dominion.ts` is a pure projection with checkpoint, complete snapshot and reliable state validation; ring centers are matched accepted snapshot feet. It is not attached to `Game` yet. Its `event()` return currently describes a projection mutation: when connecting sound cues, keep reliable cue admission/deduplication independent of snapshot state so a snapshot arriving before its reliable start/strike does not silence the cue. Add that arrival-order regression during the client part.
 
-New: `src/data/dominion.ts`, `src/sim/dominion.ts`, `src/sim/dominion.test.ts`, `src/client/dominion.ts`, `src/client/dominion.test.ts`. Updated: enemy/wave definitions, `src/gen/stamp.ts`, simulation, messages/protocol/version/fingerprint tests, protocol tests and milestone records. Reference `assets/art-src/reference/rogue/dominion-design.png` was inspected: broad ivory/gold armor, folded white wings, dark bronze face and flanged gold mace; sources remain received, no runtime atlas or human visual approval exists.
+New: `src/data/dominion.ts`, `src/sim/dominion.ts`, `src/sim/dominion.test.ts`, `src/client/dominion.ts`, `src/client/dominion.test.ts`. Updated: enemy/wave definitions, `src/gen/stamp.ts`, simulation, messages/protocol/version/fingerprint tests, protocol tests and milestone records. Reference `assets/art-src/reference/dominion-design.png` was inspected: broad ivory/gold armor, folded white wings, dark bronze face and flanged gold mace; sources remain received, no runtime atlas or human visual approval exists.
 
 | Exact command | Result |
 |---|---|

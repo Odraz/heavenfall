@@ -63,8 +63,8 @@ node_modules/
 __pycache__/
 
 # Suno takes waiting to be placed (scripts/sfx_inbox.py)
-/assets/audio-src/rogue/sfx/inbox/
+/assets/audio-src/sfx/inbox/
 # Local sound history: replaced takes, the rejected ElevenLabs trial's session records and rollback plan
-/assets/audio-src/rogue/sfx/rejected/
-/assets/audio-src/rogue/sfx/sessions/
+/assets/audio-src/sfx/rejected/
+/assets/audio-src/sfx/sessions/
 /reports/audio/

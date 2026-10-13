@@ -1,6 +1,7 @@
 /** Terrain and effect textures (§11.1, §11.2), made from generated images by scripts/cutout.py. */
 import * as THREE from 'three';
 import floorUrl from '../../assets/textures/tex-floor.jpg';
+import refinerUrl from '../../assets/textures/tex-refiner-channel.jpg';
 import floorPlainUrl from '../../assets/textures/tex-floor-plain.jpg';
 import medallionUrl from '../../assets/textures/tex-floor-medallion.jpg';
 import riserUrl from '../../assets/textures/tex-riser.jpg';
@@ -34,6 +35,7 @@ export interface TerrainTextures {
   array: THREE.DataArrayTexture;
   /** Closed doors. */
   door: THREE.Texture;
+  refiner: THREE.Texture;
   /** The sky's horizon band (M10 §4.2). */
   sky: THREE.Texture;
   /** The light shaft (M10 §7.1). */
@@ -78,15 +80,15 @@ export async function loadGameTextures(withGate: boolean): Promise<GameTextures>
   const layers = [floorUrl, floorPlainUrl, medallionUrl, riserUrl, wallUrl, windowUrl, pilasterUrl, corniceUrl, arcadeLowerUrl, arcadeUpperUrl];
   // Nothing in the gate wraps: the shafts repeat by geometry.
   const gateLayers = [gateLeavesUrl, gateRailingUrl, gatePostTopUrl, gateShaftUrl];
-  const [array, gate, [door, sky, shaft, atmosphere, ring, beam, chain, glow, smoke]] = await Promise.all([
+  const [array, gate, [door, sky, shaft, atmosphere, ring, beam, chain, glow, smoke, refiner]] = await Promise.all([
     loadTextureArray(layers, 1024),
     withGate ? loadTextureArray(gateLayers, GATE_LAYER_W, GATE_LAYER_H, THREE.ClampToEdgeWrapping) : Promise.resolve(null),
-    Promise.all([doorUrl, skyUrl, shaftUrl, atmosphereUrl, ringUrl, beamUrl, chainUrl, glowUrl, smokeUrl].map(load)),
+    Promise.all([doorUrl, skyUrl, shaftUrl, atmosphereUrl, ringUrl, beamUrl, chainUrl, glowUrl, smokeUrl, refinerUrl].map(load)),
   ]);
   prepareSkyTexture(sky);
   for (const t of [shaft, atmosphere]) {
     t.wrapS = THREE.ClampToEdgeWrapping;
     t.wrapT = THREE.ClampToEdgeWrapping;
   }
-  return { terrain: { array, door, sky, shaft, atmosphere, gate }, fx: { ring, beam, chain, glow, smoke } };
+  return { terrain: { array, door, sky, shaft, atmosphere, gate, refiner }, fx: { ring, beam, chain, glow, smoke } };
 }

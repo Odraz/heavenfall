@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { DECOR_IDS, decorSprite } from '../data/decor';
 import { ROTATED_SPRITES } from '../client/burstDeaths';
+import { PROP_SPRITES } from '../data/props';
 
 const pngs = import.meta.glob('../../assets/sprites/*.png', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 
@@ -16,6 +17,7 @@ const BILLBOARD_SPRITES = new Set([
   // M12 §4.2: the burst and the torn pieces, each in 4 rotations.
   ...ROTATED_SPRITES.flatMap((n) => [0, 1, 2, 3].map((r) => `${n}-r${r}`)),
   ...DECOR_IDS.map(decorSprite),
+  ...PROP_SPRITES, 'gold-halo', 'heal-mote',
 ]);
 
 /** A sprite's image URL, for HUD images. */

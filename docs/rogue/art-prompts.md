@@ -13,15 +13,15 @@ Map icons, door sigils, reward plates, state markers, rings, lanes, timers, text
 
 ## Checklist
 
-Save every image as PNG with exactly this name: Part A in `assets/art-src/reference/rogue/`, Part B in `assets/art-src/rogue/`. "Needed by" is the milestone ([implementation.md](implementation.md)) whose play checkpoint first shows the image; until it arrives the game uses a labeled placeholder. **Required** images must exist before the slice is accepted; **optional** ones have a coded or reused fallback.
+Save every image as PNG with exactly this name: Part A in `assets/art-src/reference/`, Part B in `assets/art-src/`. "Needed by" is the milestone ([implementation.md](implementation.md)) whose play checkpoint first shows the image; until it arrives the game uses a labeled placeholder. **Required** images must exist before the slice is accepted; **optional** ones have a coded or reused fallback.
 
 **Checked means source received**, not integrated or accepted in the game. For partially received families, the missing files are listed below. Runtime preparation and human acceptance remain tracked in [asset-manifest.md](asset-manifest.md).
 
-**Part A: model references** (`assets/art-src/reference/rogue/`)
+**Part A: model references** (`assets/art-src/reference/`)
 - [x] A1 The Dominion, needed by R2, required: `dominion-design.png` (do this first), `dominion-turnaround.png`, `dominion-wings.png`, `dominion-mace.png`
 - [ ] A2 The Gatekeeper's trumpet, needed by R7, required: `gatekeeper-trumpet.png`, `gatekeeper-trumpet-raised.png`
 
-**Part B: game assets** (`assets/art-src/rogue/`)
+**Part B: game assets** (`assets/art-src/`)
 - [x] B1 Breakable props, needed by R2, required: `amphora-tall.png` (pilot, do it first), `amphora-squat.png`, `amphora-lily.png`, `amphora-marked.png`, `sanctuary-lamp.png`, `blessing-chalice.png`
 - [x] B2 Pickups, needed by R2 (halo, mote) and R4 (page), required: `gold-halo.png`, `heal-mote.png`, `rite-page.png`
 - [ ] B3 The Pardoner's stall, needed by R3, required: `npc-pardoner.png`, `pardoner-box.png`, `shop-pedestal.png`, `chart-scroll.png`. **3/4 received; missing `shop-pedestal.png`.**
@@ -40,7 +40,7 @@ Save every image as PNG with exactly this name: Part A in `assets/art-src/refere
 
 **27/63 required sources received:** 4 model references and 23 game assets; 36 required sources still missing. The JPEG/JFIF downloads were converted to PNG at their original resolution, with decoded pixels verified unchanged. Their green, magenta, grey or black backgrounds remain for later preparation. This receipt does not approve the pilots or replace the in-game acceptance check.
 
-The original downloads are preserved byte for byte under `assets/art-src/rogue/originals/` and `assets/art-src/reference/rogue/originals/`, with their original filenames. PNG sources use the prompt IDs above. Generation tool, generation date and subscription plan are unconfirmed; the receipt date is not a generation date.
+The original downloads are preserved byte for byte under `tmp/asset-originals-2026-10-13/props/` and `tmp/asset-originals-2026-10-13/dominion/`, with their original filenames. PNG sources use the prompt IDs above. Generation tool, generation date and subscription plan are unconfirmed; the receipt date is not a generation date.
 
 | Original filename | PNG source | Reason |
 |---|---|---|
@@ -202,7 +202,7 @@ The colossal angel in the first attached image, copied exactly (same armor, sing
 
 ## Part B: game assets
 
-Save in `assets/art-src/rogue/`.
+Save in `assets/art-src/`.
 
 ### B1 Breakable props
 

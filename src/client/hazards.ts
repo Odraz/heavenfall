@@ -1,4 +1,4 @@
-/** Pooled coded fire/glow fallback, driven only by complete accepted room state. */
+/** Painted channel floor with pooled animated fire, driven by accepted room state. */
 import * as THREE from 'three';
 import type { Snapshot } from '../net/protocol';
 import { PHASE_COMBAT } from '../net/protocol';
@@ -7,15 +7,17 @@ import type { GameMap } from '../sim/map';
 const vertex = `
  attribute float iRoom; attribute float iSeed;
  uniform vec3 cameraRight; uniform float upright;
- varying vec2 vUv; varying float vRoom; varying float vSeed;
+ varying vec2 vUv; varying float vRoom; varying float vSeed; varying vec2 vWorld;
  void main() {
    vUv = uv; vRoom = iRoom; vSeed = iSeed;
    vec3 p = upright > 0.5 ? cameraRight * position.x + vec3(0.0, (position.y + 0.5) * 0.8, 0.0) : vec3(position.x, 0.0, position.y);
+   vWorld = (instanceMatrix * vec4(p, 1.0)).xz;
    gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(p, 1.0);
  }`;
 const fragment = `
  uniform float tick; uniform float activeRoom; uniform float sealTick; uniform float upright;
- varying vec2 vUv; varying float vRoom; varying float vSeed;
+ uniform sampler2D channel;
+ varying vec2 vUv; varying float vRoom; varying float vSeed; varying vec2 vWorld;
  void main() {
    float isHot = abs(vRoom - activeRoom) < 0.1 ? 1.0 : 0.0;
    float elapsed = tick - sealTick;
@@ -29,8 +31,9 @@ const fragment = `
      color = mix(vec3(1.0, 0.16, 0.015), vec3(1.0, 0.88, 0.24), vUv.y + flare * 0.4);
    } else {
      float edge = max(abs(vUv.x - 0.5), abs(vUv.y - 0.5));
-     color = mix(vec3(0.8, 0.08, 0.015), vec3(1.0, 0.63, 0.12), smoothstep(0.35, 0.5, edge));
-     alpha = mix(0.065, 0.43 + wave * 0.1 + flare * 0.25, isHot);
+     vec3 painted = texture2D(channel, vWorld / 4.0).rgb;
+     color = painted * mix(0.38, 0.95 + wave * 0.08 + flare * 0.35, isHot);
+     alpha = 1.0;
    }
    gl_FragColor = vec4(color, alpha);
    #include <colorspace_fragment>
@@ -48,7 +51,7 @@ export class HazardView {
   private nearestRoom = -1;
   private nearestAt: { x: number; y: number } | null = null;
   private readonly right = new THREE.Vector3();
-  constructor(readonly map: GameMap) {
+  constructor(readonly map: GameMap, channel = new THREE.Texture()) {
     this.seals = new Float64Array(map.rooms.length).fill(-10_000);
     const indices: number[] = [];
     for (let i = 0; i < map.hazard.length; i++) if (map.hazard[i] && map.roomOf[i] !== 255) {
@@ -58,7 +61,7 @@ export class HazardView {
     this.geometry.setAttribute('iRoom', new THREE.InstancedBufferAttribute(Float32Array.from(indices, (i) => map.roomOf[i]), 1));
     this.geometry.setAttribute('iSeed', new THREE.InstancedBufferAttribute(Float32Array.from(indices, (i) => (i * 0.618034) % 100), 1));
     this.materials = [0, 1].map((upright) => new THREE.ShaderMaterial({ vertexShader: vertex, fragmentShader: fragment,
-      uniforms: { tick: { value: 0 }, activeRoom: { value: -1 }, sealTick: { value: -10_000 }, upright: { value: upright }, cameraRight: { value: new THREE.Vector3(1, 0, 0) } },
+      uniforms: { channel: { value: channel }, tick: { value: 0 }, activeRoom: { value: -1 }, sealTick: { value: -10_000 }, upright: { value: upright }, cameraRight: { value: new THREE.Vector3(1, 0, 0) } },
       transparent: true, depthWrite: false, side: THREE.DoubleSide }));
     const matrix = new THREE.Matrix4();
     for (const material of this.materials) {

@@ -44,6 +44,14 @@ UI_OUT = ROOT / 'assets' / 'ui'
 
 # Output height in pixels per sprite.
 SPRITES = {
+    'amphora-tall': 256,
+    'amphora-squat': 256,
+    'amphora-lily': 256,
+    'amphora-marked': 256,
+    'sanctuary-lamp': 384,
+    'blessing-chalice': 384,
+    'gold-halo': 128,
+    'heal-mote': 128,
     'proj-censer': 192,
     'proj-orb': 192,
     'proj-arrow': 192,
@@ -103,6 +111,7 @@ ICON_INSET = {'icon-field-of-blood': 0.125}
 
 # Terrain textures (§11.1): output size in pixels, each covering 4 × 4 m.
 TEXTURES = {
+    'tex-refiner-channel': 1024,
     'tex-floor': 1024,
     'tex-riser': 1024,
     'tex-wall': 1024,
@@ -192,6 +201,7 @@ JPEG_QUALITY = 88
 # Sprites with some green of their own (the lilies' stems). Pixels with less than
 # OWN_GREEN of the background's greenness are kept as they are, not keyed or despilled.
 HAS_GREEN = {'decor-lily-urn'}
+MAGENTA_BACKGROUND = {'heal-mote'}  # Green healing art deliberately uses the opposite key color.
 OWN_GREEN = 0.15
 
 
@@ -220,11 +230,12 @@ def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN, ro
     k = 16
     corners = np.concatenate([c.reshape(-1, 3) for c in (rgb[:k, :k], rgb[:k, -k:], rgb[-k:, :k], rgb[-k:, -k:])])
     bg = np.median(corners, axis=0)
-    bg_green = greenness(bg)
+    key_strength = (lambda c: np.minimum(c[..., 0], c[..., 2]) - c[..., 1]) if name in MAGENTA_BACKGROUND else greenness
+    bg_green = key_strength(bg)
 
     # Each pixel is a mix of the subject and the background; its greenness says how much
     # background it holds. Unmixing recovers the subject's color at the edges.
-    bg_share = np.clip(greenness(rgb) / bg_green, 0, 1)
+    bg_share = np.clip(key_strength(rgb) / bg_green, 0, 1)
     bg_share[bg_share < (OWN_GREEN if name in HAS_GREEN else 0.08)] = 0  # JPEG noise inside the subject
     alpha = 1 - bg_share
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -232,7 +243,8 @@ def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN, ro
     color = np.nan_to_num(np.clip(color, 0, 255))
     # Whatever green is left is spill: no palette color has more green than red or blue.
     spill = bg_share > 0 if name in HAS_GREEN else np.full(alpha.shape, True)
-    color[..., 1] = np.where(spill, np.minimum(color[..., 1], np.maximum(color[..., 0], color[..., 2])), color[..., 1])
+    if name not in MAGENTA_BACKGROUND:
+        color[..., 1] = np.where(spill, np.minimum(color[..., 1], np.maximum(color[..., 0], color[..., 2])), color[..., 1])
 
     if name in SPACED:
         color, alpha = space_letters(color, alpha, *SPACED[name])
