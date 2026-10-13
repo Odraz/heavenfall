@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DUNGEONS } from '../data/dungeons/index';
 
 const sandbox = DUNGEONS.sandbox;
-import { BLESSED } from '../data/enemies';
+import { BLESSED, DOMINION } from '../data/enemies';
 import { FIRE_LEFT, FIRE_RIGHT, FIRE_RIGHT_LAST } from '../data/weapons';
 import { Simulation } from '../sim/sim';
 import type { GameEvent } from './messages';
@@ -187,7 +187,7 @@ describe('snapshot protocol', () => {
     expect(parts.length).toBe(1);
     expect(parts[0].byteLength).toBe(HEADER_BYTES + 4 * PLAYER_BYTES + 100 * ENEMY_BYTES + 20 * 9);
     const s = decodeSnapshot(parts[0])!;
-    expect(HEADER_BYTES).toBe(65);
+    expect(HEADER_BYTES).toBe(67);
     const v = new DataView(parts[0]);
     expect([v.getUint8(0), v.getUint8(1), v.getUint8(2), v.getUint8(3)]).toEqual([PROTOCOL_VERSION, 0, 1, 4]);
     expect(Array.from(new Uint8Array(parts[0], 4, 16))).toEqual(Array.from(new Uint8Array(encodeInput({
@@ -421,5 +421,63 @@ describe('M12 stage 4 protocol (M12 §9)', () => {
     const bursts: GameEvent = { type: 'bursts', list: [3, 400, 1] };
     const cut: GameEvent = { type: 'dashCut', playerId: 1, x0: 1, y0: 2, z0: 0, x1: 9, y1: 2, z1: 0 };
     expect(JSON.parse(JSON.stringify([bursts, cut]))).toEqual([bursts, cut]);
+  });
+});
+
+describe('R2 Dominion snapshot control metadata', () => {
+  function casting(ne = 1500) {
+    const e = entities(ne, ne === 1500 ? 400 : 0, ne === 1500 ? 160 : 0);
+    const count = Math.min(3, ne);
+    e.dominionCasts = Array.from({ length: count }, (_, k) => {
+      const i = ne - count + k; e.enemyTypeState[i] = DOMINION | (2 << 4);
+      return { slot: e.enemySlot[i], incarnation: e.enemyIncarnation[i], castId: k + 1,
+        startTick: header.tick - 10, impactTick: header.tick + 35, room: 2 };
+    });
+    return e;
+  }
+  it('reserves three 19-byte records in part zero at maximum capacity, even when their enemies are in part one', () => {
+    const e = casting(), packets = encodeSnapshot(header, players(4), e);
+    expect(packets).toHaveLength(2); expect(packets.every((p) => p.byteLength <= 16000)).toBe(true);
+    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (67 + 4 * 36) + 1500 * 14 + 400 * 9 + 160 * 9 + 3 * 19);
+    const zero = decodeSnapshot(packets[0])!, one = decodeSnapshot(packets[1])!;
+    expect(zero.dominionCasts).toEqual(e.dominionCasts); expect(one.dominionCasts).toEqual([]);
+    expect(one.totalDominionCasts).toBe(3); expect(zero.enemySlot.includes(e.dominionCasts![0].slot)).toBe(false);
+    const a = new SnapshotAssembler(); a.reset(header.runId);
+    expect(a.add(one, 0)).toBeNull(); expect(a.add(zero, 1)?.dominionCasts).toEqual(e.dominionCasts);
+  });
+  it('ignores identical metadata duplicates and rejects conflicting records or sibling counts', () => {
+    const packets = encodeSnapshot(header, players(4), casting());
+    const a = new SnapshotAssembler(); a.reset(header.runId);
+    expect(a.add(decodeSnapshot(packets[0])!, 0)).toBeNull();
+    expect(a.add(decodeSnapshot(packets[0])!, 1)).toBeNull();
+    expect(a.add(decodeSnapshot(packets[1])!, 2)?.dominionCasts).toHaveLength(3);
+    a.reset(header.runId); a.add(decodeSnapshot(packets[0])!, 0);
+    const changed = packets[0].slice(0), v = new DataView(changed), o = HEADER_BYTES + 4 * PLAYER_BYTES;
+    v.setUint32(o + 10, header.tick - 11, true); v.setUint32(o + 14, header.tick + 34, true);
+    expect(a.add(decodeSnapshot(changed)!, 1)).toBeNull(); expect(a.add(decodeSnapshot(packets[1])!, 2)).toBeNull();
+    expect(a.newestCompleteTick).toBe(-1);
+    a.reset(header.runId); a.add(decodeSnapshot(packets[0])!, 0);
+    const sibling = packets[1].slice(0); new DataView(sibling).setUint8(65, 2);
+    expect(a.add(decodeSnapshot(sibling)!, 1)).toBeNull(); expect(a.newestCompleteTick).toBe(-1);
+  });
+  it('rejects malformed identities, deadlines, caps and inactive records before publication', () => {
+    const e = casting(1), packet = encodeSnapshot(header, players(1), e)[0], o = HEADER_BYTES + PLAYER_BYTES;
+    const bad = (offset: number, value: number, bytes: 1 | 2 | 4) => {
+      const b = packet.slice(0), v = new DataView(b);
+      if (bytes === 1) v.setUint8(offset, value); else if (bytes === 2) v.setUint16(offset, value, true); else v.setUint32(offset, value, true);
+      expect(decodeSnapshot(b)).toBeNull();
+    };
+    bad(65, 4, 1); bad(66, 0, 1); bad(o, 65535, 2); bad(o + 2, 0, 4); bad(o + 6, 0, 4);
+    bad(o + 10, header.tick + 1, 4); bad(o + 14, header.tick, 4); bad(o + 18, 32, 1);
+    bad(o + 2, 999, 4); // Reused slot: the record does not match its current incarnation.
+    for (const extra of [4, 15, 0xf4]) bad(o + 19 + 6, extra, 1);
+    bad(o + 19 + 7, 128, 1);
+    expect(() => encodeSnapshot(header, [], { ...e, dominionCasts: [...e.dominionCasts!, ...e.dominionCasts!] })).toThrow('invalid Dominion casts');
+  });
+  it('does not advance the complete watermark for a multipart cast attached to a reused slot', () => {
+    const e = casting(); e.dominionCasts = e.dominionCasts!.map((c) => ({ ...c, incarnation: c.incarnation + 1 }));
+    const packets = encodeSnapshot(header, players(4), e), a = new SnapshotAssembler(); a.reset(header.runId);
+    a.add(decodeSnapshot(packets[0])!, 0);
+    expect(a.add(decodeSnapshot(packets[1])!, 1)).toBeNull(); expect(a.newestCompleteTick).toBe(-1);
   });
 });

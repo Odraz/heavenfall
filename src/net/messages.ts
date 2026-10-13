@@ -2,6 +2,7 @@
 import type { ClassId } from '../data/classes';
 import type { PickupRecord } from '../data/pickups';
 import type { PropFamily } from '../data/rooms/types';
+import type { DominionCast, DominionPhase } from '../data/dominion';
 import type { RunIdentity } from './version';
 
 /** The host's choice, carried by both welcome and lobby. Fixed maps are development fixtures. */
@@ -36,9 +37,11 @@ export interface FloorSync {
   pickups?: PickupRecord[];
   brokenProps?: number[];
   propBlasts?: Array<{ id: number; impactTick: number }>;
+  dominionCasts?: DominionCast[];
 }
 
 export type GameEvent =
+  | { type: 'dominionCast'; phase: DominionPhase; cast: DominionCast; x: number; y: number; z: number }
   | { type: 'propBroken'; id: number; family: PropFamily; x: number; y: number; z: number; marked: boolean; impactTick: number; targets: number[] }
   | { type: 'propBlast'; id: number; x: number; y: number; z: number }
   | { type: 'pickupState'; pickup: PickupRecord }

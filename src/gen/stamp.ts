@@ -27,7 +27,7 @@ export function waveCounts(w: TemplateWave, budget: number): WaveDef {
     const m = w.mix[id] ?? 0;
     return m > 0 ? Math.max(1, Math.round((rest * m) / TP[id])) : 0;
   };
-  return { blessed: n('blessed'), choristers: n('chorister'), cherubs: n('cherub') };
+  return { blessed: n('blessed'), choristers: n('chorister'), cherubs: n('cherub'), ...(w.elites ? { dominions: w.elites } : {}) };
 }
 
 export function roomBudget(shape: string, band: number): number {

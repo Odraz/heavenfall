@@ -9,7 +9,8 @@
 - Local `main` remains `fa9e3f5765cd09d5a315db6342107ff70ad159e8`, the base recorded in R0/R1. Cached `origin/main` is `c5d74e456f9932953d432eaa7e679f427ec8d937`; no fetch, push, main merge or ref replacement was performed.
 - R2.1 code end SHA: `36d24131b40de6399ae37cd4e42f395fd31c9629` (authoritative pickups, halo ledger and bounded snapshots). The following documentation commit only records that identity.
 - R2.2 code end SHA: `42271ee3a73bf300aa8d11e6437dca429150e484` (authoritative props, delayed blasts and late-entry checkpoints).
-- Protocol version **3**, rules version **2**. Floor layout/pool/pinned hash remain the R1 fixture until R2.6 introduces the full pool. Restart the dev server after a commit so every participant uses the same artifact fingerprint.
+- R2.3 code end SHA: `5755024eda5b404c29f8651256e5abc2d8e51740` (all 51 S1 runtime takes, bounded loader and cosmetic shuffle bags).
+- Protocol version **4**, rules version **3** after the R2.4 authority/wire checkpoint (R2.1–R2.3 used 3/2). Floor layout/pool/pinned hash remain the R1 fixture until R2.6 introduces the full pool. Restart the dev server after a commit so every participant uses the same artifact fingerprint.
 
 ## R2.1: pickups, halo ledger and bounded snapshots
 
@@ -90,11 +91,37 @@ Changed: `src/audio/recorded.ts`, `src/audio/recorded.test.ts`, `src/audio/audio
 
 The first browser run passed 3/4 but missed the toggle test's instantaneous mouse click during the Revolver cooldown. The fixture now holds real fire until playback, without changing game code or timing limits; the final four-test run passed. No multiplayer/network code changed in this stage, and no benchmark or human hearing approval is claimed.
 
+## R2.4 authority/wire checkpoint (stage still unfinished)
+
+Start SHA `5755024eda5b404c29f8651256e5abc2d8e51740`. This component checkpoint implements Dominion type 4 (1500 HP, radius 0.45, body 3.2, speed 3.5), scaled elite group HP, the two-alive queue cap and the complete host cast/slam/drop path. It is **not** a playable completed R2.4 stage: the runtime pool still has no elite template, and the ring, atlas fallback, sounds and bot consumers are not wired yet.
+
+Host tells use monotonic u32 cast IDs and 45-tick impact deadlines. The accepted feet position follows movement/displacement; tell and 30-tick recovery hold ordinary steering. Strike/cancel both set the next tell >=90 ticks later. Stun, silence, accepted Falling Star launch and removal cancel once; bound alone permits the slam. Height/LOS checks admit exposed +1m daises, block tall walls and exclude hovering/airborne enemies and elite/boss targets. The slam deals 200 to eligible nonelite ground enemies and 40 to players, using existing shield/invulnerability rules. World heavy deaths retain owner -1 and settle ordinary loot once. If Shroud kills another collected caster during a simultaneous strike, that dead actor cannot restart a cast.
+
+At seal, reserve gold in wave/spawn order from H; queued placement does not redirect a consumed/forfeited reservation. Each legitimate ordinary-wave elite death drops its entitled gold, up to two motes within the room's remaining 4/6/8 quota and a 25% weighted item roll. Native cleanup/removal grants no loot. Fodder still places when the two-elite cap blocks another Dominion, and the unfinished elite keeps its wave queued. Historical zero-elite wave records stay byte-identical in the stamped R1 map.
+
+Protocol 4 keeps offsets 0–64 and appends total/local cast counts at 65/66: 67-byte header. All <=3 cast records reserve 19 bytes each in part0 before distributing entity ranges. Each record contains slot u16, incarnation/castId/start/impact u32 and room u8. At 1500 enemies/400 projectiles/160 pickups/four players/three casts, two <=16,000-byte packets total **26,519 B**. Decode/assembly validate count bounds, unique IDs/slots, 45-tick active deadlines and matching complete-snapshot Dominion incarnation/windup state, including when the caster is in part1. Invalid cast attachment never advances the complete watermark. Reliable start/strike/cancel records and detached FloorSync active records carry the same identities/deadlines.
+
+`src/client/dominion.ts` is a pure projection with checkpoint, complete snapshot and reliable state validation; ring centers are matched accepted snapshot feet. It is not attached to `Game` yet. Its `event()` return currently describes a projection mutation: when connecting sound cues, keep reliable cue admission/deduplication independent of snapshot state so a snapshot arriving before its reliable start/strike does not silence the cue. Add that arrival-order regression during the client part.
+
+New: `src/data/dominion.ts`, `src/sim/dominion.ts`, `src/sim/dominion.test.ts`, `src/client/dominion.ts`, `src/client/dominion.test.ts`. Updated: enemy/wave definitions, `src/gen/stamp.ts`, simulation, messages/protocol/version/fingerprint tests, protocol tests and milestone records. Reference `assets/art-src/reference/rogue/dominion-design.png` was inspected: broad ivory/gold armor, folded white wings, dark bronze face and flanged gold mace; sources remain received, no runtime atlas or human visual approval exists.
+
+| Exact command | Result |
+|---|---|
+| `npm test -- src/sim/dominion.test.ts src/sim/waves.test.ts` | 33 passed before later wire and simultaneous-Shroud/landing regressions. |
+| `npm test -- src/net/protocol.test.ts src/sim/dominion.test.ts src/client/dominion.test.ts src/client/snapshots.test.ts src/net/buildFingerprint.test.ts` | 51 passed before the final native landing/snapshot regressions. An initial malformed-state assertion exposed that active cast metadata should match windup state; decode/assembly now enforce that relation. |
+| Final `npm test` | **839 passed across 77 files**, exit 0, 53.55 s. One worker, unchanged 8-ms/tick check passed. |
+| `npm run typecheck` | passed, exit 0. |
+| `npm run build -- --logLevel error` | passed, exit 0. |
+
+Next work within R2.4: wire `Game` to the projection/ring and accepted start/strike/cancel feedback, add tall labeled mace-bearing fallback animation, cancelable tell playback and positional steps, bot ring escape, type-eligible affinity/tag integration and a scoped reproducible dev elite encounter. Test active-cast late entry, cancellation and crowd bait in browsers before calling R2.4 complete or starting R2.5. Full pool adoption remains R2.6; preserve the existing fixed dungeon and source art. The browser session checks here use the unchanged R1 pool, so they do not establish active-elite visual/readability acceptance.
+
+Browser verification: `npm run e2e -- e2e/multiplayer.spec.ts e2e/rogue-floor.spec.ts --grep 'multiplayer\|second generated run' --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-core'` finished **1 passed / 1 failed**, exit 1, 1.5 min. Run reset passed (24.7 s); after successful late entry, the late client returned to Title with `Host left the game` during the three-second chat check, while the other clients remained in-game and had that chat message; no console/page errors were reported. The cause is not established by that output. With no code or threshold change, `npm run e2e -- e2e/multiplayer.spec.ts --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-core-mp-retry'` then **passed**, exit 0, 2.7 min, including late prop catch-up, chat, 30 advancing consistent snapshot samples, original upload bound and host departure. Both production builds passed. Keep the initial intermittent failure visible; this is not a claim that active Dominion late entry was tested. `git diff --check` passed.
+
 ## Current fixture limits and next stage
 
 Dominion, fire damage/dry navigation, six-second crest and remaining 10 templates are still unfinished. This checkpoint must not be labeled the completed R2 milestone. Marked props supply gold halos; elite sources arrive in R2.4. No shop, profile, durable money, XP, inventory or build mechanics have been added.
 
-R2.4 next: Dominion type/cast/slam, elite count/HP scaling and ledger reservations, reliable/snapshot catch-up, ring/model fallback and bot avoidance. The R1 runtime pool contains no elite template, so use meaningful simulation fixtures while preparing the first elite template for a scoped dev encounter; full runtime pool adoption remains R2.6. Preserve the fixed dungeon and test/commit before the hazard stage.
+Resume the client/bot/dev-encounter remainder of R2.4 described above; do not skip to the hazard stage. This report's authority/wire checkpoint is a tested component, not the finished player-facing stage. Full runtime pool adoption remains R2.6.
 
 For a quick R2.1 check: run `npm run dev`, open a generated room with `?dev=1&map=rogue&seed=317434499&room=1&class=betrayer&god=1`, shoot the room's enemies and collect halos before they fade. Watch the wallet and motes; move onto a mote at full HP and confirm it waits. These dev/god runs do not establish balance or human Gate B acceptance.
 

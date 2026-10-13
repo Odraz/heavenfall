@@ -7,6 +7,7 @@ import {
   CHERUB_CLIMB,
   CHERUB_HOVER,
   CHORISTER,
+  DOMINION,
   ENEMIES,
   GATEKEEPER,
   ST_ATTACKING,
@@ -113,6 +114,8 @@ import { PROP_HEIGHT, type PropDef } from '../data/props';
 import { Props, type Prop } from './props';
 import { HaloLedger, HALO_WEIGHT, haloBudget, moteCap } from './economy';
 import { Pickups } from './pickups';
+import { Dominions } from './dominion';
+import { DOMINION_ALIVE_CAP, DOMINION_REACH, DOMINION_RADIUS, DOMINION_HEIGHT_TOLERANCE, type DominionCast, type DominionPhase } from '../data/dominion';
 import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, reviveSlowdown, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
 
 /** Linear party scaling, including half-player bots (rogue game.md §0). */
@@ -130,7 +133,7 @@ export function bossMultiplier(partySize: number, solo = partySize === 1): numbe
 
 /** A wave's enemies for the party size, each type and its squad (M12 follow-up §4.2) scaled. */
 export function waveSize(w: WaveDef, partySize: number): number {
-  return scaleCount(w.blessed, partySize) + scaleCount(w.choristers, partySize) + scaleCount(w.cherubs, partySize) + (w.squad ? scaleCount(w.squad.count, partySize) : 0);
+  return scaleCount(w.blessed, partySize) + scaleCount(w.choristers, partySize) + scaleCount(w.cherubs, partySize) + scaleCount(w.dominions ?? 0, partySize) + (w.squad ? scaleCount(w.squad.count, partySize) : 0);
 }
 
 /** Scales one enemy count for the party size, rounding up (§7.5). */
@@ -346,7 +349,7 @@ const MAX_PROJECTILES = 400;
 const PROJECTILE_RANGE = 60;
 
 /** Enemy type order for spawning ties: Blessed, Choristers, Cherubs. */
-const SPAWN_TYPES = [BLESSED, CHORISTER, CHERUB];
+const SPAWN_TYPES = [BLESSED, CHORISTER, CHERUB, DOMINION];
 const SPAWN_ELIGIBLE_DIST = 8;
 /** Combat arenas place a wave only on spawn points this far from every living player, when any are (M12 §2.2). */
 const SPAWN_FAR_DIST = 15;
@@ -534,6 +537,11 @@ export class Simulation {
   private nextIncarnation = 1;
   readonly pickups: Pickups;
   readonly props: Props;
+  readonly dominions: Dominions;
+  readonly eGoldEntitled = new Uint8Array(ENEMY_SLOTS);
+  private readonly eliteGold = new Map<number, number[]>();
+  private readonly elitePlaced = new Map<number, number[]>();
+  private livingDominions = 0;
   readonly haloLedgers = new Map<number, HaloLedger>();
   private readonly moteDrops = new Map<number, number>();
   readonly eType = new Uint8Array(ENEMY_SLOTS);
@@ -700,6 +708,7 @@ export class Simulation {
     this.map = opts.map ?? loadMap(opts.dungeon);
     this.pickups = new Pickups(this.map, (p) => this.emit('all', { type: 'pickupState', pickup: { ...p } }));
     this.props = new Props(this.map, opts.props ?? [], (p, origin) => this.propBroken(p, origin));
+    this.dominions = new Dominions((phase, cast) => this.dominionPhase(phase, cast));
     this.benchRoom = opts.benchRoom ?? -1;
     this.benchBurst = !!opts.benchBurst && this.benchRoom >= 0;
     this.noWaves = !!opts.noWaves;
@@ -783,7 +792,7 @@ export class Simulation {
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
-      pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint() };
+      pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint() };
   }
 
   private discoverNeighbours(ai: number): void {
@@ -1312,7 +1321,12 @@ export class Simulation {
     if (a.kind === 'combat' && a.shape && a.band) {
       const weight = a.waves.reduce((sum, w) => sum + scaleCount(w.blessed, st.partySize) +
         10 * (scaleCount(w.choristers, st.partySize) + scaleCount(w.cherubs, st.partySize)), 0);
-      this.haloLedgers.set(ai, new HaloLedger(haloBudget(a.shape, a.band), weight));
+      const counts = a.waves.map((w) => scaleCount(w.dominions ?? 0, st.partySize));
+      const ledger = new HaloLedger(haloBudget(a.shape, a.band), weight, counts.reduce((sum, n) => sum + n, 0));
+      this.haloLedgers.set(ai, ledger);
+      let gold = ledger.reservedElites;
+      this.eliteGold.set(ai, counts.map((n) => { const granted = Math.min(gold, n); gold -= granted; return granted; }));
+      this.elitePlaced.set(ai, counts.map(() => 0));
     }
     this.updateLeaves();
     this.invalidateFields();
@@ -1393,16 +1407,16 @@ export class Simulation {
   private startWave(ai: number, n: number): void {
     const st = this.rooms[ai];
     const w = this.map.rooms[ai].waves[n];
-    const counts = [scaleCount(w.blessed, st.partySize), scaleCount(w.choristers, st.partySize), scaleCount(w.cherubs, st.partySize)];
+    const counts = [scaleCount(w.blessed, st.partySize), scaleCount(w.choristers, st.partySize), scaleCount(w.cherubs, st.partySize), scaleCount(w.dominions ?? 0, st.partySize)];
     const squad = w.squad ? scaleCount(w.squad.count, st.partySize) : 0;
     st.wave = n;
-    const queued = counts[0] + counts[1] + counts[2];
+    const queued = counts.reduce((sum, n) => sum + n, 0);
     st.waveTotals[n] = queued + squad;
     st.waveAlive[n] = 0;
     st.waveFullySpawned[n] = st.waveTotals[n] === 0;
     st.pace = 0;
     st.paceRate = queued / WAVE_ARRIVAL_TICKS;
-    if (queued > 0) st.queue.push({ counts, spawned: [0, 0, 0], wave: n });
+    if (queued > 0) st.queue.push({ counts, spawned: [0, 0, 0, 0], wave: n });
     st.squad = squad > 0 ? { type: w.squad!.type === 'cherubs' ? CHERUB : CHORISTER, at: w.squad!.at, left: squad, next: this.tick + SQUAD_DELAY_TICKS, rr: 0, wave: n } : null;
     st.director?.waveStarted(n);
   }
@@ -1529,7 +1543,7 @@ export class Simulation {
       // Benchmark: keep exactly 1 500 enemies alive instead of waves, topped up with Blessed. The
       // Gatekeeper and his summons count (`living` leaves the Gatekeeper out).
       let queued = 0;
-      for (const q of st.queue) for (let t = 0; t < 3; t++) queued += q.counts[t] - q.spawned[t];
+      for (const q of st.queue) for (let t = 0; t < q.counts.length; t++) queued += q.counts[t] - q.spawned[t];
       const boss = this.bossSlot >= 0 && this.eRoom[this.bossSlot] === ai ? 1 : 0;
       const need = MAX_LIVING_ENEMIES - this.living - boss - queued;
       if (need > 0) st.queue.push({ counts: [need, 0, 0], spawned: [0, 0, 0], wave: -1 });
@@ -1637,6 +1651,9 @@ export class Simulation {
     while (st.queue.length > 0) {
       if (this.activeCount >= MAX_LIVING_ENEMIES) return;
       if (paced && st.pace < 1 - 1e-9) return;
+      const batch = st.queue[0];
+      const typeIndex = this.nextType(batch);
+      if (typeIndex < 0) return; // Pending elites wait; fodder remains eligible while the cap is full.
       let found = -1;
       for (let k = 0; k < np; k++) {
         const i = (st.rr + k) % np;
@@ -1648,8 +1665,8 @@ export class Simulation {
       if (found < 0) return;
       const slot = this.allocSlot();
       if (slot < 0) return;
-      const batch = st.queue[0];
-      const type = this.takeNextType(batch);
+      const type = SPAWN_TYPES[typeIndex];
+      batch.spawned[typeIndex]++;
       if (batch.spawned.every((s, t) => s >= batch.counts[t])) {
         st.queue.shift();
         // Fully placed once its squad is too (M12 follow-up §4.2).
@@ -1687,10 +1704,12 @@ export class Simulation {
   }
 
   /** The type with the lowest (spawned + 0.5) / count among types with enemies left (§8.2). */
-  private takeNextType(batch: SpawnBatch): number {
+  private nextType(batch: SpawnBatch): number {
     let best = -1;
     let bestV = Infinity;
-    for (let t = 0; t < 3; t++) {
+    const eliteCap = this.dominionAlive() >= DOMINION_ALIVE_CAP;
+    for (let t = 0; t < batch.counts.length; t++) {
+      if (SPAWN_TYPES[t] === DOMINION && eliteCap) continue;
       if (batch.spawned[t] >= batch.counts[t]) continue;
       const v = (batch.spawned[t] + 0.5) / batch.counts[t];
       if (v < bestV) {
@@ -1698,8 +1717,11 @@ export class Simulation {
         best = t;
       }
     }
-    batch.spawned[best]++;
-    return SPAWN_TYPES[best];
+    return best;
+  }
+
+  private dominionAlive(): number {
+    return this.livingDominions;
   }
 
   private allocSlot(): number {
@@ -1750,6 +1772,16 @@ export class Simulation {
     this.eVz[slot] = 0;
     this.eGrounded[slot] = 1;
     this.eHp[slot] = def.hp;
+    if (type === DOMINION) this.livingDominions++;
+    this.eGoldEntitled[slot] = 0;
+    this.dominions.reset(slot);
+    if (type === DOMINION && wave >= 0) {
+      const n4 = this.map.rooms[room].waves[wave].dominions ?? 0;
+      const party = this.rooms[room].partySize, count = scaleCount(n4, party);
+      if (count > 0) this.eHp[slot] *= n4 * partyMultiplier(party) / count;
+      const placed = this.elitePlaced.get(room);
+      if (placed) this.eGoldEntitled[slot] = placed[wave]++ < (this.eliteGold.get(room)?.[wave] ?? 0) ? 1 : 0;
+    }
     this.eRoom[slot] = room;
     this.eWave[slot] = wave;
     this.home[slot] = ROOM_NONE;
@@ -1793,8 +1825,10 @@ export class Simulation {
    */
   removeEnemy(slot: number, sweep = false): void {
     if (!this.eAlive[slot]) return;
+    this.dominions.cancel(slot, this.tick);
     this.eAlive[slot] = 0;
     const type = this.eType[slot];
+    if (type === DOMINION) this.livingDominions--;
     const d = sweep || type === GATEKEEPER ? null : this.activeDirector();
     if (d) {
       for (const p of this.players) {
@@ -1885,6 +1919,12 @@ export class Simulation {
     if (this.eWave[slot] >= 0) {
       const coins = this.haloLedgers.get(room)?.death(HALO_WEIGHT[type as 0 | 1 | 2] ?? 0) ?? 0;
       for (let i = 0; i < coins; i++) this.pickups.drop(COIN, room, x, y, this.tick);
+      if (type === DOMINION) {
+        if (this.eGoldEntitled[slot]) this.pickups.drop(GOLD_HALO, room, x, y, this.tick);
+        this.eGoldEntitled[slot] = 0;
+        this.dropMote(room, x, y); this.dropMote(room, x, y);
+        if (this.random() < 0.25) this.pickups.drop(itemDrop(this.random), room, x, y, this.tick);
+      }
     }
     if ((type === CHORISTER || type === CHERUB) && this.random() < 0.2) this.dropMote(room, x, y);
   }
@@ -2086,6 +2126,7 @@ export class Simulation {
   stun(slot: number, seconds: number): void {
     if (this.immune(slot)) return;
     this.eStunUntil[slot] = Math.max(this.eStunUntil[slot], this.tick + ticks(seconds));
+    this.dominions.cancel(slot, this.tick);
     this.eCast[slot] = 0;
     this.eCastT[slot] = 0;
   }
@@ -2097,6 +2138,7 @@ export class Simulation {
   /** Silence: a cast in progress is cancelled. */
   silence(slot: number, seconds: number): void {
     this.eSilenceUntil[slot] = Math.max(this.eSilenceUntil[slot], this.tick + ticks(seconds));
+    this.dominions.cancel(slot, this.tick);
     this.eCast[slot] = 0;
     this.eCastT[slot] = 0;
   }
@@ -2660,6 +2702,7 @@ export class Simulation {
       else this.damageEnemy(s, FALLING_STAR_REACH_DAMAGE, p.index, FALLING_STAR_REACH_DAMAGE, cx, cy);
       if (!this.eAlive[s] || this.isRooted(s) || this.immune(s)) continue;
       this.knockAway(s, cx, cy, KNOCKBACK_DIST, FALLING_STAR_KNOCKBACK_TIME);
+      this.dominions.cancel(s, this.tick); // Falling Star's accepted launch, even though its arc is drawn only.
       launched.push(s);
     }
     this.emit('all', { type: 'starLanded', playerId: p.id, x: cx, y: cy, z: floor, launched });
@@ -3100,8 +3143,50 @@ export class Simulation {
         if (this.eCastCd[slot] > 0) this.eCastCd[slot] = Math.max(0, this.eCastCd[slot] - TICK_DT);
         this.eState[slot] = ST_IDLE;
       } else if (type === BLESSED) this.updateMelee(slot);
-      else this.updateCast(slot);
+      else if (type !== DOMINION) this.updateCast(slot);
     }
+    this.updateDominions();
+  }
+
+  private dominionInRange(slot: number): boolean {
+    const p = this.slots[this.eTarget[slot]];
+    const room = this.roomAt(this.eX[slot], this.eY[slot]);
+    return room !== ROOM_NONE && this.livingTargetable(p) && this.roomAt(p!.x, p!.y) === room &&
+      Math.hypot(p!.x - this.eX[slot], p!.y - this.eY[slot]) <= DOMINION_REACH && Math.abs(p!.z - this.eZ[slot]) <= DOMINION_HEIGHT_TOLERANCE &&
+      lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eyeZ(slot), p!.x, p!.y, p!.z + PLAYER_HEIGHT / 2);
+  }
+
+  private updateDominions(): void {
+    if (this.livingDominions === 0) return;
+    // Slams remove victims; gather only the bounded casters after ordinary movement completed.
+    const slots: number[] = [];
+    for (let k = 0; k < this.activeCount; k++) if (this.eType[this.active[k]] === DOMINION) slots.push(this.active[k]);
+    for (const s of slots) {
+      if (!this.eAlive[s]) continue; // A prior slam may trigger an owned Shroud burst that kills this caster.
+      this.dominions.update(s, this.tick, { incarnation: this.eIncarnation[s], room: this.roomAt(this.eX[s], this.eY[s]),
+        grounded: this.eGrounded[s] === 1, stunned: this.isStunned(s), silenced: this.tick < this.eSilenceUntil[s], inRange: this.dominionInRange(s) });
+      if (!this.eAlive[s]) continue;
+      if (this.dominions.active.has(s)) this.eState[s] = ST_WINDUP;
+      else if (this.tick < this.dominions.recoveryUntil[s]) this.eState[s] = ST_ATTACKING;
+    }
+  }
+
+  private dominionPhase(phase: DominionPhase, cast: DominionCast): void {
+    const s = cast.slot, x = this.eX[s], y = this.eY[s], z = this.eZ[s];
+    this.emit('all', { type: 'dominionCast', phase, cast: { ...cast }, x, y, z });
+    if (phase !== 'strike') return;
+    const eligible = (vx: number, vy: number, vz: number, height: number) => this.roomAt(vx, vy) === cast.room &&
+      Math.hypot(vx - x, vy - y) <= DOMINION_RADIUS + 1e-9 && Math.abs(vz - z) <= DOMINION_HEIGHT_TOLERANCE + 1e-9 &&
+      lineOfSight(this.map, x, y, z + ENEMIES[DOMINION].height / 2, vx, vy, vz + height / 2);
+    const victims: number[] = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const q = this.active[k], type = this.eType[q], def = ENEMIES[type];
+      if (type === DOMINION || type === GATEKEEPER || !this.eGrounded[q]) continue;
+      if (type === CHERUB && Math.abs(this.eZ[q] - groundHeight(this.map, this.eX[q], this.eY[q], def.radius, Infinity, false, true)) > 0.05) continue;
+      if (eligible(this.eX[q], this.eY[q], this.eZ[q], def.height)) victims.push(q);
+    }
+    for (const q of victims) this.damageEnemy(q, 200, -1, Infinity, x, y, true);
+    for (const p of this.players) if (this.livingTargetable(p) && eligible(p.x, p.y, p.z, PLAYER_HEIGHT)) this.damagePlayer(p, 40);
   }
 
   private updatePull(slot: number): void {
@@ -3316,7 +3401,7 @@ export class Simulation {
     let mx = 0;
     let my = 0;
     const rooted = this.tick < this.eRootUntil[slot];
-    const holds = type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot));
+    const holds = type === DOMINION ? this.dominions.holding(slot, this.tick) : type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot));
     const p = t >= 0 ? this.slots[t] : undefined;
     if (p && !rooted && !holds && !stunned) {
       const s = this.steerOut;
@@ -3564,7 +3649,7 @@ export class Simulation {
     if (!st) return 0;
     if (this.map.rooms[ai].boss) return st.alive;
     let n = st.alive;
-    for (const q of st.queue) for (let t = 0; t < 3; t++) n += q.counts[t] - q.spawned[t];
+    for (const q of st.queue) for (let t = 0; t < q.counts.length; t++) n += q.counts[t] - q.spawned[t];
     n += st.squad?.left ?? 0;
     const waves = this.map.rooms[ai].waves;
     if (!this.noWaves && this.benchRoom < 0) {
@@ -3586,6 +3671,7 @@ export class Simulation {
     if (this.preparedTick === this.tick) return;
     this.preparedTick = this.tick;
     const e = this.ent;
+    e.dominionCasts = this.dominions.checkpoint();
     const tick = this.tick;
     e.enemyCount = this.activeCount;
     for (let k = 0; k < this.activeCount; k++) {
