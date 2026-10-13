@@ -1,6 +1,6 @@
 /**
- * The R1 room pool of the Pearly Gates (rogue r01.md): the 10 combat templates that need no Dominion
- * and no Refiner's Fire, then the 4 specials. Pool order is what the weighted picks iterate; changing
+ * The Pearly Gates pools: full R2 content and the historical R1 regression pool. Pool order is what
+ * the weighted picks iterate; changing
  * it changes floors for a seed (a RULES_VERSION bump).
  */
 import type { RoomTemplate } from '../types';
@@ -18,6 +18,16 @@ import ranged2x1 from './pg-c-2x1-ranged-01';
 import flyers2x1 from './pg-c-2x1-flyers-01';
 import courtyard from './pg-c-2x2-horde-flyers-01';
 import pardoner from './pg-s-pardoner-01';
+import rangedHazard from './pg-c-1x1-ranged-hazard-01';
+import hazardFlyers from './pg-c-1x1-hazard-flyers-01';
+import { lampstands } from './pg-c-1x1-elite-01';
+import elite2 from './pg-c-1x1-elite-02';
+import { trials } from './pg-c-1x1-hazard-01';
+import hazard2 from './pg-c-1x1-hazard-02';
+import processional from './pg-c-2x1-horde-hazard-01';
+import dominions from './pg-c-2x1-elite-01';
+import host from './pg-c-2x2-horde-elite-01';
+import refiners from './pg-c-2x2-hazard-horde-01';
 
 export const PEARLY_POOL_R1: readonly RoomTemplate[] = [
   ranged1,
@@ -34,6 +44,13 @@ export const PEARLY_POOL_R1: readonly RoomTemplate[] = [
   pardoner,
   confessional,
   gate,
+];
+
+/** Full R2 pool: 20 combat grids plus the four special rooms; historical R1 stays immutable. */
+export const PEARLY_POOL: readonly RoomTemplate[] = [
+  ranged1, ranged2, ranged3, rangedHazard, flyers1, flyers2, flyers3, hazardFlyers,
+  lampstands, elite2, trials, hazard2, horde2x1, processional, ranged2x1, flyers2x1, dominions,
+  courtyard, host, refiners, breach, pardoner, confessional, gate,
 ];
 
 /** A template of the pool by id. */

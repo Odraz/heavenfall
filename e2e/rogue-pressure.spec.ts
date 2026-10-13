@@ -1,5 +1,5 @@
 import { generateFloor } from '../src/gen';
-import { PEARLY_POOL_R1 } from '../src/data/rooms/1';
+import { PEARLY_POOL } from '../src/data/rooms/1';
 import { PINNED } from '../src/gen/pinned';
 import { expect, state, test } from './fixtures';
 import { propDefs } from '../src/data/props';
@@ -8,7 +8,7 @@ import { shootProp } from './prop-fixtures';
 
 test('generated combat drops are visible in complete snapshots and collected into the absolute wallet', async ({ page }) => {
   test.setTimeout(150_000);
-  const { def } = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL_R1);
+  const { def } = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
   const room = def.rooms.findIndex((r) => r.kind === 'combat' && r.shape === '1x1');
   await page.setViewportSize({ width: 640, height: 360 });
   await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&room=${room}&class=betrayer&bot=1&god=1`);
@@ -25,7 +25,7 @@ test('generated combat drops are visible in complete snapshots and collected int
 });
 
 test('shooting the marked amphora destroys its seed-selected body once and drops a collectible gold halo', async ({ page }) => {
-  const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL_R1);
+  const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
   const q = propDefs(g.floor).find((p) => p.marked)!;
   // Independent geometry chooses a legal nearby same-floor firing point, avoiding obstacles and leaves.
   const z = g.map.floor[Math.floor(q.y) * g.map.w + Math.floor(q.x)];

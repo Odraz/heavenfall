@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { PEARLY_POOL_R1 } from '../data/rooms/1/index';
+import { PEARLY_POOL_R1, PEARLY_POOL } from '../data/rooms/1/index';
+import { PINNED as PINNED_R2 } from './pinned';
 import { stampFloor } from './stamp';
 import { fallbackLayout } from './fallback';
 import { attemptSeed, fmix32, makeRng } from './hash';
 import { floorHash, generateFloor, pinnedSeed, roomCount } from './index';
-import { PINNED } from './pinned';
+import { PINNED_R1 as PINNED } from './pinned';
 import { floorRuleErrors, zoneLeaks } from './testutil/rules';
 
 describe('seeds (rogue game.md §3.2)', () => {
@@ -29,6 +30,16 @@ describe('seeds (rogue game.md §3.2)', () => {
 });
 
 describe('generateFloor (rogue game.md §3.3)', () => {
+  it('repins the complete R2 pool and restores the real fallback hazard/elite templates', () => {
+    const g = generateFloor(PINNED_R2.seed, 1, 1, PEARLY_POOL);
+    expect({ seed: g.floor.seed, attempts: g.floor.attempts, n: g.floor.n, floorHash: floorHash(g.def) }).toEqual(PINNED_R2);
+    const fb = fallbackLayout(PEARLY_POOL, 1), stamped = stampFloor(fb.layout, fb.assignment);
+    expect(stamped.errors).toEqual([]); expect(zoneLeaks(stamped.map)).toEqual([]);
+    expect([2, 6, 7, 8].map((i) => fb.assignment.templates[i].id)).toEqual([
+      'pg-c-2x1-horde-hazard-01', 'pg-c-1x1-elite-01', 'pg-c-1x1-hazard-02', 'pg-c-1x1-ranged-hazard-01',
+    ]);
+    expect(stamped.def.gate?.facing).toBe('W');
+  });
   it('is deterministic: the same seed gives the same floorHash', () => {
     const a = generateFloor(pinnedSeed(3), 1, 1, PEARLY_POOL_R1);
     const b = generateFloor(pinnedSeed(3), 1, 1, PEARLY_POOL_R1);

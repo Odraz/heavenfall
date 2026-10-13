@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { PEARLY_POOL_R1 } from '../data/rooms/1';
+import { PEARLY_POOL_R1, PEARLY_POOL } from '../data/rooms/1';
 import { BLESSED } from '../data/enemies';
 import { generateFloor } from '../gen';
-import { PINNED } from '../gen/pinned';
+import { PINNED_R1 as PINNED } from '../gen/pinned';
+import { PINNED as PINNED_R2 } from '../gen/pinned';
 import { PHASE_COMBAT, PHASE_COUNTDOWN, PHASE_IDLE } from '../net/protocol';
 import { Simulation } from '../sim/sim';
 import { TICK_DT, TICK_HZ, TICK_MS } from '../sim/constants';
@@ -28,8 +29,20 @@ function destination(bot: Bot, v: BotView): { x: number; y: number } | null {
 }
 
 describe('R1.4 bots', () => {
-  it('walks the pinned floor through real collision and room seals to victory', () => {
-    const generated = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL_R1);
+  it('keeps ready combat abilities while walking an empty frontier instead of repeatedly launching away from the route', () => {
+    const v = view(); v.qReady = v.eReady = true; const bot = new Bot(v.map);
+    expect(bot.update(0, v)).toMatchObject({ pressQ: false, pressE: false });
+    v.enemies = [{ slot: 0, type: BLESSED, x: v.body.x + 3, y: v.body.y, z: v.body.z }];
+    expect(bot.update(300, v)).toMatchObject({ pressQ: true, pressE: true });
+  });
+  it('replans a retained waypoint after accepted displacement instead of walking back toward a stale cell', () => {
+    const v = view(); v.map = mapOf(room(40, 20)); Object.assign(v.body, { x: 8.5, y: 10.5, z: 0 });
+    v.hostPlayer = { x: 30.5, y: 10.5 }; const bot = new Bot(v.map);
+    expect(bot.update(0, v).dirX).toBeGreaterThan(0);
+    v.body.x = 20.5; expect(bot.update(50, v).dirX).toBeGreaterThan(0);
+  });
+  it.each([['R1', PEARLY_POOL_R1, PINNED], ['R2', PEARLY_POOL, PINNED_R2]] as const)('walks the pinned %s floor through real collision and room seals to victory', (_, pool, pin) => {
+    const generated = generateFloor(pin.seed, 1, 1, pool);
     const sim = new Simulation({ dungeon: generated.def, map: generated.map, players: [{ id: 0, name: 'Pilot', classId: 'fallen' }], seed: 1, god: true });
     const p = sim.players[0], local = new LocalPlayer(p.x, p.y, p.z, p.speed), bot = new Bot(sim.map);
     const v = { ...view(), map: sim.map, body: local.body };

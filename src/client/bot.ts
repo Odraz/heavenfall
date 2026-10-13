@@ -149,8 +149,9 @@ export class Bot {
       }
     }
 
-    o.pressQ = v.qReady;
-    o.pressE = v.eReady;
+    const threatened = v.enemies.length > 0 || (v.dominionRings?.length ?? 0) > 0;
+    o.pressQ = v.qReady && threatened;
+    o.pressE = v.eReady && threatened;
 
     // Goal.
     let goal: { x: number; y: number } | null = null;
@@ -398,7 +399,8 @@ export class Bot {
       const wy = Math.floor(this.waypointCell / map.w) + 0.5;
       // Finish a diagonal through its centre before selecting the next cell. Replanning at the
       // intermediate orthogonal cell can turn back on a stair and oscillate forever.
-      if (this.waypointCell < 0 || this.waypointGoal !== this.fieldCell || this.field.dist[this.waypointCell] === UNREACHABLE || Math.hypot(wx - b.x, wy - b.y) < ARRIVE_DIST) {
+      const waypointDistance = Math.hypot(wx - b.x, wy - b.y);
+      if (this.waypointCell < 0 || this.waypointGoal !== this.fieldCell || this.field.dist[this.waypointCell] === UNREACHABLE || waypointDistance < ARRIVE_DIST || waypointDistance > 2) {
         this.waypointCell = this.field.bestNeighbor(c, r);
         this.waypointGoal = this.fieldCell;
       }

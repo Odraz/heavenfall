@@ -1,10 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { allowedOrientations } from '../../gen/assign';
 import { templateFixture } from '../../gen/fixture';
-import { PEARLY_POOL_R1 } from './1/index';
+import { PEARLY_POOL, PEARLY_POOL_R1 } from './1/index';
 import { placedShapes, validateTemplate } from './validate';
 
 const breach = PEARLY_POOL_R1.find((t) => t.kind === 'breach')!;
+
+describe('the full R2 pool', () => {
+  it('contains the twenty distinct combat templates and four specials', () => {
+    expect(PEARLY_POOL.filter((t) => t.kind === 'combat')).toHaveLength(20);
+    expect(new Set(PEARLY_POOL.map((t) => t.id)).size).toBe(24);
+  });
+  for (const t of PEARLY_POOL) it(`${t.id} validates in every allowed shape/orientation`, () => {
+    expect(validateTemplate(t)).toEqual([]);
+    for (const shape of placedShapes(t)) {
+      const orientations = allowedOrientations(t, shape); expect(orientations.length).toBeGreaterThan(0);
+      for (const o of orientations) expect(templateFixture(t, o, shape, breach).errors.slice(0, 5)).toEqual([]);
+    }
+  });
+});
 
 describe('the R1 room pool (rogue game.md §4.7)', () => {
   it('has the 10 combat templates and the 4 specials, ids unique', () => {

@@ -1,6 +1,6 @@
 /**
- * The fallback floor (rooms.md §5, rogue game.md Appendix A.1) with the R1 substitutions of r01.md for
- * templates outside the R1 pool. Fixed: 11 rooms, fixed templates, the first valid orientation, every
+ * The fallback floor (rooms.md §5, rogue game.md Appendix A.1), using the real R2 templates; the
+ * immutable historical R1 pool keeps its substitutions. Fixed: 11 rooms, first valid orientation, every
  * prop socket with a chance of at least 0.75; no RNG draw.
  */
 import type { RoomKind, RoomShape } from '../data/dungeons/types';
@@ -30,6 +30,13 @@ const ROOMS: Array<[RoomKind, RoomShape, [number, number], number, [number, numb
 const FILL_CHANCE = 0.75;
 
 export function fallbackLayout(pool: readonly RoomTemplate[], heaven: number): { layout: Layout; assignment: Assignment } {
+  const full = pool.some((t) => t.focus === 'elite' || t.focus === 'hazard' || t.secondary === 'elite' || t.secondary === 'hazard');
+  const restored: Record<string, string> = {
+    'pg-c-2x1-horde-01': 'pg-c-2x1-horde-hazard-01',
+    'pg-c-1x1-flyers-02': 'pg-c-1x1-elite-01',
+    'pg-c-1x1-ranged-02': 'pg-c-1x1-hazard-02',
+    'pg-c-1x1-ranged-03': 'pg-c-1x1-ranged-hazard-01',
+  };
   const rooms: LayoutRoom[] = [];
   for (const [kind, shape, [ax, ay], parent, n, c] of ROOMS) {
     const i = rooms.length;
@@ -43,7 +50,8 @@ export function fallbackLayout(pool: readonly RoomTemplate[], heaven: number): {
     }
   }
   const layout: Layout = { n: rooms.length, rooms, confessional: 9, boss: 10, reliquary: 8, pardoner: 5, keyRoom: 4, mapRoom: 7, bells: [2, 6] };
-  const templates = ROOMS.map(([, , , , , , id]) => {
+  const templates = ROOMS.map(([, , , , , , legacyId]) => {
+    const id = full ? restored[legacyId] ?? legacyId : legacyId;
     const t = pool.find((p) => p.id === id && p.heaven === heaven);
     if (!t) throw new Error(`the fallback floor's template '${id}' isn't in the pool`);
     return t;
