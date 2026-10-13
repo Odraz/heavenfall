@@ -6,6 +6,7 @@ import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, CHORISTER, DOMINION, ENEMIES, GATEK
 import { DOMINION_RADIUS } from '../data/dominion';
 import { DominionProjection } from './dominion';
 import { DominionView } from './dominionView';
+import { HazardView } from './hazards';
 import {
   ABILITIES,
   ATTACK_NONE,
@@ -394,6 +395,7 @@ export class Game {
   private readonly props: PropView;
   private readonly dominion: DominionProjection;
   private readonly dominionView = new DominionView();
+  private readonly hazards: HazardView;
   /** When each enemy slot's Falling Star launch arc starts (M9 §3.2). */
   private readonly launchAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
   /** Wading (M12 §3.1): launched enemies don't press until then (ms), and the applied speed factor. */
@@ -511,6 +513,7 @@ export class Game {
     this.scene.scene.add(this.props.billboards.mesh);
     this.dominion = new DominionProjection(o.runId);
     this.scene.scene.add(this.dominionView.group);
+    this.hazards = new HazardView(this.map); this.scene.scene.add(this.hazards.group);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
     for (const [type, set] of Object.entries(o.enemyAnims)) {
@@ -578,6 +581,7 @@ export class Game {
       z: this.map.floor[Math.floor(p.y) * this.map.w + Math.floor(p.x)], marked: p.marked }));
     debugState.brokenProps = [];
     debugState.dominion = { actors: [], casts: [], starts: 0, strikes: 0, cancels: 0 };
+    debugState.hazards = { activeRoom: -1, activeCells: 0 };
     this.sounds.renderDelay = (this.snaps.delayTicks * TICK_MS) / 1000;
   }
 
@@ -884,6 +888,7 @@ export class Game {
       const transition = this.rooms.event(msg.event, msg.revision);
       debugState.roomKnowledge = this.rooms.states.map((r) => r.knowledge);
       if (!transition) return;
+      if (msg.event.phase === PHASE_COMBAT) this.hazards.seal(msg.event.room, msg.tick);
     }
     if (msg.event.type === 'pickupState') this.pickups.model.state(msg.event.pickup, msg.tick, msg.revision);
     if (msg.event.type === 'dominionCast') {
@@ -2113,6 +2118,11 @@ export class Game {
     this.dominionView.update(dominionRings, dominionTick);
     this.sounds.dominions(this.paused ? [] : dominionRings, dominionTick);
     debugState.dominion.casts = dominionRings;
+    const fireCells = this.hazards.update(this.snaps.newest, this.scene.camera, dominionTick, this.over);
+    const fireRoom = fireCells > 0 ? this.snaps.newest!.activeRoom : -1;
+    const fireOwnRoom = this.rooms.roomAt(p.body.x, p.body.y);
+    this.sounds.hazard(fireOwnRoom === fireRoom && !this.paused ? this.hazards.nearest(fireRoom, p.body.x, p.body.y, now) : null);
+    debugState.hazards = { activeRoom: fireRoom, activeCells: fireCells };
     const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
     this.hud.setHealing(this.ownBeamOn, now);
     this.hud.setBeamed(beamed.has(this.localId));
@@ -2546,6 +2556,7 @@ export class Game {
     this.pickups.dispose();
     this.props.dispose();
     this.dominionView.dispose();
+    this.hazards.dispose();
     this.hum?.stop();
     this.hud.dispose();
     this.mapView.dispose();

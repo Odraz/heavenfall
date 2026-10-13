@@ -14,20 +14,24 @@ function playback() {
     createGain: () => ({ gain: { value: 1, setTargetAtTime: vi.fn() }, connect() {} }),
     createStereoPanner: () => ({ pan: { value: 0 }, connect() {} }),
     createBufferSource: () => {
-      const source = { buffer: null as unknown, playbackRate: { value: 1 }, onended: null, stop: vi.fn((at) => stopped.push(at)),
+      const source = { buffer: null as unknown, loop: false, playbackRate: { value: 1 }, onended: null, stop: vi.fn((at) => stopped.push(at)),
         connect(node: { gain: { value: number } }) { source.start = (when = 0, offset = 0) => { started.push({ buffer: source.buffer, gain: node.gain.value }); windows.push({ when, offset, rate: source.playbackRate.value }); }; }, start(_when = 0, _offset = 0) {} };
       return source;
     },
   };
   const engine = Object.assign(Object.create(AudioEngine.prototype) as Record<string, unknown>, {
     ctx, sfxBus: {}, recordedOn: true, lx: 0, ly: 0, lyaw: 0, voices, lastStart: new Map(),
-    buffers: new Map([['porcelainBreak', synth], ['shotgun', synth]]),
+    buffers: new Map([['porcelainBreak', synth], ['shotgun', synth], ['refinerFire', synth]]),
     takes: new Map([['porcelainBreak', { bufs: buffers, gains: [1, 2, 3], bag }]]),
   }) as unknown as AudioEngine;
   return { engine, bag, ctx, voices, started, synth, buffers, windows, stopped };
 }
 
 describe('recorded playback admission', () => {
+  it('keeps an ambient sample finite and inside the normal voice caps', () => {
+    const h = playback(); h.engine.play('refinerFire');
+    expect(h.voices).toHaveLength(1); expect((h.voices[0].src as { loop?: boolean }).loop).toBe(false);
+  });
   it('resumes at the accepted remaining tell and provides an idempotent capped voice stop', () => {
     const h = playback(), handle = h.engine.play('porcelainBreak', null, 1, 0, undefined, undefined, { elapsed: 1, duration: 1.5 })!;
     expect(h.windows).toEqual([{ when: 1, offset: 0.5, rate: 0.5 }]); expect(handle.playing()).toBe(true);

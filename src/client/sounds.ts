@@ -41,6 +41,12 @@ export class GameSounds {
   private readonly enemyState = new Uint8Array(ENEMY_SLOTS).fill(NO_STATE);
   private tickSecond = 0;
   private readonly tells = new Map<number, VoiceHandle>();
+  private fireAmbient: VoiceHandle | undefined;
+  /** Ambient fire uses an admitted finite voice, so it shares the unchanged caps/stealing rules. */
+  hazard(at: SoundPos | null): void {
+    if (!at) { this.fireAmbient?.stop(); this.fireAmbient = undefined; return; }
+    if (!this.fireAmbient?.playing()) this.fireAmbient = sfx('refinerFire', at, 0.55, 0, 0);
+  }
   private readonly steps = new Map<number, { incarnation: number; x: number; y: number; distance: number }>();
 
   /** Resume only the remaining tell; snapshot omission/control/disposal stops the actual voice. */
@@ -243,7 +249,11 @@ export class GameSounds {
         sfx('revive', e.playerId === this.localId ? null : (pose(e.playerId) ?? null));
         break;
       case 'roomState':
-        if (e.phase === PHASE_COMBAT) sfx('doorsSeal');
+        if (e.phase === PHASE_COMBAT) {
+          sfx('doorsSeal');
+          const p = pose(this.localId), r = this.map.rooms[e.room];
+          if (r.hazards?.length && p && this.map.roomOf[Math.floor(p.y) * this.map.w + Math.floor(p.x)] === e.room) sfx('refinerIgnite', null);
+        }
         else if (e.phase === PHASE_CLEARED && this.map.rooms[e.room].kind === 'combat') sfx('arenaCleared');
         break;
       case 'pickupCollected':
@@ -309,6 +319,7 @@ export class GameSounds {
   }
 
   dispose(): void {
+    this.fireAmbient?.stop(); this.fireAmbient = undefined;
     for (const handle of this.tells.values()) handle.stop(); this.tells.clear(); this.steps.clear();
     audio()?.music.keepStings(false);
   }

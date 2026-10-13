@@ -1,6 +1,6 @@
 # R2 report: pressure and pickups
 
-**Status: implementing** (2026-10-13). Brief: [r02.md](r02.md). R2.1–R2.3 are implemented and verified. R2.4 authority and client components are implemented; scoped Dominion checks pass, broader four-client verification remains unresolved. R2.5–R2.7 implementation remains. Gate B and human feel acceptance are pending. Local branch `rogue`; nothing pushed, merged or published.
+**Status: implementing** (2026-10-13). Brief: [r02.md](r02.md). R2.1–R2.3 and R2.5 are implemented and verified. R2.4 authority and client components are implemented; scoped Dominion checks pass, broader four-client verification remains unresolved. R2.6–R2.7 implementation remains. Gate B and human feel acceptance are pending. Local branch `rogue`; nothing pushed, merged or published.
 
 ## Authorization and Git facts
 
@@ -12,7 +12,7 @@
 - R2.3 code end SHA: `5755024eda5b404c29f8651256e5abc2d8e51740` (all 51 S1 runtime takes, bounded loader and cosmetic shuffle bags).
 - R2.4 authority/wire component end SHA: `65e4384861ddb038c8d38d755fe573316c8c18b8`. Client component and its verification limitations are recorded below.
 - R2.4 client/bot/encounter component end SHA: `78cc0b0f74f0e4b6c6f51088da1a1a3a1a939f02`. Five final scoped browser/audio checks and 860 unit tests passed; four-client failures remain explicitly unresolved.
-- Protocol version **4**, rules version **3** after the R2.4 authority/wire checkpoint (R2.1–R2.3 used 3/2). Floor layout/pool/pinned hash remain the R1 fixture until R2.6 introduces the full pool. Restart the dev server after a commit so every participant uses the same artifact fingerprint.
+- Protocol version **4**, rules version **4** after R2.5 (R2.4 used 4/3; R2.1–R2.3 used 3/2). Floor layout/pool/pinned hash remain the R1 fixture until R2.6 introduces the full pool. Restart the dev server after a commit so every participant uses the same artifact fingerprint.
 
 ## R2.1: pickups, halo ledger and bounded snapshots
 
@@ -150,11 +150,33 @@ Bots retain aim/fire/abilities while taking a collision-checked escape from same
 
 Final source browser/audio command: `npm run e2e -- e2e/dominion.spec.ts e2e/recorded-sound.spec.ts --grep-invert 'four real' --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-client-checkpoint'`: **5 passed**, exit 0, 2.3 min (bait 22.8 s, cancel 23.6 s, accepted late deadline/30 snapshots/host exit 1.2 min, recorded toggle 7.6 s, corrupt-family synth 8.1 s). Production build passed. Tell/ring/fallback captures were inspected. Human readability/feel and larger-session verification remain pending.
 
-## Current fixture limits and next stage
+## R2.5: Refiner's Fire and dry navigation
 
-Fire damage/dry navigation, six-second crest and remaining templates are still unfinished; the Dominion client/authority components now exist but broader multiplayer verification is unresolved. This checkpoint must not be labeled the completed R2 milestone. Marked props supply gold halos; legitimate elite deaths use the R2.4 ledger entitlement. No shop, profile, durable money, XP, inventory or build mechanics have been added.
+Start SHA `769befedba11b1346f7117ff71e8753677f34b82`. One active-room mask applies 7/30 player and 35/30 enemy HP per tick at actual grounded feet contact (0.05 m tolerance). Player damage keeps native mitigation/shield/immunity; hovering Cherubs and airborne feet do not contact. World deaths settle the existing ordinary ledger once without a player killer. Host `ePooled` combines active fire contact and native Field of Blood membership; no new wire flag is invented. Fire stops on clear/result.
 
-The next ordered implementation is R2.5's hazard and dry navigation. Preserve the R2.4 four-client verification failure as an open checkpoint issue and resolve/retest it before final milestone handoff. Full runtime pool adoption remains R2.6.
+Ordinary ground fields retain their old rules. Avoiding types use at most four additional fields with active fire cells excluded, at the existing cadence/clamp. A single cached reverse-ground routing per active room supplies nearest reachable dry anchors (path cost, row-major ties) and escape steps after accepted displacement. No search runs per enemy. Ordinary steering refuses entry into fire; accepted pushes/pulls/knockbacks keep their paths. Casting avoiders escape fire without resetting cast deadlines, then resume their hold on dry ground; root and stun still forbid movement. Caches/fields release when inactive or no avoider remains. Unreachable dry anchors stop and use existing cleanup/recovery.
+
+Three pooled meshes render coded red-orange moving tongues/ground glow and a fixed narrow gold lip along the authored sunk channel boundary. Accepted complete room state drives activation/dim; the accepted seal tick supplies a one-second flare, and late catch-up cannot replay a fresh seal. A room-local nearest sound source scans at four Hz; finite admitted ambient samples share the existing 24/4 voice limits and fade on exit/pause/disposal. Named ignition/fire synths are connected; B10 runtime textures/flames and S8 recordings remain missing/unapproved, with received sources preserved. `map=refiner` uses authored Gridiron geometry and a short explicit dev wave including Choristers for dry-navigation coverage, not final full-pool composition.
+
+| Exact command | Result |
+|---|---|
+| `npm test -- src/sim/hazards.test.ts src/sim/flowfield.test.ts` | Initial fixtures omitted `activeRoom`, then incorrectly assumed a sub-threshold fire hit must burst. Corrected accepted combat fixtures and used a real same-tick Revolver setup/world kill. A release regression also caught sparse undefined field slots; fixed release. Final 18 passed after one-way-drop and no-escape coverage. |
+| `npm test -- src/sim/hazards.perf.test.ts src/sim/hazards.test.ts` | 11 passed; includes 1500 continuously living enemies, four dry fields, 300 measured ticks and full snapshot encoding under the unchanged <=8 ms/tick limit. Inflated test HP maintains the maximum workload; this is not a human crest observation or benchmark. |
+| `npm test -- src/client/hazards.test.ts src/client/dominionSounds.test.ts src/audio/audio.test.ts` | 11 passed: accepted activation/dim/no fresh late flare, nearest-source cadence, finite capped ambient voice and lifetime. |
+| `npm test -- src/sim/hazards.test.ts src/sim/hazards.perf.test.ts src/sim/dominion.test.ts src/client/hazards.test.ts` | 42 passed after casting-escape, root/stun and immutable impact regressions. |
+| Final `npm test` | **880 passed / 83 files**, exit 0, 57.97 s. One worker; both original and additional dry-field <=8-ms assertions passed. Earlier complete runs: 870 and 876 passed before final additions. |
+| `npm run typecheck`; `npm run build -- --logLevel error`; `git diff --check` | All passed on final source. |
+| `npm run e2e -- e2e/refiner.spec.ts --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-refiner'` | 2 failed: gameplay assertions reached completion, but WebGL rejected GLSL reserved word `active`, so presentation was not passed. Renamed it; no threshold changes. |
+| Same command, output `r02-refiner-final` | **2 passed**, 34.9 s; activation, native contact damage and actual autopilot clear/dim. Captures inspected. |
+| `npm run e2e -- e2e/refiner.spec.ts e2e/dominion.spec.ts --grep-invert 'four real' --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-fire-verified'` | **5 passed**, exit 0, 2.3 min on final gold-border/casting-escape code: fire damage and dry safety without God in the damage test, native clear/dim, Dominion bait/cancel and two-client original-deadline/30-snapshot/upload/host-exit regression. |
+
+No benchmark or human Gate B is claimed. The earlier wider four-client failure remains open and was not converted into a pass by these scoped checks. R2.6 must adopt/validate the full pool and crest/warned spawning, then perform final traversal/multiplayer verification.
+
+## Remaining fixture limits and next stage
+
+Six-second crest and remaining templates are still unfinished; fire and Dominion components now exist but broader multiplayer verification is unresolved. This checkpoint must not be labeled the completed R2 milestone. Marked props supply gold halos; legitimate elite deaths use the R2.4 ledger entitlement. No shop, profile, durable money, XP, inventory or build mechanics have been added.
+
+The next ordered implementation is R2.6's full pool, crest pacing and warned fallback spawning. Preserve the R2.4 four-client verification failure as an open checkpoint issue and resolve/retest it before final milestone handoff.
 
 For a quick R2.1 check: run `npm run dev`, open a generated room with `?dev=1&map=rogue&seed=317434499&room=1&class=betrayer&god=1`, shoot the room's enemies and collect halos before they fade. Watch the wallet and motes; move onto a mote at full HP and confirm it waits. These dev/god runs do not establish balance or human Gate B acceptance.
 

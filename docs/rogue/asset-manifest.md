@@ -147,6 +147,8 @@ R2.3 runtime inventory: all **17 families / 51 WAVs** exist and are connected. N
 
 ## Audio: new events (S2–S8)
 
+R2.5: `src/client/hazards.ts` supplies pooled coded red-orange motion/ground glow and narrow gold channel edges. Received B10 sources remain preserved, without runtime texture/flame export or human visual acceptance. `refinerIgnite` and a finite voice-capped room-local `refinerFire` synth are connected; S8 recordings remain missing. Active/dim captures were inspected in production Chromium. This does not mark the requested art/audio assets delivered or accepted.
+
 All have a synthesized fallback (`required` = no), but a missing readable cue blocks its own milestone. `keep` = takes needed.
 
 | assetId | kind | required | neededBy | status | sourcePath | runtimePath | events | generator | generatedAt | plan | notes |

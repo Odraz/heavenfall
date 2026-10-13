@@ -105,6 +105,7 @@ import { aimDir, burstAngle, burstTier, rayCylinder, silverBulletHits } from './
 import { Director, ENGAGED_HIT_TICKS, ENGAGED_RADIUS, KILL_NEAR_RADIUS, type DirectorInfo } from './director';
 import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } from './field';
 import { FlowField, UNREACHABLE } from './flowfield';
+import { DryNavigation, FIRE_ENEMY_DAMAGE, FIRE_PLAYER_DAMAGE, Hazards } from './hazards';
 import { lineOfSight, raycastTerrain } from './los';
 import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
@@ -554,6 +555,8 @@ export class Simulation {
   private readonly eStartY = new Float64Array(ENEMY_SLOTS);
   readonly eVz = new Float64Array(ENEMY_SLOTS);
   readonly eGrounded = new Uint8Array(ENEMY_SLOTS);
+  /** Native area membership (Field of Blood or active ground hazard); no extra wire flag. */
+  readonly ePooled = new Uint8Array(ENEMY_SLOTS);
   readonly eHp = new Float64Array(ENEMY_SLOTS);
   readonly eTarget = new Int8Array(ENEMY_SLOTS);
   readonly eRoom = new Int8Array(ENEMY_SLOTS);
@@ -663,6 +666,9 @@ export class Simulation {
   /** Flow fields by player index, made when a player first takes the slot. */
   readonly groundFields: FlowField[] = [];
   readonly airFields: FlowField[] = [];
+  readonly hazards: Hazards;
+  readonly dryNavigation: DryNavigation;
+  private readonly hazardVictims = new Uint16Array(ENEMY_SLOTS);
   private readonly fieldValid: boolean[] = new Array(PLAYER_SLOTS).fill(false);
 
   // Separation spatial hashes (ground, air): counting sort of slots by cell.
@@ -706,6 +712,8 @@ export class Simulation {
   constructor(opts: SimOptions) {
     this.runId = opts.runId ?? '00000000000000000000000000000000';
     this.map = opts.map ?? loadMap(opts.dungeon);
+    this.hazards = new Hazards(this.map);
+    this.dryNavigation = new DryNavigation(this.map, this.hazards.active);
     this.pickups = new Pickups(this.map, (p) => this.emit('all', { type: 'pickupState', pickup: { ...p } }));
     this.props = new Props(this.map, opts.props ?? [], (p, origin) => this.propBroken(p, origin));
     this.dominions = new Dominions((phase, cast) => this.dominionPhase(phase, cast));
@@ -1044,6 +1052,7 @@ export class Simulation {
     this.tick++;
     this.nowMs = nowMs ?? this.tick * TICK_MS;
     this.checkRoomStarts();
+    this.syncHazards();
     this.updateTrickle();
     this.updateFlowFields();
     this.updateSpawning();
@@ -1054,12 +1063,14 @@ export class Simulation {
     this.updateProjectiles();
     this.updateClouds();
     this.props.update(this.tick, (p) => this.explodeProp(p));
+    this.updateHazardDamage();
     this.updateSouls();
     this.pickups.update(this.tick, this.players, (drop, collector) => this.collectPickup(drop, this.slots[collector.id]!));
     this.recoverEnemies();
     this.checkVictory();
     this.checkRoomClears();
     this.checkDefeat();
+    this.syncHazards();
     if (this.benchBurst && this.tick % BENCH_BURST_TICKS === 0) this.benchBurstHit();
     this.flushBursts();
   }
@@ -1248,16 +1259,18 @@ export class Simulation {
     for (let k = this.activeCount - 1; k >= 0; k--) {
       const s = this.active[k];
       if (this.eRoom[s] !== ai || this.eType[s] === GATEKEEPER || this.leashed[s]) continue;
-      const fields = this.eType[s] === CHERUB ? this.airFields : this.groundFields;
+      const avoids = (this.eType[s] === CHORISTER || this.eType[s] === DOMINION) && this.dryNavigation.room === ai;
+      const fields = this.eType[s] === CHERUB ? this.airFields : avoids ? this.dryNavigation.fields : this.groundFields;
       const c = Math.floor(this.eX[s]), r = Math.floor(this.eY[s]);
-      const reachable = this.players.some((p) => this.livingTargetable(p) && this.fieldValid[p.index] && fields[p.index].targetCell >= 0 && fields[p.index].at(c, r) !== UNREACHABLE);
+      const anchor = avoids && this.hazards.active[r * this.map.w + c] ? this.dryNavigation.project(r * this.map.w + c) : r * this.map.w + c;
+      const reachable = anchor >= 0 && this.players.some((p) => this.livingTargetable(p) && this.fieldValid[p.index] && fields[p.index] && fields[p.index]!.targetCell >= 0 && fields[p.index]!.at(anchor % this.map.w, Math.floor(anchor / this.map.w)) !== UNREACHABLE);
       if (reachable) this.eUnreachableSince[s] = -1;
       else if (this.eUnreachableSince[s] < 0) this.eUnreachableSince[s] = this.tick;
       const unreachable = this.eUnreachableSince[s] >= 0 && this.tick - this.eUnreachableSince[s] >= ticks(10);
       const stuck = lastPlaced && st.alive <= 10 && this.tick - this.eStillSince[s] >= ticks(20);
       if (!unreachable && !stuck && this.eRecoveryFailed[s] < 0) continue;
       const points = this.map.roomSpawnPoints[ai], safe = new Uint8Array(points.length);
-      this.markEligible(points, SPAWN_MIN_DIST, safe);
+      this.markEligible(points, SPAWN_MIN_DIST, safe, this.spawnEligibility(ai, points, this.eType[s]));
       let best = -1, distance = -1;
       for (let i = 0; i < points.length; i++) {
         if (!safe[i]) continue;
@@ -1267,7 +1280,7 @@ export class Simulation {
         for (const p of this.players) {
           if (!this.livingTargetable(p)) continue;
           nearest = Math.min(nearest, (p.x - x - 0.5) ** 2 + (p.y - y - 0.5) ** 2);
-          if (this.fieldValid[p.index] && fields[p.index].targetCell >= 0 && fields[p.index].at(x, y) !== UNREACHABLE) reachableMarker = true;
+          if (this.fieldValid[p.index] && fields[p.index] && fields[p.index]!.targetCell >= 0 && fields[p.index]!.at(x, y) !== UNREACHABLE) reachableMarker = true;
         }
         if (reachableMarker && nearest > distance) { distance = nearest; best = i; }
       }
@@ -1485,6 +1498,7 @@ export class Simulation {
       }
       if (!this.livingTargetable(p) || room === ROOM_NONE || !this.hasEnemies(room)) {
         this.fieldValid[p.index] = false;
+        this.dryNavigation.release(p.index);
         continue;
       }
       const k = p.index * 2;
@@ -1507,6 +1521,7 @@ export class Simulation {
 
   /** Explicit refresh for dev/test placements, including roomless geometry fixtures. */
   refreshFields(): void {
+    this.syncHazards();
     for (const p of this.players) if (this.livingTargetable(p)) this.computeFields(p, this.roomAt(p.x, p.y), true);
   }
 
@@ -1523,6 +1538,36 @@ export class Simulation {
     if (flyers) this.airFields[p.index].compute(c, r, clamp);
     else this.airFields[p.index].targetCell = -1;
     this.fieldValid[p.index] = true;
+    if (this.dryNavigation.room === room && room !== ROOM_NONE) this.dryNavigation.compute(p.index, c, r);
+    else this.dryNavigation.release(p.index);
+  }
+
+  private syncHazards(): void {
+    const room = !this.result && this.activePhase === PHASE_COMBAT ? this.activeRoom : -1;
+    const changed = this.hazards.setRoom(room);
+    let avoiding = false;
+    if (this.hazards.room >= 0) for (let k = 0; k < this.activeCount && !avoiding; k++) {
+      const s = this.active[k]; avoiding = (this.eType[s] === CHORISTER || this.eType[s] === DOMINION) && this.roomAt(this.eX[s], this.eY[s]) === this.hazards.room;
+    }
+    if (this.dryNavigation.setRoom(avoiding ? this.hazards.room : -1) || changed) this.invalidateFields();
+  }
+
+  private updateHazardDamage(): void {
+    this.ePooled.fill(0);
+    if (this.hazards.room < 0 && this.tick >= this.fieldUntil) return;
+    // Player snapshots carry accepted feet, not a grounded bit; actual floor contact is the test.
+    for (const p of this.players) if (this.livingTargetable(p) && this.hazards.contact(p.x, p.y, p.z, true)) this.damagePlayer(p, FIRE_PLAYER_DAMAGE);
+    let count = 0;
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k], fire = this.hazards.contact(this.eX[s], this.eY[s], this.eZ[s], this.eGrounded[s] === 1);
+      this.ePooled[s] = fire || this.tick < this.fieldUntil && inField(this.fieldX, this.fieldY, this.eX[s], this.eY[s]) ? 1 : 0;
+      if (fire) this.hazardVictims[count++] = s;
+    }
+    // Stable bounded slots: owned shield bursts/removals cannot skip or damage a victim twice.
+    for (let k = 0; k < count; k++) {
+      const s = this.hazardVictims[k];
+      if (this.eAlive[s]) this.damageEnemy(s, FIRE_ENEMY_DAMAGE, -1, FIRE_ENEMY_DAMAGE, this.eX[s], this.eY[s], true);
+    }
   }
 
   // ------------------------------------------------------------------ spawning
@@ -1853,6 +1898,7 @@ export class Simulation {
     if (!this.eAlive[slot]) return;
     this.dominions.cancel(slot, this.tick);
     this.eAlive[slot] = 0;
+    this.ePooled[slot] = 0;
     const type = this.eType[slot];
     if (type === DOMINION) this.livingDominions--;
     const d = sweep || type === GATEKEEPER ? null : this.activeDirector();
@@ -3392,13 +3438,14 @@ export class Simulation {
     const y = this.eY[slot];
     const c = Math.floor(x);
     const r = Math.floor(y);
-    const tc = Math.floor(p.x);
-    const tr = Math.floor(p.y);
+    const projected = !!field.excluded && field.targetCell !== Math.floor(p.y) * this.map.w + Math.floor(p.x);
+    const tc = projected ? field.targetCell % this.map.w : Math.floor(p.x);
+    const tr = projected ? Math.floor(field.targetCell / this.map.w) : Math.floor(p.y);
     let gx: number;
     let gy: number;
     if (Math.abs(c - tc) <= 1 && Math.abs(r - tr) <= 1) {
-      gx = p.x;
-      gy = p.y;
+      gx = projected ? tc + 0.5 : p.x;
+      gy = projected ? tr + 0.5 : p.y;
       out.direct = true;
     } else {
       const n = field.bestNeighbor(c, r);
@@ -3429,15 +3476,28 @@ export class Simulation {
     const rooted = this.tick < this.eRootUntil[slot];
     const holds = type === DOMINION ? this.dominions.holding(slot, this.tick) : type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot));
     const p = t >= 0 ? this.slots[t] : undefined;
-    if (p && !rooted && !holds && !stunned) {
+    const avoids = this.hazards.room >= 0 && (type === CHORISTER || type === DOMINION) && this.hazards.room === this.roomAt(b.x, b.y);
+    const cell = avoids ? this.hazards.cell(b.x, b.y) : -1, inFire = avoids && !!this.hazards.active[cell];
+    if (p && !rooted && (!holds || inFire) && !stunned) {
       const s = this.steerOut;
-      if (this.steer(slot, this.groundFields[t], p, s)) {
+      const field = avoids ? this.dryNavigation.fields[t] : this.groundFields[t];
+      let steered = false;
+      if (inFire) {
+        const next = this.dryNavigation.escapeStep(cell);
+        if (next >= 0) {
+          const dx = next % this.map.w + 0.5 - b.x, dy = Math.floor(next / this.map.w) + 0.5 - b.y, d = Math.hypot(dx, dy);
+          if (d > 1e-9) { s.dx = dx / d; s.dy = dy / d; s.dist = d; s.direct = false; steered = true; }
+        }
+      } else if (field && (!avoids || field.targetCell >= 0)) steered = this.steer(slot, field, p, s);
+      if (steered) {
         let step = this.speedOf(slot) * TICK_DT;
         if (s.direct && type === BLESSED) step = Math.min(step, s.dist - BLESSED_STOP);
         else if (s.direct) step = Math.min(step, s.dist);
         if (step > 0) {
           mx = s.dx * step;
           my = s.dy * step;
+          // Only ordinary steering refuses fire. Accepted knockbacks, pulls and separation keep their existing paths.
+          if (avoids && !inFire && this.hazards.active[this.hazards.cell(b.x + mx, b.y + my)]) mx = my = 0;
         }
       }
     }
