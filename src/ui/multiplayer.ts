@@ -42,6 +42,7 @@ export interface FormScreen {
 }
 
 export interface HostSetupActions {
+  fixtureId?: string;
   onCreate: (password: string, dungeonId: string) => void;
   onBack: () => void;
 }
@@ -52,7 +53,7 @@ export function hostSetupScreen(a: HostSetupActions): FormScreen {
   const panel = el('div', 'panel', screen);
   const password = textField(panel, 'Password', 'password', PASSWORD_MAX);
   el('div', 'field-hint', panel, 'Leave empty for an open game.');
-  const dungeonId = dungeonPicker(panel);
+  const dungeonId = dungeonPicker(panel, a.fixtureId);
   const status = el('div', 'message', panel);
   const buttons = el('div', 'buttons', panel);
   button('Back', buttons, a.onBack, 'secondary');

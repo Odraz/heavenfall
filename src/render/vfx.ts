@@ -234,7 +234,7 @@ export class Vfx {
   /** Spawn rays (M12 §2.4) by spawn point, reused; `since` is when the ray last appeared. */
   private readonly spawnRays = new Map<
     string,
-    { mesh: THREE.Mesh; material: THREE.ShaderMaterial; since: number; flare: number; ring: number }
+    { mesh: THREE.Mesh; material: THREE.ShaderMaterial; since: number; flare: number; ring: number; width: number }
   >();
   private readonly liveBeamMaterial: THREE.MeshBasicMaterial;
   /** Falling Star's preview (M12 §5.2), made on first use and reused. */
@@ -588,7 +588,7 @@ export class Vfx {
    * last flare; at most every 0.4 s a gold ground ring grows from it. (x, y, z) is the point's cell
    * center on its floor.
    */
-  flareSpawn(now: number, x: number, y: number, z: number): void {
+  flareSpawn(now: number, x: number, y: number, z: number, width = 1): void {
     const key = `${x},${y}`;
     let g = this.spawnRays.get(key);
     if (!g) {
@@ -610,12 +610,13 @@ export class Vfx {
       mesh.frustumCulled = false;
       this.columns.add(mesh);
       this.group.add(mesh);
-      g = { mesh, material, since: now, flare: -Infinity, ring: -Infinity };
+      g = { mesh, material, since: now, flare: -Infinity, ring: -Infinity, width };
       this.spawnRays.set(key, g);
     }
     // A ray that had faded out comes down from the sky again.
     if (now - g.flare >= SPAWN_RAY_HOLD_MS + SPAWN_GLOW_FADE_MS) g.since = now;
     g.flare = now;
+    g.width = width;
     if (now - g.ring >= SPAWN_RING_GAP_MS) {
       g.ring = now;
       this.ring(now, x, y, z, SPAWN_GOLD, 0.3, SPAWN_RING_RADIUS, SPAWN_RING_GAP_MS);
@@ -629,7 +630,7 @@ export class Vfx {
       g.mesh.visible = f > 0;
       if (!g.mesh.visible) continue;
       const drop = Math.min(1, Math.max(0, (now - g.since) / SPAWN_RAY_DROP_MS));
-      g.mesh.scale.set(SPAWN_RAY_WIDTH, SPAWN_RAY_HEIGHT * Math.max(1e-3, 1 - (1 - drop) ** 3), 1);
+      g.mesh.scale.set(SPAWN_RAY_WIDTH * g.width, SPAWN_RAY_HEIGHT * Math.max(1e-3, 1 - (1 - drop) ** 3), 1);
       g.material.uniforms.opacity.value = Math.min(1, f);
       g.material.uniforms.time.value = now / 1000;
     }

@@ -94,7 +94,7 @@ async function loadGameAssets(run: RunConfig, roster: RosterEntry[], localId: nu
   progress('Drawing the sprites…');
   const localClass = roster.find((r) => r.id === localId)?.classId;
   const others = multiplayer ? CLASS_IDS.filter((c) => c !== localClass) : roster.filter((r) => r.id !== localId).map((r) => r.classId);
-  const [atlas, textures, enemyAnims, players] = await Promise.all([buildAtlas(), loadGameTextures(map.gate !== null), loadEnemyAnims(), loadPlayerAnims(others)]);
+  const [atlas, textures, enemyAnims, players] = await Promise.all([buildAtlas(), loadGameTextures(map.gate !== null), loadEnemyAnims(map.rooms.some((r) => r.waves.some((w) => (w.dominions ?? 0) > 0))), loadPlayerAnims(others)]);
   return { map, floor, runId: run.runId, atlas, textures, enemyAnims, players };
 }
 
@@ -166,6 +166,7 @@ function toHostSetup(name: string): void {
   let left = false;
   let creating = false;
   const view = hostSetupScreen({
+    fixtureId: params.devMenu ? params.mapId : undefined,
     onCreate: (password, dungeonId) => {
       if (creating) return;
       creating = true;
@@ -287,6 +288,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
   const chat: Array<{ playerId: number; name: string; text: string }> = [];
 
   const disposeGame = (): void => {
+    delete window.__heavenfallReady;
     game?.dispose();
     game = null;
     s.transport.onSnapshot = () => {};
@@ -420,8 +422,16 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
     await g.prepare();
     if (stale()) return;
     view.set('Waiting for the other players…');
-    s.transport.sendCtrl({ type: 'ready' });
-    if (go) enterGame();
+    let sentReady = false;
+    const ready = (): void => {
+      delete window.__heavenfallReady;
+      if (sentReady || stale()) return;
+      sentReady = true;
+      s.transport.sendCtrl({ type: 'ready' });
+      if (go) enterGame();
+    };
+    if (params.readyHold) window.__heavenfallReady = ready;
+    else ready();
   };
 
   s.transport.onCtrl = (msg) => {
@@ -491,7 +501,7 @@ document.addEventListener('click', (e) => {
   if ((e.target as Element | null)?.closest?.('button:not(:disabled)')) sfx('buttonClick');
 });
 
-if (params.benchArena >= 0 || params.dev) void startSingleplayer('Dev', params.classId, params.mapId, params.seed);
+if (params.benchArena >= 0 || params.dev && !params.devMenu) void startSingleplayer('Dev', params.classId, params.mapId, params.seed);
 // Bot auto-join skips the Title and Join screens (M8 §6.4).
 else if (params.autojoin) toJoin(validName(params.name ?? '') ?? 'Bot', params.join, true);
 else toTitle();

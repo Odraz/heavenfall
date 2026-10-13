@@ -2,11 +2,12 @@
  * The game's sound effects and music (M8 §9.1, §9.2), driven by what the client already knows: its
  * own input, snapshot changes and events.
  */
-import { audio, setMusic, sfx, type SoundPos } from '../audio/audio';
+import { audio, setMusic, sfx, type SoundPos, type VoiceHandle } from '../audio/audio';
 import { PRIO_ABILITY, PRIO_OTHERS } from '../audio/sfx';
 import type { ClassId } from '../data/classes';
 import { COIN, GOLD_HALO } from '../data/pickups';
-import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
+import { BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
+import type { DominionRing } from './dominionView';
 import type { TrackId } from '../data/music';
 import type { GameEvent } from '../net/messages';
 import { PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
@@ -39,6 +40,18 @@ export class GameSounds {
   renderDelay = 0;
   private readonly enemyState = new Uint8Array(ENEMY_SLOTS).fill(NO_STATE);
   private tickSecond = 0;
+  private readonly tells = new Map<number, VoiceHandle>();
+  private readonly steps = new Map<number, { incarnation: number; x: number; y: number; distance: number }>();
+
+  /** Resume only the remaining tell; snapshot omission/control/disposal stops the actual voice. */
+  dominions(rings: readonly DominionRing[], tick: number): void {
+    for (const [id, handle] of this.tells) if (!rings.some((c) => c.castId === id)) { handle.stop(); this.tells.delete(id); }
+    for (const c of rings) {
+      if (this.tells.get(c.castId)?.playing()) continue;
+      const handle = sfx('dominionTell', c, 1, 0, PRIO_ABILITY, 1, { elapsed: (tick - c.startTick) / 30, duration: (c.impactTick - c.startTick) / 30 });
+      if (handle) this.tells.set(c.castId, handle);
+    }
+  }
 
   constructor(
     private readonly map: GameMap,
@@ -139,10 +152,23 @@ export class GameSounds {
       for (let i = 0; i < n; i++) sfx(SECONDARY_SFX[cls], at, 1, (i * gap) / n, PRIO_OTHERS);
     }
     // Enemy wind-ups.
+    const liveDominions = new Set<number>();
     for (let i = 0; i < s.enemyCount; i++) {
       const slot = s.enemySlot[i];
       const st = s.enemyState[i];
       const type = s.enemyType[i];
+      if (type === DOMINION) {
+        liveDominions.add(slot);
+        const x = s.enemyX[i], y = s.enemyY[i], incarnation = s.enemyIncarnation[i];
+        let step = this.steps.get(slot);
+        if (!step || step.incarnation !== incarnation) {
+          step = { incarnation, x, y, distance: 0 }; this.steps.set(slot, step); sfx('dominionStep', { x, y }, 1, 0, PRIO_OTHERS);
+        } else {
+          const distance = Math.hypot(x - step.x, y - step.y); step.x = x; step.y = y;
+          if (distance < 2) step.distance += distance;
+          if (step.distance >= 1.2) { step.distance %= 1.2; sfx('dominionStep', { x, y }, 1, 0, PRIO_OTHERS); }
+        }
+      }
       if (st === ST_WINDUP && this.enemyState[slot] !== ST_WINDUP) {
         const at = { x: s.enemyX[i], y: s.enemyY[i] };
         if (type === CHORISTER) sfx('choristerWindup', at);
@@ -150,6 +176,7 @@ export class GameSounds {
       }
       this.enemyState[slot] = st;
     }
+    for (const slot of this.steps.keys()) if (!liveDominions.has(slot)) this.steps.delete(slot);
     if (!prev) return;
     // The Gatekeeper's Volley: its wind-up, then the 8 orbs it fires (one sound for them).
     const boss = this.bossPos(s);
@@ -228,6 +255,10 @@ export class GameSounds {
       case 'propBlast':
         sfx('blastLampBurst', { x: e.x, y: e.y });
         break;
+      case 'dominionCast':
+        if (e.phase !== 'start') { this.tells.get(e.cast.castId)?.stop(); this.tells.delete(e.cast.castId); }
+        if (e.phase === 'strike') sfx('dominionSlam', { x: e.x, y: e.y }, 1, 0, PRIO_ABILITY);
+        break;
       case 'bossCast':
         sfx(e.phase === 'start' ? 'judgmentCharge' : e.phase === 'completed' ? 'judgmentBlast' : 'interrupted');
         break;
@@ -278,6 +309,7 @@ export class GameSounds {
   }
 
   dispose(): void {
+    for (const handle of this.tells.values()) handle.stop(); this.tells.clear(); this.steps.clear();
     audio()?.music.keepStings(false);
   }
 }

@@ -37,6 +37,8 @@ export interface OrientedTemplate {
   obstacles: Array<{ rect: Rect; purpose: string }>;
   rewardSpot: Cell;
   chorister: Rect[];
+  dominion: Rect[];
+  spawnTags: Array<{ at: Cell; only: Array<'chorister' | 'dominion'> }>;
   points: {
     pedestals?: Cell[];
     advocate?: Cell;
@@ -86,6 +88,8 @@ export function orientTemplate(t: RoomTemplate, o: number): OrientedTemplate {
     obstacles: t.obstacles.map((z) => ({ rect: rect(o, W, H, z.rect), purpose: z.purpose })),
     rewardSpot: rewardRect(o, W, H, t.rewardSpot),
     chorister: (t.spawnAffinity?.chorister ?? []).map((z) => rect(o, W, H, z)),
+    dominion: (t.spawnAffinity?.dominion ?? []).map((z) => rect(o, W, H, z)),
+    spawnTags: (t.spawnTags ?? []).map((tag) => ({ at: c(tag.at), only: [...tag.only] })),
     points: {},
   };
   const pt = t.points;

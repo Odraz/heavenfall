@@ -10,6 +10,7 @@ import hereticPortrait from '../../assets/ui/portrait-heretic.png';
 import binderPortrait from '../../assets/ui/portrait-binder.png';
 import betrayerPortrait from '../../assets/ui/portrait-betrayer.png';
 import logoUrl from '../../assets/ui/ui-logo.png';
+import { getDungeon } from '../data/dungeons';
 
 /** Each class's idle frame from the front, rendered from its 3D model (§11.2). */
 const PORTRAITS: Record<ClassId, string> = { fallen: fallenPortrait, heretic: hereticPortrait, binder: binderPortrait, betrayer: betrayerPortrait };
@@ -166,11 +167,13 @@ export function classCard(id: ClassId, parent: HTMLElement): HTMLButtonElement {
 }
 
 /** The dungeon picker with its only entry preselected; returns that dungeon's id. */
-export function dungeonPicker(panel: HTMLElement): string {
+export function dungeonPicker(panel: HTMLElement, fixtureId?: string): string {
   el('div', 'section-label', panel, 'Dungeon');
   const dungeons = el('div', 'dungeon-picker', panel);
-  const dungeonId = MENU_DUNGEONS[0].id;
-  for (const d of MENU_DUNGEONS) {
+  const fixture = getDungeon(fixtureId);
+  const choices = fixture ? [{ id: fixture.id, name: `${fixture.name} (dev)` }] : MENU_DUNGEONS;
+  const dungeonId = choices[0].id;
+  for (const d of choices) {
     const opt = el('button', 'dungeon-option', dungeons, d.name);
     opt.type = 'button';
     opt.setAttribute('aria-pressed', String(d.id === dungeonId));

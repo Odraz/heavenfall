@@ -45,6 +45,9 @@ export interface LoopHandle {
   setRate(rate: number): void;
   stop(): void;
 }
+export interface VoiceHandle { stop(): void; playing(): boolean; }
+/** Play only the remaining accepted window, stretching the source to its authoritative duration. */
+export interface PlayWindow { elapsed: number; duration: number; }
 
 export class AudioEngine {
   readonly ctx: AudioContext;
@@ -154,7 +157,7 @@ export class AudioEngine {
    * priority can be taken over. `priority` overrides the sound's own (another player's weapon). An
    * explicit `rate` (playback rate) plays without the random pitch variation, so ladders stay exact.
    */
-  play(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number, rate?: number): void {
+  play(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number, rate?: number, window?: PlayWindow): VoiceHandle | undefined {
     const def = SFX[name];
     let buffer = this.buffers.get(name);
     if (!buffer) return;
@@ -164,6 +167,7 @@ export class AudioEngine {
       buffer = recorded.bufs[take];
       gain *= recorded.gains[take];
     }
+    if (window && (![window.elapsed, window.duration, buffer.duration].every(Number.isFinite) || window.elapsed < 0 || window.duration <= 0 || window.elapsed >= window.duration || buffer.duration <= 0)) return;
     const prio = priority ?? def.priority;
     const now = this.ctx.currentTime;
     const start = Math.max(now, now + when);
@@ -191,7 +195,7 @@ export class AudioEngine {
     if (recorded) recorded.bag.take();
     const src = this.ctx.createBufferSource();
     src.buffer = buffer;
-    src.playbackRate.value = playbackRate('ui' in def && def.ui === true, rate);
+    src.playbackRate.value = window ? buffer.duration / window.duration : playbackRate('ui' in def && def.ui === true, rate);
     const g = this.ctx.createGain();
     g.gain.value = gain;
     src.connect(g);
@@ -204,7 +208,13 @@ export class AudioEngine {
     const voice: Voice = { name, priority: prio, started: start, src, ended: false };
     src.onended = () => (voice.ended = true);
     this.voices.push(voice);
-    src.start(start);
+    src.start(start, window ? window.elapsed * src.playbackRate.value : 0);
+    let stopped = false;
+    return { playing: () => !voice.ended && !stopped, stop: () => {
+      if (stopped || voice.ended) return;
+      stopped = true; g.gain.setTargetAtTime(0, this.ctx.currentTime, 0.01);
+      try { src.stop(this.ctx.currentTime + 0.04); } catch { /* Already ended. */ }
+    } };
   }
 
   /** Starts a looping sound effect; it plays outside the voice limits until stopped. */
@@ -293,6 +303,6 @@ export function setMusic(play: TrackId | null, next: TrackId | null = null): voi
 }
 
 /** Plays a sound effect if audio is running (M8 §9.1). */
-export function sfx(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number, rate?: number): void {
-  engine?.play(name, pos, gain, when, priority, rate);
+export function sfx(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number, rate?: number, window?: PlayWindow): VoiceHandle | undefined {
+  return engine?.play(name, pos, gain, when, priority, rate, window);
 }

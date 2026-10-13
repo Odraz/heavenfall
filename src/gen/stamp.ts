@@ -171,11 +171,12 @@ export function stampFloor(layout: Layout, a: Assignment, mode: ValidateMode = '
     if (ot.points.advocate) def.points!.advocate = w(ot.points.advocate);
     if (ot.points.watchers) def.points!.watchers = ot.points.watchers.map(w);
     if (ot.points.addSpawns) def.points!.addSpawns = { gate: ot.points.addSpawns.gate.map(w), field: ot.points.addSpawns.field.map(w) };
-    if (ot.chorister.length) {
+    if (ot.chorister.length || ot.dominion.length || ot.spawnTags.length) {
       // Preferred spawn indices: the room's x cells in reading order inside an affinity rect.
       const xs: Cell[] = [];
       for (let y = rect.y0; y <= rect.y1; y++) for (let x = rect.x0; x <= rect.x1; x++) if (markers[y][x] === 'x') xs.push([x, y]);
-      def.chorister = xs.flatMap(([x, y], k) => (ot.chorister.some((z) => x - ox >= z.x0 && x - ox <= z.x1 && y - oy >= z.y0 && y - oy <= z.y1) ? [k] : []));
+      for (const type of ['chorister', 'dominion'] as const) if (ot[type].length) def[type] = xs.flatMap(([x, y], k) => (ot[type].some((z) => x - ox >= z.x0 && x - ox <= z.x1 && y - oy >= z.y0 && y - oy <= z.y1) ? [k] : []));
+      if (ot.spawnTags.length) def.spawnTags = ot.spawnTags.map((tag) => ({ index: xs.findIndex(([x, y]) => x === tag.at[0] + ox && y === tag.at[1] + oy), only: [...tag.only] }));
     }
     if (ot.gate) {
       const g = ot.gate;

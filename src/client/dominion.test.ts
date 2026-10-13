@@ -12,6 +12,24 @@ const snapshot = (incarnation = 10): Snapshot => ({ runId: 'run', tick: 120, sta
 const event = (phase: 'start' | 'strike' | 'cancel'): Extract<GameEvent, { type: 'dominionCast' }> => ({ type: 'dominionCast', phase, cast: { ...cast }, x: 7, y: 8, z: 1 });
 
 describe('Dominion accepted projection', () => {
+  it('admits each reliable cue once when its complete snapshot already applied the transition', () => {
+    const p = new DominionProjection('run'); p.snapshot({ ...snapshot(), tick: 110 });
+    expect(p.event(event('start'), 110, 99)).toBe(false); // Start emission must match its immutable cast start.
+    expect(p.event(event('start'), 100, 4)).toBe(true);
+    expect(p.event(event('start'), 100, 5)).toBe(false);
+    expect(p.snapshot({ ...snapshot(), tick: 145, stateRevision: 6, dominionCasts: [], totalDominionCasts: 0 })).toBe(true);
+    expect(p.event(event('strike'), 145, 6)).toBe(true);
+    expect(p.event(event('strike'), 145, 7)).toBe(false);
+    expect(p.active.size).toBe(0);
+  });
+  it('keeps snapshot-before-cancel cues and rejects altered cast identities without consuming revision', () => {
+    const p = new DominionProjection('run'); p.snapshot(snapshot());
+    p.snapshot({ ...snapshot(), tick: 125, stateRevision: 5, dominionCasts: [], totalDominionCasts: 0 });
+    expect(p.event({ ...event('cancel'), cast: { ...cast, room: 1 } }, 125, 99)).toBe(false);
+    expect(p.event(event('cancel'), 125, 5)).toBe(true);
+    expect(p.event(event('cancel'), 125, 6)).toBe(false);
+    expect(p.active.size).toBe(0);
+  });
   it('catches up at the remaining deadline, follows accepted feet and never attaches to a reused slot', () => {
     const p = new DominionProjection('run'); expect(p.sync(checkpoint())).toBe(true);
     expect(p.rings(snapshot(), 120)[0]).toMatchObject({ x: 7, y: 8, z: 1, startTick: 100, impactTick: 145 });

@@ -8,7 +8,9 @@ import { PLAYER_EYE, PLAYER_HEIGHT, PLAYER_RADIUS } from '../sim/constants';
 import { FlowField, UNREACHABLE } from '../sim/flowfield';
 import { lineOfSight, raycastTerrain } from '../sim/los';
 import { roomCleared, type GameMap } from '../sim/map';
-import { distToCylinder, type Body } from '../sim/movement';
+import { distToCylinder, tryDisplace, type Body } from '../sim/movement';
+import { DOMINION_HEIGHT_TOLERANCE, DOMINION_RADIUS } from '../data/dominion';
+import type { DominionRing } from './dominionView';
 import { PITCH_LIMIT } from './localPlayer';
 
 /** A living enemy as the client renders it (interpolated), with its derived height. */
@@ -25,6 +27,8 @@ export interface BotView {
   body: Body;
   dead: boolean;
   enemies: BotEnemy[];
+  /** Already filtered by accepted cast deadline, room and incarnation. */
+  dominionRings?: readonly DominionRing[];
   /** The snapshot's active room (255: none), its phase and the cleared rooms (rogue game.md §14.3). */
   activeRoom: number;
   activePhase: number;
@@ -196,8 +200,28 @@ export class Bot {
     }
 
     if (goal) this.steer(now, v, goal, o);
+    this.escapeDominion(v, o);
     o.jump = v.blockedLastFrame;
     return o;
+  }
+
+  /** Sixteen short collision probes: bounded local escape takes precedence over a normal goal. */
+  private escapeDominion(v: BotView, o: BotOutput): void {
+    const room = v.map.roomOf[Math.floor(v.body.y) * v.map.w + Math.floor(v.body.x)];
+    const rings = (v.dominionRings ?? []).filter((c) => c.room === room && Math.abs(c.z - v.body.z) <= DOMINION_HEIGHT_TOLERANCE);
+    if (!rings.some((c) => Math.hypot(c.x - v.body.x, c.y - v.body.y) < DOMINION_RADIUS + v.body.radius)) return;
+    const clearance = (x: number, y: number) => Math.min(...rings.map((c) => Math.hypot(c.x - x, c.y - y)));
+    let best = clearance(v.body.x, v.body.y), dx = 0, dy = 0;
+    for (let k = 0; k < 16; k++) {
+      const x = Math.cos(k * Math.PI / 8), y = Math.sin(k * Math.PI / 8), probe = { ...v.body };
+      // Walk every substep, so an endpoint beyond a wall cannot masquerade as an escape.
+      let legal = true;
+      for (let n = 0; n < 5; n++) if (!tryDisplace(v.map, probe, x * 0.2, y * 0.2)) { legal = false; break; }
+      if (!legal) continue;
+      const score = clearance(probe.x, probe.y);
+      if (score > best + 1e-6) { best = score; dx = x; dy = y; }
+    }
+    o.dirX = dx; o.dirY = dy;
   }
 
   /** BFS through cleared rooms; closest frontier first, then room index. */

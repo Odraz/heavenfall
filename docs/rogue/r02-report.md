@@ -1,6 +1,6 @@
 # R2 report: pressure and pickups
 
-**Status: implementing** (2026-10-13). Brief: [r02.md](r02.md). R2.1–R2.3 are implemented and verified; R2.4–R2.7 remain. Gate B and human feel acceptance are pending. Local branch `rogue`; nothing pushed, merged or published.
+**Status: implementing** (2026-10-13). Brief: [r02.md](r02.md). R2.1–R2.3 are implemented and verified. R2.4 authority and client components are implemented; scoped Dominion checks pass, broader four-client verification remains unresolved. R2.5–R2.7 implementation remains. Gate B and human feel acceptance are pending. Local branch `rogue`; nothing pushed, merged or published.
 
 ## Authorization and Git facts
 
@@ -10,7 +10,7 @@
 - R2.1 code end SHA: `36d24131b40de6399ae37cd4e42f395fd31c9629` (authoritative pickups, halo ledger and bounded snapshots). The following documentation commit only records that identity.
 - R2.2 code end SHA: `42271ee3a73bf300aa8d11e6437dca429150e484` (authoritative props, delayed blasts and late-entry checkpoints).
 - R2.3 code end SHA: `5755024eda5b404c29f8651256e5abc2d8e51740` (all 51 S1 runtime takes, bounded loader and cosmetic shuffle bags).
-- R2.4 authority/wire component end SHA: `65e4384861ddb038c8d38d755fe573316c8c18b8`. R2.4 itself remains unfinished; resume its client/bot/dev-encounter work below.
+- R2.4 authority/wire component end SHA: `65e4384861ddb038c8d38d755fe573316c8c18b8`. Client component and its verification limitations are recorded below.
 - Protocol version **4**, rules version **3** after the R2.4 authority/wire checkpoint (R2.1–R2.3 used 3/2). Floor layout/pool/pinned hash remain the R1 fixture until R2.6 introduces the full pool. Restart the dev server after a commit so every participant uses the same artifact fingerprint.
 
 ## R2.1: pickups, halo ledger and bounded snapshots
@@ -92,7 +92,7 @@ Changed: `src/audio/recorded.ts`, `src/audio/recorded.test.ts`, `src/audio/audio
 
 The first browser run passed 3/4 but missed the toggle test's instantaneous mouse click during the Revolver cooldown. The fixture now holds real fire until playback, without changing game code or timing limits; the final four-test run passed. No multiplayer/network code changed in this stage, and no benchmark or human hearing approval is claimed.
 
-## R2.4 authority/wire checkpoint (stage still unfinished)
+## R2.4 authority/wire checkpoint (historical component)
 
 Start SHA `5755024eda5b404c29f8651256e5abc2d8e51740`. This component checkpoint implements Dominion type 4 (1500 HP, radius 0.45, body 3.2, speed 3.5), scaled elite group HP, the two-alive queue cap and the complete host cast/slam/drop path. It is **not** a playable completed R2.4 stage: the runtime pool still has no elite template, and the ring, atlas fallback, sounds and bot consumers are not wired yet.
 
@@ -118,11 +118,42 @@ Next work within R2.4: wire `Game` to the projection/ring and accepted start/str
 
 Browser verification: `npm run e2e -- e2e/multiplayer.spec.ts e2e/rogue-floor.spec.ts --grep 'multiplayer\|second generated run' --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-core'` finished **1 passed / 1 failed**, exit 1, 1.5 min. Run reset passed (24.7 s); after successful late entry, the late client returned to Title with `Host left the game` during the three-second chat check, while the other clients remained in-game and had that chat message; no console/page errors were reported. The cause is not established by that output. With no code or threshold change, `npm run e2e -- e2e/multiplayer.spec.ts --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-core-mp-retry'` then **passed**, exit 0, 2.7 min, including late prop catch-up, chat, 30 advancing consistent snapshot samples, original upload bound and host departure. Both production builds passed. Keep the initial intermittent failure visible; this is not a claim that active Dominion late entry was tested. `git diff --check` passed.
 
+## R2.4 client/bot/encounter checkpoint
+
+Start SHA `e547409`. Game now owns the accepted cast projection and three pooled ground rings; centers match complete-snapshot feet/incarnations, fill and mace raise use the original impact deadline. Snapshot-before-reliable ordering admits each terminal cue once without restarting projection. FloorSync restores only the remaining tell. Accepted cancel/omission/disposal stops its real voice; accepted strike plays the positional slam and ring flash without inventing victims. The tell resumes the buffer at its elapsed offset, uses the existing 24/4 voice caps and fades on cancel. Positional steps track incarnation and distance. Recorded S1 bags, priorities, limiter and sample toggle remain intact.
+
+The received A1 references still have no runtime model/atlas approval. A tall labeled coded ivory/bronze figure with folded wings and a gold mace supplies eight directions, walking, six raise/two release poses, pain and death. Its body reads about 3.4 m, with mace above it. It loads only when authored waves contain Dominions. This is fallback presentation, not delivered/accepted model art. S2 Dominion recordings remain missing; named synths are connected. Spawn rays widen 1.5x for a Dominion. The empty fixture minimap is hidden so it cannot cover encounter feedback.
+
+Bots retain aim/fire/abilities while taking a collision-checked escape from same-room/same-height live rings; probes are bounded at sixteen short paths. Both Chorister and Dominion affinities survive all eight template orientations. Marker tags filter type eligibility before distance and affinity, including ordinary points borrowed by squads/trickles; blocked elite points do not stall fodder. The runtime R1 pool/hash is preserved. The authored Lampstands template is present for the scoped `map=dominion` lab, whose short explicit waves are a dev fixture, not the final generated-room composition. Full pool adoption stays R2.6.
+
+`dev=1&menu=1` enables actual menus/PeerJS with the labeled dev fixture. `readyHold=1` additionally exposes a one-shot prepared-client ready callback for deadline catch-up testing; it sends the normal ready message, never fabricates simulation/snapshot/cast state, and preserves the ordinary 20-second loading deadline. The callback clears on send/disposal/new round. Normal menus and auto-dev behavior retain their defaults.
+
+| Exact command | Result |
+|---|---|
+| `npm test -- src/client/dominion.test.ts src/audio/audio.test.ts src/data/dungeons/validate.test.ts src/params.test.ts src/sim/dominion.test.ts` | Initial dev fixture validation rejected four S cells inside its combat rect. Corrected the fixture to a legal outside chamber/door/entry. Subsequent run: 51 passed. |
+| `npm test -- src/client/dominionBot.test.ts src/client/dominionSounds.test.ts src/gen/spawnAffinity.test.ts src/sim/dominion.test.ts` | 38 passed before final immutable start/actual-room assertions. |
+| Final `npm test` | **860 passed / 80 files**, exit 0, 59.33 s; one worker, unchanged 8-ms/tick assertion passed. Earlier complete run also passed (52.64 s). |
+| `npm run typecheck`; `npm run build -- --logLevel error`; `git diff --check` | All passed on final source. |
+| `npm run e2e -- e2e/dominion.spec.ts --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion'` | 2 passed / 1 failed: native crowd bait/world heavy deaths with zero player kills and Q cancellation passed; late readiness waited for encounter arrival and exceeded its fixture's 15 s wait. |
+| Same command, output `r02-dominion-final` | **3 passed**, exit 0, 1.2 min after moving encounter arrival before late prepare; original game loading/network bounds unchanged. This was the two-client late-entry fixture. |
+| `npm run e2e -- e2e/dominion.spec.ts e2e/multiplayer.spec.ts e2e/rogue-floor.spec.ts --grep 'Dominion\|Blasphemy\|PeerJS\|multiplayer\|second generated run\|two browser clients' --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-verified'` | 5 passed / 1 failed, 6.0 min: scoped cast tests, generated reset and Node/browser/Gate parity passed. Four-client full-floor test lost clients 2/3 during snapshot sample 20/30; no console/page errors. |
+| `npm run e2e -- e2e/dominion.spec.ts e2e/multiplayer.spec.ts --grep 'tells are visible\|multiplayer' --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-confirm'` | 1 passed / 1 failed, 1.7 min: readable ring/coded mace capture; full-floor late client reported Connection failed before Lobby. |
+| `npm run e2e -- e2e/multiplayer.spec.ts --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-multiplayer-repeat'` | Failed, 2.5 min: all clients returned to Host left during sample 20/30. |
+| Same command, output `r02-dominion-lazy-atlas` | Failed, 2.5 min after avoiding unused Dominion atlas allocation: Host left during sample 20/30. No attribution of the earlier failure to that allocation. |
+| `$env:HEAVENFALL_E2E_SMALL = '1'; npm run e2e -- e2e/multiplayer.spec.ts --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-multiplayer-small'` | Failed, 56.8 s: late client Connection failed before Lobby. Optional small-view experiment was reverted; the original suite/config is unchanged. |
+| `npm run e2e -- e2e/dominion.spec.ts --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-four-client'` | 2 passed / 1 failed, 3.9 min: four-client variant exceeded 180 s overall. |
+| `npm run e2e -- e2e/dominion.spec.ts --grep 'four real' --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-four-serial'` | Failed, 1.4 min: after two separately admitted clients, final client did not prepare within unchanged 20 s. |
+| `npm run e2e -- e2e/dominion.spec.ts --grep 'PeerJS' --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-catchup-final'` | 1 passed / 1 failed, 2.4 min: two-client accepted same start/impact/incarnation, zero replayed starts, 30 advancing consistent samples, upload <=437 KB/s and host exit; four-client variant failed another admission at 30 s despite the established loading-throttle fixture. |
+
+`C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4` above is `C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4`. Captures/failed diagnostic artifacts remain there. Browser execution used installed Chromium/public PeerJS outside the restricted process/network sandbox. Process inspection observed substantial memory compression and stalled/low-FPS browser work; the failure cause remains **unproven**. Do not count broader four-client verification as passed or silently relax loading, heartbeat, snapshot, upload or simulation limits. No unrelated apps were stopped and no benchmark ran. The active-cast two-client path is established; larger-session reliability remains a final-checkpoint limitation to resolve/retest while continuing the independent remaining feature work.
+
+Final source browser/audio command: `npm run e2e -- e2e/dominion.spec.ts e2e/recorded-sound.spec.ts --grep-invert 'four real' --output 'C:/Users/TPouzar/.codex/visualizations/2026/10/12/01a13224-d270-7850-8085-84381d09a6f4/r02-dominion-client-checkpoint'`: **5 passed**, exit 0, 2.3 min (bait 22.8 s, cancel 23.6 s, accepted late deadline/30 snapshots/host exit 1.2 min, recorded toggle 7.6 s, corrupt-family synth 8.1 s). Production build passed. Tell/ring/fallback captures were inspected. Human readability/feel and larger-session verification remain pending.
+
 ## Current fixture limits and next stage
 
-Dominion, fire damage/dry navigation, six-second crest and remaining 10 templates are still unfinished. This checkpoint must not be labeled the completed R2 milestone. Marked props supply gold halos; elite sources arrive in R2.4. No shop, profile, durable money, XP, inventory or build mechanics have been added.
+Fire damage/dry navigation, six-second crest and remaining templates are still unfinished; the Dominion client/authority components now exist but broader multiplayer verification is unresolved. This checkpoint must not be labeled the completed R2 milestone. Marked props supply gold halos; legitimate elite deaths use the R2.4 ledger entitlement. No shop, profile, durable money, XP, inventory or build mechanics have been added.
 
-Resume the client/bot/dev-encounter remainder of R2.4 described above; do not skip to the hazard stage. This report's authority/wire checkpoint is a tested component, not the finished player-facing stage. Full runtime pool adoption remains R2.6.
+The next ordered implementation is R2.5's hazard and dry navigation. Preserve the R2.4 four-client verification failure as an open checkpoint issue and resolve/retest it before final milestone handoff. Full runtime pool adoption remains R2.6.
 
 For a quick R2.1 check: run `npm run dev`, open a generated room with `?dev=1&map=rogue&seed=317434499&room=1&class=betrayer&god=1`, shoot the room's enemies and collect halos before they fade. Watch the wallet and motes; move onto a mote at full HP and confirm it waits. These dev/god runs do not establish balance or human Gate B acceptance.
 

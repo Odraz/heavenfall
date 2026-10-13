@@ -1202,7 +1202,7 @@ export class Simulation {
       if (!this.canAlloc(count)) continue;
       const points = this.map.roomSpawnPoints[ai];
       const safe = new Uint8Array(points.length);
-      if (!this.markEligible(points, SPAWN_MIN_DIST, safe)) continue;
+      if (!this.markEligible(points, SPAWN_MIN_DIST, safe, this.spawnEligibility(ai, points, BLESSED))) continue;
       const hidden: number[] = [];
       let farthest = -1, farDist = -1;
       for (let i = 0; i < points.length; i++) {
@@ -1574,12 +1574,13 @@ export class Simulation {
     if (!q || q.left <= 0 || this.tick < q.next || this.activeCount >= MAX_LIVING_ENEMIES) return;
     let points = q.at;
     let eligible = new Uint8Array(points.length);
-    const own = this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible);
+    const own = this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible, this.spawnEligibility(ai, points, q.type));
     if (!own) {
       points = this.map.roomSpawnPoints[ai];
       if (points.length === 0) return;
       eligible = new Uint8Array(points.length);
-      if (!this.markEligible(points, this.map.rooms[ai].shape === '1x1' ? 10 : SPAWN_FAR_DIST, eligible) && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible) && !this.markEligible(points, SPAWN_MIN_DIST, eligible)) return;
+      const allowed = this.spawnEligibility(ai, points, q.type);
+      if (!this.markEligible(points, this.map.rooms[ai].shape === '1x1' ? 10 : SPAWN_FAR_DIST, eligible, allowed) && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible, allowed) && !this.markEligible(points, SPAWN_MIN_DIST, eligible, allowed)) return;
     }
     let found = -1;
     const rr = own ? q.rr : st.rr;
@@ -1644,18 +1645,30 @@ export class Simulation {
     // Eligible: more than 15 m from every living player in a combat arena (M12 §2.2), else more
     // than 8 m; if no point is, every point.
     const paced = st.director !== null;
-    const eligible = new Uint8Array(np);
-    const far = paced && this.markEligible(points, this.map.rooms[ai].shape === '1x1' ? 10 : SPAWN_FAR_DIST, eligible);
-    if (!far && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible) && !this.markEligible(points, SPAWN_MIN_DIST, eligible)) return;
+    const def = this.map.rooms[ai];
+    const maskFor = (type: number) => {
+      const allowed = this.spawnEligibility(ai, points, type);
+      const eligible = new Uint8Array(np);
+      const far = paced && this.markEligible(points, def.shape === '1x1' ? 10 : SPAWN_FAR_DIST, eligible, allowed);
+      if (!far && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible, allowed)) this.markEligible(points, SPAWN_MIN_DIST, eligible, allowed);
+      return eligible;
+    };
+    const shared = def.spawnTags?.length ? null : maskFor(BLESSED);
+    const eligibleByType = SPAWN_TYPES.map((type) => shared ?? maskFor(type));
 
     while (st.queue.length > 0) {
       if (this.activeCount >= MAX_LIVING_ENEMIES) return;
       if (paced && st.pace < 1 - 1e-9) return;
       const batch = st.queue[0];
-      const typeIndex = this.nextType(batch);
+      const typeIndex = this.nextType(batch, eligibleByType.map((mask) => mask.some((ok, i) => !!ok && st.budgets[i] >= 1)));
       if (typeIndex < 0) return; // Pending elites wait; fodder remains eligible while the cap is full.
       let found = -1;
+      const eligible = eligibleByType[typeIndex], type = SPAWN_TYPES[typeIndex];
+      const affinity = type === CHORISTER ? def.chorister : type === DOMINION ? def.dominion : undefined;
+      const preferred = affinity?.filter((i) => eligible[i] && st.budgets[i] >= 1);
+      if (preferred?.length) found = preferred[Math.floor(this.random() * preferred.length)];
       for (let k = 0; k < np; k++) {
+        if (found >= 0) break;
         const i = (st.rr + k) % np;
         if (eligible[i] && st.budgets[i] >= 1) {
           found = i;
@@ -1665,7 +1678,6 @@ export class Simulation {
       if (found < 0) return;
       const slot = this.allocSlot();
       if (slot < 0) return;
-      const type = SPAWN_TYPES[typeIndex];
       batch.spawned[typeIndex]++;
       if (batch.spawned.every((s, t) => s >= batch.counts[t])) {
         st.queue.shift();
@@ -1681,10 +1693,23 @@ export class Simulation {
     }
   }
 
+  /** Authored marker tags also apply when squads or trickles borrow ordinary points. */
+  private spawnEligibility(ai: number, points: Array<[number, number]>, type: number): boolean[] | undefined {
+    const tags = this.map.rooms[ai].spawnTags;
+    if (!tags?.length) return undefined;
+    const markers = this.map.roomSpawnPoints[ai];
+    return points.map(([x, y]) => {
+      const index = markers.findIndex(([c, r]) => x === c && y === r);
+      const tag = tags.find((t) => t.index === index);
+      return !tag || tag.only.some((id) => type === (id === 'chorister' ? CHORISTER : DOMINION));
+    });
+  }
+
   /** Marks the spawn points farther than `dist` from every living player; returns whether any is. */
-  private markEligible(points: Array<[number, number]>, dist: number, eligible: Uint8Array): boolean {
+  private markEligible(points: Array<[number, number]>, dist: number, eligible: Uint8Array, allowed?: readonly boolean[]): boolean {
     let any = false;
     for (let i = 0; i < points.length; i++) {
+      if (allowed && !allowed[i]) { eligible[i] = 0; continue; }
       const [c, r] = points[i];
       const px = c + 0.5;
       const py = r + 0.5;
@@ -1704,11 +1729,12 @@ export class Simulation {
   }
 
   /** The type with the lowest (spawned + 0.5) / count among types with enemies left (§8.2). */
-  private nextType(batch: SpawnBatch): number {
+  private nextType(batch: SpawnBatch, canSpawn?: readonly boolean[]): number {
     let best = -1;
     let bestV = Infinity;
     const eliteCap = this.dominionAlive() >= DOMINION_ALIVE_CAP;
     for (let t = 0; t < batch.counts.length; t++) {
+      if (canSpawn && !canSpawn[t]) continue;
       if (SPAWN_TYPES[t] === DOMINION && eliteCap) continue;
       if (batch.spawned[t] >= batch.counts[t]) continue;
       const v = (batch.spawned[t] + 0.5) / batch.counts[t];

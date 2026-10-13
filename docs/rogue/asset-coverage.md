@@ -6,7 +6,7 @@ Revision 9, 2026-10-11. **Which game feature or event uses which file.** For imp
 
 | Feature | Files (prompt section) or treatment | Milestone | Fallback until delivered |
 |---|---|---|---|
-| Dominion | `dominion-design`, `-turnaround`, `-wings`, `-mace` (A1) → model → 8-direction atlas: idle, walk, mace raised (tell), strike, recovery, pain, death | R2 | a scaled tinted Blessed with a gold bar above its head, labeled |
+| Dominion | `dominion-design`, `-turnaround`, `-wings`, `-mace` (A1) → model → 8-direction atlas: idle, walk, mace raised (tell), strike, recovery, pain, death | R2 | tall labeled coded ivory/bronze armor, folded wings and gold mace; `src/render/dominionAtlas.ts`; received references have no runtime model/atlas approval |
 | Loot props | `amphora-tall`, `-squat`, `-lily` (B1); variant = canonical loot-socket index mod 3 (rooms.md §8); shards cut from the same sprite | R2 | a coded ivory cylinder |
 | Marked amphora | `amphora-marked` (B1) + coded glint every 3 s | R2 (look), R6 (Chart) | `amphora-tall` with a coded gold cross |
 | Blast prop | `sanctuary-lamp` (B1); fireball ring = `fx-ring` tinted, smoke = `fx-smoke` | R2 | coded red cylinder with black band |

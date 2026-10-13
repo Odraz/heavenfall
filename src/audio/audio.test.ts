@@ -6,15 +6,16 @@ import type { SfxName } from './sfx';
 /** Exercise actual admission/playback with injected decoded buffers and WebAudio nodes. */
 function playback() {
   const started: Array<{ buffer: unknown; gain: number }> = [];
-  const synth = { id: 'synth' }, buffers = [{ id: 'take0' }, { id: 'take1' }, { id: 'take2' }];
+  const synth = { id: 'synth', duration: 1.5 }, buffers = [{ id: 'take0', duration: 0.75 }, { id: 'take1', duration: 0.75 }, { id: 'take2', duration: 0.75 }];
+  const windows: Array<{ when: number; offset: number; rate: number }> = [], stopped: unknown[] = [];
   const bag = new ShuffleBag(3, () => 0.99);
   const voices: Array<{ name: SfxName; priority: number; ended: boolean; src: { stop(): void } }> = [];
   const ctx = { currentTime: 1,
-    createGain: () => ({ gain: { value: 1 }, connect() {} }),
+    createGain: () => ({ gain: { value: 1, setTargetAtTime: vi.fn() }, connect() {} }),
     createStereoPanner: () => ({ pan: { value: 0 }, connect() {} }),
     createBufferSource: () => {
-      const source = { buffer: null as unknown, playbackRate: { value: 1 }, onended: null, stop: vi.fn(),
-        connect(node: { gain: { value: number } }) { source.start = () => { started.push({ buffer: source.buffer, gain: node.gain.value }); }; }, start() {} };
+      const source = { buffer: null as unknown, playbackRate: { value: 1 }, onended: null, stop: vi.fn((at) => stopped.push(at)),
+        connect(node: { gain: { value: number } }) { source.start = (when = 0, offset = 0) => { started.push({ buffer: source.buffer, gain: node.gain.value }); windows.push({ when, offset, rate: source.playbackRate.value }); }; }, start(_when = 0, _offset = 0) {} };
       return source;
     },
   };
@@ -23,10 +24,21 @@ function playback() {
     buffers: new Map([['porcelainBreak', synth], ['shotgun', synth]]),
     takes: new Map([['porcelainBreak', { bufs: buffers, gains: [1, 2, 3], bag }]]),
   }) as unknown as AudioEngine;
-  return { engine, bag, ctx, voices, started, synth, buffers };
+  return { engine, bag, ctx, voices, started, synth, buffers, windows, stopped };
 }
 
 describe('recorded playback admission', () => {
+  it('resumes at the accepted remaining tell and provides an idempotent capped voice stop', () => {
+    const h = playback(), handle = h.engine.play('porcelainBreak', null, 1, 0, undefined, undefined, { elapsed: 1, duration: 1.5 })!;
+    expect(h.windows).toEqual([{ when: 1, offset: 0.5, rate: 0.5 }]); expect(handle.playing()).toBe(true);
+    handle.stop(); handle.stop(); expect(handle.playing()).toBe(false); expect(h.stopped).toEqual([1.04]);
+    expect(h.voices).toHaveLength(1); // A fading voice still counts until native onended.
+  });
+  it('rejects elapsed/invalid windows before consuming the bag or admitting a voice', () => {
+    const h = playback();
+    for (const window of [{ elapsed: 1.5, duration: 1.5 }, { elapsed: -1, duration: 1.5 }, { elapsed: 0, duration: NaN }]) expect(h.engine.play('porcelainBreak', null, 1, 0, undefined, undefined, window)).toBeUndefined();
+    expect(h.started).toHaveLength(0); expect(h.bag.peek()).toBe(0); expect(h.voices).toHaveLength(0);
+  });
   it('does not advance the bag for inaudible, gap-limited or priority-rejected voices', () => {
     const h = playback();
     h.engine.play('porcelainBreak', { x: 40, y: 0 });

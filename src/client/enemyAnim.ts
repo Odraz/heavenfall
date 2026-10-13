@@ -6,7 +6,7 @@
  * the 8th tick in range, then every 1 s: M12 §3.2), and casts from when the wind-up began and when the shot fired. Cherubs flap their
  * wings on a clock instead of walking; the Gatekeeper's casts follow the boss cast in the snapshot.
  */
-import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, ST_ATTACKING, ST_FALLING, ST_MOVING, ST_WINDUP } from '../data/enemies';
+import { BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_FALLING, ST_MOVING, ST_WINDUP } from '../data/enemies';
 import { BOSS_CAST_JUDGMENT, BOSS_CAST_VOLLEY } from '../sim/sim';
 import { ENEMY_SLOTS } from '../sim/constants';
 
@@ -15,7 +15,7 @@ export type EnemyAnimName = 'idle' | 'walk' | 'fly' | 'attack' | 'cast' | 'volle
 /** Meters walked per walk cycle (two steps), so the feet keep pace with the ground: the Blessed's. */
 export const WALK_CYCLE_M = 1.6;
 /** Walk cycle lengths by enemy type (§11.1). */
-const WALK_CYCLES: Record<number, number> = { [BLESSED]: WALK_CYCLE_M, [CHORISTER]: 2.0 };
+const WALK_CYCLES: Record<number, number> = { [BLESSED]: WALK_CYCLE_M, [CHORISTER]: 2.0, [DOMINION]: 2.4 };
 /**
  * Casts (§11.1): the wind-up frames play over the wind-up and hold the last one; the release
  * frames play from the tick the shot fires.
@@ -27,6 +27,7 @@ export interface CastTiming {
   releaseMs: number;
 }
 export const CAST_TIMINGS: Partial<Record<number, CastTiming>> = {
+  [DOMINION]: { windupFrames: 6, windupMs: 1500, releaseFrames: 2, releaseMs: 1000 },
   [CHORISTER]: { windupFrames: 6, windupMs: 1000, releaseFrames: 2, releaseMs: 250 },
   [CHERUB]: { windupFrames: 4, windupMs: 500, releaseFrames: 2, releaseMs: 200 },
 };

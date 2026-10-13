@@ -5,6 +5,9 @@ import { parseJoinId } from './net/invite';
 
 export interface Params {
   dev: boolean;
+  /** Dev encounter through the real multiplayer menus/handshake. */
+  devMenu: boolean;
+  readyHold: boolean;
   /**
    * The benchmark's arena (M10 gate §4), or -1 when not benchmarking: the boss arena in the gate
    * view, arena 0 otherwise (and in the gate view on a map with no boss arena).
@@ -82,7 +85,7 @@ export function parseParams(search: string): Params {
     const classId: ClassId = isClassId(cls) ? cls : 'betrayer';
     const benchHudFire = q.get('hudfire') === '1';
     const benchBurst = q.get('burst') === '1';
-    return { dev: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0, startRoom: null };
+    return { dev: false, devMenu: false, readyHold: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0, startRoom: null };
   }
   // Without dev=1 (or bench=1) the page opens the menus.
   const dev = q.get('dev') === '1';
@@ -100,6 +103,8 @@ export function parseParams(search: string): Params {
   const join = parseJoinId(q.get('join'));
   return {
     dev,
+    devMenu: dev && q.get('menu') === '1',
+    readyHold: dev && q.get('menu') === '1' && q.get('readyHold') === '1',
     benchArena: -1,
     bot,
     god: q.get('god') === '1',

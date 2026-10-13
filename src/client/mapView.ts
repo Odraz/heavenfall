@@ -28,6 +28,7 @@ export class MapView {
   constructor(private readonly parent: HTMLElement, private readonly model: ClientRooms, private readonly floor: Floor | null, private readonly localId: number) {
     this.mini.width = this.mini.height = 200;
     this.mini.className = 'minimap'; this.mini.setAttribute('aria-label', 'Floor minimap');
+    this.mini.hidden = !floor;
     this.plate.width = this.plate.height = 588; this.plate.setAttribute('aria-label', 'Full floor map');
     this.full.className = 'full-map'; this.full.hidden = true;
     const layout = document.createElement('div'); layout.className = 'map-layout';

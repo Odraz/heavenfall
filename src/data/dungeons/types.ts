@@ -77,6 +77,9 @@ export interface RoomDef {
   };
   /** Preferred spawn indices (spawn affinity), used in R2. */
   chorister?: number[];
+  dominion?: number[];
+  /** Type restrictions on reading-order room x markers, applied before distance/affinity. */
+  spawnTags?: Array<{ index: number; only: Array<'chorister' | 'dominion'> }>;
 }
 
 /**

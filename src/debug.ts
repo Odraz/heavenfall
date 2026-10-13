@@ -38,6 +38,7 @@ export interface DebugState {
   pickups: Array<{ id: number; kind: number; x: number; y: number }>;
   props: Array<{ id: number; room: number; family: string; x: number; y: number; z: number; marked: boolean }>;
   brokenProps: number[];
+  dominion: { actors: Array<{ slot: number; incarnation: number; x: number; y: number; z: number }>; casts: Array<{ slot: number; incarnation: number; castId: number; startTick: number; impactTick: number; room: number; x: number; y: number; z: number }>; starts: number; strikes: number; cancels: number };
   seed: number | null;
   simSeed: number | null;
   runId: string | null;
@@ -99,6 +100,7 @@ export const debugState: DebugState = {
   pickups: [],
   props: [],
   brokenProps: [],
+  dominion: { actors: [], casts: [], starts: 0, strikes: 0, cancels: 0 },
   seed: null,
   simSeed: null,
   runId: null,
@@ -146,6 +148,7 @@ export function resetGameDebug(): void {
     pickups: [],
     props: [],
     brokenProps: [],
+    dominion: { actors: [], casts: [], starts: 0, strikes: 0, cancels: 0 },
     seed: null,
     simSeed: null,
     runId: null,
@@ -182,6 +185,8 @@ declare global {
     readonly __heavenfall: Readonly<DebugState>;
     /** With `dev=1`, in game: moves the local player to (x, y) on the floor there, as a teleport (screenshots, M12 stage 4). */
     __heavenfallTeleport?: (x: number, y: number) => void;
+    /** Dev menu only: finish the prepared client's real ready handshake. */
+    __heavenfallReady?: () => void;
   }
 }
 

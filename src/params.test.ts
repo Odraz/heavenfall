@@ -4,6 +4,10 @@ import { parseParams } from './params';
 import { validName } from './ui/menus';
 
 describe('URL parameters (§2.5)', () => {
+  it('restricts held ready to explicit dev menus and keeps the elite fixture reproducible', () => {
+    expect(parseParams('?dev=1&menu=1&readyHold=1&map=dominion')).toMatchObject({ devMenu: true, readyHold: true, mapId: 'dominion' });
+    for (const q of ['?readyHold=1&menu=1', '?dev=1&readyHold=1', '?bench=1&dev=1&menu=1&readyHold=1']) expect(parseParams(q).readyHold).toBe(false);
+  });
   it('opens the menus without dev=1 or bench=1', () => {
     const p = parseParams('');
     expect(p.dev).toBe(false);

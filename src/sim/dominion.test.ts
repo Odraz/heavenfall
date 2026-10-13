@@ -162,6 +162,32 @@ describe('Dominion host geometry, controls and drops', () => {
 });
 
 describe('Dominion authored group scaling and reservations', () => {
+  it('filters tags before safety, prefers eligible affinity and never stalls fodder on a blocked elite point', () => {
+    const dungeon = arenaDungeon([{ blessed: 12, choristers: 4, cherubs: 0, dominions: 1 }]);
+    const r = dungeon.rooms[0]; r.shape = '1x1'; r.band = 1; r.dominion = [2]; r.chorister = [5];
+    r.spawnTags = [{ index: 2, only: ['dominion'] }, { index: 5, only: ['chorister'] }];
+    const sim = new Simulation({ dungeon, players: Array.from({ length: 4 }, (_, id) => ({ id, name: `P${id}`, classId: 'fallen' as const })), seed: 1, god: true });
+    const placements: Array<{ type: number; c: number; r: number }> = [];
+    const internal = sim as unknown as { spawnAt(slot: number, type: number, c: number, r: number, ai: number, wave: number): void };
+    const original = internal.spawnAt.bind(sim); internal.spawnAt = (slot, type, c, row, ai, wave) => { placements.push({ type, c, r: row }); original(slot, type, c, row, ai, wave); };
+    sealAt(sim); for (let i = 0; i < 310; i++) sim.step();
+    expect(placements.find((p) => p.type === DOMINION)).toMatchObject({ c: 31, r: 2 });
+    expect(placements.filter((p) => p.type === CHORISTER)).toHaveLength(4);
+    expect(placements.filter((p) => p.type === CHORISTER).every((p) => p.c === 31 && p.r === 5)).toBe(true);
+    expect(placements.filter((p) => p.type === BLESSED).every((p) => !(p.c === 31 && [2, 5].includes(p.r)))).toBe(true);
+  });
+  it('falls back from an unsafe preferred point only to type eligible ordinary markers', () => {
+    const dungeon = arenaDungeon([{ blessed: 0, choristers: 0, cherubs: 0, dominions: 1 }]);
+    dungeon.rooms[0].dominion = [0]; // West marker camped by the party.
+    dungeon.rooms[0].spawnTags = [{ index: 2, only: ['chorister'] }, { index: 5, only: ['chorister'] }, { index: 8, only: ['chorister'] }];
+    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'P', classId: 'fallen' }], seed: 1, god: true });
+    const placed: number[] = [], internal = sim as unknown as { spawnAt(slot: number, type: number, c: number, r: number, ai: number, wave: number): void };
+    const original = internal.spawnAt.bind(sim); internal.spawnAt = (slot, type, c, r, ai, wave) => { placed.push(c); original(slot, type, c, r, ai, wave); };
+    sealAt(sim); for (let i = 0; i < 310; i++) sim.step();
+    const slot = Array.from(sim.active.subarray(0, sim.activeCount)).find((s) => sim.eType[s] === DOMINION)!;
+    expect(placed).toEqual([19]);
+    expect(slot).toBeDefined(); expect(sim.rooms[0].waveFullySpawned[0]).toBe(true);
+  });
   it('retains authored elite counts without changing historical zero-elite records', () => {
     expect(waveCounts({ share: 1, mix: { blessed: 1 }, elites: 2 }, 400)).toEqual({ blessed: 280, choristers: 0, cherubs: 0, dominions: 2 });
     expect(waveCounts({ share: 1, mix: { blessed: 1 } }, 400)).toEqual({ blessed: 400, choristers: 0, cherubs: 0 });

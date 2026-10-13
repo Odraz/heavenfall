@@ -2,7 +2,10 @@
 import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
-import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, CHORISTER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
+import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, CHORISTER, DOMINION, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
+import { DOMINION_RADIUS } from '../data/dominion';
+import { DominionProjection } from './dominion';
+import { DominionView } from './dominionView';
 import {
   ABILITIES,
   ATTACK_NONE,
@@ -389,6 +392,8 @@ export class Game {
   private readonly incense: IncenseClouds;
   private readonly pickups: PickupView;
   private readonly props: PropView;
+  private readonly dominion: DominionProjection;
+  private readonly dominionView = new DominionView();
   /** When each enemy slot's Falling Star launch arc starts (M9 §3.2). */
   private readonly launchAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
   /** Wading (M12 §3.1): launched enemies don't press until then (ms), and the applied speed factor. */
@@ -504,6 +509,8 @@ export class Game {
     this.scene.scene.add(this.pickups.group);
     this.props = new PropView(this.map, o.runId, propDefs(o.floor), this.scene.terrain.lightmap);
     this.scene.scene.add(this.props.billboards.mesh);
+    this.dominion = new DominionProjection(o.runId);
+    this.scene.scene.add(this.dominionView.group);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
     for (const [type, set] of Object.entries(o.enemyAnims)) {
@@ -570,6 +577,7 @@ export class Game {
     debugState.props = this.props.defs.map((p) => ({ id: p.id, room: p.room, family: p.family, x: p.x, y: p.y,
       z: this.map.floor[Math.floor(p.y) * this.map.w + Math.floor(p.x)], marked: p.marked }));
     debugState.brokenProps = [];
+    debugState.dominion = { actors: [], casts: [], starts: 0, strikes: 0, cancels: 0 };
     this.sounds.renderDelay = (this.snaps.delayTicks * TICK_MS) / 1000;
   }
 
@@ -862,6 +870,7 @@ export class Game {
   /** A `ctrl` message from the host; the game handles its events (§9.2). */
   handleCtrl(msg: CtrlMessage): void {
     if (msg.type === 'floorSync' && !this.disposed) {
+      this.dominion.sync(msg);
       this.pickups.model.sync(msg);
       if (this.props.model.sync(msg)) debugState.brokenProps = [...this.props.model.broken];
       if (this.rooms.sync(msg)) {
@@ -877,6 +886,10 @@ export class Game {
       if (!transition) return;
     }
     if (msg.event.type === 'pickupState') this.pickups.model.state(msg.event.pickup, msg.tick, msg.revision);
+    if (msg.event.type === 'dominionCast') {
+      if (!this.dominion.event(msg.event, msg.tick, msg.revision)) return;
+      const phase = msg.event.phase; debugState.dominion[phase === 'start' ? 'starts' : phase === 'strike' ? 'strikes' : 'cancels']++;
+    }
     if (msg.event.type === 'propBroken' || msg.event.type === 'propBlast') {
       if (!this.props.model.event(msg.event, msg.revision)) return;
       debugState.brokenProps = [...this.props.model.broken];
@@ -887,6 +900,12 @@ export class Game {
 
   private onEvent(e: GameEvent, now: number): void {
     switch (e.type) {
+      case 'dominionCast':
+        if (e.phase === 'strike') {
+          this.vfx.ring(now, e.x, e.y, e.z, 0xffedaa, 0, DOMINION_RADIUS, 220);
+          this.vfx.glow(now, e.x, e.y, e.z + 0.2, 0xffd066, 0.2, DOMINION_RADIUS, 250);
+        }
+        break;
       case 'propBroken':
         if (e.family === 'blessing') {
           this.vfx.ring(now, e.x, e.y, e.z, 0xffdc75, 0, 6, 300);
@@ -1209,6 +1228,9 @@ export class Game {
   private onSnapshot(s: Snapshot, prev: Snapshot | null): void {
     const now = performance.now();
     this.rooms.snapshot(s);
+    this.dominion.snapshot(s);
+    debugState.dominion.actors = [];
+    for (let i = 0; i < s.enemyCount; i++) if (s.enemyType[i] === DOMINION) debugState.dominion.actors.push({ slot: s.enemySlot[i], incarnation: s.enemyIncarnation[i], x: s.enemyX[i], y: s.enemyY[i], z: s.enemyZ[i] });
     // Every leaf follows from the header's activeRoom, activePhase and clearedMask (rogue game.md §3.4).
     let changed = false;
     let k = 0;
@@ -1391,7 +1413,7 @@ export class Game {
     const points = this.map.roomSpawnPoints[s.activeRoom]?.concat(this.map.roomSquadPoints[s.activeRoom]);
     if (!points?.length) return;
     for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 1;
-    const flared = new Set<number>();
+    const flared = new Map<number, number>();
     for (let i = 0; i < s.enemyCount; i++) {
       if (this.prevSlots[s.enemySlot[i]]) continue;
       let best = -1;
@@ -1405,13 +1427,13 @@ export class Game {
           best = k;
         }
       }
-      if (best >= 0) flared.add(best);
+      if (best >= 0) flared.set(best, Math.max(flared.get(best) ?? 1, s.enemyType[i] === DOMINION ? 1.5 : 1));
     }
     for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 0;
-    for (const k of flared) {
+    for (const [k, width] of flared) {
       const [c, r] = points[k];
       const z = this.map.floor[r * this.map.w + c];
-      this.pendingFx.push({ at, run: (t) => this.vfx.flareSpawn(t, c + 0.5, r + 0.5, z) });
+      this.pendingFx.push({ at, run: (t) => this.vfx.flareSpawn(t, c + 0.5, r + 0.5, z, width) });
     }
   }
 
@@ -1909,6 +1931,7 @@ export class Game {
         body: p.body,
         dead: this.dead,
         enemies: be,
+        dominionRings: s ? this.dominion.rings(s, this.snaps.estimatedTick(simNow)) : [],
         activeRoom: s?.activeRoom ?? 255,
         activePhase: s?.activePhase ?? 0,
         clearedMask: s?.clearedMask ?? 0,
@@ -2085,6 +2108,11 @@ export class Game {
     this.drawBillboards(now, ents, enemyZ);
     this.pickups.update(this.snaps.newest, this.scene.camera, this.snaps.estimatedTick(now));
     this.props.update(this.scene.camera, this.snaps.estimatedTick(simNow));
+    const dominionTick = this.snaps.estimatedTick(simNow);
+    const dominionRings = this.snaps.newest ? this.dominion.rings(this.snaps.newest, dominionTick) : [];
+    this.dominionView.update(dominionRings, dominionTick);
+    this.sounds.dominions(this.paused ? [] : dominionRings, dominionTick);
+    debugState.dominion.casts = dominionRings;
     const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
     this.hud.setHealing(this.ownBeamOn, now);
     this.hud.setBeamed(beamed.has(this.localId));
@@ -2200,6 +2228,12 @@ export class Game {
       const stunned = (ents.flags[i] & FLAG_STUNNED) !== 0;
       this.animator.setStunned(slot, stunned, now);
       const pick = this.animator.pick(slot, now, this.bossCast);
+      if (type === DOMINION && ents.state[i] === ST_WINDUP && !stunned) {
+        const cast = this.dominion.active.get(slot);
+        if (cast && cast.incarnation === this.snaps.newest?.enemyIncarnation[this.snaps.newest.enemySlot.indexOf(slot)]) {
+          pick.anim = 'cast'; pick.frame = Math.max(0, Math.min(5, Math.floor((this.snaps.estimatedTick(now) - cast.startTick) / (cast.impactTick - cast.startTick) * 6)));
+        }
+      }
       const f = set.anims[pick.anim][spriteDirection(this.animator.facing[slot], eye.x - x, eye.y - y)][pick.frame];
       const height = f.height * ENEMIES[type].draw;
       const target = this.enemyBillboards.get(type)!;
@@ -2511,6 +2545,7 @@ export class Game {
     this.incense.dispose();
     this.pickups.dispose();
     this.props.dispose();
+    this.dominionView.dispose();
     this.hum?.stop();
     this.hud.dispose();
     this.mapView.dispose();
