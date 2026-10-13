@@ -10,6 +10,7 @@
 - R2.1 code end SHA: `36d24131b40de6399ae37cd4e42f395fd31c9629` (authoritative pickups, halo ledger and bounded snapshots). The following documentation commit only records that identity.
 - R2.2 code end SHA: `42271ee3a73bf300aa8d11e6437dca429150e484` (authoritative props, delayed blasts and late-entry checkpoints).
 - R2.3 code end SHA: `5755024eda5b404c29f8651256e5abc2d8e51740` (all 51 S1 runtime takes, bounded loader and cosmetic shuffle bags).
+- R2.4 authority/wire component end SHA: `65e4384861ddb038c8d38d755fe573316c8c18b8`. R2.4 itself remains unfinished; resume its client/bot/dev-encounter work below.
 - Protocol version **4**, rules version **3** after the R2.4 authority/wire checkpoint (R2.1–R2.3 used 3/2). Floor layout/pool/pinned hash remain the R1 fixture until R2.6 introduces the full pool. Restart the dev server after a commit so every participant uses the same artifact fingerprint.
 
 ## R2.1: pickups, halo ledger and bounded snapshots
