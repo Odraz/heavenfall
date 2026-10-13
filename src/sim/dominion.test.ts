@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { Dominions } from './dominion';
 import { DOMINION, BLESSED, CHORISTER, CHERUB, GATEKEEPER, ENEMIES } from '../data/enemies';
 import { COIN, GOLD_HALO, HEAL_MOTE, ITEM_FIRST } from '../data/pickups';
-import type { DominionCast, DominionPhase } from '../data/dominion';
+import type { DominionCast, DominionPhase, DominionLeap } from '../data/dominion';
+import { dominionLeapPosition } from '../data/dominion';
+import { dominionLeapClear } from './dominionLeap';
 import { waveCounts } from '../gen/stamp';
 import { Simulation, scaleCount, partyMultiplier, waveSize } from './sim';
 import { arenaDungeon, sealAt } from './testutil/arenas';
@@ -71,6 +73,55 @@ describe('Dominion accepted cast deadlines', () => {
 });
 
 describe('Dominion host geometry, controls and drops', () => {
+  it('uses Blessed melee cadence between casts, with no melee during the slam tell or recovery', () => {
+    const { sim, slot } = fixture(), p = sim.players[0];
+    put(sim, p, sim.eX[slot] + 1.8, sim.eY[slot]); sim.root(slot, 20);
+    sim.dominions.readyAt[slot] = 1000;
+    for (let i = 0; i < 7; i++) sim.step(); expect(p.hp).toBe(120);
+    sim.step(); expect(p.hp).toBe(108);
+    for (let i = 0; i < 30; i++) sim.step(); expect(p.hp).toBe(96);
+    sim.dominions.readyAt[slot] = 0; sim.step(); const cast = sim.dominions.checkpoint()[0];
+    while (sim.tick < cast.impactTick - 1) sim.step(); expect(p.hp).toBe(96);
+    sim.step(); expect(p.hp).toBe(16);
+    for (let i = 0; i < 29; i++) sim.step(); expect(p.hp).toBe(16);
+  });
+  it('only chooses living same-room players 16–48 metres away with a clear arc and dry landing', () => {
+    const { sim, slot } = fixture(room(80, 25)), p = sim.players[0];
+    const choose = () => (sim as unknown as { dominionLeapTarget(s: number): DominionLeap | undefined }).dominionLeapTarget(slot);
+    for (const distance of [8, 15.9, 48.1]) { put(sim, p, sim.eX[slot] + distance, sim.eY[slot]); expect(choose()).toBeUndefined(); }
+    for (const distance of [16, 48]) { put(sim, p, sim.eX[slot] + distance, sim.eY[slot]); expect(choose()?.x).toBe(p.x); }
+    p.dead = true; expect(choose()).toBeUndefined(); p.dead = false;
+    sim.map.hazard[Math.floor(p.y) * sim.map.w + Math.floor(p.x)] = 1; expect(choose()).toBeUndefined();
+    sim.map.hazard.fill(0); sim.map.solid[10 * sim.map.w + 20] = 1; expect(choose()).toBeUndefined();
+  });
+  it('locks a distant spot, charges in place, flies the final second and strikes only at landing', () => {
+    const { sim, slot } = fixture(room(80, 25)), p = sim.players[0];
+    put(sim, p, 35.5, 10.5); sim.dominions.leapReadyAt[slot] = 0;
+    for (let i = 0; i < 30 && !sim.dominions.active.size; i++) sim.step();
+    const cast = sim.dominions.checkpoint()[0]; expect(cast.leap).toBeDefined();
+    const target = cast.leap!; p.x = 60.5;
+    const detached = sim.dominions.checkpoint()[0]; detached.leap!.x = 70;
+    while (sim.tick < cast.startTick + 14) sim.step();
+    expect(sim.eX[slot]).toBeCloseTo(target.fromX); expect(sim.eZ[slot]).toBe(0);
+    while (sim.tick < cast.startTick + 38) sim.step();
+    expect(sim.eZ[slot]).toBeGreaterThan(3.5); expect(sim.eX[slot]).toBeGreaterThan(target.fromX);
+    expect(sim.events.some((e) => e.event.type === 'dominionCast' && e.event.phase === 'strike')).toBe(false);
+    while (sim.tick < cast.impactTick) sim.step();
+    expect(sim.eX[slot]).toBe(target.x); expect(sim.eZ[slot]).toBe(target.z);
+    expect(sim.dominions.leapReadyAt[slot]).toBe(cast.impactTick + 240);
+    expect(sim.events.find((e) => e.event.type === 'dominionCast' && e.event.phase === 'strike')?.event).toMatchObject({ x: target.x, y: target.y, z: target.z });
+    expect(p.hp).toBe(p.maxHp);
+  });
+  for (const control of ['root', 'stun', 'silence'] as const) it(`${control} cancels a flying slam without a delayed impact`, () => {
+    const { sim, slot } = fixture(room(80, 25)); put(sim, sim.players[0], 35.5, 10.5); sim.dominions.leapReadyAt[slot] = 0;
+    while (!sim.dominions.active.size && sim.tick < 30) sim.step();
+    const cast = sim.dominions.checkpoint()[0];
+    while (sim.tick < cast.startTick + 35) sim.step();
+    sim[control](slot, 10); expect(sim.dominions.active.size).toBe(0);
+    while (sim.tick <= cast.impactTick) sim.step();
+    expect(sim.events.filter((e) => e.event.type === 'dominionCast' && e.event.phase === 'strike')).toEqual([]);
+    expect(sim.eZ[slot]).toBeGreaterThanOrEqual(0);
+  });
   it('starts at five metres and launches a surviving player outward after an 80-damage hit', () => {
     const { sim, slot } = fixture(), p = sim.players[0];
     put(sim, p, sim.eX[slot] + 5, sim.eY[slot]); sim.root(slot, 10);
@@ -151,7 +202,7 @@ describe('Dominion host geometry, controls and drops', () => {
     const grounded = sim.placeEnemy(CHERUB, 13, 9, 0); sim.eZ[grounded] = 0;
     sim.players[0].z = 1; sim.giveShield(sim.players[0], 150, 20);
     slam(sim, slot);
-    for (const s of [near, edge, grounded]) expect(sim.eAlive[s]).toBe(0);
+    for (const s of [near, edge, grounded, elite]) { expect(sim.eAlive[s]).toBe(1); expect(sim.eVz[s]).toBe(9); }
     for (const s of [far, high, elite, boss, flyer]) expect(sim.eAlive[s]).toBe(1);
     expect(sim.players[0].shield).toBe(70); expect(sim.players[0].hp).toBe(120);
     expect(sim.players[0].kills).toBe(0); expect(sim.players[0].damage).toBe(0);
@@ -162,7 +213,7 @@ describe('Dominion host geometry, controls and drops', () => {
     const { sim, slot } = fixture(heights);
     const blocked = sim.placeEnemy(BLESSED, 14, 10, 0);
     const dais = sim.placeEnemy(BLESSED, 10, 12, 0); sim.eZ[dais] = 1;
-    slam(sim, slot); expect(sim.eAlive[blocked]).toBe(1); expect(sim.eAlive[dais]).toBe(0);
+    slam(sim, slot); expect(sim.eAlive[blocked]).toBe(1); expect(sim.eAlive[dais]).toBe(1); expect(sim.eVz[dais]).toBe(9);
   });
   for (const control of ['stun', 'silence', 'removeEnemy'] as const) it(`${control} immediately sends one terminal cancellation`, () => {
     const { sim, slot } = fixture(); sim.step(); expect(sim.dominions.active.has(slot)).toBe(true);
@@ -172,20 +223,19 @@ describe('Dominion host geometry, controls and drops', () => {
     expect(sim.events.filter((e) => e.event.type === 'dominionCast' && e.event.phase === 'cancel')).toHaveLength(1);
     expect(sim.pickups.live).toHaveLength(0);
   });
-  it('world heavy deaths settle ordinary entitlements once, without player final blows', () => {
+  it('throws enemies up and away without damage, death rewards or fabricated player credit', () => {
     const { sim, slot } = fixture();
     const victim = sim.placeEnemy(CHORISTER, 13, 10, 0); sim.eWave[victim] = 0;
     sim.rooms[0].waveAlive[0]++;
     sim.haloLedgers.set(0, new HaloLedger(12, HALO_WEIGHT[CHORISTER]));
-    sim.random = () => 0.5;
+    const hp = sim.eHp[victim], x = sim.eX[victim];
     slam(sim, slot);
-    expect(sim.eAlive[victim]).toBe(0); expect(sim.players[0].kills).toBe(0);
-    expect(sim.pickups.live.filter((p) => p.kind === COIN).reduce((sum, p) => sum + p.value, 0)).toBe(12);
-    sim.damageEnemy(victim, 200, -1);
-    expect(sim.haloLedgers.get(0)?.paid).toBe(12);
-    expect(sim.floorSync(sim.runId).dominionCasts).toEqual([]);
-    const bursts = (sim as unknown as { tickBursts: number[] }).tickBursts;
-    expect(bursts[1]).toBeGreaterThanOrEqual(360); expect(bursts[2]).toBe(-1);
+    expect(sim.eAlive[victim]).toBe(1); expect(sim.eHp[victim]).toBe(hp);
+    expect(sim.players[0].kills).toBe(0); expect(sim.pickups.live).toEqual([]);
+    expect(sim.haloLedgers.get(0)?.paid).toBe(0);
+    for (let i = 0; i < 15; i++) sim.step();
+    expect(sim.eX[victim] - x).toBeCloseTo(6, 1); expect(sim.eZ[victim]).toBeGreaterThan(1.9);
+    expect(sim.eHp[victim]).toBe(hp);
   });
   it('cannot restart a dead simultaneous caster after an accepted slam triggers Shroud', () => {
     const { sim, slot } = fixture(); const second = sim.placeEnemy(DOMINION, 14, 10, 0);
@@ -299,3 +349,20 @@ describe('Dominion authored group scaling and reservations', () => {
     expect(sim.eHp[elite]).toBeCloseTo(1500 * partyMultiplier(party) / scaleCount(1, party));
   });
 });
+
+ it('flies vertically at takeoff and landing, and clears the whole silhouette around columns', () => {
+   const { sim } = fixture(room(80, 25));
+   const leap = { fromX: 10.5, fromY: 10.5, fromZ: 0, x: 58.5, y: 10.5, z: 0 };
+   const up = dominionLeapPosition(leap, 0.2), down = dominionLeapPosition(leap, 0.8);
+   expect(up[0]).toBe(leap.fromX); expect(up[2]).toBeGreaterThan(4);
+   expect(down[0]).toBe(leap.x); expect(down[2]).toBeGreaterThan(4);
+   expect(dominionLeapPosition(leap, 0.5)[2]).toBe(8);
+   expect(dominionLeapClear(sim.map, 0, leap)).toBe(true);
+   sim.map.hazard[11 * sim.map.w + 58] = 1;
+   expect(dominionLeapClear(sim.map, 0, leap)).toBe(false);
+   sim.map.hazard.fill(0);
+   // Off the center line, outside the walking radius but inside the flying silhouette.
+   sim.map.solid[11 * sim.map.w + 30] = 1;
+   expect(dominionLeapClear(sim.map, 0, leap)).toBe(false);
+   expect(dominionLeapClear(sim.map, 0, leap, 0.4, 0.6)).toBe(false);
+ });

@@ -1,5 +1,8 @@
 import type { Browser, Page } from '@playwright/test';
 import { expect, state, test } from './fixtures';
+import { dominionLab } from '../src/data/dungeons/dominion';
+import { loadMap } from '../src/sim/map';
+import { dominionLeapClear } from '../src/sim/dominionLeap';
 
 async function encounter(page: Page, god = true): Promise<void> {
   await page.setViewportSize({ width: 640, height: 360 });
@@ -27,6 +30,66 @@ async function observeLaunch(page: Page): Promise<void> {
   expect(Math.min(...samples.map((s) => s.hp))).toBeLessThanOrEqual(before.players.find((p) => p.classId === 'fallen')!.hp - 48);
   await page.screenshot({ path: test.info().outputPath('dominion-launch.png') });
 }
+
+async function moveAwayForLeap(page: Page): Promise<void> {
+  const map = loadMap(dominionLab);
+  let at: { x: number; y: number } | undefined;
+  await expect.poll(async () => {
+    const actor = (await state(page)).dominion.actors[0];
+    if (!actor) return false;
+    const points = [];
+    for (let y = 7; y < 37; y++) for (let x = 2; x < 32; x++) {
+      const leap = { fromX: actor.x, fromY: actor.y, fromZ: actor.z, x: x + 0.5, y: y + 0.5, z: map.floor[y * map.w + x] };
+      const d = Math.hypot(leap.x - actor.x, leap.y - actor.y);
+      if (d >= 20 && d <= 48 && dominionLeapClear(map, 0, leap)) points.push({ ...leap, d });
+    }
+    at = points.sort((a, b) => b.d - a.d)[0];
+    return !!at;
+  }, { timeout: 10_000, message: 'the walking Dominion reaches a clear takeoff corridor' }).toBe(true);
+  await page.evaluate(({ x, y }) => window.__heavenfallTeleport!(x, y), at!);
+}
+
+async function flyingTell(page: Page) {
+  const deadline = Date.now() + 15_000;
+  let retreatAt = 0;
+  while (Date.now() < deadline) {
+    const s = await state(page);
+    const cast = s.dominion.casts.find((c) => c.leap && c.impactTick - s.lastSnapshotTick >= 35);
+    if (cast) return cast;
+    // Keep the player distant while the ordinary slam cooldown runs; the caster still walks.
+    if (Date.now() >= retreatAt && !s.dominion.casts.some((c) => c.leap)) {
+      await moveAwayForLeap(page); retreatAt = Date.now() + 1500;
+    }
+    await page.waitForTimeout(20);
+  }
+  throw new Error('No native distant flying slam within 15 seconds');
+}
+
+test('a distant player gets a locked landing ring and a visible Dominion flight ending at its deadline', async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 540 });
+  await page.goto('/?dev=1&map=dominion&class=fallen&god=1&seed=7');
+  await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
+  await page.evaluate(() => window.__heavenfallTeleport!(14.5, 9.5));
+  await page.waitForFunction(() => window.__heavenfall.dominion.actors.length > 0);
+  await moveAwayForLeap(page);
+  const cast = await flyingTell(page);
+  expect(Math.hypot(cast!.leap!.x - cast!.leap!.fromX, cast!.leap!.y - cast!.leap!.fromY)).toBeGreaterThanOrEqual(16);
+  expect(cast!.impactTick - cast!.startTick).toBe(45);
+  // Observe real flight and ring positions throughout the remaining tell, rather than moving the camera.
+  const samples = await page.evaluate((id) => new Promise<Array<{ tick: number; z: number; ringX?: number; ringY?: number }>>((resolve) => {
+    const samples: Array<{ tick: number; z: number; ringX?: number; ringY?: number }> = [], until = performance.now() + 2200;
+    const sample = () => {
+      const s = window.__heavenfall, c = s.dominion.casts.find((c) => c.castId === id);
+      samples.push({ tick: s.lastSnapshotTick, z: s.dominion.rendered.find((r) => r.slot === s.dominion.actors[0]?.slot)?.z ?? 0, ringX: c?.x, ringY: c?.y });
+      if (performance.now() < until) requestAnimationFrame(sample); else resolve(samples);
+    }; sample();
+  }), cast!.castId);
+  expect(samples.some((s) => s.z > Math.max(cast!.leap!.fromZ, cast!.leap!.z) + 6)).toBe(true);
+  for (const sample of samples.filter((s) => s.ringX !== undefined)) { expect(sample.ringX).toBe(cast!.x); expect(sample.ringY).toBe(cast!.y); }
+  const end = await state(page); expect(end.dominion.strikes).toBeGreaterThan(0);
+  expect(Math.hypot(end.dominion.actors[0].x - cast!.x, end.dominion.actors[0].y - cast!.y)).toBeLessThan(1);
+  await page.screenshot({ path: test.info().outputPath('dominion-leap-landing.png') });
+});
 
 test('a native slam damages and launches the player up and away without God mode', async ({ page }) => {
   await encounter(page, false);
@@ -63,11 +126,14 @@ test('a real PeerJS guest receives the host-authorized damaging launch', async (
   } finally { await owned.close(); }
 });
 
-test('Dominion tells are visible and baiting a native slam bursts its crowd without a player killer', async ({ page }) => {
+test('Dominion tells are visible and a native slam preserves its crowd without kill credit', async ({ page }) => {
   await encounter(page);
   const telling = await state(page); expect(telling.dominion.casts[0].impactTick - telling.dominion.casts[0].startTick).toBe(45);
   await page.screenshot({ path: test.info().outputPath('dominion-tell.png') });
-  await page.waitForFunction(() => window.__heavenfall.dominion.strikes > 0 && window.__heavenfall.bursts.heavy > 0, null, { timeout: 30_000 });
+  await page.waitForFunction(() => window.__heavenfall.dominion.rendered.some((r) => !window.__heavenfall.dominion.actors.some((a) => a.slot === r.slot) && r.z - r.floor > 1), null, { timeout: 30_000 });
+  expect((await state(page)).dominion.strikes).toBeGreaterThan(0);
+  expect((await state(page)).enemies).toBeGreaterThanOrEqual(telling.enemies);
+  expect((await state(page)).bursts.heavy).toBe(telling.bursts.heavy);
   expect((await state(page)).players[0].kills).toBe(0);
   expect((await state(page)).wallet).toBeGreaterThanOrEqual(0);
 });
@@ -88,7 +154,7 @@ async function menu(page: Page, url: string, name: string): Promise<void> {
   await page.getByLabel('Player name').fill(name); await page.getByRole('button', { name: 'Multiplayer', exact: true }).click();
 }
 
-test('real PeerJS late entry resumes the active Dominion deadline without restarting its tell', async ({ page, browser }) => {
+test('real PeerJS late entry restores the locked leap destination and deadline without restarting its tell', async ({ page, browser }) => {
   test.setTimeout(180_000);
   await lateEntry(page, browser, false);
 });
@@ -142,12 +208,14 @@ async function lateEntry(a: Page, browser: Browser, four: boolean): Promise<void
     await b.waitForFunction(() => typeof window.__heavenfallReady === 'function', null, { timeout: 20_000 });
     progress('late client prepared');
     // Wait for an actual new tell. No cast/snapshot state is fabricated.
-    const cast = await (await a.waitForFunction(() => {
+    const cast = !four ? await flyingTell(a) : await (await a.waitForFunction(() => {
       const s = window.__heavenfall; return s.dominion.casts.find((c) => c.impactTick - s.lastSnapshotTick >= 35) ?? null;
     }, null, { polling: 20, timeout: 15_000 })).jsonValue();
     await b.evaluate(() => window.__heavenfallReady!());
     const joined = await (await b.waitForFunction((id) => window.__heavenfall.dominion.casts.find((c) => c.castId === id) ?? null, cast!.castId, { polling: 20, timeout: 3000 })).jsonValue();
     expect([joined!.startTick, joined!.impactTick, joined!.incarnation]).toEqual([cast!.startTick, cast!.impactTick, cast!.incarnation]);
+    expect(joined!.leap).toEqual(cast!.leap);
+    if (!four) expect(joined!.leap).toBeDefined();
     expect((await state(b)).floorSyncTick).toBeGreaterThanOrEqual(cast!.startTick);
     expect((await state(b)).dominion.startedCastIds, 'the caught-up cast never replays a reliable start cue').not.toContain(cast!.castId);
     expect((await state(b)).players.find((p) => p.classId === 'betrayer')?.dead).toBe(true);

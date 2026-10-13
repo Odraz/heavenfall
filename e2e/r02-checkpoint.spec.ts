@@ -7,7 +7,7 @@ import { shootProp } from './prop-fixtures';
 
 // These are the published Gate B selections, deliberately independent of future repins.
 const seed = 317434499;
-const hash = 'c2f93477';
+const hash = '81713798';
 const selections = [
   { label: 'small', room: 7, templateId: 'pg-c-1x1-flyers-03', name: 'The Ziggurat', band: 3 },
   { label: 'horde', room: 3, templateId: 'pg-c-2x2-horde-flyers-01', name: 'Courtyard of Clouds', band: 2 },
@@ -25,7 +25,7 @@ for (const classId of ['fallen', 'heretic', 'binder', 'betrayer'] as const) {
       await page.goto(`/?dev=1&map=rogue&seed=${seed}&room=${selection.room}&class=${classId}&god=0`);
       await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
       await page.waitForFunction(() => window.__heavenfall.activePhase === 'combat', null, { timeout: 10_000 });
-      await page.waitForFunction(() => window.__heavenfall.dominion.actors.length === 1, null, { timeout: 5000 });
+      expect((await state(page)).dominion.actors).toEqual([]);
       const s = await state(page);
       expect([s.seed, s.floorHash, s.fallbackUsed, s.activeRoom]).toEqual([seed, hash, false, selection.room]);
       expect(s.players[0]).toMatchObject({ classId, dead: false, kills: 0 });

@@ -117,7 +117,8 @@ import { Props, type Prop } from './props';
 import { HaloLedger, HALO_WEIGHT, haloBudget, moteCap } from './economy';
 import { Pickups } from './pickups';
 import { Dominions } from './dominion';
-import { DOMINION_ALIVE_CAP, DOMINION_REACH, DOMINION_RADIUS, DOMINION_HEIGHT_TOLERANCE, DOMINION_PLAYER_DAMAGE, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_SECONDS, type DominionCast, type DominionPhase } from '../data/dominion';
+import { dominionLeapClear } from './dominionLeap';
+import { DOMINION_ALIVE_CAP, DOMINION_COOLDOWN_TICKS, DOMINION_REACH, DOMINION_RADIUS, DOMINION_HEIGHT_TOLERANCE, DOMINION_PLAYER_DAMAGE, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_VZ, DOMINION_LEAP_CHARGE_TICKS, DOMINION_LEAP_MIN_RANGE, DOMINION_LEAP_MAX_RANGE, DOMINION_TELL_TICKS, DOMINION_MELEE_RANGE, DOMINION_MELEE_DAMAGE, dominionLeapPosition, type DominionLeap, type DominionCast, type DominionPhase } from '../data/dominion';
 import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, reviveSlowdown, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
 
 /** Linear party scaling, including half-player bots (rogue game.md §0). */
@@ -2009,6 +2010,7 @@ export class Simulation {
     if (type === DOMINION) this.livingDominions++;
     this.eGoldEntitled[slot] = 0;
     this.dominions.reset(slot);
+    this.dominions.leapReadyAt[slot] = this.tick + DOMINION_COOLDOWN_TICKS;
     if (type === DOMINION && wave >= 0) {
       const n4 = this.map.rooms[room].waves[wave].dominions ?? 0;
       const party = this.rooms[room].partySize, count = scaleCount(n4, party);
@@ -2353,6 +2355,7 @@ export class Simulation {
   root(slot: number, seconds: number): void {
     if (this.immune(slot)) return;
     this.eRootUntil[slot] = Math.max(this.eRootUntil[slot], this.tick + ticks(seconds));
+    if (this.dominions.active.get(slot)?.leap) this.dominions.cancel(slot, this.tick);
   }
 
   /** Rooted: by Chains, including the 0.3 s pull. The Gatekeeper can't be rooted. */
@@ -2389,6 +2392,7 @@ export class Simulation {
     if (this.immune(slot)) return;
     const len = Math.hypot(dirX, dirY);
     if (len < 1e-9) return;
+    if (this.dominions.active.get(slot)?.leap) this.dominions.cancel(slot, this.tick);
     const v = dist / seconds;
     this.eKbVx[slot] = (dirX / len) * v;
     this.eKbVy[slot] = (dirY / len) * v;
@@ -3366,6 +3370,7 @@ export class Simulation {
         this.updateBoss(slot);
         continue;
       }
+      if (type === DOMINION && this.updateDominionFlight(slot)) continue;
       if (this.ePullStart[slot] >= 0) {
         this.updatePull(slot);
         continue;
@@ -3377,12 +3382,13 @@ export class Simulation {
       if (tick > this.eKbFrom[slot] && tick <= this.eKbUntil[slot]) this.updateKnockback(slot);
       else if (type === CHERUB) this.updateCherub(slot, stunned);
       else this.updateWalker(slot, stunned);
-      if (stunned) {
+      const thrown = tick <= this.eKbUntil[slot] && !this.eGrounded[slot];
+      if (stunned || thrown) {
         this.eMeleeNext[slot] = -1;
         this.eCast[slot] = 0;
         this.eCastT[slot] = 0;
         if (this.eCastCd[slot] > 0) this.eCastCd[slot] = Math.max(0, this.eCastCd[slot] - TICK_DT);
-        this.eState[slot] = ST_IDLE;
+        this.eState[slot] = thrown ? ST_FALLING : ST_IDLE;
       } else if (type === BLESSED) this.updateMelee(slot);
       else if (type !== DOMINION) this.updateCast(slot);
     }
@@ -3397,23 +3403,62 @@ export class Simulation {
       lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eyeZ(slot), p!.x, p!.y, p!.z + PLAYER_HEIGHT / 2);
   }
 
+  private dominionLeapTarget(slot: number): DominionLeap | undefined {
+    const room = this.roomAt(this.eX[slot], this.eY[slot]);
+    const choices: DominionLeap[] = [];
+    for (const p of this.players) {
+      if (!this.livingTargetable(p) || this.roomAt(p.x, p.y) !== room) continue;
+      const distance = Math.hypot(p.x - this.eX[slot], p.y - this.eY[slot]);
+      if (distance < DOMINION_LEAP_MIN_RANGE || distance > DOMINION_LEAP_MAX_RANGE) continue;
+      const z = groundHeight(this.map, p.x, p.y, ENEMIES[DOMINION].radius, Infinity, false, true);
+      if (!Number.isFinite(z) || this.map.hazard[Math.floor(p.y) * this.map.w + Math.floor(p.x)]) continue;
+      const leap: DominionLeap = { fromX: Math.fround(this.eX[slot]), fromY: Math.fround(this.eY[slot]), fromZ: Math.fround(this.eZ[slot]), x: Math.fround(p.x), y: Math.fround(p.y), z: Math.fround(z) };
+      if (dominionLeapClear(this.map, room, leap)) choices.push(leap);
+    }
+    return choices.length ? choices[Math.floor(this.random() * choices.length)] : undefined;
+  }
+
+  private updateDominionFlight(slot: number): boolean {
+    const cast = this.dominions.active.get(slot), leap = cast?.leap;
+    if (!cast || !leap) return false;
+    const flightStart = cast.startTick + DOMINION_LEAP_CHARGE_TICKS;
+    if (this.isRooted(slot) || this.isStunned(slot) || this.tick < this.eSilenceUntil[slot] ||
+      this.roomAt(this.eX[slot], this.eY[slot]) !== cast.room || this.tick < flightStart && !this.eGrounded[slot]) {
+      this.dominions.cancel(slot, this.tick); return false;
+    }
+    if (this.tick < flightStart) { this.eState[slot] = ST_WINDUP; return true; }
+    const duration = DOMINION_TELL_TICKS - DOMINION_LEAP_CHARGE_TICKS;
+    const from = Math.max(0, (this.tick - 1 - flightStart) / duration), to = Math.min(1, (this.tick - flightStart) / duration);
+    if (!dominionLeapClear(this.map, cast.room, leap, from, to)) { this.dominions.cancel(slot, this.tick); return false; }
+    const [x, y, z] = dominionLeapPosition(leap, to);
+    this.eVz[slot] = to < 1 ? (z - this.eZ[slot]) / TICK_DT : 0;
+    this.eX[slot] = x; this.eY[slot] = y; this.eZ[slot] = to < 1 ? z : leap.z;
+    this.eGrounded[slot] = to >= 1 ? 1 : 0; this.eState[slot] = ST_WINDUP;
+    return true;
+  }
+
   private updateDominions(): void {
     if (this.livingDominions === 0) return;
-    // Slams remove victims; gather only the bounded casters after ordinary movement completed.
+    // Resolve the bounded casters after ordinary movement; displacement can cancel other casts.
     const slots: number[] = [];
     for (let k = 0; k < this.activeCount; k++) if (this.eType[this.active[k]] === DOMINION) slots.push(this.active[k]);
     for (const s of slots) {
       if (!this.eAlive[s] || this.eSpawnTick[s] === this.tick) continue; // A prior slam may trigger an owned Shroud burst that kills this caster.
+      const ownFlight = this.dominions.active.get(s)?.leap !== undefined;
+      const leap = this.tick % 15 === s % 15 && !this.dominions.holding(s, this.tick) && this.tick >= this.dominions.readyAt[s] && this.tick >= this.dominions.leapReadyAt[s] && !this.isRooted(s) && !this.isStunned(s) && this.tick >= this.eSilenceUntil[s] && this.eGrounded[s] ? this.dominionLeapTarget(s) : undefined;
       this.dominions.update(s, this.tick, { incarnation: this.eIncarnation[s], room: this.roomAt(this.eX[s], this.eY[s]),
-        grounded: this.eGrounded[s] === 1, stunned: this.isStunned(s), silenced: this.tick < this.eSilenceUntil[s], inRange: this.dominionInRange(s) });
+        grounded: this.eGrounded[s] === 1 || ownFlight, stunned: this.isStunned(s), silenced: this.tick < this.eSilenceUntil[s], inRange: this.dominionInRange(s), leap });
       if (!this.eAlive[s]) continue;
-      if (this.dominions.active.has(s)) this.eState[s] = ST_WINDUP;
-      else if (this.tick < this.dominions.recoveryUntil[s]) this.eState[s] = ST_ATTACKING;
+      if (this.dominions.holding(s, this.tick)) {
+        this.eMeleeNext[s] = -1;
+        this.eState[s] = this.dominions.active.has(s) ? ST_WINDUP : ST_ATTACKING;
+      } else if (!this.isStunned(s) && this.eGrounded[s]) this.updateMelee(s);
+      else this.eMeleeNext[s] = -1;
     }
   }
 
   private dominionPhase(phase: DominionPhase, cast: DominionCast): void {
-    const s = cast.slot, x = this.eX[s], y = this.eY[s], z = this.eZ[s];
+    const s = cast.slot, x = cast.leap?.x ?? this.eX[s], y = cast.leap?.y ?? this.eY[s], z = cast.leap?.z ?? this.eZ[s];
     this.emit('all', { type: 'dominionCast', phase, cast: { ...cast }, x, y, z });
     if (phase !== 'strike') return;
     const eligible = (vx: number, vy: number, vz: number, height: number) => this.roomAt(vx, vy) === cast.room &&
@@ -3422,11 +3467,17 @@ export class Simulation {
     const victims: number[] = [];
     for (let k = 0; k < this.activeCount; k++) {
       const q = this.active[k], type = this.eType[q], def = ENEMIES[type];
-      if (type === DOMINION || type === GATEKEEPER || !this.eGrounded[q]) continue;
+      if (q === s || type === GATEKEEPER || !this.eGrounded[q]) continue;
       if (type === CHERUB && Math.abs(this.eZ[q] - groundHeight(this.map, this.eX[q], this.eY[q], def.radius, Infinity, false, true)) > 0.05) continue;
       if (eligible(this.eX[q], this.eY[q], this.eZ[q], def.height)) victims.push(q);
     }
-    for (const q of victims) this.damageEnemy(q, 200, -1, Infinity, x, y, true);
+    for (const q of victims) {
+      this.dominions.cancel(q, this.tick);
+      this.ePullStart[q] = -1;
+      this.knockAway(q, x, y, DOMINION_LAUNCH_SPEED * DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_SECONDS);
+      this.eVz[q] = DOMINION_LAUNCH_VZ; this.eGrounded[q] = 0;
+      this.eMeleeNext[q] = -1; this.eCast[q] = 0; this.eCastT[q] = 0;
+    }
     for (const p of this.players) if (this.livingTargetable(p) && eligible(p.x, p.y, p.z, PLAYER_HEIGHT)) {
       const immune = this.isInvulnerable(p);
       this.damagePlayer(p, DOMINION_PLAYER_DAMAGE);
@@ -3579,8 +3630,8 @@ export class Simulation {
     const b = this.loadBody(slot);
     const dx = this.eKbVx[slot] * TICK_DT;
     const dy = this.eKbVy[slot] * TICK_DT;
-    if (b.flying) moveHorizontal(this.map, b, dx, dy);
-    else stepBody(this.map, b, dx, dy, TICK_DT);
+    if (b.flying && b.vz === 0) moveHorizontal(this.map, b, dx, dy);
+    else { b.flying = false; stepBody(this.map, b, dx, dy, TICK_DT); }
     this.storeBody(slot, b);
     this.eState[slot] = !b.grounded ? ST_FALLING : ST_MOVING;
   }
@@ -3694,6 +3745,7 @@ export class Simulation {
 
   private updateCherub(slot: number, stunned: boolean): void {
     const b = this.loadBody(slot);
+    b.vz = 0; b.grounded = true; // Resume ordinary hovering after an accepted physical launch.
     const t = this.eTarget[slot];
     let mx = 0;
     let my = 0;
@@ -3743,11 +3795,13 @@ export class Simulation {
    * on the 8th tick in range (0.267 s, M12 §3.2), then every 1 s. Leaving range resets the timer.
    */
   private updateMelee(slot: number): void {
+    const dominion = this.eType[slot] === DOMINION;
     const t = this.eTarget[slot];
     let inRange = false;
     const p = t >= 0 ? this.slots[t] : undefined;
     if (p) {
-      inRange = Math.hypot(p.x - this.eX[slot], p.y - this.eY[slot]) <= MELEE_RANGE && Math.abs(p.z - this.eZ[slot]) < MELEE_HEIGHT;
+      inRange = Math.hypot(p.x - this.eX[slot], p.y - this.eY[slot]) <= (dominion ? DOMINION_MELEE_RANGE : MELEE_RANGE) && Math.abs(p.z - this.eZ[slot]) < MELEE_HEIGHT &&
+        (!dominion || lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eyeZ(slot), p.x, p.y, p.z + PLAYER_HEIGHT / 2));
     }
     if (!inRange) {
       this.eMeleeNext[slot] = -1;
@@ -3756,7 +3810,7 @@ export class Simulation {
     if (this.eMeleeNext[slot] < 0) this.eMeleeNext[slot] = MELEE_FIRST;
     this.eMeleeNext[slot] -= TICK_DT;
     if (this.eMeleeNext[slot] <= 1e-9) {
-      this.damagePlayer(p!, MELEE_DAMAGE);
+      this.damagePlayer(p!, dominion ? DOMINION_MELEE_DAMAGE : MELEE_DAMAGE);
       this.eMeleeNext[slot] += MELEE_INTERVAL;
     }
     if (this.eState[slot] !== ST_FALLING) this.eState[slot] = ST_ATTACKING;
@@ -3852,7 +3906,7 @@ export class Simulation {
     const b = this.body;
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
-      if (!isLayer(s) || this.ePullStart[s] >= 0) continue;
+      if (!isLayer(s) || this.ePullStart[s] >= 0 || this.dominions.active.get(s)?.leap) continue;
       const def = ENEMIES[this.eType[s]];
       const x = this.eX[s];
       const y = this.eY[s];

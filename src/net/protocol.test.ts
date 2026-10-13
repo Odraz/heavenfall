@@ -425,6 +425,16 @@ describe('M12 stage 4 protocol (M12 §9)', () => {
 });
 
 describe('R2 Dominion snapshot control metadata', () => {
+  it('round-trips locked leap geometry and rejects malformed kinds and destinations', () => {
+    const e = casting(1);
+    e.dominionCasts![0].leap = { fromX: 10, fromY: 10, fromZ: 2, x: 30, y: 10, z: 2 };
+    const packet = encodeSnapshot(header, players(1), e)[0], o = HEADER_BYTES + PLAYER_BYTES;
+    expect(decodeSnapshot(packet)?.dominionCasts).toEqual(e.dominionCasts);
+    for (const [offset, value] of [[20, NaN], [32, Infinity], [32, 1000], [32, 12]]) {
+      const bad = packet.slice(0); new DataView(bad).setFloat32(o + offset, value, true); expect(decodeSnapshot(bad)).toBeNull();
+    }
+    const bad = packet.slice(0); new DataView(bad).setUint8(o + 19, 2); expect(decodeSnapshot(bad)).toBeNull();
+  });
   function casting(ne = 1500) {
     const e = entities(ne, ne === 1500 ? 400 : 0, ne === 1500 ? 160 : 0);
     const count = Math.min(3, ne);
@@ -435,10 +445,10 @@ describe('R2 Dominion snapshot control metadata', () => {
     });
     return e;
   }
-  it('reserves three 19-byte records in part zero at maximum capacity, even when their enemies are in part one', () => {
+  it('reserves three 44-byte records in part zero at maximum capacity, even when their enemies are in part one', () => {
     const e = casting(), packets = encodeSnapshot(header, players(4), e);
     expect(packets).toHaveLength(2); expect(packets.every((p) => p.byteLength <= 16000)).toBe(true);
-    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (67 + 4 * 36) + 1500 * 14 + 400 * 9 + 160 * 9 + 3 * 19);
+    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (67 + 4 * 36) + 1500 * 14 + 400 * 9 + 160 * 9 + 3 * 44);
     const zero = decodeSnapshot(packets[0])!, one = decodeSnapshot(packets[1])!;
     expect(zero.dominionCasts).toEqual(e.dominionCasts); expect(one.dominionCasts).toEqual([]);
     expect(one.totalDominionCasts).toBe(3); expect(zero.enemySlot.includes(e.dominionCasts![0].slot)).toBe(false);
@@ -470,8 +480,8 @@ describe('R2 Dominion snapshot control metadata', () => {
     bad(65, 4, 1); bad(66, 0, 1); bad(o, 65535, 2); bad(o + 2, 0, 4); bad(o + 6, 0, 4);
     bad(o + 10, header.tick + 1, 4); bad(o + 14, header.tick, 4); bad(o + 18, 32, 1);
     bad(o + 2, 999, 4); // Reused slot: the record does not match its current incarnation.
-    for (const extra of [4, 15, 0xf4]) bad(o + 19 + 6, extra, 1);
-    bad(o + 19 + 7, 128, 1);
+    for (const extra of [4, 15, 0xf4]) bad(o + 44 + 6, extra, 1);
+    bad(o + 44 + 7, 128, 1);
     expect(() => encodeSnapshot(header, [], { ...e, dominionCasts: [...e.dominionCasts!, ...e.dominionCasts!] })).toThrow('invalid Dominion casts');
   });
   it('does not advance the complete watermark for a multipart cast attached to a reused slot', () => {

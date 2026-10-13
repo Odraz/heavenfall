@@ -2,7 +2,7 @@
 import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
-import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, CHORISTER, DOMINION, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
+import { CHERUB, CHERUB_HOVER, CHORISTER, DOMINION, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_FALLING, ST_WINDUP } from '../data/enemies';
 import { DOMINION_RADIUS } from '../data/dominion';
 import { DominionProjection } from './dominion';
 import { DominionView } from './dominionView';
@@ -84,7 +84,7 @@ import {
 } from './burstDeaths';
 import { Flinches, HIT_FLINCH, KILL_FLINCH, PredictedKills, predictHit, predictPellets, predictSilverBullet, type PelletTarget, type Predicted } from './killPredict';
 import { BurstPops, MassKills } from './massKill';
-import { massKillShake, Shake, SHAKE_BLASPHEMY, SHAKE_LANDING, SHAKE_SHROUD, SHROUD_SHAKE_RANGE } from './shake';
+import { dominionShake, massKillShake, Shake, SHAKE_BLASPHEMY, SHAKE_LANDING, SHAKE_SHROUD, SHROUD_SHAKE_RANGE } from './shake';
 import { LIGHTMAP_TEXELS } from '../render/lightmap';
 import { Bot, type BotEnemy } from './bot';
 import { corpseFrame, EnemyAnimator, spriteDirection, type Corpse } from './enemyAnim';
@@ -437,10 +437,6 @@ export class Game {
   private hum: LoopHandle | null = null;
   /** Each leaf's state its door was last drawn in (room by room, leaf by leaf): 1 closed, 0 open, -1 before the first snapshot. */
   private leafDrawn: Int8Array;
-  /** Smoothed Cherub heights per slot (§9.4). */
-  private readonly cherubZ = new Float32Array(ENEMY_SLOTS);
-  /** Frame number when each slot's Cherub height was last updated. */
-  private readonly cherubFrame = new Uint32Array(ENEMY_SLOTS);
   private frameNo = 1;
   private readonly zScratch = new Float32Array(ENEMY_SLOTS);
   /** performance.now() when each enemy's last white flash started. */
@@ -587,7 +583,7 @@ export class Game {
       z: this.map.floor[Math.floor(p.y) * this.map.w + Math.floor(p.x)], marked: p.marked }));
     debugState.brokenProps = [];
     debugState.propRecharges = [];
-    debugState.dominion = { actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 };
+    debugState.dominion = { rendered: [], actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 };
     debugState.hazards = { activeRoom: -1, activeCells: 0 };
     debugState.spawnWarnings = []; debugState.crests = 0;
     this.sounds.renderDelay = (this.snaps.delayTicks * TICK_MS) / 1000;
@@ -926,6 +922,9 @@ export class Game {
         break;
       case 'dominionCast':
         if (e.phase === 'strike') {
+          const b = this.player.body;
+          const impactShake = dominionShake(Math.hypot(e.x - b.x, e.y - b.y, e.z - b.z));
+          if (!this.dead && impactShake) this.shake.add(now, impactShake);
           this.vfx.ring(now, e.x, e.y, e.z, 0xffedaa, 0, DOMINION_RADIUS, 220);
           this.vfx.glow(now, e.x, e.y, e.z + 0.2, 0xffd066, 0.2, DOMINION_RADIUS, 250);
         }
@@ -1910,9 +1909,11 @@ export class Game {
 
     // While singleplayer is paused, the simulation's clock stands still at the moment Pause opened.
     const simNow = this.paused && this.o.singleplayer ? this.pausedAt : now;
-    // Enemies at the render time, and their derived heights.
+    // Render authoritative altitude as well as horizontal movement (leaps, throws and hovering).
     const ents = this.snaps.interpolate(simNow);
-    const enemyZ = this.enemyHeights(ents, dt);
+    const enemyZ = this.zScratch;
+    enemyZ.set(ents.z.subarray(0, ents.count));
+    this.frameNo++;
     this.computeAllyTarget(now);
     this.party?.setAllyTarget(this.allyTargetId);
 
@@ -2234,6 +2235,7 @@ export class Game {
   };
 
   private drawBillboards(now: number, ents: { count: number; slot: Uint16Array; x: Float32Array; y: Float32Array; type: Uint8Array; state: Uint8Array; flags: Uint8Array }, enemyZ: Float32Array): void {
+    debugState.dominion.rendered.length = 0;
     const bb = this.billboards;
     bb.begin();
     const shadows = this.shadows;
@@ -2331,6 +2333,7 @@ export class Game {
       else if (judgment) glow = judgment;
       else if (ents.state[i] === ST_WINDUP) glow = GLOW_WINDUP;
       const grey = (flags & FLAG_SILENCED) !== 0;
+      if (type === DOMINION || ents.state[i] === ST_FALLING) debugState.dominion.rendered.push({ slot, type, z, floor: this.floorAt(x, y) });
       target.add(f, fx, fy, z, height * tall, false, grey ? 0.55 : 1, grey ? 0.55 : 1, grey ? 0.6 : 1, glow, 1, wide);
       // Contact shadows only under the players and the Gatekeeper, not the swarm: cut for the
       // performance gate (M10 §2.3 cut 3, decisions).
@@ -2534,32 +2537,6 @@ export class Game {
       }
     }
     return out;
-  }
-
-  /** Enemy height isn't sent: ground height for ground enemies, ground height + 4 m (smoothed) for Cherubs (§9.4). */
-  private enemyHeights(ents: { count: number; slot: Uint16Array; x: Float32Array; y: Float32Array; type: Uint8Array }, dt: number): Float32Array {
-    const z = this.zScratch;
-    for (let i = 0; i < ents.count; i++) {
-      const type = ents.type[i];
-      const r = ENEMIES[type].radius;
-      const g = groundHeight(this.map, ents.x[i], ents.y[i], r, Infinity, false, true);
-      const ground = g === -Infinity ? 0 : g;
-      if (type === CHERUB) {
-        const slot = ents.slot[i];
-        const want = ground + CHERUB_HOVER;
-        const cur = this.cherubZ[slot];
-        const fresh = this.cherubFrame[slot] !== this.frameNo - 1;
-        this.cherubFrame[slot] = this.frameNo;
-        if (fresh) this.cherubZ[slot] = want;
-        else {
-          const max = CHERUB_CLIMB * Math.min(dt, 0.1);
-          this.cherubZ[slot] = cur + Math.max(-max, Math.min(max, want - cur));
-        }
-        z[i] = this.cherubZ[slot];
-      } else z[i] = ground;
-    }
-    this.frameNo++;
-    return z;
   }
 
   dispose(): void {

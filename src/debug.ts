@@ -1,5 +1,6 @@
 /** The read-only debug object `window.__heavenfall` (§2.5). */
 import type { DirectorInfo } from './sim/director';
+import type { DominionLeap } from './data/dominion';
 
 export type Screen =
   | 'title'
@@ -42,7 +43,7 @@ export interface DebugState {
   hazards: { activeRoom: number; activeCells: number };
   spawnWarnings: Array<{ id: number; room: number; x: number; y: number; z: number; startTick: number; readyTick: number }>;
   crests: number;
-  dominion: { actors: Array<{ slot: number; incarnation: number; x: number; y: number; z: number }>; casts: Array<{ slot: number; incarnation: number; castId: number; startTick: number; impactTick: number; room: number; x: number; y: number; z: number }>; starts: number; startedCastIds: number[]; strikes: number; cancels: number };
+  dominion: { rendered: Array<{ slot: number; type: number; z: number; floor: number }>; actors: Array<{ slot: number; incarnation: number; x: number; y: number; z: number }>; casts: Array<{ slot: number; incarnation: number; castId: number; startTick: number; impactTick: number; room: number; x: number; y: number; z: number; leap?: DominionLeap }>; starts: number; startedCastIds: number[]; strikes: number; cancels: number };
   seed: number | null;
   simSeed: number | null;
   runId: string | null;
@@ -108,7 +109,7 @@ export const debugState: DebugState = {
   brokenProps: [],
   propRecharges: [],
   hazards: { activeRoom: -1, activeCells: 0 },
-  dominion: { actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
+  dominion: { rendered: [], actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
   seed: null,
   simSeed: null,
   runId: null,
@@ -158,7 +159,7 @@ export function resetGameDebug(): void {
     brokenProps: [],
     propRecharges: [],
     hazards: { activeRoom: -1, activeCells: 0 },
-    dominion: { actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
+    dominion: { rendered: [], actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
     seed: null,
     simSeed: null,
     runId: null,

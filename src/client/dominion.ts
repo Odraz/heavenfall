@@ -1,5 +1,5 @@
 /** Accepted cast projection; rendering/bots share these deadlines and matched incarnations. */
-import { DOMINION_CAST_CAP, type DominionCast } from '../data/dominion';
+import { DOMINION_CAST_CAP, copyDominionCast, type DominionCast } from '../data/dominion';
 import { DOMINION, ST_WINDUP } from '../data/enemies';
 import type { FloorSync, GameEvent } from '../net/messages';
 import { validCasts, type Snapshot } from '../net/protocol';
@@ -17,7 +17,7 @@ export class DominionProjection {
       casts.some((c) => this.known.has(c.castId) && !sameCast(this.known.get(c.castId)!.cast, c))) return false;
     for (const c of this.active.values()) this.remember(c);
     this.revision = revision; this.tick = tick; this.active.clear();
-    for (const cast of casts) { this.active.set(cast.slot, { ...cast }); this.remember(cast); }
+    for (const cast of casts) { this.active.set(cast.slot, copyDominionCast(cast)); this.remember(cast); }
     return true;
   }
   sync(s: FloorSync): boolean {
@@ -58,14 +58,14 @@ export class DominionProjection {
     // A newer snapshot may already have applied this state. Its reliable cue still plays once.
     if (revision > this.revision && tick >= this.tick) {
       this.revision = revision; this.tick = tick;
-      if (e.phase === 'start') this.active.set(e.cast.slot, { ...e.cast });
+      if (e.phase === 'start') this.active.set(e.cast.slot, copyDominionCast(e.cast));
       else this.active.delete(e.cast.slot);
     }
     return true;
   }
   private remember(c: DominionCast): { cast: DominionCast; phases: number } {
     let entry = this.known.get(c.castId);
-    if (!entry) { entry = { cast: { ...c }, phases: 0 }; this.known.set(c.castId, entry); }
+    if (!entry) { entry = { cast: copyDominionCast(c), phases: 0 }; this.known.set(c.castId, entry); }
     while (this.known.size > 2 * DOMINION_CAST_CAP) this.known.delete(this.known.keys().next().value!);
     return entry;
   }
@@ -75,11 +75,11 @@ export class DominionProjection {
     for (const c of this.active.values()) {
       const i = s.enemySlot.indexOf(c.slot);
       if (tick < c.startTick || tick >= c.impactTick || i < 0 || s.enemyType[i] !== DOMINION || s.enemyIncarnation[i] !== c.incarnation) continue;
-      rings.push({ ...c, x: s.enemyX[i], y: s.enemyY[i], z: s.enemyZ[i] });
+      rings.push({ ...copyDominionCast(c), x: c.leap?.x ?? s.enemyX[i], y: c.leap?.y ?? s.enemyY[i], z: c.leap?.z ?? s.enemyZ[i] });
     }
     return rings;
   }
 }
 function sameCast(a: DominionCast, b: DominionCast): boolean {
-  return a.slot === b.slot && a.incarnation === b.incarnation && a.castId === b.castId && a.room === b.room && a.startTick === b.startTick && a.impactTick === b.impactTick;
+  return a.slot === b.slot && a.incarnation === b.incarnation && a.castId === b.castId && a.room === b.room && a.startTick === b.startTick && a.impactTick === b.impactTick && (!!a.leap === !!b.leap) && (!a.leap || !!b.leap && ['fromX', 'fromY', 'fromZ', 'x', 'y', 'z'].every((k) => a.leap![k as keyof NonNullable<DominionCast['leap']>] === b.leap![k as keyof NonNullable<DominionCast['leap']>]));
 }

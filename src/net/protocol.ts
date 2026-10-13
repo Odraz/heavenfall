@@ -2,7 +2,7 @@
 import { PROTOCOL_VERSION } from './version';
 import { PICKUP_CAP, PICKUP_KIND_COUNT } from '../data/pickups';
 import { DOMINION, ENEMIES, ST_WINDUP } from '../data/enemies';
-import { DOMINION_CAST_CAP, DOMINION_TELL_TICKS, type DominionCast } from '../data/dominion';
+import { DOMINION_CAST_CAP, DOMINION_TELL_TICKS, DOMINION_LEAP_MIN_RANGE, DOMINION_LEAP_MAX_RANGE, type DominionCast } from '../data/dominion';
 import { ENEMY_SLOTS, MAX_LIVING_ENEMIES, PROJECTILE_SLOTS } from '../sim/constants';
 
 function writeRunId(v: DataView, offset: number, runId: string): void {
@@ -101,7 +101,7 @@ export function decodeInput(buf: ArrayBuffer, expectedRunId: string): InputMsg |
 
 /** Run-scoped header, repeated in every part (rogue r01.md, R1.6). */
 export const HEADER_BYTES = 67;
-export const DOMINION_CAST_BYTES = 19;
+export const DOMINION_CAST_BYTES = 44;
 /** The MVP's 28 bytes plus `revive` and `shots` (M8 §10), `shots2` and `beam` (M9 §10). */
 export const PLAYER_BYTES = 36;
 export const ENEMY_BYTES = 14;
@@ -295,6 +295,8 @@ export function encodeSnapshot(
       const c = casts[i];
       v.setUint16(o, c.slot, true); v.setUint32(o + 2, c.incarnation, true); v.setUint32(o + 6, c.castId, true);
       v.setUint32(o + 10, c.startTick, true); v.setUint32(o + 14, c.impactTick, true); v.setUint8(o + 18, c.room);
+      v.setUint8(o + 19, c.leap ? 1 : 0);
+      if (c.leap) ['fromX', 'fromY', 'fromZ', 'x', 'y', 'z'].forEach((key, j) => v.setFloat32(o + 20 + j * 4, c.leap![key as keyof NonNullable<typeof c.leap>], true));
       o += DOMINION_CAST_BYTES;
     }
     for (let i = e0; i < e0 + ne; i++) {
@@ -448,8 +450,11 @@ export function decodeSnapshot(buf: ArrayBuffer, expectedRunId?: string): Snapsh
     o += PLAYER_BYTES;
   }
   for (let i = 0; i < nc; i++) {
+    const kind = v.getUint8(o + 19);
+    if (kind > 1 || kind === 0 && Array.from({ length: 6 }, (_, j) => v.getFloat32(o + 20 + j * 4, true)).some((n) => n !== 0)) return null;
     s.dominionCasts!.push({ slot: v.getUint16(o, true), incarnation: v.getUint32(o + 2, true), castId: v.getUint32(o + 6, true),
-      startTick: v.getUint32(o + 10, true), impactTick: v.getUint32(o + 14, true), room: v.getUint8(o + 18) });
+      startTick: v.getUint32(o + 10, true), impactTick: v.getUint32(o + 14, true), room: v.getUint8(o + 18),
+      ...(kind ? { leap: { fromX: v.getFloat32(o + 20, true), fromY: v.getFloat32(o + 24, true), fromZ: v.getFloat32(o + 28, true), x: v.getFloat32(o + 32, true), y: v.getFloat32(o + 36, true), z: v.getFloat32(o + 40, true) } } : {}) });
     o += DOMINION_CAST_BYTES;
   }
   if (!validCasts(s.dominionCasts!, s.tick)) return null;
@@ -643,7 +648,11 @@ export function validCasts(casts: readonly DominionCast[], tick: number): boolea
   return casts.length <= DOMINION_CAST_CAP && new Set(casts.map((c) => c.slot)).size === casts.length && new Set(casts.map((c) => c.castId)).size === casts.length &&
     casts.every((c) => Number.isInteger(c.slot) && c.slot >= 0 && c.slot < ENEMY_SLOTS && Number.isInteger(c.room) && c.room >= 0 && c.room < 32 &&
       [c.incarnation, c.castId].every((n) => Number.isInteger(n) && n > 0 && n <= 0xffffffff) && Number.isInteger(c.startTick) && c.startTick >= 0 && c.startTick <= tick &&
-      Number.isInteger(c.impactTick) && c.impactTick <= 0xffffffff && c.impactTick > tick && c.impactTick - c.startTick === DOMINION_TELL_TICKS);
+      Number.isInteger(c.impactTick) && c.impactTick <= 0xffffffff && c.impactTick > tick && c.impactTick - c.startTick === DOMINION_TELL_TICKS &&
+      (c.leap === undefined || c.leap !== null && typeof c.leap === 'object' &&
+        [c.leap.fromX, c.leap.fromY, c.leap.x, c.leap.y].every((n) => Number.isFinite(n) && n >= 0 && n <= 2048) &&
+        [c.leap.fromZ, c.leap.z].every((n) => Number.isFinite(n) && n >= -64 && n <= 256) &&
+        Math.hypot(c.leap.x - c.leap.fromX, c.leap.y - c.leap.fromY) >= DOMINION_LEAP_MIN_RANGE - 0.001 && Math.hypot(c.leap.x - c.leap.fromX, c.leap.y - c.leap.fromY) <= DOMINION_LEAP_MAX_RANGE + 0.001));
 }
 function castsMatchEnemies(s: Snapshot): boolean {
   return (s.dominionCasts ?? []).every((c) => {

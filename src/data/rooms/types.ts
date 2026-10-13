@@ -11,7 +11,7 @@ export type MixId = 'blessed' | 'chorister' | 'cherub';
 export interface TemplateWave {
   share: number;
   mix: Partial<Record<MixId, number>>;
-  /** Authored extra elites; stamping adds one baseline commander outside this TP mix. */
+  /** Authored TP allocation; current stamping preserves minions but ramps commanders by wave index. */
   elites?: number;
 }
 

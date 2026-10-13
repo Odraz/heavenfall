@@ -11,6 +11,19 @@ const snapshot = (incarnation = 10): Snapshot => ({ runId: 'run', tick: 120, sta
   enemyX: new Float32Array([7]), enemyY: new Float32Array([8]), enemyZ: new Float32Array([1]) } as Snapshot);
 const event = (phase: 'start' | 'strike' | 'cancel'): Extract<GameEvent, { type: 'dominionCast' }> => ({ type: 'dominionCast', phase, cast: { ...cast }, x: 7, y: 8, z: 1 });
 
+it('a leap ring stays at its locked target through snapshots, catch-up and duplicate rejection', () => {
+  const leapCast = { ...cast, leap: { fromX: 7, fromY: 8, fromZ: 1, x: 27, y: 8, z: 1 } };
+  const p = new DominionProjection('run'), sync = { ...checkpoint(), dominionCasts: [leapCast] };
+  expect(p.sync(sync)).toBe(true); sync.dominionCasts[0].leap.x = 30;
+  const s = snapshot(); s.enemyX[0] = 15;
+  expect(p.rings(s, 135)[0]).toMatchObject({ x: 27, y: 8, z: 1 });
+  const original = { ...leapCast, leap: { ...leapCast.leap, x: 27 } };
+  const changed = { type: 'dominionCast' as const, phase: 'strike' as const, cast: leapCast, x: 30, y: 8, z: 1 };
+  expect(p.event(changed, 145, 99)).toBe(false);
+  expect(p.event({ ...changed, cast: original, x: 27 }, 145, 5)).toBe(true);
+  expect(p.event({ ...changed, cast: original, x: 27 }, 145, 6)).toBe(false);
+});
+
 describe('Dominion accepted projection', () => {
   it('installs the admission cue watermark when a newer unordered snapshot already won the state race', () => {
     const p = new DominionProjection('run'); expect(p.snapshot({ ...snapshot(), tick: 125, stateRevision: 8 })).toBe(true);
