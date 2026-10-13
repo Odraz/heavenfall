@@ -1,6 +1,10 @@
 /** Dominion authority/readability constants (rogue rooms.md §6). */
-export const DOMINION_REACH = 3;
-export const DOMINION_RADIUS = 4.5;
+export const DOMINION_REACH = 5;
+export const DOMINION_RADIUS = 6;
+export const DOMINION_PLAYER_DAMAGE = 80;
+export const DOMINION_LAUNCH_SPEED = 12;
+export const DOMINION_LAUNCH_VZ = 9;
+export const DOMINION_LAUNCH_SECONDS = 0.5;
 export const DOMINION_HEIGHT_TOLERANCE = 1.5;
 export const DOMINION_TELL_TICKS = 45;
 export const DOMINION_RECOVERY_TICKS = 30;

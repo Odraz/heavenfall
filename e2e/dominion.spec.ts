@@ -1,13 +1,67 @@
 import type { Browser, Page } from '@playwright/test';
 import { expect, state, test } from './fixtures';
 
-async function encounter(page: Page): Promise<void> {
+async function encounter(page: Page, god = true): Promise<void> {
   await page.setViewportSize({ width: 640, height: 360 });
-  await page.goto('/?dev=1&map=dominion&class=fallen&god=1&seed=7&cam=16,23,10,-90,-35');
+  await page.goto(`/?dev=1&map=dominion&class=fallen&god=${god ? 1 : 0}&seed=7&cam=16,23,10,-90,-35`);
   await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
   await page.evaluate(() => window.__heavenfallTeleport!(14.5, 9.5));
   await page.waitForFunction(() => window.__heavenfall.dominion.casts.length > 0, null, { timeout: 60_000 });
 }
+
+async function observeLaunch(page: Page): Promise<void> {
+  const before = await state(page), cast = before.dominion.casts[0];
+  const distance = Math.hypot(before.self.x - cast.x, before.self.y - cast.y);
+  expect(distance).toBeLessThanOrEqual(6);
+  const samples = await page.evaluate(() => new Promise<Array<{ x: number; y: number; z: number; hp: number }>>((resolve) => {
+    const samples: Array<{ x: number; y: number; z: number; hp: number }> = [], end = performance.now() + 2500;
+    const sample = () => {
+      const s = window.__heavenfall;
+      samples.push({ ...s.self, hp: s.players.find((p) => p.classId === 'fallen')!.hp });
+      if (performance.now() < end) requestAnimationFrame(sample); else resolve(samples);
+    };
+    sample();
+  }));
+  expect(Math.max(...samples.map((s) => s.z - before.self.z))).toBeGreaterThan(1.5);
+  expect(Math.max(...samples.map((s) => Math.hypot(s.x - cast.x, s.y - cast.y))) - distance).toBeGreaterThan(2);
+  expect(Math.min(...samples.map((s) => s.hp))).toBeLessThanOrEqual(before.players.find((p) => p.classId === 'fallen')!.hp - 48);
+  await page.screenshot({ path: test.info().outputPath('dominion-launch.png') });
+}
+
+test('a native slam damages and launches the player up and away without God mode', async ({ page }) => {
+  await encounter(page, false);
+  await observeLaunch(page);
+});
+
+test('a real PeerJS guest receives the host-authorized damaging launch', async ({ page: a, browser }) => {
+  const owned = await browser.browserType().launch(test.info().project.use.launchOptions ?? {});
+  const context = await owned.newContext({ viewport: { width: 640, height: 360 }, baseURL: 'http://localhost:4173' });
+  const b = await context.newPage(), errors: string[] = [];
+  b.on('pageerror', (e) => errors.push(e.message));
+  b.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  try {
+    await a.setViewportSize({ width: 640, height: 360 });
+    await menu(a, '/?dev=1&menu=1&map=dominion&god=0', 'Host');
+    await a.getByRole('button', { name: 'Host game', exact: true }).click();
+    await a.getByRole('button', { name: 'Create', exact: true }).click();
+    await a.waitForFunction(() => window.__heavenfall.screen === 'lobby');
+    const id = (await a.locator('.game-id').textContent())!.trim();
+    await a.getByRole('button', { name: /The Betrayer/ }).click();
+    await a.getByRole('button', { name: 'Start', exact: true }).click();
+    await a.waitForFunction(() => window.__heavenfall.screen === 'inGame');
+    await menu(b, '/?dev=1&menu=1', 'Guest');
+    await b.getByRole('button', { name: 'Join game', exact: true }).click();
+    await b.getByLabel('Game ID').fill(id); await b.getByRole('button', { name: 'Join', exact: true }).click();
+    await b.waitForFunction(() => window.__heavenfall.screen === 'lobby');
+    await b.getByRole('button', { name: /The Fallen/ }).click();
+    await b.getByRole('button', { name: 'Enter game', exact: true }).click();
+    await b.waitForFunction(() => window.__heavenfall.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
+    await Promise.all([a, b].map((p) => p.evaluate(() => window.__heavenfallTeleport!(14.5, 9.5))));
+    await b.waitForFunction(() => window.__heavenfall.dominion.casts.length > 0, null, { timeout: 60_000 });
+    await observeLaunch(b);
+    expect(errors).toEqual([]);
+  } finally { await owned.close(); }
+});
 
 test('Dominion tells are visible and baiting a native slam bursts its crowd without a player killer', async ({ page }) => {
   await encounter(page);

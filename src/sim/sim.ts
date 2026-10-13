@@ -117,7 +117,7 @@ import { Props, type Prop } from './props';
 import { HaloLedger, HALO_WEIGHT, haloBudget, moteCap } from './economy';
 import { Pickups } from './pickups';
 import { Dominions } from './dominion';
-import { DOMINION_ALIVE_CAP, DOMINION_REACH, DOMINION_RADIUS, DOMINION_HEIGHT_TOLERANCE, type DominionCast, type DominionPhase } from '../data/dominion';
+import { DOMINION_ALIVE_CAP, DOMINION_REACH, DOMINION_RADIUS, DOMINION_HEIGHT_TOLERANCE, DOMINION_PLAYER_DAMAGE, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_SECONDS, type DominionCast, type DominionPhase } from '../data/dominion';
 import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, reviveSlowdown, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
 
 /** Linear party scaling, including half-player bots (rogue game.md §0). */
@@ -263,6 +263,8 @@ export interface SimPlayer {
   teleportId: number;
   /** Speed check skipped until this host time (ms). */
   speedCheckSkipUntil: number;
+  /** -1 awaits the launch correction's first acknowledged input; otherwise a bounded host deadline. */
+  launchUntilMs: number;
 }
 
 /**
@@ -888,9 +890,11 @@ export class Simulation {
     }
     let x = m.x;
     let y = m.y;
+    if (p.launchUntilMs === -1) p.launchUntilMs = nowMs + DOMINION_LAUNCH_SECONDS * 1000;
     if (nowMs >= p.speedCheckSkipUntil) {
       const elapsed = Math.max(0, nowMs - p.lastAcceptMs) / 1000;
-      const maxD = 1.2 * p.speed * elapsed + 0.5;
+      const launched = Math.max(0, Math.min(nowMs, p.launchUntilMs) - p.lastAcceptMs) / 1000;
+      const maxD = 1.2 * (p.speed * elapsed + Math.max(0, DOMINION_LAUNCH_SPEED - p.speed) * Math.min(elapsed, launched)) + 0.5;
       const dx = x - p.x;
       const dy = y - p.y;
       const d = Math.hypot(dx, dy);
@@ -927,13 +931,14 @@ export class Simulation {
   }
 
   /** Moves a player on the host and tells its client (§9.3). */
-  teleport(p: SimPlayer, x: number, y: number, z: number): void {
+  teleport(p: SimPlayer, x: number, y: number, z: number, launch?: { dx: number; dy: number }): void {
     p.x = x;
     p.y = y;
     p.z = z;
     p.teleportId = (p.teleportId + 1) & 0xffff;
     p.lastAcceptMs = this.nowMs;
-    this.emit(p.id, { type: 'teleport', teleportId: p.teleportId, x, y, z });
+    p.launchUntilMs = launch ? -1 : 0;
+    this.emit(p.id, { type: 'teleport', teleportId: p.teleportId, x, y, z, ...(launch ? { launch } : {}) });
   }
 
   /** Adds a player to the game in its slot, with its feet at (x, y, z). */
@@ -992,6 +997,7 @@ export class Simulation {
       dash: null,
       teleportId: 0,
       speedCheckSkipUntil: 0,
+      launchUntilMs: 0,
     };
     this.slots[p.index] = p;
     this.activeDirector()?.clear(p.index);
@@ -3421,7 +3427,16 @@ export class Simulation {
       if (eligible(this.eX[q], this.eY[q], this.eZ[q], def.height)) victims.push(q);
     }
     for (const q of victims) this.damageEnemy(q, 200, -1, Infinity, x, y, true);
-    for (const p of this.players) if (this.livingTargetable(p) && eligible(p.x, p.y, p.z, PLAYER_HEIGHT)) this.damagePlayer(p, 40);
+    for (const p of this.players) if (this.livingTargetable(p) && eligible(p.x, p.y, p.z, PLAYER_HEIGHT)) {
+      const immune = this.isInvulnerable(p);
+      this.damagePlayer(p, DOMINION_PLAYER_DAMAGE);
+      if (immune || p.dead) continue;
+      const dx = p.x - x, dy = p.y - y, distance = Math.hypot(dx, dy);
+      // Reuse the acknowledged host correction: stale pre-impact positions cannot undo the launch.
+      const direction = distance > 1e-9 ? { dx: dx / distance, dy: dy / distance } : { dx: Math.cos(p.yaw), dy: Math.sin(p.yaw) };
+      p.dash = null; p.landingTick = -1;
+      this.teleport(p, p.x, p.y, p.z, direction);
+    }
   }
 
   private updatePull(slot: number): void {

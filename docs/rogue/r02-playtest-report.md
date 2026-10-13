@@ -2,7 +2,19 @@
 
 Status: awaiting human play (Gate B remains open). Cleanup and pickup fixes are committed together as `d96c388` on `rogue`, based on `ad23bf2`; the latest pressure follow-up below builds on `d96c388`. No push, merge or deployment.
 
-## Latest pressure feedback — 2026-10-13
+## Dominion impact follow-up — 2026-10-13
+
+Tomas requested greater Dominion range, a much more punishing hit, and a launch into the air and away. Based on pressure commit `d1fa931`, the slam now starts at 5 m (was 3), strikes a 6 m ring (was 4.5), and deals 80 player damage before defenses (was 40). Its 45-tick tell, 30-tick recovery, 90-tick cooldown and 200 friendly damage remain unchanged. Rendering and bot avoidance share the new radius. Geometry/LOS, room and feet-height eligibility remain authoritative.
+
+A surviving nonimmune victim receives an outward 12 m/s shove for 0.5 s and a 9 m/s vertical launch: up to 6 m away and about 2 m high on open flat ground. Collision stops the shove at walls; normal gravity handles landing. The forced half-second overrides ordinary steering/jump spam; a movement ability can replace it. Shields absorb damage but do not prevent the shove; invulnerability prevents both, and lethal hits leave the soul at the hit position. Coincident centers use the player's facing as a deterministic direction.
+
+Player movement remains client-simulated under the existing architecture. The host alone selects victims/direction and sends the launch as an optional payload on its run-scoped, revisioned teleport correction. Its acknowledgement rejects pre-impact input; the host allows only the bounded extra movement speed, rather than skipping speed validation. A later teleport clears the launch. Protocol/rules advance to 7/9; pinned geometry/wave hashes remain unchanged. This does not implement a new host-physics engine or durable R03 reconnect.
+
+Verification: `npm test` passed **951 tests in 90 files**, exit 0, 77.89 seconds with the existing single worker and unchanged performance limits (`tmp/dominion-slam-unit.log`). `npm run typecheck` and `npm run build` passed (`tmp/dominion-slam-typecheck.log`, `tmp/dominion-slam-build.log`). Coverage includes the 5 m trigger, 6 m geometry boundary, damage/defenses/lethal hits, stale input acknowledgement and bounded movement allowance, the actual local launch arc, wall collision and teleport reset.
+
+`npx playwright test --config playwright.hardware.config.ts e2e/dominion.spec.ts e2e/crest.spec.ts e2e/controls.spec.ts`: **9 passed**, exit 0, 4.7 minutes (`tmp/dominion-slam-e2e.log`). New solo and real PeerJS guest checks observe over 1.5 m of rise, over 2 m outward displacement in the actual fixture, and at least 48 HP damage to the Fallen after mitigation. Existing tell/bait, Blasphemy cancellation, two/four-client deadline synchronization, native safe arrivals, generated crest and player controls all passed. Inspected the larger gold warning ring and post-impact guest capture; airborne movement is established by the sampled browser assertions, not the post-landing screenshot. `git diff --check` passed. No benchmark or generator acceptance rerun was needed for unchanged generation; human Gate B acceptance remains open.
+
+## Earlier pressure feedback — 2026-10-13
 
 Tomas still found little reason to enter the crowd: very few halos appeared despite each Blessed wearing one, effect props were oversized, and the larger enemy rarely accompanied its minions. He requested riskier candles and more frequent Dominions, clarified that the smaller chalice must remain purely healing, and chose design proposals before implementation for the other two masters.
 

@@ -946,7 +946,7 @@ export class Game {
         this.vfx.smoke(now, e.x, e.y, e.z + 0.6, 0x28252b, 0.3, 1.5, 500);
         break;
       case 'teleport':
-        this.player.teleport(e.x, e.y, e.z);
+        this.player.teleport(e.x, e.y, e.z, e.launch);
         this.lastTeleportId = e.teleportId;
         break;
       case 'roomState':

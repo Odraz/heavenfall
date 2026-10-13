@@ -1,5 +1,6 @@
 /** Local player movement, run every render frame on the player's own main thread (§2.2, §5.2). */
 import { FALLING_STAR_TIME, SHADOWSTEP_SPEED, SHADOWSTEP_TIME } from '../data/weapons';
+import { DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_VZ } from '../data/dominion';
 import { arcPoint } from './fallingStarAim';
 import { JUMP_VZ, PLAYER_RADIUS } from '../sim/constants';
 import type { GameMap } from '../sim/map';
@@ -35,12 +36,14 @@ export class LocalPlayer {
   private leap: { fx: number; fy: number; fz: number; tx: number; ty: number; tz: number; t: number } | null = null;
   /** Shadowstep in progress: a horizontal dash with normal movement rules. */
   private dash: { dx: number; dy: number; t: number } | null = null;
+  private launch: { dx: number; dy: number; remaining: number } | null = null;
 
   /** Falling Star (M12 §5.2): flies the arc to the landing point (feet) over 0.4 s, ignoring collision. */
   startLeap(tx: number, ty: number, tz: number): void {
     const b = this.body;
     this.leap = { fx: b.x, fy: b.y, fz: b.z, tx, ty, tz, t: 0 };
     this.dash = null;
+    this.launch = null;
   }
 
   /** Shadowstep (§6.4): 40 m/s for 0.2 s along the horizontal direction (dx, dy). */
@@ -48,6 +51,7 @@ export class LocalPlayer {
     const len = Math.hypot(dx, dy);
     if (len < 1e-9) return;
     this.dash = { dx: dx / len, dy: dy / len, t: 0 };
+    this.launch = null;
   }
 
   get leaping(): boolean {
@@ -65,6 +69,13 @@ export class LocalPlayer {
   update(map: GameMap, dt: number, dirX: number, dirY: number, wantJump: boolean): void {
     dt = Math.min(dt, MAX_FRAME_DT);
     const b = this.body;
+    if (this.launch) {
+      const force = this.launch, slice = Math.min(dt, force.remaining);
+      stepBody(map, b, force.dx * DOMINION_LAUNCH_SPEED * slice, force.dy * DOMINION_LAUNCH_SPEED * slice, dt, this.moveResult);
+      force.remaining -= dt;
+      if (force.remaining <= 1e-9) this.launch = null;
+      return;
+    }
     if (this.leap) {
       const l = this.leap;
       l.t += dt;
@@ -92,14 +103,15 @@ export class LocalPlayer {
   }
 
   /** Moves the player instantly, as for a teleport. */
-  teleport(x: number, y: number, z: number): void {
+  teleport(x: number, y: number, z: number, launch?: { dx: number; dy: number }): void {
     this.leap = null;
     this.dash = null;
+    this.launch = launch ? { ...launch, remaining: DOMINION_LAUNCH_SECONDS } : null;
     this.body.x = x;
     this.body.y = y;
     this.body.z = z;
-    this.body.vz = 0;
-    this.body.grounded = true;
+    this.body.vz = launch ? DOMINION_LAUNCH_VZ : 0;
+    this.body.grounded = !launch;
   }
 }
 

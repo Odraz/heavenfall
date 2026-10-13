@@ -57,7 +57,7 @@ export type GameEvent =
    * at full HP; the player Martyr's Shroud shielded; the Falling Star ally. Empty for the others.
    */
   | { type: 'abilityUsed'; playerId: number; slot: 'Q' | 'E'; x: number; y: number; z: number; targets: number[] }
-  | { type: 'teleport'; teleportId: number; x: number; y: number; z: number }
+  | { type: 'teleport'; teleportId: number; x: number; y: number; z: number; launch?: { dx: number; dy: number } }
   | { type: 'playerDied'; playerId: number }
   | { type: 'playerRespawned'; playerId: number }
   /** Revived by the party at the soul's ground point (M8 §4.2). */

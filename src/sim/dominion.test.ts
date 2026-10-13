@@ -7,7 +7,7 @@ import { waveCounts } from '../gen/stamp';
 import { Simulation, scaleCount, partyMultiplier, waveSize } from './sim';
 import { arenaDungeon, sealAt } from './testutil/arenas';
 import { dungeonOf } from './testutil/maps';
-import { put, room } from './testutil/sims';
+import { INPUT_DEFAULTS, put, room } from './testutil/sims';
 import { PHASE_CLEARED, decodeSnapshot } from '../net/protocol';
 import { HaloLedger, HALO_WEIGHT } from './economy';
 
@@ -71,6 +71,45 @@ describe('Dominion accepted cast deadlines', () => {
 });
 
 describe('Dominion host geometry, controls and drops', () => {
+  it('starts at five metres and launches a surviving player outward after an 80-damage hit', () => {
+    const { sim, slot } = fixture(), p = sim.players[0];
+    put(sim, p, sim.eX[slot] + 5, sim.eY[slot]); sim.root(slot, 10);
+    sim.step(); expect(sim.dominions.active.has(slot)).toBe(true);
+    const impact = sim.dominions.checkpoint()[0].impactTick;
+    while (sim.tick < impact) sim.step();
+    expect(p.hp).toBe(40);
+    expect(sim.events.find((e) => e.event.type === 'teleport')?.event).toMatchObject({ launch: { dx: 1, dy: 0 } });
+  });
+  it('gates launch acknowledgement, bounds the extra movement allowance and clears it on teleport', () => {
+    const { sim, slot } = fixture(), p = sim.players[0]; slam(sim, slot);
+    const x = p.x;
+    const input = { ...INPUT_DEFAULTS, seq: 1, x: x + 0.7, y: p.y, z: 1, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 };
+    sim.applyInput(p.id, input, 33); expect(p.x).toBe(x); expect(p.launchUntilMs).toBe(-1);
+    sim.applyInput(p.id, { ...input, lastTeleportId: p.teleportId }, 33);
+    expect(p.x).toBe(x + 0.7); expect(p.launchUntilMs).toBe(533);
+    sim.applyInput(p.id, { ...input, seq: 2, x: p.x, lastTeleportId: p.teleportId }, 600);
+    const before = p.x;
+    sim.applyInput(p.id, { ...input, seq: 3, x: before + 20, lastTeleportId: p.teleportId }, 633);
+    expect(p.x - before).toBeCloseTo(1.2 * p.speed * 0.033 + 0.5);
+    slam(sim, slot); sim.teleport(p, 4, 4, 0); expect(p.launchUntilMs).toBe(0);
+  });
+  it('launches shielded survivors but not immune, lethal, out-of-ring or vertically excluded targets', () => {
+    for (const mode of ['shield', 'god', 'invulnerable', 'lethal', 'far', 'high', 'center'] as const) {
+      const { sim, slot } = fixture(), p = sim.players[0];
+      if (mode === 'shield') sim.giveShield(p, 150, 20);
+      if (mode === 'god') p.god = true;
+      if (mode === 'invulnerable') p.invulUntil = 100;
+      if (mode === 'lethal') p.hp = 70;
+      if (mode === 'far') p.x = sim.eX[slot] + 6.01;
+      if (mode === 'high') p.z = 1.51;
+      if (mode === 'center') { p.x = sim.eX[slot]; p.y = sim.eY[slot]; }
+      slam(sim, slot);
+      const launches = sim.events.filter((e) => e.event.type === 'teleport' && e.event.launch);
+      expect(launches.length, mode).toBe(mode === 'shield' || mode === 'center' ? 1 : 0);
+      if (mode === 'shield') { expect(p.hp).toBe(120); expect(p.shield).toBe(70); }
+      if (mode === 'lethal') expect(p.dead).toBe(true);
+    }
+  });
   it('starts from real range/LOS, remains still, and bound permits the slam', () => {
     const { sim, slot } = fixture(); sim.root(slot, 10);
     sim.step(); const cast = sim.dominions.checkpoint()[0]; expect(cast).toBeDefined();
@@ -105,8 +144,8 @@ describe('Dominion host geometry, controls and drops', () => {
   it('uses horizontal radius/feet height and body-center LOS; protects elites, bosses and hovering Cherubs', () => {
     const { sim, slot } = fixture();
     const near = sim.placeEnemy(BLESSED, 13, 10, 0), edge = sim.placeEnemy(CHORISTER, 15, 10, 0);
-    sim.eX[edge] = sim.eX[slot] + 4.5;
-    const far = sim.placeEnemy(BLESSED, 16, 10, 0), high = sim.placeEnemy(BLESSED, 13, 11, 0);
+    sim.eX[edge] = sim.eX[slot] + 6;
+    const far = sim.placeEnemy(BLESSED, 17, 10, 0), high = sim.placeEnemy(BLESSED, 13, 11, 0);
     sim.eZ[high] = 1.51;
     const elite = sim.placeEnemy(DOMINION, 11, 11, 0), boss = sim.placeEnemy(GATEKEEPER, 12, 12, 0), flyer = sim.placeEnemy(CHERUB, 13, 12, 0);
     const grounded = sim.placeEnemy(CHERUB, 13, 9, 0); sim.eZ[grounded] = 0;
@@ -114,7 +153,7 @@ describe('Dominion host geometry, controls and drops', () => {
     slam(sim, slot);
     for (const s of [near, edge, grounded]) expect(sim.eAlive[s]).toBe(0);
     for (const s of [far, high, elite, boss, flyer]) expect(sim.eAlive[s]).toBe(1);
-    expect(sim.players[0].shield).toBe(110); expect(sim.players[0].hp).toBe(120);
+    expect(sim.players[0].shield).toBe(70); expect(sim.players[0].hp).toBe(120);
     expect(sim.players[0].kills).toBe(0); expect(sim.players[0].damage).toBe(0);
   });
   it('blocks a tall obstacle while admitting the +1m dais through body-center sight', () => {
