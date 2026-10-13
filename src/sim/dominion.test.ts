@@ -366,3 +366,52 @@ describe('Dominion authored group scaling and reservations', () => {
    expect(dominionLeapClear(sim.map, 0, leap)).toBe(false);
    expect(dominionLeapClear(sim.map, 0, leap, 0.4, 0.6)).toBe(false);
  });
+
+it('leads accepted running movement, shortens unsafe leads, and forgets stopped/stale/teleported motion', () => {
+  const { sim, slot } = fixture(room(80, 25)), p = sim.players[0]; put(sim, p, 35.5, 10.5);
+  const input = { ...INPUT_DEFAULTS, seq: 0, x: p.x, y: p.y, z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 };
+  for (let n = 1; n <= 12; n++) { sim.applyInput(p.id, { ...input, seq: n, x: p.x + p.speed / 30 }, n * 1000 / 30); }
+  sim.nowMs = p.lastAcceptMs;
+  const choose = () => (sim as unknown as { dominionLeapTarget(s: number): DominionLeap | undefined }).dominionLeapTarget(slot);
+  const target = choose()!;
+  expect(target.x - p.x).toBeGreaterThan(8.5); expect(target.y).toBe(p.y);
+  // Continuing at the fastest class's speed stays in the 6 m impact radius; turning escapes.
+  expect(Math.abs(p.x + p.speed * 1.5 - target.x)).toBeLessThan(6);
+  expect(Math.hypot(p.x - target.x, p.speed * 1.5)).toBeGreaterThan(6);
+  sim.map.hazard[10 * sim.map.w + Math.floor(target.x)] = 1;
+  expect(choose()!.x).toBeLessThan(target.x); expect(choose()!.x).toBeGreaterThan(p.x);
+  sim.map.hazard.fill(0);
+  sim.nowMs += 251; expect(choose()!.x).toBeCloseTo(p.x);
+  sim.nowMs = p.lastAcceptMs;
+  sim.applyInput(p.id, { ...input, seq: 13, x: p.x }, p.lastAcceptMs + 33);
+  sim.nowMs = p.lastAcceptMs; expect(choose()!.x).toBeCloseTo(p.x);
+  p.moveVx = 9; sim.teleport(p, 35.5, 10.5, 0); expect(choose()!.x).toBe(35.5);
+  // A dev jump or packet spike cannot create a huge leading velocity.
+  sim.applyInput(p.id, { ...input, seq: 14, x: 70, lastTeleportId: p.teleportId }, p.lastAcceptMs + 33);
+  expect(p.moveVx).toBe(0); expect(p.moveVy).toBe(0);
+});
+
+it('applies the same backward speed factor to the host movement bound', () => {
+  const { sim } = fixture(room(80, 25)), p = sim.players[0]; put(sim, p, 35.5, 10.5);
+  sim.applyInput(p.id, { ...INPUT_DEFAULTS, seq: 1, x: 1, y: p.y, z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 }, 1000);
+  expect(35.5 - p.x).toBeCloseTo(1.2 * p.speed * 0.8 + 0.5);
+});
+
+for (const turn of [false, true]) it(`a ${turn ? 'turning' : 'straight'} runner ${turn ? 'escapes' : 'is hit by'} the locked predictive flying slam`, () => {
+  const { sim, slot } = fixture(room(90, 40)), p = sim.players[0]; put(sim, p, 35.5, 10.5);
+  sim.dominions.leapReadyAt[slot] = 0;
+  let seq = 0;
+  const run = (sideways: boolean) => {
+    const now = (sim.tick + 1) * 1000 / 30;
+    sim.applyInput(p.id, { ...INPUT_DEFAULTS, seq: ++seq, x: p.x + (sideways ? 0 : p.speed / 30), y: p.y + (sideways ? p.speed / 30 : 0),
+      z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: p.teleportId }, now);
+    sim.step(now);
+  };
+  while (!sim.dominions.active.size && sim.tick < 30) run(false);
+  const cast = sim.dominions.checkpoint()[0]; expect(cast.leap).toBeDefined();
+  expect(cast.leap!.x - p.x).toBeGreaterThan(8.5);
+  while (sim.tick < cast.impactTick) run(turn);
+  expect(p.hp).toBe(turn ? p.maxHp : p.maxHp - 80);
+  const strike = sim.events.find((e) => e.event.type === 'dominionCast' && e.event.phase === 'strike');
+  expect(strike?.event).toMatchObject({ x: cast.leap!.x, y: cast.leap!.y });
+});

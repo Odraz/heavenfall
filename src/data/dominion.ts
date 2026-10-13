@@ -15,6 +15,7 @@ export const DOMINION_ALIVE_CAP = 2;
 export const DOMINION_CAST_CAP = 3;
 export const DOMINION_LEAP_COOLDOWN_TICKS = 240;
 export const DOMINION_LEAP_CHARGE_TICKS = 15;
+export const DOMINION_LEAP_LEAD_SECONDS = 1;
 export const DOMINION_LEAP_MIN_RANGE = 16;
 export const DOMINION_LEAP_MAX_RANGE = 48;
 export interface DominionLeap { fromX: number; fromY: number; fromZ: number; x: number; y: number; z: number; }

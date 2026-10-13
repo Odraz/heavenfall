@@ -23,3 +23,21 @@ it('launch collision stops at walls and a later room correction clears residual 
   p.update(map, 1 / 60, 0, 0, false);
   expect(p.body).toMatchObject({ x: 2.5, y: 5.5, z: 0, vz: 0, grounded: true });
 });
+
+for (const speed of [6, 8, 9]) it(`slows ordinary backward movement at speed ${speed}, preserving forward/strafe and ability movement`, () => {
+  const map = mapOf(room(50, 50));
+  const travel = (dx: number, dy: number, yaw = 0, wade = 1, jump = false) => {
+    const p = new LocalPlayer(25, 25, 0, speed); p.yaw = yaw; p.wade = wade;
+    for (let i = 0; i < 60; i++) p.update(map, 1 / 60, dx, dy, jump);
+    return Math.hypot(p.body.x - 25, p.body.y - 25);
+  };
+  expect(travel(1, 0)).toBeCloseTo(speed);
+  expect(travel(0, 1)).toBeCloseTo(speed);
+  expect(travel(-1, 0)).toBeCloseTo(speed * 0.8);
+  expect(travel(0, -1, Math.PI / 2)).toBeCloseTo(speed * 0.8);
+  expect(travel(-1, 0, 0, 0.55, true)).toBeCloseTo(speed * 0.8 * 0.55);
+  expect(travel(-Math.SQRT1_2, Math.SQRT1_2)).toBeCloseTo(speed * (1 - 0.2 * Math.SQRT1_2));
+  const dash = new LocalPlayer(25, 25, 0, speed); dash.startDash(-1, 0);
+  for (let i = 0; i < 4; i++) dash.update(map, 0.05, -1, 0, false);
+  expect(dash.body.x).toBeCloseTo(17);
+});

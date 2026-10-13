@@ -117,8 +117,9 @@ import { Props, type Prop } from './props';
 import { HaloLedger, HALO_WEIGHT, haloBudget, moteCap } from './economy';
 import { Pickups } from './pickups';
 import { Dominions } from './dominion';
+import { directionalSpeedFactor } from '../data/movement';
 import { dominionLeapClear } from './dominionLeap';
-import { DOMINION_ALIVE_CAP, DOMINION_COOLDOWN_TICKS, DOMINION_REACH, DOMINION_RADIUS, DOMINION_HEIGHT_TOLERANCE, DOMINION_PLAYER_DAMAGE, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_VZ, DOMINION_LEAP_CHARGE_TICKS, DOMINION_LEAP_MIN_RANGE, DOMINION_LEAP_MAX_RANGE, DOMINION_TELL_TICKS, DOMINION_MELEE_RANGE, DOMINION_MELEE_DAMAGE, dominionLeapPosition, type DominionLeap, type DominionCast, type DominionPhase } from '../data/dominion';
+import { DOMINION_ALIVE_CAP, DOMINION_COOLDOWN_TICKS, DOMINION_REACH, DOMINION_RADIUS, DOMINION_HEIGHT_TOLERANCE, DOMINION_PLAYER_DAMAGE, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_VZ, DOMINION_LEAP_CHARGE_TICKS, DOMINION_LEAP_LEAD_SECONDS, DOMINION_LEAP_MIN_RANGE, DOMINION_LEAP_MAX_RANGE, DOMINION_TELL_TICKS, DOMINION_MELEE_RANGE, DOMINION_MELEE_DAMAGE, dominionLeapPosition, type DominionLeap, type DominionCast, type DominionPhase } from '../data/dominion';
 import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, reviveSlowdown, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
 
 /** Linear party scaling, including half-player bots (rogue game.md §0). */
@@ -258,6 +259,9 @@ export interface SimPlayer {
   lastSeq: number;
   /** Host time (ms) when the previous accepted input arrived, or the latest teleport. */
   lastAcceptMs: number;
+  /** Smoothed ordinary horizontal velocity from accepted inputs; never a dash or correction. */
+  moveVx: number;
+  moveVy: number;
   /** The Betrayer's Shadowstep being recorded and cut along (M12 §5.7), or null. */
   dash: DashRecord | null;
   /** The host's latest teleport ID for this player. */
@@ -895,7 +899,8 @@ export class Simulation {
     if (nowMs >= p.speedCheckSkipUntil) {
       const elapsed = Math.max(0, nowMs - p.lastAcceptMs) / 1000;
       const launched = Math.max(0, Math.min(nowMs, p.launchUntilMs) - p.lastAcceptMs) / 1000;
-      const maxD = 1.2 * (p.speed * elapsed + Math.max(0, DOMINION_LAUNCH_SPEED - p.speed) * Math.min(elapsed, launched)) + 0.5;
+      const walkingSpeed = p.speed * directionalSpeedFactor(p.yaw, x - p.x, y - p.y);
+      const maxD = 1.2 * (walkingSpeed * elapsed + Math.max(0, DOMINION_LAUNCH_SPEED - walkingSpeed) * Math.min(elapsed, launched)) + 0.5;
       const dx = x - p.x;
       const dy = y - p.y;
       const d = Math.hypot(dx, dy);
@@ -912,6 +917,14 @@ export class Simulation {
       if (p.dash) this.endDash(p);
       p.dash = { pressSeq: m.seq, pts: [p.x, p.y, p.z], done: 1, acceptTick: -1, full: false, cut: new Set() };
     }
+    const elapsed = (nowMs - p.lastAcceptMs) / 1000;
+    const dx = x - p.x, dy = y - p.y, distance = Math.hypot(dx, dy);
+    if (elapsed >= 0.008 && elapsed <= 0.25 && nowMs >= p.speedCheckSkipUntil && nowMs >= p.launchUntilMs &&
+      distance > 0.001 && distance <= p.speed * elapsed * 1.5 + 0.1) {
+      const scale = Math.min(1 / elapsed, p.speed / distance), blend = Math.min(1, elapsed / 0.1);
+      p.moveVx += (dx * scale - p.moveVx) * blend;
+      p.moveVy += (dy * scale - p.moveVy) * blend;
+    } else p.moveVx = p.moveVy = 0;
     p.x = x;
     p.y = y;
     p.z = z;
@@ -938,6 +951,7 @@ export class Simulation {
     p.z = z;
     p.teleportId = (p.teleportId + 1) & 0xffff;
     p.lastAcceptMs = this.nowMs;
+    p.moveVx = p.moveVy = 0;
     p.launchUntilMs = launch ? -1 : 0;
     this.emit(p.id, { type: 'teleport', teleportId: p.teleportId, x, y, z, ...(launch ? { launch } : {}) });
   }
@@ -995,6 +1009,7 @@ export class Simulation {
       lastHurtTick: -ENGAGED_HIT_TICKS,
       lastSeq: -1,
       lastAcceptMs: this.nowMs,
+      moveVx: 0, moveVy: 0,
       dash: null,
       teleportId: 0,
       speedCheckSkipUntil: 0,
@@ -3410,10 +3425,19 @@ export class Simulation {
       if (!this.livingTargetable(p) || this.roomAt(p.x, p.y) !== room) continue;
       const distance = Math.hypot(p.x - this.eX[slot], p.y - this.eY[slot]);
       if (distance < DOMINION_LEAP_MIN_RANGE || distance > DOMINION_LEAP_MAX_RANGE) continue;
-      const z = groundHeight(this.map, p.x, p.y, ENEMIES[DOMINION].radius, Infinity, false, true);
-      if (!Number.isFinite(z) || this.map.hazard[Math.floor(p.y) * this.map.w + Math.floor(p.x)]) continue;
-      const leap: DominionLeap = { fromX: Math.fround(this.eX[slot]), fromY: Math.fround(this.eY[slot]), fromZ: Math.fround(this.eZ[slot]), x: Math.fround(p.x), y: Math.fround(p.y), z: Math.fround(z) };
-      if (dominionLeapClear(this.map, room, leap)) choices.push(leap);
+      const recent = this.nowMs >= p.lastAcceptMs && this.nowMs - p.lastAcceptMs <= 250 && this.nowMs >= p.speedCheckSkipUntil && this.nowMs >= p.launchUntilMs;
+      // Prefer a one-second lead; shorten it when geometry or leap reach makes it unsafe.
+      for (const fraction of [1, 0.75, 0.5, 0.25, 0]) {
+        const lead = recent ? DOMINION_LEAP_LEAD_SECONDS * fraction : 0;
+        const x = p.x + p.moveVx * lead, y = p.y + p.moveVy * lead;
+        const reach = Math.hypot(x - this.eX[slot], y - this.eY[slot]);
+        if (reach < DOMINION_LEAP_MIN_RANGE || reach > DOMINION_LEAP_MAX_RANGE || this.roomAt(x, y) !== room) continue;
+        const z = groundHeight(this.map, x, y, ENEMIES[DOMINION].radius, Infinity, false, true);
+        if (!Number.isFinite(z)) continue;
+        const leap: DominionLeap = { fromX: Math.fround(this.eX[slot]), fromY: Math.fround(this.eY[slot]), fromZ: Math.fround(this.eZ[slot]), x: Math.fround(x), y: Math.fround(y), z: Math.fround(z) };
+        if (dominionLeapClear(this.map, room, leap)) { choices.push(leap); break; }
+        if (!recent || p.moveVx === 0 && p.moveVy === 0) break;
+      }
     }
     return choices.length ? choices[Math.floor(this.random() * choices.length)] : undefined;
   }

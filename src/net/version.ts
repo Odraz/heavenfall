@@ -2,7 +2,7 @@
 import { fmix32 } from '../gen/hash';
 
 export const PROTOCOL_VERSION = 8;
-export const RULES_VERSION = 10;
+export const RULES_VERSION = 11;
 
 export interface RunIdentity {
   runId: string;

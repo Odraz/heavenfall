@@ -1,6 +1,7 @@
 /** Local player movement, run every render frame on the player's own main thread (§2.2, §5.2). */
 import { FALLING_STAR_TIME, SHADOWSTEP_SPEED, SHADOWSTEP_TIME } from '../data/weapons';
 import { DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_VZ } from '../data/dominion';
+import { directionalSpeedFactor } from '../data/movement';
 import { arcPoint } from './fallingStarAim';
 import { JUMP_VZ, PLAYER_RADIUS } from '../sim/constants';
 import type { GameMap } from '../sim/map';
@@ -90,7 +91,7 @@ export class LocalPlayer {
       }
       return;
     }
-    let speed = this.speed * this.wade;
+    let speed = this.speed * this.wade * directionalSpeedFactor(this.yaw, dirX, dirY);
     if (this.dash) {
       this.dash.t += dt;
       dirX = this.dash.dx;

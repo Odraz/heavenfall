@@ -2,6 +2,17 @@
 
 Status: awaiting human play (Gate B remains open). Cleanup and pickup fixes are committed together as `d96c388` on `rogue`, based on `ad23bf2`; the latest pressure follow-up below builds on `d96c388`. No push, merge or deployment.
 
+## Predictive landings and slower retreat — 2026-10-13
+
+After reporting that the flight/launch changes looked good, Tomas requested a flying slam aimed ahead of movement and slower backward running. The preceding follow-up was committed as `8172313` after 961 unit tests and all 36 selected browser checks passed.
+
+- Flying slams lead ordinary accepted movement by **1 second**, using a short smoothed host-side velocity estimate. With the 1.5 s tell and 6 m radius, continuing straight at the fastest class's normal speed leaves the player inside the impact area; changing direction after the mark locks can escape. The marker never tracks after acceptance.
+- Prediction ignores stale movement (over 250 ms), teleport jumps, packet spikes, movement abilities and forced launches. Standing still and host teleports clear the estimate. Unsafe destinations shorten the lead in quarter-second steps, ending at the current position if necessary. Existing 16–48 m reach, same-room, dry footprint and full flight-clearance checks apply to every candidate.
+- Ordinary movement directly backward is **20% slower**. Backward diagonals receive a proportional penalty; forward/sideways movement keeps its speed. This follows aim direction, combines with wading and applies in the air too. Shadowstep, Falling Star and forced throws retain their own speeds. The host movement bound uses the same directional factor.
+- Rules advance to **11**; protocol stays **8** because no packet layout changes. Floor hashes and wave data are unchanged.
+
+Verification: `npm test` passed **968 tests in 90 files** (100.62 s, one worker), including actual straight-run impact versus turn-to-escape simulations, safe/stale prediction fallback, all class speeds, diagonal/airborne/wading movement and unchanged forced/dash movement. `npm run typecheck` and `npm run build` passed. `npx playwright test --config playwright.hardware.config.ts e2e/controls.spec.ts e2e/dominion.spec.ts e2e/crest.spec.ts` passed **all 11 checks** (5.8 min), including native keyboard speed measurement, the native horde crest, host/guest launch, locked leap late entry and four-client complete snapshots. Existing performance limits and transport deadlines remain unchanged. No benchmark was run. Generator content is unchanged from the preceding 1,000-floor acceptance run; broader floor/pickup checks are recorded below for `8172313`. Human feel acceptance remains necessary for the new tuning.
+
 ## Dominion pacing and leap follow-up — 2026-10-13
 
 Based on `8d9e186`, Tomas requested no first-wave Dominion, increasing later numbers, a targeted flying slam, and displacement instead of friendly damage. He then requested a Blessed-style melee attack between casts and rejected 8–24 m as too close for the leap.
