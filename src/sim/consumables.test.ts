@@ -19,6 +19,13 @@ function input(p: SimPlayer, seq: number, one: number, two: number): InputMsg {
 const step = (sim: ReturnType<typeof fixture>, count: number) => { for (let i = 0; i < count; i++) sim.step(); };
 
 describe('R03 consumable transactions', () => {
+  it('assigns one unique action ID to every successful self or area use, never a rejected use', () => {
+    const sim = fixture(), p = sim.players[0];
+    expect(sim.items.use(p, 'balm')).toBe(false); expect(sim.items.use(p, 'feather')).toBe(true);
+    p.itemReadyTick = 0; expect(sim.items.use(p, 'mirror')).toBe(true);
+    const uses = sim.events.map(e => e.event).filter(e => e.type === 'itemUsed');
+    expect(uses.map(e => e.actionId)).toEqual([1, 2]); expect(uses[1].instance?.id).toBe(2);
+  });
   it('baselines, wraps and consumes edges once; refused slot 1 leaves slot 2 available before contacts', () => {
     const sim = fixture(), p = sim.players[0]; p.inventory = [{ item: 'balm', count: 3 }, { item: 'feather', count: 3 }];
     sim.applyInput(0, input(p, 0, 255, 255), 0); sim.step(); expect(p.inventory[1]?.count).toBe(3);

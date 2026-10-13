@@ -4,6 +4,7 @@ import { CLASSES } from '../data/classes';
 import { ENEMIES, GATEKEEPER } from '../data/enemies';
 import { aimDir, rayCylinder } from './combat';
 import { distToCylinder } from './movement';
+import { overVoid } from './map';
 import { ENEMY_SLOTS, PLAYER_EYE, STEP_UP, TICK_DT } from './constants';
 import { lineOfSight, raycastTerrain } from './los';
 import type { Simulation, SimPlayer } from './sim';
@@ -43,7 +44,8 @@ export class Consumables {
   }
   use(p: SimPlayer, item: ItemId): boolean {
     const sim = this.sim, tick = sim.tick, def = ITEMS[item];
-    if (p.bot || p.dead || !p.connected || sim.result || tick < p.itemReadyTick) return false;
+    if (p.bot || p.dead || !p.connected || sim.result || tick < p.itemReadyTick || this.nextId > 0xffffffff) return false;
+    const actionId = this.nextId;
     let effect: Area | undefined;
     if (item === 'balm') {
       if (p.hp >= p.maxHp) return false;
@@ -61,7 +63,7 @@ export class Consumables {
       if (def.kind === 'thrown' && !sim.itemProjectileCapacity(previous?.activatedTick === -1)) return false;
       const [dx, dy, dz] = aimDir(p.yaw, p.pitch), sz = p.z + PLAYER_EYE;
       const bound = def.kind === 'thrown' ? Math.min(raycastTerrain(sim.map, p.x, p.y, sz, dx, dy, dz, 20), this.roomBound(p.x, p.y, dx, dy, 20, room)) : 0;
-      effect = { id: this.nextId++, owner: p.id, item, room, startTick: tick,
+      effect = { id: actionId, owner: p.id, item, room, startTick: tick,
         sx: p.x, sy: p.y, sz, dx, dy, dz, bound, flightUntil: tick + 30, traveled: 0,
         x: p.x, y: p.y, z: ground, activatedTick: -1, endTick: -1, cells: new Set(), attempted: new Set() };
       // The starting projection guarantees a bounded backward fallback even over a void.
@@ -70,9 +72,9 @@ export class Consumables {
       this.effects.push(effect);
       if (def.kind === 'placed') this.land(effect, 0);
     }
-    p.itemReadyTick = tick + 30;
+    this.nextId++; p.itemReadyTick = tick + 30;
     const first = !p.itemsTried.includes(item); if (first) p.itemsTried.push(item);
-    sim.itemEvent({ type: 'itemUsed', playerId: p.id, item, first, instance: effect ? this.record(effect) : null, x: p.x, y: p.y, z: p.z });
+    sim.itemEvent({ type: 'itemUsed', actionId, playerId: p.id, item, first, instance: effect ? this.record(effect) : null, x: p.x, y: p.y, z: p.z });
     sim.publishInventory(p); return true;
   }
   private record(e: Area): ItemEffect { const { cells: _c, attempted: _a, ...record } = e; return { ...record }; }
@@ -85,7 +87,7 @@ export class Consumables {
   }
   private floor(x: number, y: number, room: number): number | null {
     const map = this.sim.map, c = Math.floor(x), r = Math.floor(y), i = r * map.w + c;
-    return c < 0 || r < 0 || c >= map.w || r >= map.h || map.solid[i] || map.roomOf[i] !== room || !Number.isFinite(map.floor[i]) ? null : map.floor[i];
+    return c < 0 || r < 0 || c >= map.w || r >= map.h || map.solid[i] || map.roomOf[i] !== room || overVoid(map, x, y) || !Number.isFinite(map.floor[i]) ? null : map.floor[i];
   }
   /** Exact grid crossings along the immutable ray, clipped inside the owning room. */
   roomBound(x: number, y: number, dx: number, dy: number, limit: number, room: number): number {

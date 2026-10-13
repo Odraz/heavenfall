@@ -5,6 +5,7 @@ import { button, el } from './menus';
 export interface ResultsData {
   result: 'victory' | 'defeat';
   timeMs: number;
+  unclaimed?: boolean;
   /** Players still connected at the end, sorted by ID. */
   players: Array<PlayerStats & { name: string; me: boolean }>;
 }
@@ -34,11 +35,14 @@ export function showResults(data: ResultsData, a: ResultsActions): ResultsView {
   // On the panel, so everything stays readable over the painting.
   const panel = el('div', 'panel', screen);
   el('div', 'run-time', panel, `Run time ${formatTime(data.timeMs)}`);
+  if (data.unclaimed) el('p', 'message', panel, 'Unclaimed choices expired at the exit.');
   const table = el('table', 'results-table', panel);
   const columns: Array<[string, (p: ResultsData['players'][number]) => string]> = [
     ['Kills', (p) => String(p.kills)],
     ['Damage', (p) => p.damage.toLocaleString('en-US')],
     ['Deaths', (p) => String(p.deaths)],
+    ['XP gained', p => String(p.runXp ?? 0)],
+    ['Levels', p => `${p.levelBefore ?? 1} → ${p.levelAfter ?? 1}`],
   ];
   if (data.players.length > 1) columns.push(['Revive assists', (p) => String(p.reviveAssists)]);
   const head = table.createTHead().insertRow();

@@ -1,7 +1,34 @@
 import { expect, test } from './fixtures';
 import { createProfile } from '../src/profile/model';
-import { exportCode } from '../src/profile/codec';
+import { exportCode, importCode } from '../src/profile/codec';
 import type { Page } from '@playwright/test';
+
+test('accepted progress remains exportable when storage fails and retry saves current memory', async ({ page, context }) => {
+  const p = createProfile('Save retry', '9'.repeat(32), 1); p.inventory[0] = { item: 'feather', count: 2 };
+  await page.goto('/'); await page.getByLabel('Import code').fill(await exportCode(p, true));
+  await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Singleplayer', exact: true }).click(); await page.getByRole('button', { name: /The Fallen/ }).click();
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  // Admission's first input establishes the counter baseline before a new key edge is sent.
+  await page.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 3);
+  await expect(page.getByLabel('Item 1: Pilgrim’s Feather ×2', { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Object.defineProperty(window, '__restoreStorage', { value: () => { Storage.prototype.setItem = original; } });
+    Storage.prototype.setItem = function(key, value) { if (key === 'heavenfall.profile.1') throw new DOMException('Quota fixture', 'QuotaExceededError'); original.call(this, key, value); };
+  });
+  await page.keyboard.press('Digit1'); await expect(page.getByLabel('Item 1: Pilgrim’s Feather ×1', { exact: true })).toBeVisible();
+  const alert = page.getByRole('alert'); await expect(alert).toContainText('Progress is in memory');
+  await page.keyboard.press('Escape');
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']); await alert.getByRole('button', { name: 'Copy save code' }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toMatch(/^MG1\./);
+  const exported = await importCode(await page.evaluate(() => navigator.clipboard.readText()));
+  expect(exported.codex.itemsTried).toContain('feather');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!).codex.itemsTried)).not.toContain('feather');
+  await page.evaluate(() => (window as unknown as { __restoreStorage(): void }).__restoreStorage());
+  await alert.getByRole('button', { name: 'Retry save' }).click(); await expect(alert).toBeHidden();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!).codex.itemsTried)).toContain('feather');
+});
 
 test('profile import, lock exclusion, durable solo stake and abandoned recovery', async ({ page, context }) => {
   const p = createProfile('Disposable', 'd'.repeat(32), 1); p.inventory[0] = { item: 'balm', count: 3 };
@@ -52,6 +79,11 @@ test('development gameplay does not touch a stored profile', async ({ page }) =>
 
 test('a persistent guest reconnects to one retained admission and host exit restores only the original carry', async ({ page: host, browser }) => {
   const guestContext = await browser.newContext();
+  await guestContext.addInitScript(() => {
+    const channels: RTCDataChannel[] = [], create = RTCPeerConnection.prototype.createDataChannel;
+    RTCPeerConnection.prototype.createDataChannel = function(label, options) { const channel = create.call(this, label, options); channels.push(channel); return channel; };
+    Object.defineProperty(window, '__disconnectGuest', { value: () => channels.forEach(c => c.close()) });
+  });
   const prepare = async (page: Page, name: string, id: string): Promise<void> => {
     const p = createProfile(name, id.repeat(32), 1); p.inventory[0] = { item: 'feather', count: 2 };
     await page.goto('/'); await page.getByLabel('Import code').fill(await exportCode(p, true));
@@ -81,6 +113,14 @@ test('a persistent guest reconnects to one retained admission and host exit rest
     await guest.getByRole('button', { name: 'Enter game', exact: true }).click(); await guest.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 0);
     const resumed = await guest.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!));
     expect(resumed.run.runId).toBe(first.run.runId); expect(resumed.run.admissionId).toBe(first.run.admissionId); expect(resumed.stats.runs).toBe(1);
+    await expect(guest.getByLabel('Item 1: Pilgrim’s Feather ×1', { exact: true })).toBeVisible();
+    await guest.evaluate(() => (window as unknown as { __disconnectGuest(): void }).__disconnectGuest());
+    await expect(guest.getByText('Connection lost; reconnect to recover the attempt', { exact: true })).toBeVisible();
+    const interrupted = await guest.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!));
+    expect(interrupted.run.runId).toBe(first.run.runId); expect(interrupted.inventory).toEqual([null, null]);
+    await host.waitForFunction(() => window.__heavenfall.players.length === 1);
+    await guest.getByRole('button', { name: 'Multiplayer', exact: true }).click(); await join();
+    await guest.getByRole('button', { name: 'Enter game', exact: true }).click(); await guest.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 0);
     await expect(guest.getByLabel('Item 1: Pilgrim’s Feather ×1', { exact: true })).toBeVisible();
     await host.keyboard.press('Escape'); await host.getByRole('button', { name: 'Leave game', exact: true }).click();
     await expect(guest.getByText('Host left the game', { exact: true })).toBeVisible();

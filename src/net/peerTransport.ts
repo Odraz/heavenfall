@@ -41,8 +41,8 @@ function isCtrl(data: unknown): data is CtrlMessage {
 export class PeerTransport implements Transport {
   readonly stats = new NetStats();
   onSnapshot: (buf: ArrayBuffer) => void = () => {};
-  /** The host left: `leave`, a heartbeat timeout, or the connection closed (§9.4). Called once. */
-  onHostLeft: () => void = () => {};
+  /** Called once; only a reliable `leave` confirms host exit. Loss/timeout preserves a recoverable stake. */
+  onHostLeft: (explicit: boolean) => void = () => {};
   private ctrlHandler: ((msg: CtrlMessage) => void) | null = null;
   /** `ctrl` messages that arrived before anyone listened. */
   private readonly queued: CtrlMessage[] = [];
@@ -66,7 +66,7 @@ export class PeerTransport implements Transport {
       this.stats.received(jsonBytes(data), now);
       if (data.type === 'ping') return;
       if (data.type === 'leave') {
-        this.hostLeft();
+        this.hostLeft(true);
         return;
       }
       if (this.ctrlHandler) this.ctrlHandler(data);
@@ -116,10 +116,10 @@ export class PeerTransport implements Transport {
     }, PING_MS);
   }
 
-  private hostLeft(): void {
+  private hostLeft(explicit = false): void {
     if (this.closed) return;
     this.close();
-    this.onHostLeft();
+    this.onHostLeft(explicit);
   }
 
   sendInput(buf: ArrayBuffer): void {

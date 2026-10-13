@@ -4,6 +4,7 @@ import { exportCode, exportFilename, importCode, MAX_CODE_BYTES } from '../profi
 import { createProfile, importProfile, levelForXp, type Profile } from '../profile/model';
 import { lockProfile, PROFILE_SLOTS, profileKey, ProfileSession, readProfile, writeProfile, type ProfileSlot, type SaveStorage } from '../profile/storage';
 import { CLASS_IDS } from '../data/classes';
+import { ITEMS } from '../data/items';
 
 function download(text: string, name: string): void {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
@@ -91,4 +92,19 @@ export function profilesScreen(onContinue: (session: ProfileSession) => void): H
 }
 export function saveCodeButton(parent: HTMLElement, profile: () => Profile): void {
   button('Copy save code', parent, () => { void exportCode(profile()).then(code => navigator.clipboard.writeText(code)).catch(error => { el('p', 'message', parent, String(error)); }); });
+}
+/** Lobby-only inventory editing under the already-held profile lock. */
+export function profileLoadout(parent: HTMLElement, session: ProfileSession, changed: () => void = () => {}): void {
+  const panel = el('div', 'profile-loadout', parent.querySelector('.panel') ?? parent);
+  const draw = (): void => {
+    panel.replaceChildren();
+    el('div', '', panel, CLASS_IDS.map(id => `${id}: level ${levelForXp(session.profile.characters[id].xp)}`).join(' · '));
+    session.profile.inventory.forEach((stack, slot) => {
+      const row = el('span', '', panel, ` ${slot + 1}: ${stack ? `${ITEMS[stack.item].name} ×${stack.count}` : 'empty'} `);
+      if (stack && !session.profile.run) button(`Discard slot ${slot + 1}`, row, () => {
+        const next = structuredClone(session.profile); next.inventory[slot] = null;
+        if (session.save(next, true)) { changed(); draw(); } else el('p', 'message', panel, session.message);
+      }, 'secondary');
+    });
+  }; draw();
 }

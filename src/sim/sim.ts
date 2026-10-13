@@ -2,11 +2,13 @@
 import { CLASSES, type ClassId } from '../data/classes';
 import { copyInventory, emptyInventory, ITEM_IDS, isItemId, type Inventory, type ItemId } from '../data/items';
 import { Consumables } from './consumables';
+import { VictoryExit } from './victory';
+import { levelForXp } from '../profile/model';
 import type { Profile } from '../profile/model';
 import { saturatingAdd } from '../profile/model';
 import type { Floor } from '../gen/generate';
 import { ScopedRequests } from '../net/requests';
-import { buyItem, CHART_PRICE, type InteractionResult } from './shop';
+import { buyItem, CHART_PRICE, stairPoints, type InteractionResult } from './shop';
 import type { DungeonDef, WaveDef } from '../data/dungeons/types';
 import {
   BLESSED,
@@ -544,6 +546,9 @@ export function segmentDistance(
 export class Simulation {
   readonly floor: Floor | null;
   chartRevealed = false;
+  victory: VictoryExit | null = null;
+  admissionClosed = false;
+  get won(): boolean { return this.victory !== null; }
   readonly items = new Consumables(this);
   private readonly rewardRecipients = new Map<number, Set<string>>();
   private readonly pageRecipients = new Map<number, Set<string>>();
@@ -863,7 +868,7 @@ export class Simulation {
   /** Detached records: subsequent simulation changes cannot mutate a queued checkpoint. */
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
-      progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)), itemEffects: this.items.records(),
+      progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)), itemEffects: this.items.records(), victory: this.victory ? { ...this.victory.state } : null,
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
       pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), commanderCasts: this.commanders.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
   }
@@ -912,7 +917,7 @@ export class Simulation {
   }
 
   isInvulnerable(p: SimPlayer): boolean {
-    return p.god || p.devGod || this.tick < p.invulUntil;
+    return this.won || p.god || p.devGod || this.tick < p.invulUntil;
   }
 
   // ------------------------------------------------------------------ input
@@ -1187,6 +1192,7 @@ export class Simulation {
     this.pickups.update(this.tick, this.players, (drop, collector) => this.collectPickup(drop, this.slots[collector.id]!));
     this.recoverEnemies();
     this.checkVictory();
+    this.updateExit();
     this.checkRoomClears();
     this.checkDefeat();
     this.syncHazards();
@@ -1219,9 +1225,30 @@ export class Simulation {
 
   /** Victory: when the Gatekeeper dies, every remaining enemy bursts without kill credit (§8.2). */
   private checkVictory(): void {
-    if (!this.bossKilled || this.result) return;
+    if (!this.bossKilled || this.result || this.won) return;
     while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1], true);
-    this.finish('victory');
+    // Hand-authored legacy maps keep their immediate-ending development fixture.
+    if (!this.floor) { this.finish('victory'); return; }
+    const at = stairPoints(this.map, this.floor.boss)[0];
+    this.victory = new VictoryExit(this.tick, this.timeMs, at); this.admissionClosed = true;
+    for (const p of [...this.players, ...[...this.retainedPlayers.values()].map(r => r.player)]) {
+      if (p.dead) {
+        p.dead = false; p.hp = p.maxHp * .5; p.shield = 0; p.revive = 0; p.revivers = 0;
+        if (p.connected) { this.emit('all', { type: 'playerRevived', playerId: p.id }); this.teleport(p, at.x, at.y, at.z); }
+      } else if (p.connected) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * .3);
+    }
+    this.items.clearAll(); for (const s of [...this.projectiles]) this.removeProjectile(s);
+    this.clouds.length = 0; this.fieldUntil = 0;
+    for (let i = 0; i < this.rooms.length; i++) { this.rooms[i].queue.length = 0; this.rooms[i].squad = null; this.items.clearCombat(i); }
+    this.rooms[this.floor.boss].phase = PHASE_CLEARED; this.activeRoom = ROOM_NONE;
+    this.updateLeaves(); this.roomState(this.floor.boss);
+    this.emit('all', { type: 'victoryState', state: { ...this.victory.state } });
+  }
+  private updateExit(): void {
+    if (!this.victory || this.result) return;
+    const pending = [...this.pageRecipients.values()].some(set => this.players.some(p => p.connected && !p.bot && set.has(p.offerKey)));
+    if (this.victory.update(this.tick, this.players, pending)) this.finish('victory');
+    else if (this.tick % 30 === 0) this.emit('all', { type: 'victoryState', state: { ...this.victory.state } });
   }
 
   livingTargetable(p: SimPlayer | undefined): p is SimPlayer {
@@ -1499,6 +1526,8 @@ export class Simulation {
   }
 
   private startRoom(ai: number): void {
+    if (this.won) return;
+    if (this.map.rooms[ai].boss) this.admissionClosed = true;
     this.rewardRecipients.set(ai, new Set(this.players.filter(p => p.connected && !p.bot).map(p => p.offerKey)));
     const a = this.map.rooms[ai];
     const st = this.rooms[ai];
@@ -1649,7 +1678,7 @@ export class Simulation {
 
   /** Defeat: all connected players are dead at the same time (§5.7). */
   private checkDefeat(): void {
-    if (this.result || this.benchRoom >= 0) return;
+    if (this.result || this.won || this.benchRoom >= 0) return;
     const connected = this.players.filter((p) => p.connected);
     if (connected.length > 0 && connected.every((p) => p.dead)) this.finish('defeat');
   }
@@ -1660,9 +1689,10 @@ export class Simulation {
     this.result = result;
     const stats: Record<number, PlayerStats> = {};
     for (const p of this.players) {
-      if (p.connected) stats[p.id] = { kills: p.kills, damage: Math.round(p.damage), deaths: p.deaths, reviveAssists: p.reviveAssists };
+      if (p.connected) stats[p.id] = { kills: p.kills, damage: Math.round(p.damage), deaths: p.deaths, reviveAssists: p.reviveAssists,
+        runXp: Math.floor(p.runXp), levelBefore: levelForXp(p.xpBase), levelAfter: levelForXp(saturatingAdd(p.xpBase, Math.floor(p.runXp))) };
     }
-    this.emit('all', { type: 'gameOver', result, timeMs: Math.round(this.timeMs), stats });
+    this.emit('all', { type: 'gameOver', result, timeMs: Math.round(this.victory?.state.clearTimeMs ?? this.timeMs), unclaimed: this.victory?.unclaimed ?? false, stats });
   }
 
   // ------------------------------------------------------------------ flow fields
@@ -2339,19 +2369,22 @@ export class Simulation {
 
   inventoryState(p: SimPlayer): InventoryState {
     return { playerId: p.id, inventory: copyInventory(p.inventory), wallet: p.wallet, sold: p.sold, chart: this.chartRevealed,
-      nextRequestId: p.requests.next, itemReadyTick: p.itemReadyTick, featherUntil: p.featherUntil, sealUntil: p.sealUntil, xp: saturatingAdd(p.xpBase, Math.floor(p.runXp)), runXp: Math.floor(p.runXp) };
+      nextRequestId: p.requests.next, itemReadyTick: p.itemReadyTick, featherUntil: p.featherUntil, sealUntil: p.sealUntil, itemsTried: [...p.itemsTried], xp: saturatingAdd(p.xpBase, Math.floor(p.runXp)), runXp: Math.floor(p.runXp) };
   }
   publishInventory(p: SimPlayer): void { this.emit(p.id, { type: 'inventory', state: this.inventoryState(p) }); }
   /** Accepted eye/range/aim/LOS, evaluated again at commit rather than trusting the visible card. */
   interact(playerId: number, requestId: number, sourceId: number): void {
     const p = this.playerById(playerId); if (!p || p.bot) return;
     const result = p.requests.execute(requestId, `shop:${sourceId}`, () => {
-      const point = this.floor && this.map.rooms[this.floor.pardoner].points?.pedestals?.[sourceId];
-      if (!point || !Number.isInteger(sourceId) || !p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
-      const x = point[0] + 0.5, y = point[1] + 0.5, z = this.map.floor[point[1] * this.map.w + point[0]] + 1;
+      const original = sourceId < 5 ? sourceId : sourceId - 5;
+      const room = this.floor ? sourceId < 5 ? this.floor.pardoner : this.floor.boss : -1;
+      const point = this.floor && sourceId < 5 ? this.map.rooms[this.floor.pardoner].points?.pedestals?.[sourceId] : null;
+      const stair = this.won && this.floor && sourceId >= 5 && sourceId <= 8 ? stairPoints(this.map, this.floor.boss)[original + 1] : null;
+      if ((!point && !stair) || !Number.isInteger(sourceId) || !p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
+      const x = stair ? stair.x : point![0] + .5, y = stair ? stair.y : point![1] + .5, z = stair ? stair.z + 1 : this.map.floor[point![1] * this.map.w + point![0]] + 1;
       const dx = x - p.x, dy = y - p.y, dz = z - p.z - PLAYER_EYE, d = Math.hypot(dx, dy, dz), aim = aimDir(p.yaw, p.pitch);
-      if (d > 2 || this.pickups.roomAt(p.x, p.y) !== this.floor!.pardoner || !lineOfSight(this.map, p.x, p.y, p.z + PLAYER_EYE, x, y, z) || d > 0.01 && (dx * aim[0] + dy * aim[1] + dz * aim[2]) / d < 0.8) return { accepted: false, reason: 'Look at a pedestal within 2 m' };
-      if (sourceId < 4) return buyItem(p, this.floor!.stock, sourceId);
+      if (d > 2 || this.pickups.roomAt(p.x, p.y) !== room || !lineOfSight(this.map, p.x, p.y, p.z + PLAYER_EYE, x, y, z) || d > 0.01 && (dx * aim[0] + dy * aim[1] + dz * aim[2]) / d < 0.8) return { accepted: false, reason: 'Look at a pedestal within 2 m' };
+      if (sourceId !== 4) return buyItem(p, this.floor!.stock, original);
       if (this.chartRevealed) return { accepted: false, reason: 'Chart already revealed' };
       if (p.wallet < CHART_PRICE) return { accepted: false, reason: 'Not enough halos' };
       p.wallet -= CHART_PRICE; this.revealChart();

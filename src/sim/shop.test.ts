@@ -8,8 +8,35 @@ import { PINNED } from '../gen/pinned';
 import { Simulation } from './sim';
 import { HaloLedger, haloBudget } from './economy';
 import { BLESSED } from '../data/enemies';
+import { sealNow } from './testutil/sims';
 
 describe('R3 shop transactions', () => {
+  it('keeps Rite-page entitlements personal across reconnect and gives no reward to a later arrival', () => {
+    const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL), room = g.floor.rewards.findIndex(r => r.kind === 'rite');
+    g.def.rooms[room].waves = [];
+    const sim = new Simulation({ dungeon: g.def, floor: g.floor, seed: 1, startRoom: room, god: true,
+      players: [{ id: 0, name: 'A', classId: 'fallen' }, { id: 1, name: 'B', classId: 'heretic' }] });
+    sim.step(); sealNow(sim, room);
+    const page = sim.pickups.live.find(p => p.kind === 15)!; expect(page).toBeDefined();
+    const touch = (id: number) => {
+      Object.assign(sim.playerById(id)!, { x: page.x, y: page.y, z: sim.pickups.floor(page.x, page.y) }); sim.step();
+    };
+    sim.removePlayer(1, true); sim.addPlayer({ id: 2, name: 'Late', classId: 'binder' }); touch(2);
+    expect(sim.playerById(2)!.wallet).toBe(0); touch(0); touch(0); expect(sim.playerById(0)!.wallet).toBe(6);
+    expect(sim.pickups.live.some(p => p.id === page.id)).toBe(true);
+    sim.addPlayer({ id: 1, name: 'B', classId: 'heretic' }); touch(1);
+    expect(sim.playerById(1)!.wallet).toBe(6); expect(sim.pickups.live.some(p => p.id === page.id)).toBe(false);
+  });
+  it('free Chart contact reveals the party without spending a slot or wallet', () => {
+    const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
+    const sim = new Simulation({ dungeon: g.def, floor: g.floor, seed: 1, startRoom: 0,
+      players: [{ id: 0, name: 'A', classId: 'fallen' }] });
+    const p = sim.players[0]; p.wallet = 10; p.inventory = [{ item: 'balm', count: 3 }, { item: 'seal', count: 2 }];
+    const before = structuredClone(p.inventory);
+    sim.pickups.drop(13, 0, p.x, p.y, 0); sim.step();
+    expect(sim.chartRevealed).toBe(true); expect(p.wallet).toBe(10); expect(p.inventory).toEqual(before);
+    expect(sim.pickups.live.some(p => p.kind === 13)).toBe(false);
+  });
   it('cannot charge a full inventory or sold stock, stacks matching slots first, and retries never charge again', () => {
     const p = { wallet: 1000, inventory: [{ item: 'balm', count: 3 }, { item: 'seal', count: 2 }] as Inventory, sold: 0 };
     expect(buyItem(p, ['feather'], 0).accepted).toBe(false); expect(p.wallet).toBe(1000);

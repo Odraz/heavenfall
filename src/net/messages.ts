@@ -11,6 +11,7 @@ import type { Admission, ProgressState } from '../profile/lifecycle';
 import type { Inventory } from '../data/items';
 import type { ItemId } from '../data/items';
 import type { ItemEffect } from '../sim/consumables';
+import type { VictoryState } from '../sim/victory';
 
 /** The host's choice, carried by both welcome and lobby. Fixed maps are development fixtures. */
 export interface LobbyState {
@@ -36,6 +37,7 @@ export interface RoomSync {
   refills: number;
 }
 export interface FloorSync {
+  victory?: VictoryState | null;
   itemEffects?: ItemEffect[];
   progressionEnabled?: boolean;
   inventories?: InventoryState[];
@@ -56,11 +58,12 @@ export interface FloorSync {
 export interface InventoryState {
   playerId: number; inventory: Inventory; wallet: number; sold: number; chart: boolean;
   nextRequestId: number; itemReadyTick: number; xp: number; runXp: number;
-  featherUntil: number; sealUntil: number;
+  featherUntil: number; sealUntil: number; itemsTried: ItemId[];
 }
 
 export type GameEvent =
-  | { type: 'itemUsed'; playerId: number; item: ItemId; first: boolean; instance: ItemEffect | null; x: number; y: number; z: number }
+  | { type: 'victoryState'; state: VictoryState }
+  | { type: 'itemUsed'; actionId: number; playerId: number; item: ItemId; first: boolean; instance: ItemEffect | null; x: number; y: number; z: number }
   | { type: 'itemEffectActivated'; effect: ItemEffect }
   | { type: 'itemEffectEnded'; instanceId: number; reason: string }
   | { type: 'itemReflected'; playerId: number; projectile: number; x: number; y: number; z: number }
@@ -99,10 +102,11 @@ export type GameEvent =
   | { type: 'roomState'; room: number; phase: number; knowledge: number; entrySocket: number }
   | { type: 'bossCast'; phase: 'start' | 'interrupted' | 'completed' }
   /** `stats`: the players still connected at the end, by ID. */
-  | { type: 'gameOver'; result: 'victory' | 'defeat'; timeMs: number; stats: Record<number, PlayerStats> };
+  | { type: 'gameOver'; result: 'victory' | 'defeat'; timeMs: number; unclaimed?: boolean; stats: Record<number, PlayerStats> };
 
 /** One player's numbers on Results. */
 export interface PlayerStats {
+  runXp?: number; levelBefore?: number; levelAfter?: number;
   kills: number;
   /** Damage dealt to enemies, rounded. */
   damage: number;

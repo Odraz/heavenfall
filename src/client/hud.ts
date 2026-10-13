@@ -412,8 +412,8 @@ export class Hud {
       } else el('span', 'hint-icon', line);
       el('span', 'hint-text', line).textContent = h.text;
     }
-    if (multiplayer) {
-      for (const text of GENERAL_HINTS) {
+    {
+      for (const text of GENERAL_HINTS.filter(text => multiplayer || text.startsWith('1 /') || text.startsWith('F:'))) {
         const line = el('div', 'hint hint-general', this.hints);
         el('span', 'hint-icon', line);
         el('span', 'hint-text', line).textContent = text;

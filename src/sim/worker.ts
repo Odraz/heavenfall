@@ -58,10 +58,11 @@ function checkpoint(force = false): void {
     const p = sim.players.find(p => p.id === r.playerId) ?? sim.retainedPlayers.get(r.playerId)?.player;
     if (p) { r.runXp = p.runXp; r.wallet = p.wallet; r.inventory = copyInventory(p.inventory); r.itemsTried = [...p.itemsTried]; }
     if (!r.committed || r.closed) continue;
-    if (sim.result) send(r.playerId, { type: 'progress', state: records.settle(r, sim.result) });
+    if (sim.won && r.outcome !== 'victory') send(r.playerId, { type: 'progress', state: records.settle(r, 'victory') });
+    else if (sim.result) send(r.playerId, { type: 'progress', state: records.settle(r, sim.result) });
     else if (shouldSend && r.connected) send(r.playerId, { type: 'progress', state: records.state(r) });
   }
-  if (sim.result) completed.save(records);
+  if (sim.result || sim.won && shouldSend) completed.save(records);
 }
 
 function post(msg: WorkerToMain, transfer: Transferable[] = []): void {
@@ -236,7 +237,9 @@ function playerCtrl(playerId: number, msg: CtrlMessage): void {
       break;
     case 'enterGame': {
       const known = records?.byPlayer(playerId);
-      if (known?.closed || !known && sim && (sim.result || sim.map.rooms[sim.activeRoom]?.boss)) break;
+      if (known?.closed || !known && sim && (sim.result || sim.admissionClosed)) {
+        send(playerId, { type: 'reject', reason: 'in_progress' }); break;
+      }
       const start = lobby.enterGame(playerId, performance.now());
       if (start) {
         if (!reservePlayer(start, playerId)) break;
@@ -260,6 +263,9 @@ function playerCtrl(playerId: number, msg: CtrlMessage): void {
 
 function acceptReady(playerId: number): void {
   if (!lobby) return;
+  if (sim?.admissionClosed && !records?.byPlayer(playerId)?.committed) {
+    send(playerId, { type: 'reject', reason: 'in_progress' }); playerGone(playerId); return;
+  }
   const joiner = lobby.ready(playerId);
   if (!joiner) maybeGo();
   else if (sim?.addPlayer({ ...joiner, profile: lobby.profile(playerId) })) {
@@ -286,6 +292,7 @@ function playerGone(playerId: number, voluntary = false): void {
   if (r) {
     r.connected = false;
     if (!r.committed || voluntary) send(playerId, { type: 'progress', state: records!.settle(r, r.committed ? 'leave' : 'admissionAborted') });
+    if (voluntary && r.outcome === 'victory') r.closed = true;
   }
   const conn = playerConn.get(playerId);
   if (conn !== undefined) {
@@ -314,6 +321,9 @@ function startGame(): void {
 function checkLoadTimeout(): void {
   if (!lobby) return;
   for (const id of lobby.loadTimedOut(performance.now())) {
+    // Send the refund before reject closes the client transport. Resume timeouts retain their stake.
+    const r = records?.byPlayer(id);
+    if (r && !r.committed) send(id, { type: 'progress', state: records!.settle(r, 'admissionAborted') });
     send(id, { type: 'reject', reason: 'load_timeout' });
     playerGone(id);
   }

@@ -5,6 +5,86 @@ import { INPUT_DEFAULTS } from './testutil/sims';
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
+it('sends an uncommitted loading refund before rejection can close the guest transport', async () => {
+  vi.useFakeTimers(); vi.resetModules();
+  const { createProfile } = await import('../profile/model');
+  const { stakeProfile, applyProgress } = await import('../profile/lifecycle');
+  const messages: WorkerToMain[] = [];
+  const ctx = { postMessage: (m: WorkerToMain) => messages.push(m), onmessage: (_e: MessageEvent<MainToWorker>) => {} };
+  vi.stubGlobal('self', ctx); await import('./worker');
+  const send = (data: MainToWorker) => ctx.onmessage({ data } as MessageEvent<MainToWorker>);
+  const host = createProfile('Host', '1'.repeat(32), 1), guest = createProfile('Guest', '2'.repeat(32), 1);
+  guest.inventory[0] = { item: 'feather', count: 2 };
+  try {
+    send({ t: 'host', heaven: 1, fixture: null, password: '', name: host.name, god: false, bot: false, profile: host, progressionEnabled: true });
+    send({ t: 'ctrl', playerId: 0, msg: { type: 'pickClass', classId: 'fallen' } });
+    send({ t: 'connCtrl', conn: 1, msg: { type: 'hello', name: guest.name, password: '', version: __BUILD_VERSION__, bot: false, profile: guest } });
+    send({ t: 'connCtrl', conn: 1, msg: { type: 'pickClass', classId: 'heretic' } }); send({ t: 'startGame' });
+    let saved = guest;
+    for (const m of [...messages]) if (m.t === 'ctrl' && m.msg.type === 'admission') {
+      if (m.to === 1) saved = stakeProfile(saved, m.msg.admission);
+      else send({ t: 'ctrl', playerId: 0, msg: { type: 'admissionReady', runId: m.msg.admission.runId, admissionId: m.msg.admission.admissionId } });
+    }
+    send({ t: 'ctrl', playerId: 0, msg: { type: 'ready' } }); messages.length = 0;
+    vi.advanceTimersByTime(21000);
+    const refund = messages.findIndex(m => m.t === 'ctrl' && m.to === 1 && m.msg.type === 'progress' && m.msg.state.outcome === 'admissionAborted');
+    const rejection = messages.findIndex(m => m.t === 'ctrl' && m.to === 1 && m.msg.type === 'reject');
+    expect(refund).toBeGreaterThanOrEqual(0); expect(refund).toBeLessThan(rejection);
+    const m = messages[refund];
+    if (m.t !== 'ctrl' || m.msg.type !== 'progress') throw Error('Missing refund');
+    saved = applyProgress(saved, m.msg.state)!;
+    expect(saved.run).toBeNull(); expect(saved.inventory).toEqual(guest.inventory); expect(saved.stats.runs).toBe(0);
+  } finally { send({ t: 'stop' }); }
+});
+
+it('publishes victory before exit, then saves post-win purchases in the same settlement', async () => {
+  vi.useFakeTimers(); vi.resetModules();
+  const { Simulation } = await import('./sim');
+  const { createProfile } = await import('../profile/model');
+  const { stakeProfile, applyProgress } = await import('../profile/lifecycle');
+  const { sealNow } = await import('./testutil/sims');
+  const { stairPoints } = await import('./shop');
+  const { PINNED } = await import('../gen/pinned');
+  let sim: InstanceType<typeof Simulation> | undefined;
+  const step = Simulation.prototype.step;
+  const capture = vi.spyOn(Simulation.prototype, 'step').mockImplementation(function(this: InstanceType<typeof Simulation>, now?: number) { sim = this; return step.call(this, now); });
+  const messages: WorkerToMain[] = [];
+  const ctx = { postMessage: (m: WorkerToMain) => messages.push(m), onmessage: (_e: MessageEvent<MainToWorker>) => {} };
+  vi.stubGlobal('self', ctx); await import('./worker');
+  const send = (data: MainToWorker) => ctx.onmessage({ data } as MessageEvent<MainToWorker>);
+  const profile = createProfile('Victory fixture', 'a'.repeat(32), 1);
+  let saved = profile;
+  const apply = () => {
+    for (const m of messages) if (m.t === 'ctrl' && m.msg.type === 'progress') saved = applyProgress(saved, m.msg.state) ?? saved;
+    messages.length = 0;
+  };
+  try {
+    send({ t: 'start', runId: 'b'.repeat(32), seed: PINNED.seed, simSeed: 1, heaven: 1, floor: 1, edicts: 0, fixture: null,
+      progressionEnabled: true, players: [{ id: 0, name: profile.name, classId: 'fallen', profile }], god: false,
+      benchArena: -1, benchBurst: false, localPlayerId: 0, startRoom: 999 });
+    expect(sim).toBeUndefined();
+    const m = messages.find(m => m.t === 'ctrl' && m.msg.type === 'admission');
+    if (!m || m.t !== 'ctrl' || m.msg.type !== 'admission') throw Error('No admission');
+    saved = stakeProfile(saved, m.msg.admission);
+    send({ t: 'ctrl', playerId: 0, msg: { type: 'admissionReady', runId: m.msg.admission.runId, admissionId: m.msg.admission.admissionId } });
+    expect(sim).toBeDefined(); const live = sim!; apply(); expect(saved.stats.runs).toBe(1);
+    sealNow(live, live.floor!.boss);
+    live.players[0].wallet = 500;
+    live.damageEnemy(live.bossSlot, 100000, 0); vi.advanceTimersByTime(35); apply();
+    expect(live.won).toBe(true); expect(live.result).toBeNull();
+    expect(saved.run).toBeNull(); expect(saved.stats.wins).toBe(1); expect(saved.characters.fallen.xp).toBe(1500);
+    const p = live.players[0], at = stairPoints(live.map, live.floor!.boss)[1];
+    Object.assign(p, { x: at.x, y: at.y + 1, z: at.z, yaw: -Math.PI / 2, pitch: Math.atan2(-.6, 1) });
+    send({ t: 'ctrl', playerId: 0, msg: { type: 'interact', runId: live.runId, requestId: 1, sourceId: 5 } }); apply();
+    expect(p.sold).toBe(1); expect(saved.inventory).toEqual(p.inventory); expect(saved.inventory[0]).not.toBeNull();
+    const after = structuredClone(saved), wallet = p.wallet;
+    send({ t: 'ctrl', playerId: 0, msg: { type: 'interact', runId: live.runId, requestId: 1, sourceId: 5 } }); apply();
+    expect(p.wallet).toBe(wallet); expect(saved.stats).toEqual(after.stats); expect(saved.heavens.clears[1]).toBe(1);
+    Object.assign(p, stairPoints(live.map, live.floor!.boss)[0]); vi.advanceTimersByTime(3200); apply();
+    expect(live.result).toBe('victory'); expect(saved.stats.wins).toBe(1); expect(saved.inventory).toEqual(after.inventory);
+  } finally { send({ t: 'stop' }); capture.mockRestore(); }
+});
+
 it('sends go then a checkpoint before snapshots/events for every starter and a late joiner', async () => {
   vi.useFakeTimers(); vi.resetModules();
   const messages: WorkerToMain[] = [];

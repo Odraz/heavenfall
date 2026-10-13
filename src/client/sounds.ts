@@ -36,6 +36,7 @@ const MELEE_REACH = 1.6;
 const NO_STATE = 255;
 
 export class GameSounds {
+  private lastReflection = -Infinity;
   private readonly lastShots = new Map<number, number>();
   private readonly lastShots2 = new Map<number, number>();
   /** Others' events play after the render delay, like their effects (seconds). */
@@ -155,6 +156,8 @@ export class GameSounds {
     sfx('abilityReady');
   }
 
+  levelUp(): void { sfx('abilityReady'); sfx('goldPickup', null, .6, .12); }
+
   /**
    * A complete snapshot: others' shots, enemy casts, new projectiles, the Gatekeeper, own HP changes,
    * music. While `beamed` (a Sacrament beam is on the local player), HP rising doesn't chime (M9 §5.1).
@@ -249,7 +252,11 @@ export class GameSounds {
       case 'itemEffectActivated':
         sfx(e.effect.item === 'chain' ? 'chains' : e.effect.item === 'mirror' ? 'shroud' : 'censerBreak', { x: e.effect.x, y: e.effect.y }, .45);
         break;
-      case 'itemReflected': sfx('goldPickup', { x: e.x, y: e.y }, .5); break;
+      case 'itemReflected': {
+        const now = performance.now();
+        if (now - this.lastReflection >= 250) { sfx('goldPickup', { x: e.x, y: e.y }, .5); this.lastReflection = now; }
+        break;
+      }
       case 'crest':
         sfx('crest');
         break;

@@ -18,13 +18,13 @@ import type { NetStats } from './net/netStats';
 import { joinGame, type PeerTransport } from './net/peerTransport';
 import type { Transport } from './net/transport';
 import { withoutJoin } from './net/invite';
-import { singleplayerSetupScreen, titleScreen, validName } from './ui/menus';
+import { button, singleplayerSetupScreen, titleScreen, validName } from './ui/menus';
 import { loadingScreen } from './ui/loading';
 import { hostSetupScreen, joinScreen, lobbyScreen, multiplayerScreen, type LobbyView } from './ui/multiplayer';
 import { showResults, type ResultsData, type ResultsView } from './ui/results';
 import { hideTooltip } from './ui/tooltip';
 import { initAudio, setMusic, sfx } from './audio/audio';
-import { profilesScreen, saveCodeButton } from './ui/profiles';
+import { profileLoadout, profilesScreen, saveCodeButton } from './ui/profiles';
 import { ProfileSession } from './profile/storage';
 import { abandonAttempt, applyProgress, stakeProfile, type ProgressState } from './profile/lifecycle';
 
@@ -33,6 +33,16 @@ const root = document.getElementById('app')!;
 let profileSession: ProfileSession | null = null;
 let lastProgress: ProgressState | null = null;
 let requestedPersistence = false;
+let saveNotice: HTMLElement | null = null;
+function saveAccepted(profile: ProfileSession['profile']): void {
+  if (!profileSession) return;
+  if (profileSession.save(profile)) { saveNotice?.remove(); saveNotice = null; return; }
+  if (saveNotice) return;
+  saveNotice = document.createElement('div'); saveNotice.className = 'save-notice'; saveNotice.setAttribute('role', 'alert');
+  saveNotice.textContent = `${profileSession.message} Press Esc to access export or retry.`;
+  saveCodeButton(saveNotice, () => profileSession!.profile);
+  button('Retry save', saveNotice, () => saveAccepted(profileSession!.profile)); document.body.appendChild(saveNotice);
+}
 const disposable = params.dev || params.benchArena >= 0 || params.bot;
 
 function profileMessage(msg: CtrlMessage, transport: Transport): boolean {
@@ -55,7 +65,7 @@ function profileMessage(msg: CtrlMessage, transport: Transport): boolean {
     if (!lastProgress || lastProgress.runId !== msg.state.runId || msg.state.revision > lastProgress.revision) lastProgress = msg.state;
     if (profileSession) {
       const next = applyProgress(profileSession.profile, msg.state);
-      if (next) profileSession.save(next);
+      if (next) saveAccepted(next);
       if (next && msg.state.outcome && msg.state.outcome !== 'admissionAborted' && !requestedPersistence) {
         requestedPersistence = true; void navigator.storage?.persist?.().catch(() => {});
       }
@@ -67,7 +77,7 @@ function profileMessage(msg: CtrlMessage, transport: Transport): boolean {
 function localExit(outcome: 'leave' | 'hostLeft'): void {
   if (!profileSession?.profile.run || !lastProgress || lastProgress.runId !== profileSession.profile.run.runId) return;
   const next = applyProgress(profileSession.profile, { ...lastProgress, revision: 0xfffffffe, outcome });
-  if (next) profileSession.save(next);
+  if (next) saveAccepted(next);
 }
 
 /** The DOM screen currently shown over `#app`, if any. */
@@ -111,13 +121,12 @@ function toTitle(message = ''): void {
 }
 
 function toSingleplayerSetup(name: string, practice = false): void {
-  show(
-    'singleplayerSetup',
-    singleplayerSetupScreen({
+  const view = singleplayerSetupScreen({
       onStart: (classId, dungeonId) => void startSingleplayer(name, classId, dungeonId, null, practice),
       onBack: () => toTitle(),
-    }),
-  );
+    });
+  if (profileSession && !practice) profileLoadout(view, profileSession);
+  show('singleplayerSetup', view);
 }
 
 /**
@@ -353,10 +362,10 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
   };
 
   /** Ends the session and returns to Title. The host leaving sends `leave` to every client. */
-  const end = (message: string, left: boolean): void => {
+  const end = (message: string, left: boolean, settle = true): void => {
     if (ended) return;
     ended = true;
-    localExit(left ? 'leave' : 'hostLeft');
+    if (settle) localExit(left ? 'leave' : 'hostLeft');
     if (left) s.transport.sendCtrl({ type: 'leave' });
     disposeGame();
     s.host?.stop(left);
@@ -391,6 +400,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
       onChat: (text) => s.transport.sendCtrl({ type: 'chat', text }),
       onLeave: () => end('', true),
     });
+    if (profileSession && !inProg) profileLoadout(lobby.el, profileSession, () => s.transport.sendCtrl({ type: 'loadout', profile: profileSession!.profile }));
     show('lobby', lobby.el);
     lobby.setChat(chat);
     if (latest) updateLobby(latest);
@@ -522,7 +532,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
         enterGame();
         break;
       case 'reject':
-        if (msg.reason === 'load_timeout') end('Loading took too long', false);
+        if (msg.reason === 'load_timeout') end('Loading took too long', false, false);
         break;
       case 'chat':
         if (typeof msg.playerId === 'number' && typeof msg.text === 'string') onChat(msg.playerId, msg.text);
@@ -546,12 +556,12 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
   };
   if (profileSession?.profile.run) s.transport.sendCtrl({ type: 'recover', runId: profileSession.profile.run.runId, profileId: profileSession.profile.id });
   if (s.client) {
-    s.client.onHostLeft = () => {
+    s.client.onHostLeft = (explicit) => {
       // On Results the numbers stay up, and `Leave` returns to Title.
       if (results) {
         ended = true;
         results.hostLeft();
-      } else end('Host left the game', false);
+      } else end(explicit ? 'Host left the game' : 'Connection lost; reconnect to recover the attempt', false, explicit);
     };
   }
 }

@@ -5,13 +5,15 @@ import type { InventoryState } from '../net/messages';
 import type { GameMap } from '../sim/map';
 import { aimDir } from '../sim/combat';
 import { lineOfSight } from '../sim/los';
-import { CHART_PRICE } from '../sim/shop';
+import { CHART_PRICE, stairPoints } from '../sim/shop';
+import type { VictoryState } from '../sim/victory';
 import { ITEM_ART, CHART_ART } from './itemArt';
 
 export class ShopView {
   readonly group = new THREE.Group();
   private readonly cards: THREE.Sprite[] = [];
   readonly points: Array<{ x: number; y: number; z: number }> = [];
+  private won = false;
   constructor(private readonly map: GameMap, private readonly floor: Floor | null) {
     if (!floor) return;
     const loader = new THREE.TextureLoader();
@@ -29,7 +31,18 @@ export class ShopView {
       sprite.position.set(p.x, p.z, p.y); sprite.scale.set(0.8, 0.8, 1); this.group.add(sprite); this.cards.push(sprite);
     }
   }
-  update(state: InventoryState): void { this.cards.forEach((c, i) => { c.visible = i === 4 ? !state.chart : (state.sold & (1 << i)) === 0; }); }
+  victory(state: VictoryState): void {
+    if (this.won || !this.floor) return; this.won = true;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 20, 24, 1, true), new THREE.MeshBasicMaterial({ color: 0xffe7b0, transparent: true, opacity: .2, side: THREE.DoubleSide, depthWrite: false }));
+    beam.position.set(state.x, state.z + 10, state.y); this.group.add(beam);
+    for (const [i, p] of stairPoints(this.map, this.floor.boss).slice(1).entries()) {
+      this.points.push({ ...p, z: p.z + 1 });
+      const texture = new THREE.TextureLoader().load(ITEM_ART[this.floor.stock[i]]); texture.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture })); sprite.position.set(p.x, p.z + 1, p.y); sprite.scale.set(.8, .8, 1);
+      this.group.add(sprite); this.cards.push(sprite);
+    }
+  }
+  update(state: InventoryState): void { this.cards.forEach((c, i) => { c.visible = i === 4 ? !state.chart : (state.sold & (1 << (i >= 5 ? i - 5 : i))) === 0; }); }
   target(p: { x: number; y: number; z: number }, yaw: number, pitch: number, reach = 4): number {
     const aim = aimDir(yaw, pitch); let best = -1, distance = reach;
     this.points.forEach((point, i) => {
@@ -41,11 +54,13 @@ export class ShopView {
   }
   label(index: number, state: InventoryState | null): string {
     if (!this.floor || index < 0) return '';
-    const sold = index === 4 ? state?.chart : !!((state?.sold ?? 0) & (1 << index));
+    const stockIndex = index >= 5 ? index - 5 : index;
+    const sold = index === 4 ? state?.chart : !!((state?.sold ?? 0) & (1 << stockIndex));
     if (sold) return 'Sold';
     if (index === 4) return `Pardoner’s Chart · ${CHART_PRICE} halos · F within 2 m`;
-    const item = ITEMS[this.floor.stock[index]];
-    return `${item.name} · ${item.price} halos · ${item.rule} · F within 2 m`;
+    const item = ITEMS[this.floor.stock[stockIndex]];
+    const fresh = state && !state.itemsTried.includes(this.floor.stock[stockIndex]) ? 'New · ' : '';
+    return `${fresh}${item.name} · ${item.price} halos · ${item.rule} · F within 2 m`;
   }
   dispose(): void {
     this.group.traverse(object => {

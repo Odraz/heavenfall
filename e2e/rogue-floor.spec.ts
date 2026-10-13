@@ -3,6 +3,15 @@ import { PINNED } from '../src/gen/pinned';
 import { PEARLY_POOL } from '../src/data/rooms/1';
 import { gatePoint, gateVector } from '../src/sim/gate';
 import { expect, state, test } from './fixtures';
+import { stairPoints } from '../src/sim/shop';
+import type { Page } from '@playwright/test';
+
+async function ascend(page: Page): Promise<void> {
+  const g = generateFloor((await state(page)).seed!, 1, 1, PEARLY_POOL), at = stairPoints(g.map, g.floor.boss)[0];
+  await expect(page.locator('.victory-hint')).toContainText('Victory secured');
+  await page.evaluate(([x, y]) => window.__heavenfallTeleport!(x, y), [at.x, at.y]);
+  await page.waitForFunction(() => window.__heavenfall.screen === 'results', null, { timeout: 20_000 });
+}
 
 test('a second generated run after Results gets a fresh identity and accepts restarted input and snapshots', async ({ page }) => {
   await page.setViewportSize({ width: 640, height: 360 });
@@ -12,7 +21,7 @@ test('a second generated run after Results gets a fresh identity and accepts res
   const first = await state(page);
   await page.keyboard.press('KeyQ');
   await page.keyboard.press('KeyK');
-  await page.waitForFunction(() => window.__heavenfall.screen === 'results', null, { timeout: 10_000 });
+  await ascend(page);
   expect((await state(page)).gameResult).toBe('victory');
   await page.getByRole('button', { name: 'Back to title' }).click();
   expect((await state(page)).runId).toBeNull();
@@ -35,7 +44,7 @@ test('a second generated run after Results gets a fresh identity and accepts res
   await expect(page.locator('.ability').filter({ hasText: 'Q' })).not.toHaveClass(/ready/);
   await page.waitForFunction(() => window.__heavenfall.activePhase === 'combat');
   await page.keyboard.press('KeyK');
-  await page.waitForFunction(() => window.__heavenfall.screen === 'results', null, { timeout: 10_000 });
+  await ascend(page);
   expect((await state(page)).gameResult).toBe('victory');
 });
 

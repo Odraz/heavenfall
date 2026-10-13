@@ -4,6 +4,8 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 
 **Statuses.** `requested`: new asset, not made yet (or coded treatment not built yet). `reuse-review`: an existing file the spec reuses; checked in context at its milestone. `received`: source takes on disk, not yet cut to a runtime file or connected to an event. `integrated-review`: source takes received, cut to runtime files and connected to their game event; awaiting listening acceptance in a real fight. `accepted`: seen or heard in the intended build and approved (no row has it yet; a file in a folder is not done).
 
+**R03 runtime preview note.** The eight item source images, Pardoner portrait, Chart and Rite page are now referenced directly by the game. Their solid source backgrounds remain visible: these are source previews, not accepted cutouts. The box/pedestal art remains unintegrated; coded pedestals, ground-area outlines, Ward dome and Stair beam are the current fallbacks. Reward glyphs are implemented. Existing synthesized cues cover item use/landing/reflection and level-up; recording rows remain requested. Human visual/listening acceptance is open; no source provenance was invented.
+
 **S1 provenance note.** The Suno takes have no provenance sidecars: `generatedAt` is the date of their first commit (`dc7c6c6`), and their exact prompt, generation date and hashes are still to be recorded. `plan` is from [asset-plan.md](asset-plan.md) ("Pro since at least 2026-10-11").
 
 **Art receipt, 2026-10-12.** 27 user-provided JPEG/JFIF sources (4 model references, 23 game assets) converted to PNG at original resolution, with decoded pixels verified unchanged. Redundant original downloads were moved out of the source tree during the 2026-10-13 cleanup; normalized PNG sources are retained. Historical originals remain recoverable from Git and an ignored local archive at `tmp/asset-originals-2026-10-13/`. Generation tool, generation date and subscription plan remain unknown. No runtime art was exported or accepted; preparation notes and remaining sources are in [art-prompts.md](art-prompts.md#received-sources--2026-10-12).
@@ -41,7 +43,7 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 | gold-halo | sprite | yes | R2 | integrated-review | `assets/art-src/gold-halo.png` | `assets/sprites/gold-halo.png` | Host prop/pickup presentation | — | — | — | Prepared from supplied art; pending human visual acceptance |
 | heal-mote | sprite | yes | R2 | integrated-review | `assets/art-src/heal-mote.png` | `assets/sprites/heal-mote.png` | Host prop/pickup presentation | — | — | — | Prepared from supplied art; pending human visual acceptance |
 | rite-page | sprite | yes | R4 | received | `assets/art-src/rite-page.png` | — | Rite page pickup | — | — | — | B2; R3 door/map plate glyph is coded; original archived locally and in Git history |
-| npc-pardoner | sprite | yes | R3 | received | `assets/art-src/npc-pardoner.png` | — | Pardoner's stall figure | — | — | — | B3; fallback: coded pedestal, no figure; original archived locally and in Git history |
+| npc-pardoner | sprite | yes | R3 | received | `assets/art-src/npc-pardoner.png` | — | Pardoner's stall figure | — | — | — | B3; source portrait preview integrated; cutout pending; original archived locally and in Git history |
 | pardoner-box | sprite | yes | R3 | received | `assets/art-src/pardoner-box.png` | — | Pardoner's stall | — | — | — | B3; original archived locally and in Git history |
 | shop-pedestal | sprite | yes | R3 | received | `assets/art-src/shop-pedestal.jfif` | — | stall pedestal; item shown = its B7 sprite | — | — | — | B3; source on disk, cutout and runtime integration pending; fallback: coded pedestal |
 | chart-scroll | sprite | yes | R3 | received | `assets/art-src/chart-scroll.png` | — | the Chart for sale | — | — | — | B3; original archived locally and in Git history |
@@ -62,7 +64,7 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 | item-venom | icon | yes | R3 | received | `assets/art-src/item-venom.png` | — | Bitter Water | — | — | — | B7, magenta background; original archived locally and in Git history |
 | item-frost | icon | yes | R3 | received | `assets/art-src/item-frost.png` | — | Ash of Stillness | — | — | — | B7; original archived locally and in Git history |
 | item-chain | icon | yes | R3 | received | `assets/art-src/item-chain.png` | — | Chain Vial | — | — | — | B7; original archived locally and in Git history |
-| item-plume | icon | yes | R3 | received | `assets/art-src/item-plume.jfif` | — | Plume of Expulsion | — | — | — | B7; source on disk, cutout and runtime integration pending |
+| item-plume | icon | yes | R3 | received | `assets/art-src/item-plume.jfif` | — | Plume of Expulsion | — | — | — | B7; source preview integrated, cutout and visual acceptance pending |
 | relic-usher | icon | yes | R6 | requested | — | — | Usher's Badge | — | — | — | B8 pilot; fallback: name on card |
 | relic-thurible | icon | yes | R6 | requested | — | — | Broken Thurible | — | — | — | B8 |
 | relic-link | icon | yes | R6 | requested | — | — | Last Link | — | — | — | B8 |

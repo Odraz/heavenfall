@@ -25,6 +25,7 @@ export interface BotEnemy {
 }
 
 export interface BotView {
+  stair?: { x: number; y: number } | null;
   map: GameMap;
   body: Body;
   dead: boolean;
@@ -158,7 +159,9 @@ export class Bot {
 
     // Goal.
     let goal: { x: number; y: number } | null = null;
-    if (v.activePhase === PHASE_COUNTDOWN) {
+    if (v.stair) {
+      if (Math.hypot(v.stair.x - ex, v.stair.y - ey) > .5) goal = v.stair;
+    } else if (v.activePhase === PHASE_COUNTDOWN) {
       // Every bot heads for its own entry cell in the room counting down (M8 §6.4).
       const room = v.map.rooms[v.activeRoom];
       const at = v.hostPlayer ?? b;

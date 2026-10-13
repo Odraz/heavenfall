@@ -1801,3 +1801,6 @@ div.weapon-swing {
 .item-count { position: absolute; right: 4px; bottom: 3px; font-weight: bold; text-shadow: 0 1px 3px black; }
 .shop-hint { position: absolute; top: 62%; left: 50%; transform: translateX(-50%); max-width: 70%; padding: 8px; text-align: center; background: #19151bdf; color: #f0dfad; }
 .shop-hint:empty { display: none; }
+.victory-hint { position: absolute; top: 12%; left: 50%; transform: translateX(-50%); text-align: center; padding: 10px; background: #19151bdf; color: #ffe6a0; }
+.victory-hint:empty { display: none; }
+.save-notice { position: fixed; top: 0; left: 0; right: 0; padding: 10px; background: #632d27; color: white; z-index: 10000; }

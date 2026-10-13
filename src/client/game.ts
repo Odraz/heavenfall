@@ -118,6 +118,8 @@ import { ShopView } from './shop';
 import type { InventoryState } from '../net/messages';
 import { ItemView } from './itemView';
 import { ITEMS } from '../data/items';
+import type { VictoryState } from '../sim/victory';
+import { levelForXp } from '../profile/model';
 
 const BENCH_TURN_RATE = 0.3;
 /** A move longer than this in one frame is a teleport: the weapon's sway resets (M11 §3.2, as the bob). */
@@ -343,6 +345,8 @@ export class Game {
   private readonly shopHint = document.createElement('div');
   private inventory: InventoryState | null = null;
   private nextRequestId = 1;
+  private victory: VictoryState | null = null;
+  private readonly victoryHint = document.createElement('div');
   private readonly pause: PauseOverlay;
   private readonly party: PartyFrames | null;
   private paused = false;
@@ -572,6 +576,7 @@ export class Game {
     this.shop = new ShopView(this.map, o.floor); this.scene.scene.add(this.shop.group);
     this.scene.scene.add(this.itemView.group);
     this.shopHint.className = 'shop-hint'; this.hud.root.append(this.shopHint);
+    this.victoryHint.className = 'victory-hint'; this.hud.root.append(this.victoryHint);
     this.party = o.singleplayer ? null : new PartyFrames(this.hud.leftColumn, this.hud.ownFrame);
     this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id));
     this.hud.onReady = () => this.sounds.abilityReady();
@@ -905,6 +910,7 @@ export class Game {
   /** A `ctrl` message from the host; the game handles its events (§9.2). */
   handleCtrl(msg: CtrlMessage): void {
     if (msg.type === 'floorSync' && !this.disposed) {
+      if (msg.victory) this.setVictory(msg.victory);
       this.itemView.sync(msg.itemEffects ?? []);
       const inventory = msg.inventories?.find(p => p.playerId === this.localId);
       if (inventory) this.setInventory(inventory);
@@ -946,12 +952,20 @@ export class Game {
   }
 
   private setInventory(state: InventoryState): void {
+    if (this.inventory && levelForXp(state.xp) > levelForXp(this.inventory.xp)) {
+      this.hud.centerText(`Level ${levelForXp(state.xp)} · Unspent points (talents arrive in R04)`, 3000, performance.now()); this.sounds.levelUp();
+    }
     this.inventory = state; this.nextRequestId = Math.max(this.nextRequestId, state.nextRequestId);
     this.hud.setInventory(state); this.shop.update(state);
+  }
+  private setVictory(state: VictoryState): void {
+    this.victory = { ...state }; this.shop.victory(state); if (this.inventory) this.shop.update(this.inventory);
+    this.victoryHint.textContent = state.waiting ? 'A choice is waiting · Return to an earned Rite page' : 'Victory secured · Shop, then stand in the Stair for 3 seconds';
   }
 
   private onEvent(e: GameEvent, now: number): void {
     switch (e.type) {
+      case 'victoryState': this.setVictory(e.state); break;
       case 'itemUsed':
         if (e.instance) this.itemView.state(e.instance);
         if (e.playerId === this.localId && e.first) this.hud.centerText(`${ITEMS[e.item].name} · ${ITEMS[e.item].rule}`, 3000, now);
@@ -1288,6 +1302,7 @@ export class Game {
     this.resultData = {
       result: e.result,
       timeMs: e.timeMs,
+      unclaimed: e.unclaimed,
       players: Object.entries(e.stats)
         .map(([id, stats]) => ({ id: Number(id), stats }))
         .sort((a, b) => a.id - b.id)
@@ -2015,6 +2030,7 @@ export class Game {
       }
       const s = this.snaps.newest;
       const out = this.bot.update(now, {
+        stair: this.victory,
         map: this.map,
         body: p.body,
         dead: this.dead,
