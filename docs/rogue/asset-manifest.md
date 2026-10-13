@@ -10,6 +10,8 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 
 **R2.2 fallback, 2026-10-13.** All six B1 prop sources remain `received`; none is visually accepted. Inspected amphora/lamp sources have a solid green background requiring preparation. `src/client/props.ts` currently renders labeled coded ivory variants, a marked cross/glint, red-black lamp and gold chalice in one billboard atlas; accepted breaks drive shards, blast smoke/rings and heal feedback. The three S1 prop families now have named synthesized entries and accepted event mappings; their received MP3s still need runtime cutting in R2.3.
 
+**R2.6 fallback, 2026-10-13.** S1's 51 mono runtime takes, including all three prop families, are integrated and remain pending human listening acceptance. A1/B1/B2/B10 runtime art retains the documented coded presentation; received sources are preserved without implying approval. `src/client/spawnView.ts` supplies pooled gold warning beams/progress disks, with finite synthesized arrival and crest cues in `src/audio/sfx.ts`. Unintegrated S2 Dominion, S3 pickup and S8 fire recordings remain explicit synthesized fallbacks. No new generated art or recording is claimed.
+
 ## Art: new
 
 | assetId | kind | required | neededBy | status | sourcePath | runtimePath | events | generator | generatedAt | plan | notes |
