@@ -500,7 +500,7 @@ Left 4 Dead's car alarm, as one rule: **ring a cleared room's bell, fight one ha
 
 ### 5.4 The map item
 
-- **The Chart** (one per floor) reveals every room as discovered, with its icon or sigil. It comes from (a) the **marked reliquary** prop in one combat room, or (b) the **Pardoner's map pedestal** (30 halos, bought once for the whole party: when one player buys it, the pedestal is gone for everyone).
+- **The Chart** (one per floor) reveals every room as discovered, with its icon or sigil. It comes from (a) the **marked reliquary** prop in one combat room, or (b) the **Pardoner's map pedestal** (120 halos in R03 tuning, bought once for the whole party: when one player buys it, the pedestal is gone for everyone).
 - It isn't an inventory item: it applies at once, party-wide.
 
 ### 5.5 Pilgrim's Return (teleport)
@@ -563,10 +563,10 @@ Backtracking was a quarter of the run's time (r1-fun finding 5). The rule: **fro
 
 ### 6.6 The Pardoner
 
-- **Stock:** 4 item pedestals and the map pedestal (30 halos; gone once the map is revealed by any means). The 4 items are 4 weighted picks without replacement (drop weights) from `mulberry32(fmix32(seed ^ 0x9A4D0E5))`, computed in `generateFloor` and stored in `Floor`, so every client draws the same pedestals.
+- **Stock:** 4 item pedestals and the map pedestal (120 halos; gone once the map is revealed by any means). The 4 items are 4 weighted picks without replacement (drop weights) from `mulberry32(fmix32(seed ^ 0x9A4D0E5))`, computed in `generateFloor` and stored in `Floor`, so every client draws the same pedestals.
 - **Per-player stock:** every player may buy each item pedestal **once** (one item, not a stack); a bought pedestal shows `Sold` to that player only. So no one takes another's goods.
 - **Buying:** look at a pedestal within 4 m to see its card (name, one-line rule, price, `New` if the player has never used it); press F within 2 m to buy. The host checks the wallet and the inventory (§7.1: a free slot or a stack of the same item below its cap); otherwise `Not enough halos` / `Inventory full`.
-- **Prices:** set per item in items-relics.md, **25–50 halos**. A full floor's modelled income is about **105–125 halos** per player; a rushed partial clear pays less and pickup performance matters. A player usually buys 2–3 of the 4, and the 2 inventory slots mean choosing what to carry. The catalog's ids/prices govern the worked examples, which are illustrative rather than seeded stock measurements.
+- **Prices:** R03 provisionally retunes items-relics.md to **100–180 halos**, following the fourfold room-budget increase. The earlier **105–125-halo** income example is historical; a rushed partial clear pays less and pickup performance matters. A player usually buys 2–3 of the 4, and the 2 inventory slots mean choosing what to carry. The catalog's ids/prices govern the worked examples, which are illustrative rather than seeded stock measurements.
 - **After the boss** each player's unbought pedestals also stand beside the Stair of light (§11.6), so carrying items into the next run doesn't need a walk back.
 
 ### 6.7 Worked example: one Pearly Gates floor, one player's wallet

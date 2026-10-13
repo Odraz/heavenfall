@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { Floor } from '../gen/generate';
 import type { GameMap } from '../sim/map';
 import { drawMapIcon, roomIcon } from '../client/mapIcons';
+import { drawRewardIcon } from '../client/rewardIcon';
 
 export function sigilPose(map: GameMap, room: number, leaf: number) {
   const owner = map.rooms[room], cells = owner.leaves[leaf].cells;
@@ -31,6 +32,7 @@ export class DoorSigils {
       const x = (i % side) * tile, y = Math.floor(i / side) * tile;
       drawMapIcon(ctx, roomIcon(room, i === floor.reliquary), x + 64, y + 64, 96);
       if (room.secondary && i !== floor.reliquary) drawMapIcon(ctx, room.secondary, x + 105, y + 105, 40);
+      if (room.kind === 'combat') drawRewardIcon(ctx, floor.rewards[i], x + 24, y + 104, 38);
     });
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
     this.material = new THREE.MeshBasicMaterial({ map: texture, alphaTest: 0.1 });

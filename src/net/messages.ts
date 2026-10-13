@@ -8,6 +8,7 @@ import type { SpawnWarning } from '../data/spawns';
 import type { RunIdentity } from './version';
 import type { Profile } from '../profile/model';
 import type { Admission, ProgressState } from '../profile/lifecycle';
+import type { Inventory } from '../data/items';
 
 /** The host's choice, carried by both welcome and lobby. Fixed maps are development fixtures. */
 export interface LobbyState {
@@ -33,6 +34,8 @@ export interface RoomSync {
   refills: number;
 }
 export interface FloorSync {
+  progressionEnabled?: boolean;
+  inventories?: InventoryState[];
   type: 'floorSync';
   runId: string;
   tick: number;
@@ -47,7 +50,14 @@ export interface FloorSync {
   spawnWarnings?: SpawnWarning[];
 }
 
+export interface InventoryState {
+  playerId: number; inventory: Inventory; wallet: number; sold: number; chart: boolean;
+  nextRequestId: number; itemReadyTick: number; xp: number; runXp: number;
+}
+
 export type GameEvent =
+  | { type: 'inventory'; state: InventoryState }
+  | { type: 'interactionResult'; requestId: number; accepted: boolean; reason: string }
   | { type: 'spawnWarning'; phase: 'start' | 'cancel'; warning: SpawnWarning }
   | { type: 'crest'; room: number; wave: number; total: number }
   | { type: 'dominionCast'; phase: DominionPhase; cast: DominionCast; x: number; y: number; z: number }
@@ -106,6 +116,7 @@ export interface LobbyPlayer {
 export type RejectReason = 'bad_password' | 'full' | 'in_progress' | 'version' | 'load_timeout';
 
 export type CtrlMessage =
+  | { type: 'interact'; runId: string; requestId: number; sourceId: number }
   | FloorSync
   | { type: 'hello'; name: string; password: string; version: string; bot: boolean; profile?: Profile }
   | { type: 'loadout'; profile: Profile }

@@ -114,6 +114,8 @@ import { PickupView } from './pickups';
 import { PropView } from './props';
 import { propDefs } from '../data/props';
 import { MapView, type MapPlayer } from './mapView';
+import { ShopView } from './shop';
+import type { InventoryState } from '../net/messages';
 
 const BENCH_TURN_RATE = 0.3;
 /** A move longer than this in one frame is a teleport: the weapon's sway resets (M11 §3.2, as the bob). */
@@ -334,6 +336,10 @@ export class Game {
   private readonly hud: Hud;
   private readonly rooms: ClientRooms;
   private readonly mapView: MapView;
+  private readonly shop: ShopView;
+  private readonly shopHint = document.createElement('div');
+  private inventory: InventoryState | null = null;
+  private nextRequestId = 1;
   private readonly pause: PauseOverlay;
   private readonly party: PartyFrames | null;
   private paused = false;
@@ -559,6 +565,8 @@ export class Game {
     this.hud.setDeath(null);
     this.rooms = new ClientRooms(this.map, o.runId);
     this.mapView = new MapView(this.hud.root, this.rooms, o.floor, this.localId);
+    this.shop = new ShopView(this.map, o.floor); this.scene.scene.add(this.shop.group);
+    this.shopHint.className = 'shop-hint'; this.hud.root.append(this.shopHint);
     this.party = o.singleplayer ? null : new PartyFrames(this.hud.leftColumn, this.hud.ownFrame);
     this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id));
     this.hud.onReady = () => this.sounds.abilityReady();
@@ -641,6 +649,10 @@ export class Game {
     else if (code === 'KeyJ' && this.params.dev && this.o.host) this.o.host.killAll(true);
     else if (code === 'KeyG' && this.params.dev && this.o.host) this.o.host.toggleGod();
     else if (this.params.bot) return;
+    else if (code === 'KeyF' && !this.dead) {
+      const sourceId = this.shop.target(this.player.body, this.player.yaw, this.player.pitch);
+      if (sourceId >= 0) this.o.transport.sendCtrl({ type: 'interact', runId: this.o.runId, requestId: this.nextRequestId++, sourceId });
+    }
     else if (code === 'KeyQ') this.pressAbility('Q', performance.now());
     else if (code === 'KeyE') this.pressAbility('E', performance.now());
   }
@@ -885,6 +897,8 @@ export class Game {
   /** A `ctrl` message from the host; the game handles its events (§9.2). */
   handleCtrl(msg: CtrlMessage): void {
     if (msg.type === 'floorSync' && !this.disposed) {
+      const inventory = msg.inventories?.find(p => p.playerId === this.localId);
+      if (inventory) this.setInventory(inventory);
       this.dominion.sync(msg);
       this.commanders.sync(msg);
       this.spawnWarnings.sync(msg);
@@ -922,8 +936,19 @@ export class Game {
     this.sounds.event(msg.event, (id) => this.playerPose(id));
   }
 
+  private setInventory(state: InventoryState): void {
+    this.inventory = state; this.nextRequestId = Math.max(this.nextRequestId, state.nextRequestId);
+    this.hud.setInventory(state); this.shop.update(state);
+  }
+
   private onEvent(e: GameEvent, now: number): void {
     switch (e.type) {
+      case 'inventory':
+        if (e.state.playerId === this.localId) this.setInventory(e.state);
+        break;
+      case 'interactionResult':
+        this.hud.centerText(e.reason, 1800, now);
+        break;
       case 'crest':
         debugState.crests++;
         this.hud.centerText('The crest is coming', 2000, now);
@@ -2195,6 +2220,7 @@ export class Game {
     });
     mapPlayers.push({ id: this.localId, name: this.roster.find((r) => r.id === this.localId)!.name, classId: this.classId, x: p.body.x, y: p.body.y, yaw: p.yaw });
     this.mapView.update(now, mapPlayers, ownRoom);
+    this.shopHint.textContent = this.dead || this.paused ? '' : this.shop.label(this.shop.target(this.player.body, this.player.yaw, this.player.pitch), this.inventory);
     debugState.fps = this.fps.frame(now);
     debugState.simMs = this.o.host ? this.o.host.simMs(now) : 0;
     debugState.director = this.o.host?.director ?? null;
@@ -2600,6 +2626,7 @@ export class Game {
     this.hum?.stop();
     this.hud.dispose();
     this.mapView.dispose();
+    this.shop.dispose();
     this.bench?.dispose();
     this.scene.dispose();
     this.o.root.replaceChildren();

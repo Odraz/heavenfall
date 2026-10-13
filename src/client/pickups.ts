@@ -1,10 +1,12 @@
 /** R2 world pickup projection. Only complete snapshots create/remove visible entities. */
 import * as THREE from 'three';
-import { GOLD_HALO, HEAL_MOTE, PICKUP_CAP, PICKUP_KIND_COUNT, PICKUP_NAMES, type PickupRecord } from '../data/pickups';
+import { GOLD_HALO, HEAL_MOTE, PICKUP_CAP, PICKUP_KIND_COUNT, type PickupRecord } from '../data/pickups';
 import type { FloorSync } from '../net/messages';
 import type { Snapshot } from '../net/protocol';
 import type { GameMap } from '../sim/map';
 import type { Atlas } from '../render/atlas';
+import { ITEM_IDS } from '../data/items';
+import { ITEM_ART, PAGE_ART, CHART_ART } from './itemArt';
 
 export class PickupProjection {
   readonly records = new Map<number, { pickup: PickupRecord; tick: number }>();
@@ -46,7 +48,7 @@ export class PickupView {
       transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false }), PICKUP_CAP);
     this.glows.count = 0; this.glows.frustumCulled = false; this.glows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.group.add(this.glows);
-    for (let kind = 0; kind <= 10; kind++) {
+    for (const kind of [...Array.from({ length: 11 }, (_, i) => i), 13, 15]) {
       let geometry: THREE.BufferGeometry;
       let material: THREE.MeshBasicMaterial;
       if (kind <= HEAL_MOTE) {
@@ -59,15 +61,8 @@ export class PickupView {
         material = new THREE.MeshBasicMaterial({ map: atlas.texture, alphaTest: 0.02, transparent: true,
           depthWrite: false, color: kind === 0 ? 0xc5b987 : kind === GOLD_HALO ? 0xdfc584 : 0xffffff });
       } else {
-        const canvas = document.createElement('canvas'); canvas.width = 384; canvas.height = 128;
-        const ctx = canvas.getContext('2d')!;
-        ctx.fillStyle = '#211b25'; ctx.fillRect(0, 0, 384, 128);
-        ctx.strokeStyle = '#d8ae57'; ctx.lineWidth = 5; ctx.strokeRect(3, 3, 378, 122);
-        ctx.fillStyle = '#f8edd0'; ctx.font = '24px serif'; ctx.textAlign = 'center';
-        ctx.fillText(PICKUP_NAMES[kind], 192, 48);
-        ctx.font = '20px sans-serif'; ctx.fillText(kind === 3 ? '40 HP on touch' : 'Effect arrives in R3', 192, 89);
-        const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
-        geometry = new THREE.PlaneGeometry(1.8, 0.6);
+        const texture = new THREE.TextureLoader().load(kind === 15 ? PAGE_ART : kind === 13 ? CHART_ART : ITEM_ART[ITEM_IDS[kind - 3]]); texture.colorSpace = THREE.SRGBColorSpace;
+        geometry = new THREE.PlaneGeometry(0.8, 0.8);
         material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
       }
       const mesh = new THREE.InstancedMesh(geometry, material, PICKUP_CAP);

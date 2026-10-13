@@ -61,7 +61,7 @@ describe('R1.5 client room projection', () => {
   it('identifies generated special-room fixtures at idle, countdown and combat, but not in corridors or fixed dungeons', () => {
     const { model } = make();
     for (const [kind, label] of [
-      ['pardoner', 'The Pardoner · Empty stall (shop arrives in R3)'],
+      ['pardoner', 'The Pardoner · Personal stock · Aim and press F to buy'],
       ['confessional', 'The Confessional · Empty shell (Advocate arrives in R4)'],
       ['boss', 'The Gatekeeper · Inherited fight fixture (authored encounter arrives in R7)'],
     ] as const) {

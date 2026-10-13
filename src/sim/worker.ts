@@ -51,7 +51,8 @@ function validProfile(input: unknown): Profile | undefined {
 }
 function checkpoint(force = false): void {
   if (!sim || !records) return;
-  const shouldSend = force || sim.tick % 30 === 0 || sim.events.some(e => e.event.type === 'roomState');
+  const shouldSend = force || sim.tick % 30 === 0 || sim.events.some(e => e.event.type === 'roomState' || e.event.type === 'inventory');
+  if (sim.tick % 30 === 0) for (const p of sim.players) if (!p.bot) sim.publishInventory(p);
   for (const r of records.records.values()) {
     if (r.closed) continue;
     const p = sim.players.find(p => p.id === r.playerId) ?? sim.retainedPlayers.get(r.playerId)?.player;
@@ -133,7 +134,7 @@ function start(m: Extract<MainToWorker, { t: 'start' }>): void {
   stopLoop();
   const { def, map, floor } = loadRunMap(m);
   sim = new Simulation({
-    dungeon: def, map, props: propDefs(floor), runId: m.runId, players: m.players, seed: m.simSeed, god: !m.progressionEnabled && m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
+    dungeon: def, map, floor, props: propDefs(floor), runId: m.runId, players: m.players, seed: m.simSeed, god: !m.progressionEnabled && m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
     startRoom: m.startRoom, progressionEnabled: m.progressionEnabled,
   });
   runId = m.runId;
@@ -189,6 +190,10 @@ function hello(conn: number, msg: Extract<CtrlMessage, { type: 'hello' }>): void
 
 /** A player's `ctrl` message (the host's own player included). */
 function playerCtrl(playerId: number, msg: CtrlMessage): void {
+  if (msg.type === 'interact') {
+    if (sim && msg.runId === runId) { sim.interact(playerId, msg.requestId, msg.sourceId); checkpoint(true); flushEvents(); }
+    return;
+  }
   if (msg.type === 'admissionReady') {
     const r = records?.ready(playerId, msg.runId, msg.admissionId);
     if (!r) return;

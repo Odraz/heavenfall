@@ -1,5 +1,9 @@
 /** The in-game HUD and screen feedback (§10), plain DOM over the canvas. */
 import { CLASSES, GENERAL_HINTS, type ClassId } from '../data/classes';
+import { ITEMS } from '../data/items';
+import type { InventoryState } from '../net/messages';
+import { ITEM_ART } from './itemArt';
+import { levelForXp, xpForLevel } from '../profile/model';
 import { ABILITIES, WEAPONS } from '../data/weapons';
 import { mouseGlyph } from '../ui/mouseGlyph';
 import { CHAT_MAX } from '../net/lobby';
@@ -84,6 +88,8 @@ interface Fade {
 export class Hud {
   readonly root: HTMLDivElement;
   private readonly hpBar: HTMLDivElement;
+  private readonly xpLine: HTMLDivElement;
+  private readonly itemSlots: Array<{ box: HTMLDivElement; icon: HTMLImageElement; count: HTMLDivElement }>;
   private readonly hpFill: HTMLDivElement;
   private readonly shieldFill: HTMLDivElement;
   private readonly hpText: HTMLDivElement;
@@ -347,6 +353,7 @@ export class Hud {
     this.hpBar = el('div', 'hp-bar', hp);
     this.hpFill = el('div', 'hp-fill', this.hpBar);
     this.shieldFill = el('div', 'shield-fill', this.hpBar);
+    this.xpLine = el('div', 'xp-line', hp);
     this.buff = el('div', 'buff-icon', hp);
     this.buff.hidden = true;
     const buffImg = el('img', '', this.buff);
@@ -360,6 +367,10 @@ export class Hud {
     this.buff.appendChild(buffSvg);
 
     const abil = el('div', 'abilities', this.root);
+    this.itemSlots = [1, 2].map(key => {
+      const box = el('div', 'ability item-slot ready', abil), icon = el('img', 'ability-icon', box), count = el('div', 'item-count', box);
+      icon.hidden = true; el('div', 'ability-key', box).textContent = String(key); return { box, icon, count };
+    });
     this.abilities = (['Q', 'E'] as const).map((key) => {
       const box = el('div', 'ability', abil);
       const icon = el('img', 'ability-icon', box);
@@ -436,6 +447,17 @@ export class Hud {
     this.roomMessage = el('div', 'room-message', this.root);
     this.roomMessage.hidden = true;
     this.result = el('div', 'result-text', this.root);
+  }
+
+  setInventory(state: InventoryState): void {
+    this.itemSlots.forEach((slot, i) => {
+      const stack = state.inventory[i]; slot.icon.hidden = !stack; slot.count.textContent = stack ? String(stack.count) : '';
+      slot.box.title = stack ? ITEMS[stack.item].name : 'Empty'; slot.box.setAttribute('aria-label', `Item ${i + 1}: ${stack ? `${ITEMS[stack.item].name} ×${stack.count}` : 'empty'}`);
+      if (stack) slot.icon.src = ITEM_ART[stack.item];
+    });
+    const level = levelForXp(state.xp), lo = xpForLevel(level), hi = level === 10 ? lo + 10000 : xpForLevel(level + 1);
+    this.xpLine.textContent = `Level ${level} · ${state.xp} XP${level > 1 ? ' · unspent points' : ''}`;
+    this.xpLine.style.background = `linear-gradient(to right, #83709a ${Math.min(100, 100 * (state.xp - lo) / (hi - lo))}%, #241e29 0)`;
   }
 
   setWallet(value: number): void { this.wallet.textContent = `Halos ${value}`; }

@@ -5,6 +5,8 @@ import { BAND, SLOT } from '../gen/transform';
 import { PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN } from '../net/protocol';
 import { drawMapIcon, ICON_PATHS, roomIcon, type MapIcon } from './mapIcons';
 import type { ClientRooms } from './rooms';
+import { rewardLabel } from '../gen/rewards';
+import { drawRewardIcon } from './rewardIcon';
 
 export interface MapPlayer { id: number; name: string; classId: ClassId; x: number; y: number; yaw: number }
 const CLASS_COLORS: Record<ClassId, string> = { fallen: '#e05a42', heretic: '#f0c76a', binder: '#85b6e6', betrayer: '#b38bd4' };
@@ -61,7 +63,7 @@ export class MapView {
     this.lastDraw = now;
     this.draw(this.mini, 28, 2, now, players, ownRoom, false);
     if (this.open) this.draw(this.plate, 84, 0, now, players, ownRoom, true);
-    const summary = this.model.states.flatMap((r, i) => r.knowledge ? [`${i}: ${this.model.map.rooms[i].name} — ${mapState(r.knowledge, r.phase)}`] : []);
+    const summary = this.model.states.flatMap((r, i) => r.knowledge ? [`${i}: ${this.model.map.rooms[i].name} — ${mapState(r.knowledge, r.phase)}${this.floor && this.model.map.rooms[i].kind === 'combat' ? ` · ${rewardLabel(this.floor.rewards[i])}` : ''}`] : []);
     const text = summary.join('\n');
     if (text !== this.lastSummary) {
       this.lastSummary = text;
@@ -117,6 +119,7 @@ export class MapView {
       const room = this.model.map.rooms[i], size = full ? 40 : 16;
       drawMapIcon(ctx, roomIcon(room, i === floor.reliquary), x + w / 2, y + h / 2, size, st.phase === PHASE_CLEARED);
       if (room.secondary && i !== floor.reliquary) drawMapIcon(ctx, room.secondary, x + w - size / 4, y + h - size / 4, size / 2, st.phase === PHASE_CLEARED);
+      if (room.kind === 'combat') drawRewardIcon(ctx, floor.rewards[i], x + size / 4, y + h - size / 4, size / 2);
     });
     ctx.globalAlpha = 1;
     for (const p of players) {

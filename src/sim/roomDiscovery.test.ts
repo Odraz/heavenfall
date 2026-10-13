@@ -56,7 +56,8 @@ describe('R1.5 party discovery', () => {
     const sync = sim.floorSync('test-run');
     expect(sync).toMatchObject({ type: 'floorSync', runId: 'test-run', tick: sim.tick, revision: sim.stateRevision });
     expect(sync.rooms).toEqual(sim.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })));
-    expect(new TextEncoder().encode(JSON.stringify(sync)).length).toBeLessThan(1024);
+    // The original room-state budget remains; inventory/effect sections have their own bounded schemas.
+    expect(new TextEncoder().encode(JSON.stringify({ type: sync.type, runId: sync.runId, tick: sync.tick, revision: sync.revision, rooms: sync.rooms })).length).toBeLessThan(1024);
     sim.rooms[room].refills = 0;
     expect(sync.rooms[room].refills).toBe(1);
   });

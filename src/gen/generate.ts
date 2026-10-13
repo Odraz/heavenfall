@@ -7,11 +7,15 @@ import { fallbackLayout } from './fallback';
 import { attemptSeed, fmix32, makeRng } from './hash';
 import { layoutFloor, type Layout, type LayoutRoom } from './layout';
 import { stampFloor, type StampedFloor } from './stamp';
+import { clearRewards, shopStock, type ClearReward } from './rewards';
+import type { ItemId } from '../data/items';
 
 export const MAX_ATTEMPTS = 200;
 
 /** The generated floor's record (rogue r01.md): rooms in placement order, the Breach 0 and the boss last. */
 export interface Floor {
+  rewards: ClearReward[];
+  stock: ItemId[];
   heaven: number;
   floor: number;
   seed: number;
@@ -49,6 +53,7 @@ export function roomCount(seed: number, heaven: number): number {
 
 export function floorRecord(heaven: number, floor: number, seed: number, attempts: number, fallbackUsed: boolean, layout: Layout, a: Assignment, s: StampedFloor): Floor {
   return {
+    rewards: clearRewards(seed, layout), stock: shopStock(seed),
     heaven,
     floor,
     seed,

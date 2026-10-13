@@ -18,7 +18,7 @@ it('every generated leaf glyph faces its owner and maps to the destination kind/
 
 it('batches the floor into one draw/upload and keeps each quad facing inward with destination atlas UVs', () => {
   const { map, floor } = loadRunMap({ heaven: 1, floor: 1, seed: PINNED.seed, fixture: null });
-  const ctx = { save() {}, translate() {}, scale() {}, stroke() {}, restore() {} };
+  const ctx = { save() {}, translate() {}, scale() {}, stroke() {}, restore() {}, fillRect() {}, strokeRect() {}, fillText() {} };
   vi.stubGlobal('Path2D', class {});
   vi.stubGlobal('document', { createElement: () => ({ width: 0, height: 0, getContext: () => ctx }) });
   try {

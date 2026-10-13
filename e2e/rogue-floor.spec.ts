@@ -78,7 +78,7 @@ test('empty special rooms identify their later-milestone fixtures', async ({ pag
   await page.setViewportSize({ width: 640, height: 360 });
   await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&room=${floor.pardoner}&class=fallen&god=1`);
   await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
-  await expect(page.locator('.room-message')).toHaveText('The Pardoner · Empty stall (shop arrives in R3)');
+  await expect(page.locator('.room-message')).toHaveText('The Pardoner · Personal stock · Aim and press F to buy');
   const { def } = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
   const [x, y] = def.rooms[floor.confessional].entry[0].cells[0];
   await page.evaluate(([x, y]) => window.__heavenfallTeleport!(x + 0.5, y + 0.5), [x, y]);

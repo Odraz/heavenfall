@@ -1,7 +1,11 @@
 /** The host simulation: pure TypeScript, no three.js or DOM (§2.2). */
 import { CLASSES, type ClassId } from '../data/classes';
-import { copyInventory, emptyInventory, type Inventory, type ItemId } from '../data/items';
+import { copyInventory, emptyInventory, ITEM_IDS, storeItem, type Inventory, type ItemId } from '../data/items';
 import type { Profile } from '../profile/model';
+import { saturatingAdd } from '../profile/model';
+import type { Floor } from '../gen/generate';
+import { ScopedRequests } from '../net/requests';
+import { buyItem, CHART_PRICE, type InteractionResult } from './shop';
 import type { DungeonDef, WaveDef } from '../data/dungeons/types';
 import {
   BLESSED,
@@ -70,7 +74,7 @@ import {
   WEAPONS,
   type AttackSlot,
 } from '../data/weapons';
-import type { FloorSync, GameEvent, PlayerStats } from '../net/messages';
+import type { FloorSync, GameEvent, InventoryState, PlayerStats } from '../net/messages';
 import {
   ALLY_NONE,
   encodeSnapshot,
@@ -160,6 +164,7 @@ export interface SimPlayerInit {
 }
 
 export interface SimOptions {
+  floor?: Floor | null;
   progressionEnabled?: boolean;
   dungeon: DungeonDef;
   /** Real sessions always supply it; standalone simulation fixtures use the zero identity. */
@@ -191,6 +196,10 @@ export interface SimEvent {
 }
 
 export interface SimPlayer {
+  offerKey: string;
+  sold: number;
+  xpBase: number;
+  requests: ScopedRequests<InteractionResult>;
   inventory: Inventory;
   runXp: number;
   xpCorrection: number;
@@ -528,6 +537,11 @@ export function segmentDistance(
 }
 
 export class Simulation {
+  readonly floor: Floor | null;
+  chartRevealed = false;
+  private readonly rewardRecipients = new Map<number, Set<string>>();
+  private readonly pageRecipients = new Map<number, Set<string>>();
+  private nextOfferKey = 1;
   readonly progressionEnabled: boolean;
   readonly retainedPlayers = new Map<number, { player: SimPlayer; tick: number }>();
   readonly eXp = new Float64Array(ENEMY_SLOTS);
@@ -746,6 +760,7 @@ export class Simulation {
   private readonly lastSentTick = new Map<number, number>();
 
   constructor(opts: SimOptions) {
+    this.floor = opts.floor ?? null;
     this.progressionEnabled = opts.progressionEnabled ?? false;
     this.runId = opts.runId ?? '00000000000000000000000000000000';
     this.map = opts.map ?? loadMap(opts.dungeon);
@@ -837,6 +852,7 @@ export class Simulation {
   /** Detached records: subsequent simulation changes cannot mutate a queued checkpoint. */
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
+      progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)),
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
       pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), commanderCasts: this.commanders.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
   }
@@ -988,6 +1004,8 @@ export class Simulation {
       maxHp: cls.hp,
       hp: cls.hp,
       wallet: 0,
+      offerKey: init.profile?.id ?? `disposable:${this.nextOfferKey++}`,
+      sold: 0, xpBase: init.profile?.characters[init.classId].xp ?? 0, requests: new ScopedRequests(),
       inventory: init.bot ? emptyInventory() : copyInventory(init.profile?.inventory ?? emptyInventory()),
       runXp: 0, xpCorrection: 0, itemsTried: [],
       itemReadyTick: 0,
@@ -1457,6 +1475,7 @@ export class Simulation {
   }
 
   private startRoom(ai: number): void {
+    this.rewardRecipients.set(ai, new Set(this.players.filter(p => p.connected && !p.bot).map(p => p.offerKey)));
     const a = this.map.rooms[ai];
     const st = this.rooms[ai];
     st.phase = PHASE_COMBAT;
@@ -1577,6 +1596,7 @@ export class Simulation {
       if (!allWavesStarted || st.queue.length > 0 || st.squad || st.alive > 0) return;
       st.phase = PHASE_CLEARED;
       this.awardXp(100);
+      this.clearReward(ai);
       for (const { player } of this.retainedPlayers.values()) if (player.dead) {
         player.dead = false; player.hp = player.maxHp * 0.5; player.revive = 0; player.shield = 0;
       }
@@ -2268,9 +2288,22 @@ export class Simulation {
       this.halosCredited += drop.value;
       for (const human of this.players) if (human.connected && !human.bot) human.wallet += drop.value;
     } else if (drop.kind === HEAL_MOTE) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.08);
-    else if (drop.kind === ITEM_FIRST && this.tick >= p.itemReadyTick && p.hp < p.maxHp && !p.bot) {
-      p.hp = Math.min(p.maxHp, p.hp + 40); p.itemReadyTick = this.tick + TICK_HZ;
-    } else return false; // R3 owns other item effects and inventory storage.
+    else if (drop.kind >= ITEM_FIRST && drop.kind < ITEM_FIRST + ITEM_IDS.length && !p.bot) {
+      const item = ITEM_IDS[drop.kind - ITEM_FIRST];
+      if (item === 'balm' && this.tick >= p.itemReadyTick && p.hp < p.maxHp) {
+        p.hp = Math.min(p.maxHp, p.hp + 40); p.itemReadyTick = this.tick + TICK_HZ;
+        if (!p.itemsTried.includes(item)) p.itemsTried.push(item);
+      } else if (!storeItem(p.inventory, item)) return false;
+      this.publishInventory(p);
+    } else if (drop.kind === 13 && !p.bot) {
+      this.revealChart();
+    } else if (drop.kind === 15 && !p.bot) {
+      const recipients = this.pageRecipients.get(drop.id);
+      if (!recipients?.delete(p.offerKey)) return false;
+      p.wallet += 6; this.publishInventory(p);
+      if (recipients.size) return false; // A page retains other humans' personal entitlements.
+      this.pageRecipients.delete(drop.id);
+    } else return false;
     this.emit('all', { type: 'pickupCollected', id: drop.id, kind: drop.kind, playerId: p.id, x: drop.x, y: drop.y, z: this.pickups.floor(drop.x, drop.y) });
     return true;
   }
@@ -2280,6 +2313,43 @@ export class Simulation {
       const adjusted = amount - p.xpCorrection, sum = p.runXp + adjusted;
       p.xpCorrection = (sum - p.runXp) - adjusted; p.runXp = sum;
     }
+  }
+
+  inventoryState(p: SimPlayer): InventoryState {
+    return { playerId: p.id, inventory: copyInventory(p.inventory), wallet: p.wallet, sold: p.sold, chart: this.chartRevealed,
+      nextRequestId: p.requests.next, itemReadyTick: p.itemReadyTick, xp: saturatingAdd(p.xpBase, Math.floor(p.runXp)), runXp: Math.floor(p.runXp) };
+  }
+  publishInventory(p: SimPlayer): void { this.emit(p.id, { type: 'inventory', state: this.inventoryState(p) }); }
+  /** Accepted eye/range/aim/LOS, evaluated again at commit rather than trusting the visible card. */
+  interact(playerId: number, requestId: number, sourceId: number): void {
+    const p = this.playerById(playerId); if (!p || p.bot) return;
+    const result = p.requests.execute(requestId, `shop:${sourceId}`, () => {
+      const point = this.floor && this.map.rooms[this.floor.pardoner].points?.pedestals?.[sourceId];
+      if (!point || !Number.isInteger(sourceId) || !p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
+      const x = point[0] + 0.5, y = point[1] + 0.5, z = this.map.floor[point[1] * this.map.w + point[0]] + 1;
+      const dx = x - p.x, dy = y - p.y, dz = z - p.z - PLAYER_EYE, d = Math.hypot(dx, dy, dz), aim = aimDir(p.yaw, p.pitch);
+      if (d > 2 || this.pickups.roomAt(p.x, p.y) !== this.floor!.pardoner || !lineOfSight(this.map, p.x, p.y, p.z + PLAYER_EYE, x, y, z) || d > 0.01 && (dx * aim[0] + dy * aim[1] + dz * aim[2]) / d < 0.8) return { accepted: false, reason: 'Look at a pedestal within 2 m' };
+      if (sourceId < 4) return buyItem(p, this.floor!.stock, sourceId);
+      if (this.chartRevealed) return { accepted: false, reason: 'Chart already revealed' };
+      if (p.wallet < CHART_PRICE) return { accepted: false, reason: 'Not enough halos' };
+      p.wallet -= CHART_PRICE; this.revealChart();
+      return { accepted: true, reason: "Pardoner’s Chart revealed the floor" };
+    });
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale interaction; try again' }) });
+    this.publishInventory(p);
+  }
+  private clearReward(room: number): void {
+    const reward = this.floor?.rewards[room], point = this.map.rooms[room].points?.reward;
+    if (!reward || !point || reward.kind === 'nothing') return;
+    const kind = reward.kind === 'gold' ? GOLD_HALO : reward.kind === 'item' ? ITEM_FIRST + ITEM_IDS.indexOf(reward.item) : 15;
+    const drop = this.pickups.drop(kind, room, point[0] + 0.5, point[1] + 0.5, this.tick);
+    if (reward.kind === 'rite' && drop) this.pageRecipients.set(drop.id, new Set(this.rewardRecipients.get(room) ?? []));
+  }
+  private revealChart(): void {
+    if (this.chartRevealed) return;
+    this.chartRevealed = true;
+    this.rooms.forEach((r, i) => { r.knowledge = Math.max(1, r.knowledge); this.roomState(i); });
+    for (const other of this.players) this.publishInventory(other);
   }
   private settleEnemyXp(slot: number): void {
     if (this.eType[slot] === GATEKEEPER) this.awardXp(1500);
@@ -2305,7 +2375,7 @@ export class Simulation {
     const z = p.z + PROP_HEIGHT[p.family] / 2;
     const targets: number[] = [];
     if (p.family === 'loot') {
-      if (p.marked) this.pickups.drop(GOLD_HALO, p.room, p.x, p.y, this.tick);
+      if (p.marked) this.pickups.drop(this.floor ? 13 : GOLD_HALO, p.room, p.x, p.y, this.tick);
       else {
         const combat = ['combat', 'boss'].includes(this.map.rooms[p.room].kind);
         const roll = this.random();

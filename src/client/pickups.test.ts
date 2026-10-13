@@ -11,6 +11,7 @@ import { decodeSnapshot } from '../net/protocol';
 it('keeps overlapping halos visible without additive glare or expiry blinking', () => {
   const context = { fillRect() {}, strokeRect() {}, fillText() {} };
   vi.stubGlobal('document', { createElement: () => ({ getContext: () => context }) });
+  const loading = vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation(() => new THREE.Texture());
   const { map, def } = loadRunMap({ heaven: 1, floor: 1, seed: PINNED.seed, fixture: null });
   const sim = new Simulation({ dungeon: def, map, seed: 1, players: [{ id: 0, name: 'P', classId: 'fallen' }] });
   const texture = new THREE.CanvasTexture({} as HTMLCanvasElement), glow = new THREE.Texture();
@@ -43,7 +44,7 @@ it('keeps overlapping halos visible without additive glare or expiry blinking', 
     sim.pickups.live.length = 0; sim.tick = 600;
     view.update(decodeSnapshot(sim.encodeFor(0)[0])!, camera, 600);
     expect([coin.count, gold.count, mote.count, glows.count]).toEqual([0, 0, 0, 0]);
-  } finally { view.dispose(); texture.dispose(); glow.dispose(); vi.unstubAllGlobals(); }
+  } finally { view.dispose(); texture.dispose(); glow.dispose(); loading.mockRestore(); vi.unstubAllGlobals(); }
 });
 
 it('restores pickup deadlines atomically and ignores pre-checkpoint metadata without removing future drops', () => {

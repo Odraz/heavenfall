@@ -70,7 +70,7 @@ export function roomMessage(model: ClientRooms, ownRoom: number, activeRoom: num
   // Generated-floor placeholders must be identified where players encounter them (r01.md).
   if (!room?.shape) return null;
   switch (room.kind) {
-    case 'pardoner': return 'The Pardoner · Empty stall (shop arrives in R3)';
+    case 'pardoner': return 'The Pardoner · Personal stock · Aim and press F to buy';
     case 'confessional': return 'The Confessional · Empty shell (Advocate arrives in R4)';
     case 'boss': return 'The Gatekeeper · Inherited fight fixture (authored encounter arrives in R7)';
     default: return null;
