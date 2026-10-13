@@ -9,6 +9,8 @@ import type { RunIdentity } from './version';
 import type { Profile } from '../profile/model';
 import type { Admission, ProgressState } from '../profile/lifecycle';
 import type { Inventory } from '../data/items';
+import type { ItemId } from '../data/items';
+import type { ItemEffect } from '../sim/consumables';
 
 /** The host's choice, carried by both welcome and lobby. Fixed maps are development fixtures. */
 export interface LobbyState {
@@ -34,6 +36,7 @@ export interface RoomSync {
   refills: number;
 }
 export interface FloorSync {
+  itemEffects?: ItemEffect[];
   progressionEnabled?: boolean;
   inventories?: InventoryState[];
   type: 'floorSync';
@@ -53,9 +56,14 @@ export interface FloorSync {
 export interface InventoryState {
   playerId: number; inventory: Inventory; wallet: number; sold: number; chart: boolean;
   nextRequestId: number; itemReadyTick: number; xp: number; runXp: number;
+  featherUntil: number; sealUntil: number;
 }
 
 export type GameEvent =
+  | { type: 'itemUsed'; playerId: number; item: ItemId; first: boolean; instance: ItemEffect | null; x: number; y: number; z: number }
+  | { type: 'itemEffectActivated'; effect: ItemEffect }
+  | { type: 'itemEffectEnded'; instanceId: number; reason: string }
+  | { type: 'itemReflected'; playerId: number; projectile: number; x: number; y: number; z: number }
   | { type: 'inventory'; state: InventoryState }
   | { type: 'interactionResult'; requestId: number; accepted: boolean; reason: string }
   | { type: 'spawnWarning'; phase: 'start' | 'cancel'; warning: SpawnWarning }

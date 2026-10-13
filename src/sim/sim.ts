@@ -1,6 +1,7 @@
 /** The host simulation: pure TypeScript, no three.js or DOM (§2.2). */
 import { CLASSES, type ClassId } from '../data/classes';
-import { copyInventory, emptyInventory, ITEM_IDS, storeItem, type Inventory, type ItemId } from '../data/items';
+import { copyInventory, emptyInventory, ITEM_IDS, isItemId, type Inventory, type ItemId } from '../data/items';
+import { Consumables } from './consumables';
 import type { Profile } from '../profile/model';
 import { saturatingAdd } from '../profile/model';
 import type { Floor } from '../gen/generate';
@@ -215,6 +216,10 @@ export interface SimPlayer {
   hp: number;
   wallet: number;
   itemReadyTick: number;
+  featherUntil: number;
+  sealUntil: number;
+  itemPresses: [number, number];
+  pendingItems: [boolean, boolean];
   shield: number;
   /** Tick at which the shield expires. */
   shieldUntil: number;
@@ -539,6 +544,7 @@ export function segmentDistance(
 export class Simulation {
   readonly floor: Floor | null;
   chartRevealed = false;
+  readonly items = new Consumables(this);
   private readonly rewardRecipients = new Map<number, Set<string>>();
   private readonly pageRecipients = new Map<number, Set<string>>();
   private nextOfferKey = 1;
@@ -700,6 +706,11 @@ export class Simulation {
   private readonly pMaxDist = new Float64Array(PROJECTILE_SLOTS);
   /** Player index for player projectiles, -1 for enemy projectiles. */
   private readonly pOwner = new Int8Array(PROJECTILE_SLOTS);
+  readonly pReflected = new Uint8Array(PROJECTILE_SLOTS);
+  private readonly pHostileBudget = new Uint8Array(PROJECTILE_SLOTS);
+  private readonly pOrigin = new Float64Array(PROJECTILE_SLOTS * 3);
+  private readonly pRoom = new Uint8Array(PROJECTILE_SLOTS);
+  private readonly pReflectOwner = new Map<number, SimPlayer>();
   private readonly pFreedTick = new Int32Array(PROJECTILE_SLOTS).fill(-SLOT_REUSE_TICKS);
   /** Living projectile slots, oldest first. */
   readonly projectiles: number[] = [];
@@ -852,7 +863,7 @@ export class Simulation {
   /** Detached records: subsequent simulation changes cannot mutate a queued checkpoint. */
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
-      progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)),
+      progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)), itemEffects: this.items.records(),
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
       pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), commanderCasts: this.commanders.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
   }
@@ -881,6 +892,7 @@ export class Simulation {
   private emit(to: number | 'all', event: GameEvent): void {
     this.events.push({ to, tick: this.tick, revision: ++this.stateRevision, event });
   }
+  itemEvent(event: GameEvent): void { this.emit('all', event); }
 
   /** The active room's phase (countdown or combat), PHASE_IDLE when no room is active (rogue game.md §14.3). */
   get activePhase(): number {
@@ -914,6 +926,13 @@ export class Simulation {
     // Inputs sent before the client saw the host's latest teleport are ignored.
     const behind = (p.teleportId - m.lastTeleportId) & 0xffff;
     if (behind !== 0 && behind < 0x8000) return;
+    const initial = p.lastSeq < 0;
+    for (const slot of [0, 1] as const) {
+      const counter = slot === 0 ? m.item1Presses : m.item2Presses;
+      const delta = (counter - p.itemPresses[slot]) & 255;
+      if (!initial && delta >= 1 && delta <= 127 && !p.dead) p.pendingItems[slot] = true;
+      if (initial || delta <= 127) p.itemPresses[slot] = counter;
+    }
     p.lastSeq = m.seq;
     p.yaw = m.yaw;
     p.pitch = m.pitch;
@@ -1007,8 +1026,9 @@ export class Simulation {
       offerKey: init.profile?.id ?? `disposable:${this.nextOfferKey++}`,
       sold: 0, xpBase: init.profile?.characters[init.classId].xp ?? 0, requests: new ScopedRequests(),
       inventory: init.bot ? emptyInventory() : copyInventory(init.profile?.inventory ?? emptyInventory()),
-      runXp: 0, xpCorrection: 0, itemsTried: [],
+      runXp: 0, xpCorrection: 0, itemsTried: init.bot ? [] : (init.profile?.codex.itemsTried ?? []).filter(isItemId),
       itemReadyTick: 0,
+      featherUntil: 0, sealUntil: 0, itemPresses: [0, 0], pendingItems: [false, false],
       shield: 0,
       shieldUntil: 0,
       dead: false,
@@ -1102,7 +1122,7 @@ export class Simulation {
       const old = saved.player, elapsed = (this.tick - saved.tick) / TICK_HZ;
       Object.assign(p, old, { connected: true, x, y, z, lastSeq: -1, lastAcceptMs: this.nowMs,
         cdQ: Math.max(0, old.cdQ - elapsed), cdE: Math.max(0, old.cdE - elapsed),
-        shield: 0, shieldCaster: null, invulUntil: 0, fire: 0, pendingQ: false, pendingE: false,
+        shield: 0, shieldCaster: null, featherUntil: 0, sealUntil: 0, speed: CLASSES[p.classId].speed, pendingItems: [false, false], invulUntil: 0, fire: 0, pendingQ: false, pendingE: false,
         dash: null, landingTick: -1, teleportId: p.teleportId,
         revive: old.dead ? Math.max(0, old.revive - elapsed * REVIVE_DECAY) : 0 });
       this.retainedPlayers.delete(init.id);
@@ -1118,6 +1138,8 @@ export class Simulation {
     const p = this.playerById(playerId);
     if (!p) return;
     p.connected = false;
+    this.items.clearOwner(playerId);
+    p.featherUntil = p.sealUntil = 0; p.shield = 0; p.speed = CLASSES[p.classId].speed;
     if (retain) this.retainedPlayers.set(playerId, { player: p, tick: this.tick });
     this.activeDirector()?.clear(p.index);
     this.players.splice(this.players.indexOf(p), 1);
@@ -1151,6 +1173,7 @@ export class Simulation {
     this.updateFlowFields();
     this.updateSpawning();
     this.updatePlayers();
+    this.items.update();
     this.updateEnemies();
     this.separate(0);
     this.separate(1);
@@ -1159,6 +1182,7 @@ export class Simulation {
     this.updateClouds();
     this.props.update(this.tick, (p) => this.explodeProp(p), (p) => this.emit('all', { type: 'propReady', id: p.id, x: p.x, y: p.y, z: p.z }));
     this.updateHazardDamage();
+    this.items.membership();
     this.updateSouls();
     this.pickups.update(this.tick, this.players, (drop, collector) => this.collectPickup(drop, this.slots[collector.id]!));
     this.recoverEnemies();
@@ -1597,6 +1621,7 @@ export class Simulation {
       st.phase = PHASE_CLEARED;
       this.awardXp(100);
       this.clearReward(ai);
+      this.items.clearCombat(ai);
       for (const { player } of this.retainedPlayers.values()) if (player.dead) {
         player.dead = false; player.hp = player.maxHp * 0.5; player.revive = 0; player.shield = 0;
       }
@@ -2290,10 +2315,7 @@ export class Simulation {
     } else if (drop.kind === HEAL_MOTE) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.08);
     else if (drop.kind >= ITEM_FIRST && drop.kind < ITEM_FIRST + ITEM_IDS.length && !p.bot) {
       const item = ITEM_IDS[drop.kind - ITEM_FIRST];
-      if (item === 'balm' && this.tick >= p.itemReadyTick && p.hp < p.maxHp) {
-        p.hp = Math.min(p.maxHp, p.hp + 40); p.itemReadyTick = this.tick + TICK_HZ;
-        if (!p.itemsTried.includes(item)) p.itemsTried.push(item);
-      } else if (!storeItem(p.inventory, item)) return false;
+      if (!this.items.pickup(p, item)) return false;
       this.publishInventory(p);
     } else if (drop.kind === 13 && !p.bot) {
       this.revealChart();
@@ -2317,7 +2339,7 @@ export class Simulation {
 
   inventoryState(p: SimPlayer): InventoryState {
     return { playerId: p.id, inventory: copyInventory(p.inventory), wallet: p.wallet, sold: p.sold, chart: this.chartRevealed,
-      nextRequestId: p.requests.next, itemReadyTick: p.itemReadyTick, xp: saturatingAdd(p.xpBase, Math.floor(p.runXp)), runXp: Math.floor(p.runXp) };
+      nextRequestId: p.requests.next, itemReadyTick: p.itemReadyTick, featherUntil: p.featherUntil, sealUntil: p.sealUntil, xp: saturatingAdd(p.xpBase, Math.floor(p.runXp)), runXp: Math.floor(p.runXp) };
   }
   publishInventory(p: SimPlayer): void { this.emit(p.id, { type: 'inventory', state: this.inventoryState(p) }); }
   /** Accepted eye/range/aim/LOS, evaluated again at commit rather than trusting the visible card. */
@@ -2438,7 +2460,7 @@ export class Simulation {
       absorbed = Math.min(p.shield, amount);
       p.shield -= absorbed;
       amount -= absorbed;
-      burst = p.shield <= 0;
+      burst = p.shield <= 0 && p.sealUntil <= this.tick;
     }
     const [x, y, z] = [p.x, p.y, p.z];
     // Intensity (M12 §2.3): the shield absorbed plus the HP lost, counted down to 0 only.
@@ -2477,6 +2499,7 @@ export class Simulation {
     this.activeDirector()?.died(p.index);
     p.dead = true;
     p.deaths++;
+    p.featherUntil = p.sealUntil = 0; p.speed = CLASSES[p.classId].speed; p.pendingItems = [false, false];
     p.hp = 0;
     p.shield = 0;
     // The soul (M8 §4.1): its ground point is the feet, dropped to the ground under them.
@@ -2508,6 +2531,7 @@ export class Simulation {
     p.shield = amount;
     p.shieldUntil = this.tick + ticks(seconds);
     p.shieldCaster = caster;
+    p.sealUntil = 0;
   }
 
   // ------------------------------------------------------------------ status effects (§5.6)
@@ -2572,6 +2596,13 @@ export class Simulation {
     this.eKbFrom[slot] = this.tick;
     this.eKbUntil[slot] = this.tick + ticks(seconds);
   }
+  /** Item control is a real 0.4-second flight; its hit cylinder follows gravity, not client VFX. */
+  itemLaunch(slot: number, x: number, y: number): void {
+    if (this.immune(slot) || this.isRooted(slot) || !this.eGrounded[slot] || this.tick < this.eKbUntil[slot]) return;
+    this.knockAway(slot, x, y, 2, .4);
+    this.eVz[slot] = 4; this.eGrounded[slot] = 0;
+    this.commanders.cancel(slot); this.dominions.cancel(slot, this.tick);
+  }
 
   /** Knocks an enemy away from (cx, cy); one exactly there goes along a fixed angle from its slot. */
   private knockAway(slot: number, cx: number, cy: number, dist: number, seconds: number): void {
@@ -2619,6 +2650,8 @@ export class Simulation {
 
   private updatePlayers(): void {
     for (const p of this.players) {
+      p.speed = CLASSES[p.classId].speed + (this.tick < p.featherUntil ? 2 : 0);
+      for (const slot of [0, 1] as const) if (p.pendingItems[slot]) { p.pendingItems[slot] = false; this.items.manual(p, slot); }
       p.cdQ = Math.max(0, p.cdQ - TICK_DT);
       p.cdE = Math.max(0, p.cdE - TICK_DT);
       if (p.shield > 0 && this.tick >= p.shieldUntil) p.shield = 0;
@@ -3251,8 +3284,19 @@ export class Simulation {
 
   // ------------------------------------------------------------------ projectiles (§5.4)
 
+  itemProjectileCapacity(replacingFlight = false): boolean {
+    const flights = this.items.flights - (replacingFlight ? 1 : 0);
+    return this.projectiles.length + flights < MAX_PROJECTILES && this.projectiles.filter(s => !this.pHostileBudget[s]).length + flights < MAX_PROJECTILES - 64;
+  }
+
   spawnProjectile(kind: number, x: number, y: number, z: number, dx: number, dy: number, dz: number, speed: number, radius: number, damage: number, maxDist: number, owner: number): number {
-    if (this.projectiles.length >= MAX_PROJECTILES) this.removeProjectile(this.projectiles[0]);
+    if (owner >= 0 && !this.itemProjectileCapacity()) return -1;
+    if (this.projectiles.length + this.items.flights >= MAX_PROJECTILES) {
+      // Only a hostile shot may replace the oldest projectile. Reserved item flights survive.
+      const victim = this.projectiles.find(s => !this.pHostileBudget[s]) ?? this.projectiles[0];
+      if (victim === undefined) return -1;
+      this.removeProjectile(victim);
+    }
     let slot = -1;
     if (this.pFree.length > 0 && this.pFreedTick[this.pFree[0]] + SLOT_REUSE_TICKS <= this.tick) slot = this.pFree.shift()!;
     else if (this.pNextFresh < PROJECTILE_SLOTS) slot = this.pNextFresh++;
@@ -3271,6 +3315,8 @@ export class Simulation {
     this.pTraveled[slot] = 0;
     this.pMaxDist[slot] = Math.min(maxDist, PROJECTILE_RANGE);
     this.pOwner[slot] = owner;
+    this.pReflected[slot] = 0; this.pHostileBudget[slot] = owner < 0 ? 1 : 0;
+    this.pOrigin.set([x, y, z], slot * 3); this.pRoom[slot] = this.pickups.roomAt(x, y);
     this.projectiles.push(slot);
     return slot;
   }
@@ -3278,6 +3324,7 @@ export class Simulation {
   removeProjectile(slot: number): void {
     if (!this.pAlive[slot]) return;
     this.pAlive[slot] = 0;
+    this.pReflectOwner.delete(slot);
     const i = this.projectiles.indexOf(slot);
     if (i >= 0) this.projectiles.splice(i, 1);
     this.pFreedTick[slot] = this.tick;
@@ -3292,6 +3339,7 @@ export class Simulation {
 
   /** Moves one projectile as a swept segment against the heightfield and enlarged target cylinders. */
   private updateProjectile(slot: number): void {
+    if (this.pReflected[slot]) { this.updateReflected(slot); return; }
     const x = this.pX[slot];
     const y = this.pY[slot];
     const z = this.pZ[slot];
@@ -3343,6 +3391,19 @@ export class Simulation {
           hitSlot = p.index;
         }
       }
+      const reflection = this.items.reflection(x, y, z, dx, dy, dz, Math.min(len, terrainT, hitT));
+      if (reflection) {
+        const t = reflection.distance, rx = x + dx * t, ry = y + dy * t, rz = z + dz * t;
+        let ax = this.pOrigin[slot * 3] - rx, ay = this.pOrigin[slot * 3 + 1] - ry, az = this.pOrigin[slot * 3 + 2] - rz;
+        let length = Math.hypot(ax, ay, az); if (length < 1e-9) { ax = -dx; ay = -dy; az = -dz; length = 1; }
+        this.pX[slot] = rx; this.pY[slot] = ry; this.pZ[slot] = rz; this.pTraveled[slot] += t;
+        this.pDx[slot] = ax / length; this.pDy[slot] = ay / length; this.pDz[slot] = az / length;
+        this.pReflected[slot] = 1; this.pRoom[slot] = reflection.area.room;
+        const caster = this.playerById(reflection.area.owner);
+        if (caster) { this.pOwner[slot] = caster.index; this.pReflectOwner.set(slot, caster); }
+        this.itemEvent({ type: 'itemReflected', playerId: reflection.area.owner, projectile: slot, x: rx, y: ry, z: rz });
+        this.updateReflected(slot, len - t); return;
+      }
     }
     if (hitSlot >= 0) {
       if (owner >= 0) this.explodeCenser(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT, hitSlot);
@@ -3374,6 +3435,22 @@ export class Simulation {
       return;
     }
     if (nx < 0 || ny < 0 || nx >= this.map.w || ny >= this.map.h || nz > WALL_TOP) this.removeProjectile(slot);
+  }
+
+  private updateReflected(slot: number, distance = this.pSpeed[slot] * TICK_DT): void {
+    const x = this.pX[slot], y = this.pY[slot], z = this.pZ[slot], dx = this.pDx[slot], dy = this.pDy[slot], dz = this.pDz[slot];
+    const remaining = this.pMaxDist[slot] - this.pTraveled[slot], length = Math.min(distance, remaining);
+    const stop = Math.min(raycastTerrain(this.map, x, y, z, dx, dy, dz, length), this.items.roomBound(x, y, dx, dy, length, this.pRoom[slot]));
+    let victim = -1, hit = stop;
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k], d = ENEMIES[this.eType[s]], radius = this.pRadius[slot];
+      const t = rayCylinder(x, y, z, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s] - radius, d.radius + radius, d.height + 2 * radius);
+      if (t >= 0 && t <= hit) { hit = t; victim = s; }
+    }
+    const owner = this.pReflectOwner.get(slot);
+    if (victim >= 0 && owner?.connected) this.damageEnemy(victim, this.pDamage[slot], owner.index, this.pDamage[slot], x, y, false, false);
+    this.pX[slot] += dx * hit; this.pY[slot] += dy * hit; this.pZ[slot] += dz * hit; this.pTraveled[slot] += hit;
+    if (victim >= 0 || stop < length || length >= remaining) this.removeProjectile(slot);
   }
 
   /**
@@ -3812,7 +3889,7 @@ export class Simulation {
 
   private speedOf(slot: number): number {
     const s = ENEMIES[this.eType[slot]].speed;
-    return this.tick < this.eSlowUntil[slot] ? s * SLOW_FACTOR : s;
+    return this.tick < this.eSlowUntil[slot] || this.items.slowed[slot] ? s * SLOW_FACTOR : s;
   }
 
   private updateKnockback(slot: number): void {
@@ -4217,7 +4294,7 @@ export class Simulation {
       let f = 0;
       if (this.isRooted(s)) f |= FLAG_ROOTED;
       if (tick < this.eSilenceUntil[s]) f |= FLAG_SILENCED;
-      if (tick < this.eSlowUntil[s]) f |= FLAG_SLOWED;
+      if (tick < this.eSlowUntil[s] || this.items.slowed[s]) f |= FLAG_SLOWED;
       if (tick < this.eTauntUntil[s]) f |= FLAG_TAUNTED;
       if (tick < this.eStunUntil[s]) f |= FLAG_STUNNED;
       this.baseFlags[k] = f;

@@ -116,6 +116,8 @@ import { propDefs } from '../data/props';
 import { MapView, type MapPlayer } from './mapView';
 import { ShopView } from './shop';
 import type { InventoryState } from '../net/messages';
+import { ItemView } from './itemView';
+import { ITEMS } from '../data/items';
 
 const BENCH_TURN_RATE = 0.3;
 /** A move longer than this in one frame is a teleport: the weapon's sway resets (M11 §3.2, as the bob). */
@@ -337,6 +339,7 @@ export class Game {
   private readonly rooms: ClientRooms;
   private readonly mapView: MapView;
   private readonly shop: ShopView;
+  private readonly itemView = new ItemView();
   private readonly shopHint = document.createElement('div');
   private inventory: InventoryState | null = null;
   private nextRequestId = 1;
@@ -374,6 +377,7 @@ export class Game {
   private dead = false;
   private qPresses = 0;
   private ePresses = 0;
+  private itemPresses = [0, 0];
   /** The mouse buttons as the input's `fire` bits (M9 §10). */
   private fire = 0;
   /** The attack the held buttons pick locally this frame (M9 §2.1). */
@@ -566,6 +570,7 @@ export class Game {
     this.rooms = new ClientRooms(this.map, o.runId);
     this.mapView = new MapView(this.hud.root, this.rooms, o.floor, this.localId);
     this.shop = new ShopView(this.map, o.floor); this.scene.scene.add(this.shop.group);
+    this.scene.scene.add(this.itemView.group);
     this.shopHint.className = 'shop-hint'; this.hud.root.append(this.shopHint);
     this.party = o.singleplayer ? null : new PartyFrames(this.hud.leftColumn, this.hud.ownFrame);
     this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id));
@@ -649,6 +654,9 @@ export class Game {
     else if (code === 'KeyJ' && this.params.dev && this.o.host) this.o.host.killAll(true);
     else if (code === 'KeyG' && this.params.dev && this.o.host) this.o.host.toggleGod();
     else if (this.params.bot) return;
+    else if ((code === 'Digit1' || code === 'Digit2') && !this.dead) {
+      const slot = code === 'Digit1' ? 0 : 1; this.itemPresses[slot] = (this.itemPresses[slot] + 1) & 255;
+    }
     else if (code === 'KeyF' && !this.dead) {
       const sourceId = this.shop.target(this.player.body, this.player.yaw, this.player.pitch);
       if (sourceId >= 0) this.o.transport.sendCtrl({ type: 'interact', runId: this.o.runId, requestId: this.nextRequestId++, sourceId });
@@ -871,8 +879,8 @@ export class Game {
         ePresses: this.ePresses,
         allyTargetId: this.allyTargetId,
         lastTeleportId: this.lastTeleportId,
-        item1Presses: 0,
-        item2Presses: 0,
+        item1Presses: this.itemPresses[0],
+        item2Presses: this.itemPresses[1],
         mapHeld: this.input.mapHeld,
         qHeld: this.input.enabled && !this.input.typing && this.input.isDown('KeyQ'),
         eHeld: this.input.enabled && !this.input.typing && this.input.isDown('KeyE'),
@@ -897,6 +905,7 @@ export class Game {
   /** A `ctrl` message from the host; the game handles its events (§9.2). */
   handleCtrl(msg: CtrlMessage): void {
     if (msg.type === 'floorSync' && !this.disposed) {
+      this.itemView.sync(msg.itemEffects ?? []);
       const inventory = msg.inventories?.find(p => p.playerId === this.localId);
       if (inventory) this.setInventory(inventory);
       this.dominion.sync(msg);
@@ -943,6 +952,15 @@ export class Game {
 
   private onEvent(e: GameEvent, now: number): void {
     switch (e.type) {
+      case 'itemUsed':
+        if (e.instance) this.itemView.state(e.instance);
+        if (e.playerId === this.localId && e.first) this.hud.centerText(`${ITEMS[e.item].name} · ${ITEMS[e.item].rule}`, 3000, now);
+        if (e.item === 'balm') this.particles.healColumn(e.x, e.y, e.z);
+        if (e.item === 'seal') this.vfx.ring(now, e.x, e.y, e.z + 1, 0x7bbdff, 0, 1, 650);
+        break;
+      case 'itemEffectActivated': this.itemView.state(e.effect); break;
+      case 'itemEffectEnded': this.itemView.remove(e.instanceId); break;
+      case 'itemReflected': this.vfx.glow(now, e.x, e.y, e.z, 0xddeeff, .2, .5, 180); break;
       case 'inventory':
         if (e.state.playerId === this.localId) this.setInventory(e.state);
         break;
@@ -2178,6 +2196,10 @@ export class Game {
     this.drawStarPreview();
     this.drawBillboards(now, ents, enemyZ);
     this.pickups.update(this.snaps.newest, this.scene.camera, this.snaps.estimatedTick(now));
+    const itemTick = this.snaps.estimatedTick(simNow);
+    this.itemView.update(itemTick);
+    this.player.speed = CLASSES[this.classId].speed + (!this.dead && itemTick < (this.inventory?.featherUntil ?? 0) ? 2 : 0);
+    this.hud.setItemCooldown(this.inventory ? Math.max(0, this.inventory.itemReadyTick - itemTick) / 30 : 0);
     this.props.update(this.scene.camera, this.snaps.estimatedTick(simNow));
     const dominionTick = this.snaps.estimatedTick(simNow);
     const dominionRings = this.snaps.newest ? this.dominion.rings(this.snaps.newest, dominionTick) : [];
@@ -2627,6 +2649,7 @@ export class Game {
     this.hud.dispose();
     this.mapView.dispose();
     this.shop.dispose();
+    this.itemView.dispose();
     this.bench?.dispose();
     this.scene.dispose();
     this.o.root.replaceChildren();

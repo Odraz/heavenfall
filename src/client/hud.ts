@@ -459,6 +459,12 @@ export class Hud {
     this.xpLine.textContent = `Level ${level} · ${state.xp} XP${level > 1 ? ' · unspent points' : ''}`;
     this.xpLine.style.background = `linear-gradient(to right, #83709a ${Math.min(100, 100 * (state.xp - lo) / (hi - lo))}%, #241e29 0)`;
   }
+  setItemCooldown(seconds: number): void {
+    for (const slot of this.itemSlots) {
+      slot.box.classList.toggle('ready', seconds <= 0);
+      slot.box.style.setProperty('--item-cooldown', `${Math.min(100, seconds * 100)}%`);
+    }
+  }
 
   setWallet(value: number): void { this.wallet.textContent = `Halos ${value}`; }
 

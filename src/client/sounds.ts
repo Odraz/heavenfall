@@ -243,6 +243,13 @@ export class GameSounds {
   /** A game event's sound. `pose` gives a player's position. */
   event(e: GameEvent, pose: (id: number) => SoundPos | undefined): void {
     switch (e.type) {
+      case 'itemUsed':
+        sfx(e.item === 'balm' ? 'motePickup' : e.item === 'seal' ? 'shroud' : e.item === 'feather' ? 'fallingStarLeap' : 'porcelainBreak', { x: e.x, y: e.y }, .55);
+        break;
+      case 'itemEffectActivated':
+        sfx(e.effect.item === 'chain' ? 'chains' : e.effect.item === 'mirror' ? 'shroud' : 'censerBreak', { x: e.effect.x, y: e.effect.y }, .45);
+        break;
+      case 'itemReflected': sfx('goldPickup', { x: e.x, y: e.y }, .5); break;
       case 'crest':
         sfx('crest');
         break;

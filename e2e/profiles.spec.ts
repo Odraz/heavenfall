@@ -70,6 +70,9 @@ test('a persistent guest reconnects to one retained admission and host exit rest
     };
     await join(); await host.getByRole('button', { name: /The Fallen/ }).click(); await guest.getByRole('button', { name: /The Binder/ }).click();
     await host.getByRole('button', { name: 'Start', exact: true }).click(); await guest.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 0);
+    await expect(guest.getByLabel('Item 1: Pilgrim’s Feather ×2', { exact: true })).toBeVisible();
+    await guest.keyboard.press('Digit1');
+    await expect(guest.getByLabel('Item 1: Pilgrim’s Feather ×1', { exact: true })).toBeVisible();
     const first = await guest.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!));
     await guest.close();
     await host.waitForFunction(() => window.__heavenfall.players.length === 1);
@@ -78,9 +81,29 @@ test('a persistent guest reconnects to one retained admission and host exit rest
     await guest.getByRole('button', { name: 'Enter game', exact: true }).click(); await guest.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 0);
     const resumed = await guest.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!));
     expect(resumed.run.runId).toBe(first.run.runId); expect(resumed.run.admissionId).toBe(first.run.admissionId); expect(resumed.stats.runs).toBe(1);
+    await expect(guest.getByLabel('Item 1: Pilgrim’s Feather ×1', { exact: true })).toBeVisible();
     await host.keyboard.press('Escape'); await host.getByRole('button', { name: 'Leave game', exact: true }).click();
     await expect(guest.getByText('Host left the game', { exact: true })).toBeVisible();
     const ended = await guest.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!));
     expect(ended.run).toBeNull(); expect(ended.inventory[0]).toEqual({ item: 'feather', count: 2 }); expect(ended.stats.runs).toBe(1);
   } finally { await guestContext.close(); }
+});
+
+test('both carried keys respect refused use and cooldown while practice leaves the imported profile untouched', async ({ page }) => {
+  const profile = createProfile('Item practice', '3'.repeat(32), 1);
+  profile.inventory = [{ item: 'balm', count: 2 }, { item: 'feather', count: 3 }];
+  await page.goto('/'); await page.getByLabel('Import code').fill(await exportCode(profile, true));
+  await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  const saved = await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'));
+  await page.getByRole('button', { name: 'Practice (disposable)', exact: true }).click();
+  await page.getByRole('button', { name: /The Fallen/ }).click(); await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await expect(page.getByLabel('Item 1: Balm of the Rejected ×2', { exact: true })).toBeVisible();
+  await page.keyboard.press('Digit1'); await page.keyboard.press('Digit2');
+  await expect(page.getByLabel('Item 2: Pilgrim’s Feather ×2', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Item 1: Balm of the Rejected ×2', { exact: true })).toBeVisible();
+  await page.keyboard.press('Digit2'); await page.waitForTimeout(1200);
+  await expect(page.getByLabel('Item 2: Pilgrim’s Feather ×2', { exact: true })).toBeVisible();
+  await page.keyboard.press('Digit2'); await expect(page.getByLabel('Item 2: Pilgrim’s Feather ×1', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'))).toBe(saved);
+  await page.screenshot({ path: test.info().outputPath('r03-item-hud.png') });
 });

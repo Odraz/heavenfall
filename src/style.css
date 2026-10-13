@@ -1797,6 +1797,7 @@ div.weapon-swing {
 .hud.map-open .crosshair { display: none; }
 .xp-line { font: 12px sans-serif; padding: 3px 6px; color: #f0dfad; border-bottom: 2px solid #937649; }
 .item-slot { position: relative; }
+.item-slot:not(.ready)::after { content: ''; position: absolute; inset: 0 0 auto; height: var(--item-cooldown); background: #19151b99; pointer-events: none; }
 .item-count { position: absolute; right: 4px; bottom: 3px; font-weight: bold; text-shadow: 0 1px 3px black; }
 .shop-hint { position: absolute; top: 62%; left: 50%; transform: translateX(-50%); max-width: 70%; padding: 8px; text-align: center; background: #19151bdf; color: #f0dfad; }
 .shop-hint:empty { display: none; }
