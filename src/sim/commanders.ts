@@ -1,5 +1,5 @@
 import { BLESSED, CANTOR, CARRIER, ENEMIES, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
-import { CANTOR_AIM_SPEED, CANTOR_BEAM_TURN_SPEED, CANTOR_BEAM, CANTOR_COOLDOWN, CANTOR_RECOVERY, CANTOR_TELL, CARRIER_COOLDOWN, CARRIER_RECOVERY, CARRIER_SWOOP, CARRIER_GRAB_RADIUS, CARRIER_FLY_THROUGH, CARRIER_MIN_HOLD, COMMANDER_RECORD_CAP, turnToward, type CommanderCast } from '../data/commanders';
+import { CANTOR_AIM_SPEED, CANTOR_BEAM_TURN_SPEED, CANTOR_BEAM, CANTOR_COOLDOWN, CANTOR_RECOVERY, CANTOR_TELL, CARRIER_COOLDOWN, CARRIER_RECOVERY, CARRIER_SWOOP, CARRIER_GRAB_RADIUS, CARRIER_FLY_THROUGH, CARRIER_MIN_HOLD, CARRIER_MIN_FLIGHT, CARRIER_TRACK_TICKS, CARRIER_FLIGHT_HEIGHT, CARRIER_DAMAGE, CARRIER_DAMAGE_INTERVAL, COMMANDER_RECORD_CAP, turnToward, type CommanderCast } from '../data/commanders';
 import { ENEMY_SLOTS, PLAYER_HEIGHT, PLAYER_RADIUS } from './constants';
 import { circleOverlapsCell } from './movement';
 import { lineOfSight, raycastTerrain } from './los';
@@ -88,7 +88,10 @@ export class Commanders {
   }
   remove(slot: number): void { this.cancel(slot); this.active.delete(slot); this.origins.delete(slot); this.carrierChecks.delete(slot); }
   damaged(slot: number, amount: number): void {
-    if (this.active.get(slot)?.phase !== 'carry') return;
+    const c = this.active.get(slot);
+    if (!c || amount <= 0) return;
+    if (c.kind === 'carry' && c.phase === 'active') { this.cancel(slot); return; }
+    if (c.phase !== 'carry') return;
     this.rescueDamage[slot] += amount;
     if (this.rescueDamage[slot] >= this.rescueThreshold[slot] - 1e-6) this.cancel(slot);
   }
@@ -213,15 +216,31 @@ export class Commanders {
       }
     }
     if (c.phase === 'idle') return false;
-    if (c.phase === 'recover') { s.eState[slot] = ST_ATTACKING; return true; }
+    if (c.phase === 'recover') {
+      // A wall can shorten the fly-through, but must not leave a missed dive parked at head height.
+      const ground = s.map.floor[Math.floor(c.y) * s.map.w + Math.floor(c.x)];
+      const z = Math.max(c.z, Math.min(c.z + 6 / 30, ground + CARRIER_FLIGHT_HEIGHT));
+      if (carryPathClear(s.map, c.room, c.x, c.y, c.z, c.x, c.y, z)) s.eZ[slot] = z;
+      s.eState[slot] = ST_ATTACKING; return true;
+    }
     const p = this.target(c);
     if (!p || c.phase === 'carry' && s.isInvulnerable(p)) { this.cancel(slot); return true; }
     if (c.phase === 'active') {
       const o = this.origins.get(slot)!, f = Math.min(1, (s.tick - c.phaseTick) / CARRIER_SWOOP);
-      // Commit to a flight through the marked position, leaving a genuine sidestep possible.
-      const distance = Math.hypot(c.targetX - o.x, c.targetY - o.y), travel = (distance + CARRIER_FLY_THROUGH) * f;
+      // Brief acquisition, then a committed flight: backing away is caught, a late sidestep can evade.
+      if (s.tick - c.phaseTick <= CARRIER_TRACK_TICKS) {
+        c.yaw = turnToward(c.yaw, Math.atan2(p.y - o.y, p.x - o.x), Math.PI / 30);
+        const reach = Math.hypot(p.x - o.x, p.y - o.y);
+        c.targetX = o.x + Math.cos(c.yaw) * reach; c.targetY = o.y + Math.sin(c.yaw) * reach; c.targetZ = p.z;
+      }
+      const distance = Math.hypot(c.targetX - o.x, c.targetY - o.y);
+      const length = Math.max(CARRIER_MIN_FLIGHT, distance + CARRIER_FLY_THROUGH), travel = length * f;
       const x = o.x + Math.cos(c.yaw) * travel, y = o.y + Math.sin(c.yaw) * travel;
-      const z = o.z + (c.targetZ + 2 - o.z) * Math.min(1, travel / Math.max(distance, 1e-9));
+      // Two parabolic wings meet with zero vertical slope at the grab point.
+      const low = c.targetZ + 2, ground = s.map.floor[Math.floor(y) * s.map.w + Math.floor(x)];
+      const high = Math.max(o.z, c.targetZ + CARRIER_FLIGHT_HEIGHT, Number.isFinite(ground) ? ground + CARRIER_FLIGHT_HEIGHT : 0);
+      const z = travel <= distance ? low + (o.z - low) * (1 - travel / Math.max(distance, 1e-9)) ** 2 :
+        low + (high - low) * ((travel - distance) / (length - distance)) ** 2;
       if (!carryPathClear(s.map, c.room, c.x, c.y, c.z, x, y, z)) { this.cancel(slot); return true; }
       s.eX[slot] = x; s.eY[slot] = y; s.eZ[slot] = z; s.eState[slot] = ST_ATTACKING;
       // Sweep the grab along this tick's flight, rather than checking only the final position.
@@ -233,6 +252,7 @@ export class Commanders {
         const drop = this.dropPoint(c, p); c.dropX = drop?.x ?? p.x; c.dropY = drop?.y ?? p.y;
         c.phase = 'carry'; c.phaseTick = s.tick; c.endTick = s.tick + (s.solo ? CARRIER_MIN_HOLD : 105); this.rescueDamage[slot] = 0;
         this.origins.set(slot, { x: p.x, y: p.y, z: p.z });
+        s.cancelPlayerActions(p);
         s.teleport(p, p.x, p.y, p.z, undefined, true);
       } else if (s.tick >= c.endTick) this.cancel(slot);
     } else if (c.phase === 'carry') {
@@ -244,7 +264,7 @@ export class Commanders {
       if (!carryPathClear(s.map, c.room, p.x, p.y, p.z, x, y, z)) { this.cancel(slot); return true; }
       p.x = x; p.y = y; p.z = z; p.moveVx = p.moveVy = 0;
       s.eX[slot] = x; s.eY[slot] = y; s.eZ[slot] = z + PLAYER_HEIGHT; c.yaw = Math.atan2(dy, dx); s.eState[slot] = ST_ATTACKING;
-      if ((s.tick - c.phaseTick) % 15 === 0) s.damagePlayer(p, 2);
+      if ((s.tick - c.phaseTick) % CARRIER_DAMAGE_INTERVAL === 0) s.damagePlayer(p, CARRIER_DAMAGE);
       if (p.dead || s.tick >= c.endTick || climb === 1 && distance <= 0.5 && s.tick - c.phaseTick >= CARRIER_MIN_HOLD) this.cancel(slot);
     }
     return true;

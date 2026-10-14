@@ -150,9 +150,11 @@ export function settingsButton(panel: HTMLElement, buttons: HTMLElement, onProfi
     for (const e of hidden) e.hidden = false;
     hidden = [];
     panel.style.minHeight = '';
+    panel.classList.remove('settings-open');
   };
   open.addEventListener('click', () => {
     panel.style.minHeight = `${panel.offsetHeight}px`;
+    panel.classList.add('settings-open');
     hidden = [...panel.children].filter((e): e is HTMLElement => e instanceof HTMLElement && e !== view && !e.hidden);
     for (const e of hidden) e.hidden = true;
     syncRecorded();

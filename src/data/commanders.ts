@@ -31,7 +31,9 @@ export const CANTOR_TELL = 75, CANTOR_BEAM = 90, CANTOR_RECOVERY = 60, CANTOR_CO
 /** Radians per second. Tracking must leave room to strafe out of an active beam. */
 export const CANTOR_AIM_SPEED = Math.PI / 6, CANTOR_BEAM_TURN_SPEED = Math.PI / 18;
 export const CARRIER_SWOOP = 30, CARRIER_RECOVERY = 45, CARRIER_COOLDOWN = 240;
-export const CARRIER_GRAB_RADIUS = 2.25, CARRIER_FLY_THROUGH = 4, CARRIER_MIN_HOLD = 90;
+export const CARRIER_GRAB_RADIUS = 2.25, CARRIER_FLY_THROUGH = 12, CARRIER_MIN_HOLD = 90;
+export const CARRIER_MIN_FLIGHT = 24, CARRIER_TRACK_TICKS = 6, CARRIER_FLIGHT_HEIGHT = 6;
+export const CARRIER_DAMAGE = 10, CARRIER_DAMAGE_INTERVAL = 15;
 export const COMMANDER_PHASES = ['idle', 'tell', 'active', 'carry', 'recover'] as const;
 export function turnToward(yaw: number, target: number, limit: number): number {
   const delta = Math.atan2(Math.sin(target - yaw), Math.cos(target - yaw));

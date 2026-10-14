@@ -48,13 +48,15 @@ it('rejects invalid family records before admitting a revision', () => {
   expect(validCommanderCasts([cast, { ...cast, slot: 2, castId: 10 }], 110)).toBe(false);
 });
 
-it('carried local movement ignores walking/jumping while look and escape abilities still work', () => {
+it('carried local movement permits looking but blocks walking, jumping and escape abilities until released', () => {
   const map = loadMap(dungeonOf(room(32, 32))), p = new LocalPlayer(10, 10, 6, 9);
   p.carried = true; p.update(map, 0.05, 1, 0, true); expect([p.body.x, p.body.y, p.body.z]).toEqual([10, 10, 6]);
   p.look(0.5, 0.2); expect(p.yaw).toBe(0.5);
-  p.startDash(1, 0); p.update(map, 0.05, 0, 0, false); expect(p.body.x).toBeGreaterThan(10); expect(p.carried).toBe(false);
-  p.carried = true; p.startLeap(20, 20, 0); expect(p.carried).toBe(false);
-  p.carried = true; p.teleport(5, 5, 4); expect(p.carried).toBe(false);
+  p.startDash(1, 0); p.startLeap(20, 20, 0); p.update(map, 0.05, 0, 0, false);
+  expect([p.body.x, p.body.y, p.body.z]).toEqual([10, 10, 6]);
+  expect(p.carried).toBe(true); expect(p.dashing).toBe(false); expect(p.leaping).toBe(false);
+  p.teleport(5, 5, 0); expect(p.carried).toBe(false);
+  p.startDash(1, 0); p.update(map, 0.05, 0, 0, false); expect(p.body.x).toBeGreaterThan(5);
 });
 
 function view(): BotView {

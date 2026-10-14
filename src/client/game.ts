@@ -660,7 +660,7 @@ export class Game {
     else if (code === 'KeyJ' && this.params.dev && this.o.host) this.o.host.killAll(true);
     else if (code === 'KeyG' && this.params.dev && this.o.host) this.o.host.toggleGod();
     else if (this.params.bot) return;
-    else if ((code === 'Digit1' || code === 'Digit2') && !this.dead) {
+    else if ((code === 'Digit1' || code === 'Digit2') && !this.dead && !this.player.carried) {
       const slot = code === 'Digit1' ? 0 : 1; this.itemPresses[slot] = (this.itemPresses[slot] + 1) & 255;
     }
     else if (code === 'KeyF' && !this.dead) {
@@ -671,12 +671,20 @@ export class Game {
     else if (code === 'KeyE') this.pressAbility('E', performance.now());
   }
 
+  /** Discard predictions canceled by the host's grab correction. */
+  private cancelCarriedActions(): void {
+    this.fire = 0;
+    this.starAim.reset(); this.starPreview = null;
+    this.wasLeaping = this.wasDashing = false;
+    this.dashFrom = null;
+  }
+
   /**
    * A press of Q or E: counted for the host (§9.3); movement abilities also run here at once when
    * their displayed cooldown is ready.
    */
   private pressAbility(slot: 'Q' | 'E', now: number): void {
-    if (this.dead || this.over) return;
+    if (this.dead || this.over || this.player.carried) return;
     if (slot === 'Q') {
       this.qPresses = (this.qPresses + 1) & 0xff;
       // Your Blasphemy shakes the screen on its press (M12 §4.5).
@@ -731,6 +739,7 @@ export class Game {
 
   /** Falling Star's leap to a landing point (feet) starts: counted for the host, cooling down locally (M12 §5.2). */
   private leap(now: number, x: number, y: number, z: number, ally: number): void {
+    if (this.player.carried) return;
     this.player.startLeap(x, y, z);
     this.leapAlly = ally;
     this.ePresses = (this.ePresses + 1) & 0xff;
@@ -744,6 +753,7 @@ export class Game {
    */
   private updateStarAim(now: number, fire: number): number {
     const p = this.player;
+    if (p.carried) { this.starAim.reset(); this.starPreview = null; return 0; }
     const step = this.starAim.frame(this.input.isDown('KeyE'), this.input.rightHeld, this.input.releases);
     let landing: Landing | null = null;
     if (this.starAim.aiming || step === 'release') {
@@ -880,7 +890,7 @@ export class Game {
         z: p.body.z,
         yaw: p.yaw,
         pitch: p.pitch,
-        fire: this.fire,
+        fire: p.carried ? 0 : this.fire,
         qPresses: this.qPresses,
         ePresses: this.ePresses,
         allyTargetId: this.allyTargetId,
@@ -888,8 +898,8 @@ export class Game {
         item1Presses: this.itemPresses[0],
         item2Presses: this.itemPresses[1],
         mapHeld: this.input.mapHeld,
-        qHeld: this.input.enabled && !this.input.typing && this.input.isDown('KeyQ'),
-        eHeld: this.input.enabled && !this.input.typing && this.input.isDown('KeyE'),
+        qHeld: !p.carried && this.input.enabled && !this.input.typing && this.input.isDown('KeyQ'),
+        eHeld: !p.carried && this.input.enabled && !this.input.typing && this.input.isDown('KeyE'),
       }),
     );
   }
@@ -1014,6 +1024,7 @@ export class Game {
         if (((e.teleportId - this.lastTeleportId) & 0xffff) >= 0x8000 || e.teleportId === this.lastTeleportId) break;
         this.player.teleport(e.x, e.y, e.z, e.launch);
         this.player.carried = e.carry === true;
+        if (this.player.carried) this.cancelCarriedActions();
         if (e.carry === false) this.player.body.grounded = false;
         this.lastTeleportId = e.teleportId;
         break;
@@ -1349,8 +1360,9 @@ export class Game {
     const beamed = s.players.some((p) => p.beam === this.localId) || !!prev?.players.some((p) => p.beam === this.localId);
     if (me) {
       const correction = me.teleportId ?? 0, forward = (correction - this.lastTeleportId) & 0xffff;
-      if ((me.carrySlot ?? -1) >= 0 && forward < 0x8000 && !this.player.leaping && !this.player.dashing) {
+      if ((me.carrySlot ?? -1) >= 0 && forward < 0x8000) {
         this.player.teleport(me.x, me.y, me.z); this.player.carried = true; this.lastTeleportId = correction;
+        this.cancelCarriedActions();
       } else if (this.player.carried && (me.carrySlot ?? -1) < 0 && forward < 0x8000) {
         this.player.teleport(me.x, me.y, me.z); this.player.body.grounded = false; this.lastTeleportId = correction;
       }
@@ -2084,7 +2096,7 @@ export class Game {
       else p.look(dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY);
     }
     this.input.jumpQueued = false;
-    this.fire = this.dead || this.over || this.input.mapHeld ? 0 : fire;
+    this.fire = this.dead || this.over || p.carried || this.input.mapHeld ? 0 : fire;
     // Neither attack fires during Shadowstep's slash; held buttons resume afterwards (M12 §5.7).
     if (now - this.slashAt < SHADOWSTEP_TIME * 1000) this.fire = 0;
     const bx = p.body.x;

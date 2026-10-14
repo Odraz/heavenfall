@@ -1,9 +1,9 @@
 import type { Page } from '@playwright/test';
 import { expect, state, test } from './fixtures';
 
-async function encounter(page: Page, family: string) {
+async function encounter(page: Page, family: string, invulnerable = false) {
   await page.setViewportSize({ width: 640, height: 360 });
-  await page.goto(`/?dev=1&map=${family}&class=fallen&god=${family === 'carrier' ? 0 : 1}&seed=7&cam=16,23,10,-90,-35`);
+  await page.goto(`/?dev=1&map=${family}&class=fallen&god=${family === 'carrier' && !invulnerable ? 0 : 1}&seed=7&cam=16,23,10,-90,-35`);
   await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
   await page.evaluate(() => window.__heavenfallTeleport!(14.5, 9.5));
   await page.waitForFunction(() => window.__heavenfall.commanders.length > 0, null, { timeout: 45000 });
@@ -69,20 +69,80 @@ for (const family of ['cantor', 'carrier']) test(`${family}: a real PeerJS late 
   } finally { await own.close(); }
 });
 
-test('Carrier rushes without a mark, carries under host authority, and Falling Star frees the victim', async ({ page }) => {
+test('Carrier holds the victim despite movement, shooting and ability presses, then restores controls on release', async ({ page }) => {
   await encounter(page, 'carrier');
+  await page.locator('.game-canvas').click({ position: { x: 300, y: 160 } });
+  await page.waitForFunction(() => document.pointerLockElement !== null);
   await page.waitForFunction(() => window.__heavenfall.commanders.some((c) => c.phase === 'active'), null, { polling: 20, timeout: 45000 });
   const grab = await (await page.waitForFunction(() => window.__heavenfall.commanders.find((c) => c.phase === 'carry'), null, { polling: 20, timeout: 3000 })).jsonValue();
+  const before = (await state(page)).players[0];
   await page.keyboard.down('KeyW');
+  await page.mouse.down();
+  await page.keyboard.press('KeyQ');
+  await page.keyboard.down('KeyE');
+  await page.keyboard.press('Digit1'); await page.keyboard.press('Digit2');
   const carried = await (await page.waitForFunction((z) => {
     const s = window.__heavenfall, c = s.commanders.find((c) => c.phase === 'carry');
     return c && s.self.z > z + 3 ? { self: { ...s.self }, c } : null;
   }, grab!.targetZ, { polling: 20, timeout: 2000 })).jsonValue();
   await page.keyboard.up('KeyW');
   expect(Math.hypot(carried!.self.x - carried!.c.x, carried!.self.y - carried!.c.y)).toBeLessThan(1);
-  await page.keyboard.press('KeyE');
+  await page.waitForFunction(tick => window.__heavenfall.lastSnapshotTick >= tick + 60, grab!.phaseTick);
+  const held = await state(page);
+  expect(held.commanders.find(c => c.castId === grab!.castId)?.phase).toBe('carry');
+  expect(held.star).toBeNull();
+  expect([held.players[0].primaryShots, held.players[0].secondaryShots]).toEqual([before.primaryShots, before.secondaryShots]);
+  await page.mouse.up(); await page.keyboard.up('KeyE');
   await page.waitForFunction(() => window.__heavenfall.commanders.every((c) => c.phase !== 'carry'), null, { timeout: 3000 });
   await page.keyboard.press('KeyG');
+  await page.mouse.down();
+  await page.waitForFunction(shots => window.__heavenfall.players[0].primaryShots > shots, before.primaryShots);
+  await page.mouse.up();
+  await page.keyboard.down('KeyE');
+  await page.waitForFunction(() => window.__heavenfall.star !== null);
+  await page.keyboard.up('KeyE');
   await page.screenshot({ path: test.info().outputPath('carrier-release.png') });
   expect((await state(page)).players[0].dead).toBe(false);
+});
+
+test('Carrier holds the victim above the horde for at least three seconds before dropping', async ({ page }) => {
+  await encounter(page, 'carrier');
+  const grab = await (await page.waitForFunction(() => {
+    const s = window.__heavenfall, c = s.commanders.find(c => c.phase === 'carry');
+    return c ? { c, hp: s.players[0].hp } : null;
+  }, null, { polling: 20, timeout: 45000 })).jsonValue();
+  expect(grab!.c.endTick - grab!.c.phaseTick).toBeGreaterThanOrEqual(90);
+  const held = await (await page.waitForFunction(({ id, tick }) => {
+    const s = window.__heavenfall, c = s.commanders.find(c => c.castId === id);
+    return c && s.lastSnapshotTick >= tick + 60 ? { c, z: s.self.z, hp: s.players[0].hp } : null;
+  }, { id: grab!.c.castId, tick: grab!.c.phaseTick }, { polling: 20, timeout: 5000 })).jsonValue();
+  expect(held!.c.phase).toBe('carry'); expect(held!.z).toBeGreaterThan(grab!.c.targetZ + 3);
+  expect(held!.hp).toBeLessThanOrEqual(grab!.hp - 24 + 1e-6); // Four 10-damage pulses through Fallen's 40% armor.
+  const released = await (await page.waitForFunction(id => window.__heavenfall.commanders.find(c => c.castId === id && c.phase === 'recover'), grab!.c.castId, { polling: 20, timeout: 5000 })).jsonValue();
+  expect(released!.phaseTick - grab!.c.phaseTick).toBeGreaterThanOrEqual(90);
+  expect((await state(page)).players[0].dead).toBe(false);
+});
+
+test('a missed Carrier dive climbs back into the air instead of freezing beside the player', async ({ page }) => {
+  await encounter(page, 'carrier', true);
+  const flight = await (await page.waitForFunction(() => window.__heavenfall.commanders.find(c =>
+    c.kind === 'carry' && c.phase === 'active' && window.__heavenfall.lastSnapshotTick - c.phaseTick <= 6),
+  null, { polling: 20, timeout: 45000 })).jsonValue();
+  const result = await page.evaluate(async id => {
+    const samples: Array<{ x: number; y: number; z: number; phase: string }> = [];
+    const deadline = performance.now() + 5000;
+    while (performance.now() < deadline) {
+      const s = window.__heavenfall, c = s.commanders.find(c => c.castId === id);
+      if (c) {
+        samples.push({ x: c.x, y: c.y, z: c.z, phase: c.phase });
+        if (c.phase === 'recover' && s.lastSnapshotTick - c.phaseTick >= 30) return samples;
+      }
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    }
+    throw new Error('Missed Carrier flight did not complete recovery climb');
+  }, flight!.castId);
+  expect(result.some(c => c.phase === 'carry')).toBe(false);
+  expect(Math.min(...result.map(c => c.z))).toBeLessThan(flight!.z - 0.5);
+  expect(result.at(-1)!.z).toBeGreaterThanOrEqual(5.9);
+  expect(Math.hypot(result.at(-1)!.x - flight!.x, result.at(-1)!.y - flight!.y)).toBeGreaterThan(3);
 });

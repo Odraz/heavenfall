@@ -42,6 +42,7 @@ export class LocalPlayer {
 
   /** Falling Star (M12 §5.2): flies the arc to the landing point (feet) over 0.4 s, ignoring collision. */
   startLeap(tx: number, ty: number, tz: number): void {
+    if (this.carried) return;
     const b = this.body;
     this.leap = { fx: b.x, fy: b.y, fz: b.z, tx, ty, tz, t: 0 };
     this.dash = null;
@@ -51,6 +52,7 @@ export class LocalPlayer {
 
   /** Shadowstep (§6.4): 40 m/s for 0.2 s along the horizontal direction (dx, dy). */
   startDash(dx: number, dy: number): void {
+    if (this.carried) return;
     const len = Math.hypot(dx, dy);
     if (len < 1e-9) return;
     this.dash = { dx: dx / len, dy: dy / len, t: 0 };

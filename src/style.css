@@ -1631,6 +1631,10 @@ div.weapon-swing {
 }
 
 /* Settings keeps the panel's minimum size and grows to contain every control. */
+.panel.settings-open {
+  flex-shrink: 0;
+}
+
 .panel > [hidden] {
   display: none;
 }

@@ -950,9 +950,14 @@ export class Simulation {
       p.lastAcceptMs = nowMs;
       return;
     }
-    const carried = !!this.commanders.carriedBy(p.id);
-    let x = carried ? p.x : m.x;
-    let y = carried ? p.y : m.y;
+    if (this.commanders.carriedBy(p.id)) {
+      // Consume press counters above, but never queue a blocked action for release.
+      this.cancelPlayerActions(p);
+      p.lastAcceptMs = nowMs;
+      return;
+    }
+    let x = m.x;
+    let y = m.y;
     if (p.launchUntilMs === -1) p.launchUntilMs = nowMs + DOMINION_LAUNCH_SECONDS * 1000;
     if (nowMs >= p.speedCheckSkipUntil) {
       const elapsed = Math.max(0, nowMs - p.lastAcceptMs) / 1000;
@@ -967,7 +972,7 @@ export class Simulation {
         y = p.y + (dy / d) * maxD;
       }
     }
-    let z = carried ? p.z : m.z;
+    let z = m.z;
     const g = groundHeight(this.map, x, y, PLAYER_RADIUS, Infinity, false, true);
     if (g !== -Infinity && z < g) z = g;
     // A Shadowstep press starts its path where the Betrayer stood before this input (M12 §5.7).
@@ -2681,18 +2686,27 @@ export class Simulation {
     p.hp = Math.min(p.maxHp, p.hp + fraction * p.maxHp * TICK_DT);
   }
 
+  /** A grab cancels queued actions and unfinished movement attacks without executing them. */
+  cancelPlayerActions(p: SimPlayer): void {
+    p.fire = 0; p.pendingQ = p.pendingE = false;
+    p.pendingItems[0] = p.pendingItems[1] = false;
+    p.dash = null; p.landingTick = -1;
+  }
+
   private updatePlayers(): void {
     for (const p of this.players) {
+      const carried = !!this.commanders.carriedBy(p.id);
+      if (carried) this.cancelPlayerActions(p);
       p.speed = CLASSES[p.classId].speed + (this.tick < p.featherUntil ? 2 : 0);
       for (const slot of [0, 1] as const) if (p.pendingItems[slot]) { p.pendingItems[slot] = false; this.items.manual(p, slot); }
       p.cdQ = Math.max(0, p.cdQ - TICK_DT);
       p.cdE = Math.max(0, p.cdE - TICK_DT);
       if (p.shield > 0 && this.tick >= p.shieldUntil) p.shield = 0;
-      if (p.dead) {
+      if (!p.dead && this.solo) this.regenerate(p);
+      if (p.dead || carried) {
         p.fireTimer = Math.max(0, p.fireTimer - TICK_DT);
         continue;
       }
-      if (this.solo) this.regenerate(p);
       if (p.landingTick >= 0 && this.tick >= p.landingTick) {
         p.landingTick = -1;
         this.fallingStarLanding(p);

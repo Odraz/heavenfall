@@ -43,7 +43,7 @@ export class Consumables {
   }
   use(p: SimPlayer, item: ItemId): boolean {
     const sim = this.sim, tick = sim.tick, def = ITEMS[item];
-    if (p.bot || p.dead || !p.connected || sim.result || tick < p.itemReadyTick || this.nextId > 0xffffffff) return false;
+    if (p.bot || p.dead || !p.connected || sim.commanders.carriedBy(p.id) || sim.result || tick < p.itemReadyTick || this.nextId > 0xffffffff) return false;
     const actionId = this.nextId;
     let effect: Area | undefined;
     if (item === 'balm') {
