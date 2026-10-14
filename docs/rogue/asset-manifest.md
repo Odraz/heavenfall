@@ -315,3 +315,7 @@ Drawn in code by Claude; no image is generated for them.
 | watcher-rims-tethers | coded | yes | R7 | requested | — | — | Watcher red/grey rims, tethers, held player's lift | code | — | — | — |
 | combo-badge | coded | yes | R6 | requested | — | — | combo card: its two relic icons + name | code | — | — | replaced by optional combo-* emblems |
 | talent-card-glyph | coded | yes | R4–R5 | requested | — | — | talent card: tree glyph + name | code | — | — | replaced by optional talent-* icons |
+
+## October 14 R03 transparent runtime follow-up
+
+The eight consumables plus Chart, Rite page and Pardoner now use alpha-enabled assets from `assets/items/` instead of raw chroma-backed source previews. Originals remain in `assets/art-src/`. Built-in imagegen performed background extraction per asset; exact prompts and runtime paths are recorded in [r03-followup.md](r03-followup.md). Renderer alpha is enabled for world pickups and shop sprites. Automated alpha inspection and production screenshot review belong to the follow-up evidence; human aesthetic acceptance remains separate.

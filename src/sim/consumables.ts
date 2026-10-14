@@ -31,10 +31,9 @@ export class Consumables {
   }
   pickup(p: SimPlayer, item: ItemId): boolean {
     if (p.bot || p.dead || !p.connected) return false;
-    const kind = ITEMS[item].kind, valleyArea = (kind === 'placed' || kind === 'thrown') && this.sim.activeRoom === 255;
-    if (!valleyArea && !this.active(p, item) && this.use(p, item)) return true;
-    if (storeItem(p.inventory, item)) return true;
-    return kind === 'self' && this.active(p, item) && this.use(p, item);
+    // Contact never spends a consumable. Keep full-inventory drops in the world so the
+    // player can choose when to use a charge and come back for it.
+    return storeItem(p.inventory, item);
   }
   manual(p: SimPlayer, slot: 0 | 1): void {
     const stack = p.inventory[slot];

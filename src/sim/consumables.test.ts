@@ -19,6 +19,20 @@ function input(p: SimPlayer, seq: number, one: number, two: number): InputMsg {
 const step = (sim: ReturnType<typeof fixture>, count: number) => { for (let i = 0; i < count; i++) sim.step(); };
 
 describe('R03 consumable transactions', () => {
+  it('never auto-activates contacts, including useful healing, active buffs and offensive drops during combat', () => {
+    const sim = fixture(), p = sim.players[0]; p.hp = 20;
+    for (const item of ['balm', 'seal', 'feather', 'venom', 'frost', 'chain', 'mirror', 'plume'] as const) {
+      p.inventory = [null, null]; p.itemReadyTick = 0;
+      expect(sim.items.pickup(p, item)).toBe(true);
+      expect(p.inventory[0]).toEqual({ item, count: 1 });
+      expect(p.hp).toBe(20); expect(p.shield).toBe(0); expect(p.itemReadyTick).toBe(0);
+      expect(sim.items.effects).toHaveLength(0);
+    }
+    p.inventory = [{ item: 'feather', count: 3 }, { item: 'seal', count: 2 }];
+    p.featherUntil = 100; expect(sim.items.pickup(p, 'feather')).toBe(false);
+    expect(p.featherUntil).toBe(100); expect(p.itemsTried).toEqual([]);
+    expect(sim.events.some(e => e.event.type === 'itemUsed')).toBe(false);
+  });
   it('assigns one unique action ID to every successful self or area use, never a rejected use', () => {
     const sim = fixture(), p = sim.players[0];
     expect(sim.items.use(p, 'balm')).toBe(false); expect(sim.items.use(p, 'feather')).toBe(true);
@@ -40,8 +54,8 @@ describe('R03 consumable transactions', () => {
   });
   it('stores useful contacts on cooldown, leaves full stacks, and rejects all bot consumption', () => {
     const sim = fixture(), p = sim.players[0]; p.hp = 20;
-    expect(sim.items.pickup(p, 'balm')).toBe(true); expect(p.hp).toBe(60);
-    expect(sim.items.pickup(p, 'seal')).toBe(true); expect(p.shield).toBe(0); expect(p.inventory[0]?.item).toBe('seal');
+    expect(sim.items.pickup(p, 'balm')).toBe(true); expect(p.hp).toBe(20); expect(p.inventory[0]).toEqual({ item: 'balm', count: 1 });
+    expect(sim.items.pickup(p, 'seal')).toBe(true); expect(p.shield).toBe(0); expect(p.inventory[1]?.item).toBe('seal');
     p.inventory = [{ item: 'balm', count: 3 }, { item: 'seal', count: 2 }]; expect(sim.items.pickup(p, 'feather')).toBe(false);
     p.bot = true; p.itemReadyTick = 0; expect(sim.items.use(p, 'balm')).toBe(false);
   });

@@ -5,8 +5,7 @@ test('menus', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => window.__heavenfall?.screen === 'title');
 
-  await page.getByLabel('Slot 1 name').fill('Tester');
-  await page.getByRole('button', { name: 'New', exact: true }).first().click();
+  await page.getByRole('textbox', { name: 'Player name' }).fill('Tester');
   await page.getByRole('button', { name: 'Singleplayer' }).click();
   await page.waitForFunction(() => window.__heavenfall.screen === 'singleplayerSetup');
   await page.getByRole('button', { name: /The Fallen/ }).click();
@@ -29,6 +28,7 @@ test('menus', async ({ page }) => {
   await expect.poll(async () => (await state(page)).paused).toBe(true);
   await expect(page.getByRole('slider', { name: 'Music' })).toBeHidden();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('button', { name: 'Profile', exact: true })).toHaveCount(0);
   for (const name of ['Master', 'Music', 'SFX']) await expect(page.getByRole('slider', { name })).toBeVisible();
   await page.getByRole('slider', { name: 'Music' }).fill('23');
   await expect(page.getByRole('button', { name: 'Leave game' })).toBeHidden();

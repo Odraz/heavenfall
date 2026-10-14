@@ -5,8 +5,8 @@ import type { Page } from '@playwright/test';
 
 test('accepted progress remains exportable when storage fails and retry saves current memory', async ({ page, context }) => {
   const p = createProfile('Save retry', '9'.repeat(32), 1); p.inventory[0] = { item: 'feather', count: 2 };
-  await page.goto('/'); await page.getByLabel('Import code').fill(await exportCode(p, true));
-  await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.goto('/'); await openProfile(page); await page.getByLabel('Import code').fill(await exportCode(p, true));
+  await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.getByRole('button', { name: 'Singleplayer', exact: true }).click(); await page.getByRole('button', { name: /The Fallen/ }).click();
   await page.getByRole('button', { name: 'Start', exact: true }).click();
   // Admission's first input establishes the counter baseline before a new key edge is sent.
@@ -33,10 +33,10 @@ test('accepted progress remains exportable when storage fails and retry saves cu
 test('profile import, lock exclusion, durable solo stake and abandoned recovery', async ({ page, context }) => {
   const p = createProfile('Disposable', 'd'.repeat(32), 1); p.inventory[0] = { item: 'balm', count: 3 };
   const code = await exportCode(p, true);
-  await page.goto('/'); await page.getByLabel('Import code').fill(code); await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.goto('/'); await openProfile(page); await page.getByLabel('Import code').fill(code); await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click();
   await expect(page.getByText('Profile imported', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  const other = await context.newPage(); await other.goto('/'); await other.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  const other = await context.newPage(); await other.goto('/'); await other.getByRole('button', { name: 'Singleplayer', exact: true }).click();
   await expect(other.getByText('Open in another tab', { exact: true })).toBeVisible(); await other.close();
   await page.getByRole('button', { name: 'Singleplayer', exact: true }).click();
   await page.getByRole('button', { name: /The Fallen/ }).click(); await page.getByRole('button', { name: 'Start', exact: true }).click();
@@ -45,7 +45,7 @@ test('profile import, lock exclusion, durable solo stake and abandoned recovery'
   expect(saved.inventory).toEqual([null, null]); expect(saved.run.carried[0].count).toBe(3);
   expect(saved.run.admissionCommitted).toBe(true); expect(saved.stats.runs).toBe(1);
   // Reload destroys the sole host. Starting another run resolves the unmatched stake as loss.
-  await page.reload(); await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.reload();
   await page.getByRole('button', { name: 'Singleplayer', exact: true }).click();
   await page.getByRole('button', { name: /The Binder/ }).click(); await page.getByRole('button', { name: 'Start', exact: true }).click();
   await page.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 0);
@@ -55,8 +55,8 @@ test('profile import, lock exclusion, durable solo stake and abandoned recovery'
 
 test('a refused durable stake never places a player or spends the stored carry', async ({ page }) => {
   const p = createProfile('Quota fixture', 'e'.repeat(32), 1); p.inventory[0] = { item: 'seal', count: 2 };
-  await page.goto('/'); await page.getByLabel('Import code').fill(await exportCode(p, true)); await page.getByRole('button', { name: 'Import', exact: true }).click();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.goto('/'); await openProfile(page); await page.getByLabel('Import code').fill(await exportCode(p, true)); await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.evaluate(() => {
     const original = Storage.prototype.setItem;
     Storage.prototype.setItem = function(key, value) { if (key === 'heavenfall.profile.1') throw new DOMException('Quota fixture', 'QuotaExceededError'); original.call(this, key, value); };
@@ -86,8 +86,8 @@ test('a persistent guest reconnects to one retained admission and host exit rest
   });
   const prepare = async (page: Page, name: string, id: string): Promise<void> => {
     const p = createProfile(name, id.repeat(32), 1); p.inventory[0] = { item: 'feather', count: 2 };
-    await page.goto('/'); await page.getByLabel('Import code').fill(await exportCode(p, true));
-    await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.goto('/'); await openProfile(page); await page.getByLabel('Import code').fill(await exportCode(p, true));
+    await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Back', exact: true }).click();
     await page.getByRole('button', { name: 'Multiplayer', exact: true }).click();
   };
   try {
@@ -108,7 +108,7 @@ test('a persistent guest reconnects to one retained admission and host exit rest
     const first = await guest.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!));
     await guest.close();
     await host.waitForFunction(() => window.__heavenfall.players.length === 1);
-    guest = await guestContext.newPage(); await guest.goto('/'); await guest.getByRole('button', { name: 'Continue', exact: true }).click();
+    guest = await guestContext.newPage(); await guest.goto('/');
     await guest.getByRole('button', { name: 'Multiplayer', exact: true }).click(); await join();
     await guest.getByRole('button', { name: 'Enter game', exact: true }).click(); await guest.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 0);
     const resumed = await guest.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!));
@@ -132,12 +132,26 @@ test('a persistent guest reconnects to one retained admission and host exit rest
 test('both carried keys respect refused use and cooldown while practice leaves the imported profile untouched', async ({ page }) => {
   const profile = createProfile('Item practice', '3'.repeat(32), 1);
   profile.inventory = [{ item: 'balm', count: 2 }, { item: 'feather', count: 3 }];
-  await page.goto('/'); await page.getByLabel('Import code').fill(await exportCode(profile, true));
-  await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.goto('/'); await openProfile(page); await page.getByLabel('Import code').fill(await exportCode(profile, true));
+  await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Back', exact: true }).click();
   const saved = await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'));
-  await page.getByRole('button', { name: 'Practice (disposable)', exact: true }).click();
-  await page.getByRole('button', { name: /The Fallen/ }).click(); await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await page.getByRole('button', { name: 'Singleplayer', exact: true }).click();
+  await expect(page.locator('.class-level')).toHaveCount(4);
+  const cards = await page.locator('.class-cards').boundingBox(), loadout = await page.locator('.profile-loadout').boundingBox(), dungeon = await page.locator('.dungeon-picker').boundingBox();
+  expect(loadout!.y).toBeGreaterThanOrEqual(cards!.y + cards!.height);
+  expect(dungeon!.y).toBeGreaterThan(loadout!.y + loadout!.height);
+  const weapon = await page.locator('.class-card').first().locator('.class-weapon').last().boundingBox(), powers = await page.locator('.class-card').first().locator('.class-abilities').boundingBox();
+  expect(powers!.y).toBeGreaterThanOrEqual(weapon!.y + weapon!.height);
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await page.screenshot({ path: test.info().outputPath('r03-class-selection.png') });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByRole('button', { name: /The Fallen/ }).click(); await page.getByRole('button', { name: 'Practice (disposable)', exact: true }).click();
+  await page.waitForFunction(() => window.__heavenfall.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0, null, { timeout: 30_000 });
   await expect(page.getByLabel('Item 1: Balm of the Rejected ×2', { exact: true })).toBeVisible();
+  const inventory = await page.locator('.item-slot').first().boundingBox(), abilities = await page.locator('.ability:not(.item-slot)').first().boundingBox();
+  expect(inventory!.y + inventory!.height).toBeLessThan(abilities!.y);
+  const wallet = await page.locator('.halo-wallet').boundingBox(), xp = await page.getByRole('progressbar', { name: 'Class experience' }).boundingBox();
+  expect(wallet!.y).toBeLessThan(60); expect(xp!.y).toBeLessThan(60); expect(wallet!.x + wallet!.width).toBeLessThan(xp!.x);
   await page.keyboard.press('Digit1'); await page.keyboard.press('Digit2');
   await expect(page.getByLabel('Item 2: Pilgrim’s Feather ×2', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Item 1: Balm of the Rejected ×2', { exact: true })).toBeVisible();
@@ -146,4 +160,66 @@ test('both carried keys respect refused use and cooldown while practice leaves t
   await page.keyboard.press('Digit2'); await expect(page.getByLabel('Item 2: Pilgrim’s Feather ×1', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'))).toBe(saved);
   await page.screenshot({ path: test.info().outputPath('r03-item-hud.png') });
+});
+
+async function openProfile(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Profile', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible();
+}
+
+test('title has one editable name and profile Settings safely imports and clears one current save', async ({ page, context }) => {
+  await page.goto('/');
+  await expect(page.getByRole('textbox', { name: 'Player name' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Profile', exact: true })).toBeHidden();
+  await expect(page.getByRole('button', { name: /Continue|New|Change profile|Download|Upload/ })).toHaveCount(0);
+  await page.getByRole('textbox', { name: 'Player name' }).fill('Tester');
+  await page.screenshot({ path: test.info().outputPath('r03-title.png') });
+  await openProfile(page);
+  const saved = await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'));
+  await page.getByLabel('Import code').fill('broken'); await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(page.locator('.message')).not.toBeEmpty();
+  expect(await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'))).toBe(saved);
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.getByRole('button', { name: 'Copy code', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toMatch(/^MG1\./);
+  const p = createProfile('Imported', '7'.repeat(32), 1); p.characters.fallen.xp = 1200;
+  await page.getByLabel('Import code').fill(await exportCode(p, true));
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  expect(await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'))).toBe(saved);
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(page.getByText('Profile imported', { exact: true })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('r03-profile.png') });
+  await page.getByRole('button', { name: 'Clear', exact: true }).click();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!).characters.fallen.xp)).toBe(1200);
+  await page.getByRole('button', { name: 'Confirm clear', exact: true }).click();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!).characters.fallen.xp)).toBe(0);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Player name' })).toHaveValue('Imported');
+  await page.getByRole('textbox', { name: 'Player name' }).fill('Renamed');
+  await page.getByRole('button', { name: 'Singleplayer', exact: true }).click();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!).name)).toBe('Renamed');
+});
+
+test('unreadable progress is preserved until confirmed recovery from title Settings', async ({ page }) => {
+  const original = JSON.stringify({ ...createProfile('Future', '8'.repeat(32), 1), schema: 2 });
+  await page.goto('/');
+  await page.evaluate(raw => localStorage.setItem('heavenfall.profile.1', raw), original);
+  await page.reload();
+  await page.getByLabel('Player name').fill('Recovery');
+  await page.getByRole('button', { name: 'Singleplayer', exact: true }).click();
+  await expect(page.locator('.message')).toContainText('newer version');
+  await openProfile(page);
+  await expect(page.getByRole('button', { name: 'Copy original data', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  expect(await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'))).toBe(original);
+  await openProfile(page);
+  await page.getByRole('button', { name: 'Clear', exact: true }).click();
+  expect(await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'))).toBe(original);
+  await page.getByRole('button', { name: 'Confirm clear', exact: true }).click();
+  await expect(page.getByText('Profile cleared', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1.recovery')!))).toEqual([original, null]);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.getByRole('button', { name: 'Singleplayer', exact: true }).click();
+  await expect(page.getByText('Choose your class', { exact: true })).toBeVisible();
 });

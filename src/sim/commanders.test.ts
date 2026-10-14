@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BLESSED, CANTOR, CARRIER, CHERUB, CHORISTER, DOMINION, ENEMIES } from '../data/enemies';
-import { CANTOR_TELL, CANTOR_BEAM, CANTOR_COOLDOWN, CANTOR_BEAM_TURN_SPEED, hymnalReduction, turnToward, validCommanderCasts } from '../data/commanders';
+import { CANTOR_TELL, CANTOR_BEAM, CANTOR_COOLDOWN, CANTOR_BEAM_TURN_SPEED, CARRIER_MIN_HOLD, CARRIER_SWOOP, CARRIER_FLY_THROUGH, hymnalReduction, turnToward, validCommanderCasts } from '../data/commanders';
 import { newRunIdentity } from '../net/version';
 import { DUNGEONS } from '../data/dungeons';
 import { Simulation } from './sim';
@@ -25,8 +25,9 @@ function advance(sim: Simulation, slot: number, ticks: number) { for (let i = 0;
 function crowd(sim: Simulation, x = 25, y = 9, count = 8) { for (let i = 0; i < count; i++) sim.placeEnemy(BLESSED, x + i % 2, y + Math.floor(i / 2) % 2, 0); }
 function grab() {
   const f = fixture(CARRIER); crowd(f.sim); f.sim.commanders.readyAt[f.slot] = 0;
-  f.sim.commanders.update(f.slot); expect(f.c.phase).toBe('tell');
-  advance(f.sim, f.slot, 45); expect(f.c.phase).toBe('carry'); return f;
+  f.sim.commanders.update(f.slot); expect(f.c.phase).toBe('active');
+  for (let i = 0; i < CARRIER_SWOOP && f.c.phase === 'active'; i++) advance(f.sim, f.slot, 1);
+  expect(f.c.phase).toBe('carry'); return f;
 }
 
 describe('Lectern Cantor authority', () => {
@@ -57,7 +58,7 @@ describe('Lectern Cantor authority', () => {
     expect(validCommanderCasts(sim.commanders.checkpoint(), sim.tick)).toBe(true);
   });
   it('applies frontal reduction before bound, uses area centers, and never reduces world damage', () => {
-    const { sim, slot, p, c } = fixture(); c.yaw = 0;
+    const { sim, slot, p, c } = fixture(); c.yaw = 0; c.phase = 'tell';
     sim.damageEnemy(slot, 100, p.index); expect(sim.eHp[slot]).toBe(1180);
     sim.root(slot, 20); sim.damageEnemy(slot, 100, p.index); expect(sim.eHp[slot]).toBe(1140);
     sim.damageEnemy(slot, 100, p.index, 100, c.x, c.y); expect(sim.eHp[slot]).toBe(940);
@@ -77,7 +78,7 @@ describe('Lectern Cantor authority', () => {
     expect(sim.commanders.readyAt[slot]).toBe(sim.tick + CANTOR_COOLDOWN);
   });
   it('uses the accepted attacker for a melee hit with a separate knockback origin', () => {
-    const { sim, slot, p, c } = fixture(); c.yaw = 0;
+    const { sim, slot, p, c } = fixture(); c.yaw = 0; c.phase = 'tell';
     sim.damageEnemy(slot, 100, p.index, 100, c.x - 0.5, c.y, false, false);
     expect(sim.eHp[slot]).toBe(1180);
   });
@@ -104,31 +105,33 @@ describe('Lectern Cantor authority', () => {
 });
 
 describe('Stray-Carrier authority', () => {
-  it('reports the authoritative crowd rejection without relaxing the eight-Blessed rule', () => {
-    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0;
-    crowd(sim, 25, 9, 7); sim.commanders.update(slot);
-    expect(c.phase).toBe('idle');
-    expect(sim.commanders.diagnostics()[0]).toMatchObject({ targetId: p.id, nearbyBlessed: 7, crowdCount: 7, reason: 'crowd too small' });
-    crowd(sim, 25, 9, 1); sim.map.hazard.fill(1); sim.commanders.update(slot);
-    expect(sim.commanders.diagnostics()[0]).toMatchObject({ crowdCount: 8, reason: 'drop path blocked' });
-    sim.map.hazard.fill(0); sim.commanders.update(slot);
-    expect(c.phase).toBe('tell'); expect(sim.commanders.diagnostics()[0].reason).toBe('ready');
+  it('rushes a visible player even beside a teammate and with no nearby crowd', () => {
+    const { sim, slot, c } = fixture(CARRIER, 2); sim.commanders.readyAt[slot] = 0;
+    sim.commanders.update(slot); expect(c.phase).toBe('active'); expect(c.targetId).toBe(0);
+    advance(sim, slot, 30); expect(c.phase).toBe('carry');
     sim.removeEnemy(slot); expect(sim.commanders.diagnostics()).toEqual([]);
   });
-  it('reports range and teammate rejection before any crowd scan', () => {
-    const { sim, slot, p } = fixture(CARRIER, 2); sim.commanders.readyAt[slot] = 0;
-    sim.commanders.update(slot); expect(sim.commanders.diagnostics()[0].reason).toBe('near teammate');
-    sim.players[1].connected = false; put(sim, p, 40.5, 10.5); sim.commanders.update(slot);
-    expect(sim.commanders.diagnostics()[0]).toMatchObject({ reason: 'out of range', nearbyBlessed: 0 });
-  });
-  it('needs eight grounded Blessed, a stray and a dry collision-clear drop path', () => {
-    const { sim, slot, p, c } = fixture(CARRIER, 2); sim.commanders.readyAt[slot] = 0; crowd(sim);
+  it('requires range and line of sight, and refuses unsafe drop footprints', () => {
+    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0;
+    put(sim, p, 40.5, 10.5); sim.commanders.update(slot); expect(c.phase).toBe('idle');
+    put(sim, p, 20.5, 10.5); crowd(sim);
+    sim.map.solid[10 * sim.map.w + 15] = 1; sim.map.top[10 * sim.map.w + 15] = 20;
     sim.commanders.update(slot); expect(c.phase).toBe('idle');
-    put(sim, sim.players[1], 45.5, 25.5); sim.commanders.update(slot); expect(c.phase).toBe('tell');
-    const sparse = fixture(CARRIER); crowd(sparse.sim, 25, 9, 7); expect(sparse.sim.commanders.dropPoint(sparse.c, sparse.p)).toBeUndefined();
-    sim.map.solid[10 * sim.map.w + 22] = 1;
-    expect(carryPathClear(sim.map, 0, p.x, p.y, 6, 25.5, p.y, 6)).toBe(false);
     sim.map.hazard.fill(1); expect(sim.commanders.dropPoint(c, p)).toBeUndefined();
+    expect(carryPathClear(sim.map, 0, 10, 10, 6, 20, 10, 6)).toBe(false);
+  });
+  it('deals small periodic carry damage, then stops when rescued', () => {
+    const { sim, slot, p, c } = grab(); const hp = p.hp;
+    advance(sim, slot, 14); expect(p.hp).toBe(hp);
+    advance(sim, slot, 1); expect(p.hp).toBe(hp - 2);
+    advance(sim, slot, 15); expect(p.hp).toBe(hp - 4);
+    sim.commanders.cancel(slot); advance(sim, slot, 20);
+    expect(c.phase).toBe('recover'); expect(p.hp).toBe(hp - 4);
+  });
+  it('closed-book recovery exposes the Cantor to full frontal damage', () => {
+    const { sim, slot, p, c } = fixture(); c.yaw = 0; c.phase = 'active';
+    sim.damageEnemy(slot, 100, p.index); expect(sim.eHp[slot]).toBe(1180);
+    c.phase = 'recover'; sim.damageEnemy(slot, 100, p.index); expect(sim.eHp[slot]).toBe(1080);
   });
   it('waits three seconds initially and shoots ordinary arrows between marks', () => {
     const { sim, slot, c } = fixture(CARRIER); crowd(sim);
@@ -144,29 +147,68 @@ describe('Stray-Carrier authority', () => {
     p.hp = p.maxHp = 10000;
     for (let i = 0; i < 300; i++) {
       sim.step();
-      if (c.phase === 'tell') marked = true;
+      if (c.phase === 'active') marked = true;
       if (c.phase === 'carry') {
         expect(marked).toBe(true); expect(sim.eX[slot]).toBeGreaterThan(15); return;
       }
     }
     throw new Error('Carrier stayed at arrow range instead of grabbing the solo target');
   });
-  it('locks the lane after a second and misses a sidestep without dealing grab damage', () => {
+  it('rushes without a mark and misses a sidestep without dealing grab damage', () => {
     const { sim, slot, p, c } = fixture(CARRIER); crowd(sim); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
-    advance(sim, slot, 30); const x = c.targetX; p.y += 2;
+    advance(sim, slot, 15); const x = c.targetX; p.y += 4;
     advance(sim, slot, 15); expect(c.targetX).toBe(x); expect(c.phase).toBe('recover'); expect(p.hp).toBe(120);
+    expect(sim.eX[slot]).toBeCloseTo(x + Math.cos(c.yaw) * CARRIER_FLY_THROUGH);
     expect(sim.commanders.readyAt[slot]).toBe(sim.tick + 240);
+  });
+  it('grabs a modest sidestep while passing the player, before the flight ends', () => {
+    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    p.y += 2;
+    for (let i = 0; i < CARRIER_SWOOP && c.phase === 'active'; i++) advance(sim, slot, 1);
+    expect(c.phase).toBe('carry'); expect(sim.tick).toBeLessThan(CARRIER_SWOOP);
+    expect(p.hp).toBe(120);
+  });
+  it('grabs a player who crosses the flight before its old endpoint check', () => {
+    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    put(sim, p, 15, 10);
+    advance(sim, slot, 10);
+    expect(c.phase).toBe('carry'); expect(sim.tick).toBeLessThan(CARRIER_SWOOP);
+  });
+  it('flies past an invulnerable player without grabbing or damaging them', () => {
+    const { sim, slot, p, c } = fixture(CARRIER); p.invulUntil = 9999;
+    sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot); advance(sim, slot, CARRIER_SWOOP);
+    expect(c.phase).toBe('recover'); expect(sim.eX[slot]).toBeGreaterThan(p.x + 3); expect(p.hp).toBe(120);
+  });
+  it('stops a missed flight before a newly closed wall', () => {
+    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    p.y += 4;
+    for (let y = 1; y < 32; y++) sim.map.solid[y * sim.map.w + 23] = 1;
+    advance(sim, slot, CARRIER_SWOOP);
+    expect(c.phase).toBe('recover'); expect(sim.eX[slot]).toBeLessThanOrEqual(22);
+    expect(p.hp).toBe(120);
+  });
+  for (const party of [1, 2]) it(`holds above a nearby horde for three seconds with periodic damage (party ${party})`, () => {
+    const { sim, slot, p, c } = fixture(CARRIER, party); crowd(sim, p.x, p.y);
+    sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    for (let i = 0; i < CARRIER_SWOOP && c.phase === 'active'; i++) advance(sim, slot, 1);
+    expect(c.phase).toBe('carry'); const hp = p.hp, id = p.teleportId;
+    advance(sim, slot, CARRIER_MIN_HOLD - 1);
+    expect(c.phase).toBe('carry'); expect(p.z).toBeCloseTo(6);
+    expect(Math.hypot(p.x - c.dropX, p.y - c.dropY)).toBeLessThan(0.5);
+    expect(p.hp).toBe(hp - 10); expect(p.teleportId).toBe(id);
+    advance(sim, slot, 1);
+    expect(c.phase).toBe('recover'); expect(p.hp).toBe(hp - 12); expect(p.teleportId).toBe(id + 1);
   });
   it('owns the carried body, ignores movement input, but retains aim and fire', () => {
     const { sim, slot, p } = grab(); advance(sim, slot, 15); expect(p.z).toBeCloseTo(6);
     const pos = [p.x, p.y, p.z]; sim.applyInput(p.id, { ...INPUT_DEFAULTS, seq: 1, x: 40, y: 30, z: 99, yaw: 1, pitch: 0.2, fire: 1, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: p.teleportId }, 1000);
     expect([p.x, p.y, p.z]).toEqual(pos); expect(p.fire).toBe(1); expect(p.yaw).toBe(1);
-    const before = p.x; advance(sim, slot, 1); expect(p.x - before).toBeLessThanOrEqual(3.5 / 30 + 1e-6);
+    const before = p.x; advance(sim, slot, 1); expect(p.x - before).toBeLessThanOrEqual(6 / 30 + 1e-6);
   });
   it('climbs to six metres above ground when it grabs a jumping victim', () => {
     const { sim, slot, p, c } = fixture(CARRIER); p.z = 1; crowd(sim);
     sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
-    advance(sim, slot, 45); expect(c.phase).toBe('carry');
+    advance(sim, slot, 30); expect(c.phase).toBe('carry');
     advance(sim, slot, 15); expect(p.z).toBeCloseTo(6);
   });
   it('releases after accepted rescue damage, once, using a newer acknowledged correction', () => {
@@ -193,7 +235,7 @@ describe('Stray-Carrier authority', () => {
     }
   });
   it('ends at the solo time limit and refuses a newly obstructed path', () => {
-    const a = grab(); advance(a.sim, a.slot, 75); expect(a.c.phase).toBe('recover');
+    const a = grab(); advance(a.sim, a.slot, CARRIER_MIN_HOLD); expect(a.c.phase).toBe('recover');
     const b = grab(); b.sim.map.solid[Math.floor(b.p.y) * b.sim.map.w + Math.floor(b.p.x)] = 1; advance(b.sim, b.slot, 1); expect(b.c.phase).toBe('recover');
   });
   it('round-trips host records and carry corrections through complete snapshots', () => {

@@ -1,3 +1,4 @@
+import { CARRIER_SWOOP } from '../data/commanders';
 import { CommanderProjection } from './commanders';
 import { CommanderView } from './commanderView';
 /** The in-game client: input or bot, local movement, snapshots, interpolation, rendering and feedback. */
@@ -2357,7 +2358,7 @@ export class Game {
           pick.anim = 'cast'; pick.frame = Math.max(0, Math.min(5, Math.floor((this.snaps.estimatedTick(now) - cast.startTick) / (cast.impactTick - cast.startTick) * 6)));
         }
       }
-      const commander = this.commanders.active.get(slot);
+      const commander = this.commanders.sample(slot, this.snaps.estimatedTick(now));
       if (commander && commander.incarnation === this.snaps.newest?.enemyIncarnation[this.snaps.newest.enemySlot.indexOf(slot)]) {
         if (type === CANTOR || commander.phase !== 'idle') this.animator.facing[slot] = commander.yaw;
         if (!stunned && commander.phase !== 'idle') {
@@ -2367,7 +2368,7 @@ export class Game {
             pick.frame = commander.phase === 'tell' ? Math.min(7, Math.floor(age / Math.max(1, commander.endTick - commander.phaseTick) * 8)) : commander.phase === 'active' ? Math.floor(age / 8) % 4 : Math.min(3, Math.floor(age / Math.max(1, commander.endTick - commander.phaseTick) * 4));
           } else if (type === CARRIER) {
             pick.anim = commander.phase === 'tell' ? 'mark' : commander.phase === 'active' ? 'swoop' : commander.phase === 'carry' ? 'carry' : 'fly';
-            pick.frame = commander.phase === 'tell' ? Math.min(5, Math.floor(age / 30 * 6)) : commander.phase === 'active' ? Math.min(3, Math.floor(age / 15 * 4)) : Math.floor(age / 5) % 6;
+            pick.frame = commander.phase === 'tell' ? Math.min(5, Math.floor(age / 30 * 6)) : commander.phase === 'active' ? Math.min(3, Math.floor(age / CARRIER_SWOOP * 4)) : Math.floor(age / 5) % 6;
           }
         }
       }

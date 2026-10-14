@@ -67,18 +67,18 @@ test('generated combat drops are visible in complete snapshots and collected int
   await page.setViewportSize({ width: 640, height: 360 });
   await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&room=${room}&class=betrayer&bot=1&god=1`);
   await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame');
-  await expect(page.getByLabel('Halo wallet')).toHaveText('Halos 0');
+  await expect(page.locator('.halo-wallet')).toHaveText('0');
   await page.waitForFunction(() => window.__heavenfall.pickups.some((p) => p.kind <= 1) || window.__heavenfall.wallet > 0, null, { timeout: 90_000 });
   const coin = (await state(page)).pickups.find((p) => p.kind <= 1);
   if (coin) await page.evaluate(([x, y]) => window.__heavenfallTeleport!(x, y), [coin.x, coin.y]);
   await page.waitForFunction(() => window.__heavenfall.wallet > 0, null, { timeout: 10_000 });
   const s = await state(page);
   expect(s.wallet).toBeGreaterThan(0);
-  await expect(page.getByLabel('Halo wallet')).toHaveText(`Halos ${s.wallet}`);
+  await expect(page.locator('.halo-wallet')).toHaveText(`${s.wallet}`);
   await page.screenshot({ path: test.info().outputPath('r2.1-pickups-wallet.png') });
 });
 
-test('shooting the marked amphora destroys its seed-selected body once and drops a collectible gold halo', async ({ page }) => {
+test('shooting the marked amphora destroys its body once and drops a collectible transparent Chart', async ({ page }) => {
   const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
   const q = propDefs(g.floor).find((p) => p.marked)!;
   // Independent geometry chooses a legal nearby same-floor firing point, avoiding obstacles and leaves.
@@ -96,11 +96,14 @@ test('shooting the marked amphora destroys its seed-selected body once and drops
   await expect.poll(async () => Math.hypot((await state(page)).self.x - x, (await state(page)).self.y - y)).toBeLessThan(0.2);
   expect((await state(page)).brokenProps).not.toContain(q.id);
   await shootProp(page, q.id, test.info().outputPath('r2.2-props-before.png'));
-  await page.waitForFunction(() => window.__heavenfall.pickups.some((p) => p.kind === 1) || window.__heavenfall.wallet === 6);
-  const drop = (await state(page)).pickups.find((p) => p.kind === 1);
-  if (drop) await page.evaluate(([x, y]) => window.__heavenfallTeleport!(x, y), [drop.x, drop.y]);
-  await page.waitForFunction(() => window.__heavenfall.wallet === 6);
-  await expect(page.getByLabel('Halo wallet')).toHaveText('Halos 6');
+  // R03 replaced the marked amphora's R02 gold with a non-expiring Chart.
+  await page.waitForFunction(() => window.__heavenfall.pickups.some((p) => p.kind === 13));
+  const drop = (await state(page)).pickups.find((p) => p.kind === 13)!;
+  await page.screenshot({ path: test.info().outputPath('r03-world-chart.png') });
+  const wallet = (await state(page)).wallet;
+  await page.evaluate(([x, y]) => window.__heavenfallTeleport!(x, y), [drop.x, drop.y]);
+  await page.waitForFunction(id => !window.__heavenfall.pickups.some(p => p.id === id), drop.id);
+  expect((await state(page)).wallet).toBe(wallet);
   expect((await state(page)).brokenProps.filter((id) => id === q.id)).toHaveLength(1);
   await page.screenshot({ path: test.info().outputPath('r2.2-marked-amphora.png') });
 });

@@ -1,5 +1,5 @@
 import { BLESSED, CANTOR, CARRIER, ENEMIES, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
-import { CANTOR_AIM_SPEED, CANTOR_BEAM_TURN_SPEED, CANTOR_BEAM, CANTOR_COOLDOWN, CANTOR_RECOVERY, CANTOR_TELL, CARRIER_COOLDOWN, CARRIER_MARK, CARRIER_RECOVERY, CARRIER_SWOOP, COMMANDER_RECORD_CAP, turnToward, type CommanderCast } from '../data/commanders';
+import { CANTOR_AIM_SPEED, CANTOR_BEAM_TURN_SPEED, CANTOR_BEAM, CANTOR_COOLDOWN, CANTOR_RECOVERY, CANTOR_TELL, CARRIER_COOLDOWN, CARRIER_RECOVERY, CARRIER_SWOOP, CARRIER_GRAB_RADIUS, CARRIER_FLY_THROUGH, CARRIER_MIN_HOLD, COMMANDER_RECORD_CAP, turnToward, type CommanderCast } from '../data/commanders';
 import { ENEMY_SLOTS, PLAYER_HEIGHT, PLAYER_RADIUS } from './constants';
 import { circleOverlapsCell } from './movement';
 import { lineOfSight, raycastTerrain } from './los';
@@ -163,11 +163,6 @@ export class Commanders {
       }
     }
   }
-  private strayDistance(p: SimPlayer): number {
-    let distance = Infinity;
-    for (const other of this.sim.players) if (other !== p && this.sim.livingTargetable(other)) distance = Math.min(distance, Math.hypot(p.x - other.x, p.y - other.y));
-    return distance;
-  }
   /** One enemy pass, row-major ties, then nearest dry footprint to the winning centroid. */
   dropPoint(c: CommanderCast, p: SimPlayer): { x: number; y: number } | undefined {
     const s = this.sim, rect = s.map.rooms[c.room].rect, squares = new Map<number, { count: number; x: number; y: number }>();
@@ -181,7 +176,7 @@ export class Commanders {
       const v = squares.get(key) ?? { count: 0, x: 0, y: 0 }; v.count++; v.x += s.eX[q]; v.y += s.eY[q]; squares.set(key, v);
       if (check) { check.nearbyBlessed++; check.crowdCount = Math.max(check.crowdCount, v.count); }
     }
-    const winner = [...squares.entries()].filter(([, v]) => v.count >= 8).sort((a, b) => b[1].count - a[1].count || a[0] - b[0])[0];
+    const winner = [...squares.entries()].filter(([, v]) => v.count >= 3).sort((a, b) => b[1].count - a[1].count || a[0] - b[0])[0];
     if (!winner) return;
     if (check) check.reason = 'drop path blocked';
     const v = winner[1], cx = v.x / v.count, cy = v.y / v.count;
@@ -204,54 +199,53 @@ export class Commanders {
     const s = this.sim, slot = c.slot;
     const check = this.carrierChecks.get(slot)!;
     if (c.phase === 'idle' && s.tick >= this.readyAt[slot] && s.tick % 15 === slot % 15) {
-      const strays = s.players.filter((p) => this.sees(c, p, 20) && this.strayDistance(p) >= 15 && !this.carriedBy(p.id));
-      strays.sort((a, b) => { const ad = this.strayDistance(a), bd = this.strayDistance(b); return ad === bd ? a.index - b.index : bd - ad; });
-      // Only one crowd scan per check. Diagnostics reuse the exact decision and count.
-      if (!strays.length) {
-        const nearest = s.players.filter((p) => s.livingTargetable(p) && s.roomAt(p.x, p.y) === c.room)
-          .sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
-        const distance = nearest ? Math.hypot(nearest.x - c.x, nearest.y - c.y) : 0;
-        Object.assign(check, { tick: s.tick, targetId: nearest?.id ?? -1, distance, nearbyBlessed: 0, crowdCount: 0,
-          reason: !nearest ? 'no target' : this.strayDistance(nearest) < 15 ? 'near teammate' : distance > 20 ? 'out of range' : this.carriedBy(nearest.id) ? 'already carried' : 'no line of sight' });
+      const targets = s.players.filter(p => this.sees(c, p, 20) && !this.carriedBy(p.id));
+      targets.sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y) || a.index - b.index);
+      const p = targets[0];
+      Object.assign(check, { tick: s.tick, targetId: p?.id ?? -1, distance: p ? Math.hypot(p.x - c.x, p.y - c.y) : 0,
+        nearbyBlessed: 0, crowdCount: 0, reason: p ? 'swoop path blocked' : 'no visible target in range' });
+      if (p && carryPathClear(s.map, c.room, c.x, c.y, c.z, p.x, p.y, p.z + 2)) {
+        this.start(c, p, CARRIER_SWOOP);
+        if (c.targetId !== p.id || c.phaseTick !== s.tick) return false;
+        c.phase = 'active'; c.yaw = Math.atan2(p.y - c.y, p.x - c.x);
+        c.dropX = p.x; c.dropY = p.y;
+        this.origins.set(slot, { x: c.x, y: c.y, z: c.z }); check.reason = 'rushing';
       }
-      const p = strays[0], drop = p && this.dropPoint(c, p);
-      if (p && drop) { this.start(c, p, CARRIER_MARK); c.dropX = drop.x; c.dropY = drop.y; }
     }
     if (c.phase === 'idle') return false;
     if (c.phase === 'recover') { s.eState[slot] = ST_ATTACKING; return true; }
     const p = this.target(c);
     if (!p || c.phase === 'carry' && s.isInvulnerable(p)) { this.cancel(slot); return true; }
-    if (c.phase === 'tell') {
-      c.targetX = p.x; c.targetY = p.y; c.targetZ = p.z;
-      c.yaw = Math.atan2(p.y - c.y, p.x - c.x); s.eState[slot] = ST_WINDUP;
-      if (s.tick >= c.endTick) {
-        const drop = this.strayDistance(p) >= 15 && this.dropPoint(c, p);
-        if (!drop) { if (this.strayDistance(p) < 15) check.reason = 'near teammate'; this.cancel(slot); return true; }
-        if (!carryPathClear(s.map, c.room, c.x, c.y, c.z, p.x, p.y, p.z + 2)) { check.reason = 'swoop path blocked'; this.cancel(slot); return true; }
-        c.dropX = drop.x; c.dropY = drop.y; c.phase = 'active'; c.phaseTick = s.tick; c.endTick = s.tick + CARRIER_SWOOP;
-        this.origins.set(slot, { x: c.x, y: c.y, z: c.z });
-      }
-    } else if (c.phase === 'active') {
+    if (c.phase === 'active') {
       const o = this.origins.get(slot)!, f = Math.min(1, (s.tick - c.phaseTick) / CARRIER_SWOOP);
-      const x = o.x + (c.targetX - o.x) * f, y = o.y + (c.targetY - o.y) * f, z = o.z + (c.targetZ + 2 - o.z) * f;
+      // Commit to a flight through the marked position, leaving a genuine sidestep possible.
+      const distance = Math.hypot(c.targetX - o.x, c.targetY - o.y), travel = (distance + CARRIER_FLY_THROUGH) * f;
+      const x = o.x + Math.cos(c.yaw) * travel, y = o.y + Math.sin(c.yaw) * travel;
+      const z = o.z + (c.targetZ + 2 - o.z) * Math.min(1, travel / Math.max(distance, 1e-9));
       if (!carryPathClear(s.map, c.room, c.x, c.y, c.z, x, y, z)) { this.cancel(slot); return true; }
       s.eX[slot] = x; s.eY[slot] = y; s.eZ[slot] = z; s.eState[slot] = ST_ATTACKING;
-      if (s.tick >= c.endTick) {
-        if (s.isInvulnerable(p) || Math.hypot(p.x - c.targetX, p.y - c.targetY) > 1.5 || Math.abs(p.z - c.targetZ) > 2 || this.strayDistance(p) < 15) { this.cancel(slot); return true; }
-        c.phase = 'carry'; c.phaseTick = s.tick; c.endTick = s.tick + (s.solo ? 75 : 105); this.rescueDamage[slot] = 0;
+      // Sweep the grab along this tick's flight, rather than checking only the final position.
+      const dx = x - c.x, dy = y - c.y;
+      const t = Math.max(0, Math.min(1, ((p.x - c.x) * dx + (p.y - c.y) * dy) / Math.max(dx * dx + dy * dy, 1e-9)));
+      const grabX = c.x + dx * t, grabY = c.y + dy * t, grabZ = c.z + (z - c.z) * t;
+      if (!s.isInvulnerable(p) && !this.carriedBy(p.id) && Math.hypot(p.x - grabX, p.y - grabY) <= CARRIER_GRAB_RADIUS &&
+        Math.abs(p.z + 2 - grabZ) <= 2 && carryPathClear(s.map, c.room, grabX, grabY, grabZ, p.x, p.y, p.z + 2)) {
+        const drop = this.dropPoint(c, p); c.dropX = drop?.x ?? p.x; c.dropY = drop?.y ?? p.y;
+        c.phase = 'carry'; c.phaseTick = s.tick; c.endTick = s.tick + (s.solo ? CARRIER_MIN_HOLD : 105); this.rescueDamage[slot] = 0;
         this.origins.set(slot, { x: p.x, y: p.y, z: p.z });
         s.teleport(p, p.x, p.y, p.z, undefined, true);
-      }
+      } else if (s.tick >= c.endTick) this.cancel(slot);
     } else if (c.phase === 'carry') {
       const o = this.origins.get(slot)!;
       const ground = s.map.floor[Math.floor(p.y) * s.map.w + Math.floor(p.x)];
       const climb = Math.min(1, (s.tick - c.phaseTick) / 15), z = climb < 1 ? o.z + (ground + 6 - o.z) * climb : Math.max(p.z, ground + 6);
-      const dx = c.dropX - p.x, dy = c.dropY - p.y, distance = Math.hypot(dx, dy), step = climb < 1 ? 0 : Math.min(distance, 3.5 / 30);
+      const dx = c.dropX - p.x, dy = c.dropY - p.y, distance = Math.hypot(dx, dy), step = climb < 1 ? 0 : Math.min(distance, 6 / 30);
       const x = p.x + dx / Math.max(distance, 1e-9) * step, y = p.y + dy / Math.max(distance, 1e-9) * step;
       if (!carryPathClear(s.map, c.room, p.x, p.y, p.z, x, y, z)) { this.cancel(slot); return true; }
       p.x = x; p.y = y; p.z = z; p.moveVx = p.moveVy = 0;
       s.eX[slot] = x; s.eY[slot] = y; s.eZ[slot] = z + PLAYER_HEIGHT; c.yaw = Math.atan2(dy, dx); s.eState[slot] = ST_ATTACKING;
-      if (s.tick >= c.endTick || climb === 1 && distance <= 0.5) this.cancel(slot);
+      if ((s.tick - c.phaseTick) % 15 === 0) s.damagePlayer(p, 2);
+      if (p.dead || s.tick >= c.endTick || climb === 1 && distance <= 0.5 && s.tick - c.phaseTick >= CARRIER_MIN_HOLD) this.cancel(slot);
     }
     return true;
   }

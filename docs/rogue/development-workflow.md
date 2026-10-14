@@ -44,6 +44,10 @@ You can ask for the next brief's preparation while you're producing assets. Don'
 
 You don't need every asset before coding starts, or four people for every milestone. Four-human horde evidence and real multiplayer lifecycle evidence are needed for final acceptance; bots help development but don't replace them.
 
+## Playable handoff quality
+
+Tomas's October 14 feedback sets the expectation: deliver coherent, fun-seeking iterations, not feature wiring left for the player to finish. Before handoff, inspect the actual production screens and in-game assets, exercise the changed actions, and fix obvious integration/readability defects. Tests establish correctness; screenshots establish what was inspected; neither establishes human fun acceptance. Keep each requested observation connected to its diagnosis, final behavior and evidence. If a milestone rule undermines player agency, readable threats or replayability, explain the tradeoff and update the owning rule within the authorized iteration rather than following it blindly. Keep later milestone features out of the iteration.
+
 ## Verification policy (applies to every prompt below)
 
 - **Every delivered stage or milestone must be tested** (your project instruction, confirmed 2026-10-12; see [AGENTS.md](../../AGENTS.md)). The AI adds meaningful coverage for changed behavior and explains results in plain words. `npm test` (the existing vitest suite) runs at every stage; the AI updates tests a deliberate change makes obsolete and adds tests for pure logic (generator, transforms, pool validation, profile codec/migration, legality resolver, ledgers). `npm run e2e` runs when a stage changes the session/network flow. Keep performance limits intact and run timing-sensitive tests without competing workers. A blocked or unrun check is reported as such, never as passed.

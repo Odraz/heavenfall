@@ -14,6 +14,19 @@ const cast: CommanderCast = { slot: 1, incarnation: 3, castId: 9, room: 0, kind:
   targetId: 0, yaw: 0, pitch: 0, x: 5, y: 10, z: 4, targetX: 20, targetY: 10, targetZ: 0, dropX: 23, dropY: 10 };
 const sync = (tick: number, revision: number, casts = [cast]): FloorSync => ({ type: 'floorSync', runId: 'run', tick, revision, rooms: [], commanderCasts: casts });
 
+it('interpolates wrapped facing between snapshots without extrapolating or blending new incarnations', () => {
+  const p = new CommanderProjection('run');
+  p.sync(sync(110, 1, [{ ...cast, yaw: Math.PI - .1, pitch: 0 }]));
+  p.sync(sync(113, 2, [{ ...cast, yaw: -Math.PI + .1, pitch: .3 }]));
+  expect(Math.abs(p.sample(1, 114.5)!.yaw)).toBeCloseTo(Math.PI);
+  expect(p.sample(1, 114.5)!.pitch).toBeCloseTo(.15);
+  expect(p.sample(1, 200)!.pitch).toBeCloseTo(.3);
+  expect(p.active.get(1)!.pitch).toBe(.3);
+  p.sync(sync(114, 3, [{ ...cast, incarnation: 4, yaw: 0 }]));
+  expect(p.sample(1, 114)!.yaw).toBe(0);
+  p.sync(sync(115, 4, [])); expect(p.sample(1, 115)).toBeUndefined();
+});
+
 it('rejoin and snapshot replacement cannot rewind a family cast or cross runs', () => {
   const p = new CommanderProjection('run'); expect(p.sync(sync(110, 3))).toBe(true);
   expect(p.active.get(1)).toEqual(cast);

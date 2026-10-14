@@ -118,12 +118,12 @@ describe('R2 pickups', () => {
     const cleanup = sim.placeEnemy(CHORISTER, 5, 5, 0); sim.removeEnemy(cleanup);
     expect(sim.pickups.live.filter((p) => p.kind === HEAL_MOTE)).toHaveLength(4);
   });
-  it('Balm stores at full HP and automatic uses share the one-second cooldown with all items', () => {
+  it('Balm and Seal contacts store without healing or shielding', () => {
     const sim = makeSim(room(20, 20), ['heretic'], { noWaves: true }); const p = sim.players[0]; put(sim, p, 5, 5);
     sim.pickups.drop(ITEM_FIRST, 0, 5, 5, 0); sim.step(); expect(p.inventory[0]).toEqual({ item: 'balm', count: 1 });
     p.hp = 10; sim.pickups.drop(ITEM_FIRST, 0, 5, 5, sim.tick); sim.step();
-    expect(p.hp).toBe(50); expect(sim.pickups.live).toHaveLength(0);
+    expect(p.hp).toBe(10); expect(sim.pickups.live).toHaveLength(0);
     sim.pickups.drop(ITEM_FIRST + 1, 0, 5, 5, sim.tick);
-    for (let i = 0; i < 30; i++) sim.step(); expect(p.hp).toBe(50); expect(p.inventory[1]).toEqual({ item: 'seal', count: 1 });
+    for (let i = 0; i < 30; i++) sim.step(); expect(p.hp).toBe(10); expect(p.inventory[1]).toEqual({ item: 'seal', count: 1 });
   });
 });

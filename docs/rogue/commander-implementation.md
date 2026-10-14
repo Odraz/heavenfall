@@ -1,5 +1,7 @@
 # Cantor and Carrier implementation
 
+**October 14 R03 follow-up supersedes the acquisition and defense rules in this historical report.** Carrier now rushes any nearby visible target without a mark/isolation/crowd prerequisite, deals 2 damage per half-second while carried, and selects a safe crowd drop on grab. Cantor only blocks front damage while warning/singing; its ward and beam interpolate accepted angles. See [R03 follow-up](r03-followup.md) and rooms.md §6 for current rules.
+
 
 
 Implemented from `rooms.md` §§6.1–6.3 and the reference art in commit `77fd9cf`.

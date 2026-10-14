@@ -5,7 +5,6 @@ async function encounter(page: Page, family: string) {
   await page.setViewportSize({ width: 640, height: 360 });
   await page.goto(`/?dev=1&map=${family}&class=fallen&god=${family === 'carrier' ? 0 : 1}&seed=7&cam=16,23,10,-90,-35`);
   await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
-  if (family === 'carrier') await page.keyboard.press('KeyG');
   await page.evaluate(() => window.__heavenfallTeleport!(14.5, 9.5));
   await page.waitForFunction(() => window.__heavenfall.commanders.length > 0, null, { timeout: 45000 });
 }
@@ -59,7 +58,7 @@ for (const family of ['cantor', 'carrier']) test(`${family}: a real PeerJS late 
       console.log(`${family} guest preparation`, await guest.locator('body').innerText(), errors);
       throw error;
     });
-    const cast = await (await host.waitForFunction(() => window.__heavenfall.commanders.find((c) => c.phase === 'tell' && c.endTick - window.__heavenfall.lastSnapshotTick >= 24), null, { polling: 20, timeout: 15000 })).jsonValue();
+    const cast = await (await host.waitForFunction((family) => window.__heavenfall.commanders.find((c) => c.phase === (family === 'cantor' ? 'tell' : 'active') && c.endTick - window.__heavenfall.lastSnapshotTick >= 20), family, { polling: 20, timeout: 15000 })).jsonValue();
     await guest.evaluate(() => window.__heavenfallReady!());
     const restored = await (await guest.waitForFunction((id) => window.__heavenfall.commanders.find((c) => c.castId === id), cast!.castId, { polling: 20, timeout: 3000 })).jsonValue();
     expect([restored!.incarnation, restored!.startTick, restored!.endTick, restored!.kind]).toEqual([cast!.incarnation, cast!.startTick, cast!.endTick, cast!.kind]);
@@ -70,11 +69,9 @@ for (const family of ['cantor', 'carrier']) test(`${family}: a real PeerJS late 
   } finally { await own.close(); }
 });
 
-test('Carrier marks a native crowd, carries under host authority, and Falling Star frees the victim', async ({ page }) => {
+test('Carrier rushes without a mark, carries under host authority, and Falling Star frees the victim', async ({ page }) => {
   await encounter(page, 'carrier');
-  await page.waitForFunction(() => window.__heavenfall.commanders.some((c) => c.kind === 'carry' && c.phase === 'tell'), null, { timeout: 30000 });
   await page.waitForFunction(() => window.__heavenfall.commanders.some((c) => c.phase === 'active'), null, { polling: 20, timeout: 45000 });
-  await page.keyboard.press('KeyG'); // Native developer toggle: make the real grab eligible.
   const grab = await (await page.waitForFunction(() => window.__heavenfall.commanders.find((c) => c.phase === 'carry'), null, { polling: 20, timeout: 3000 })).jsonValue();
   await page.keyboard.down('KeyW');
   const carried = await (await page.waitForFunction((z) => {

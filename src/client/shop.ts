@@ -18,8 +18,8 @@ export class ShopView {
     if (!floor) return;
     const loader = new THREE.TextureLoader();
     const room = map.rooms[floor.pardoner], x = (room.rect.x0 + room.rect.x1 + 1) / 2, y = (room.rect.y0 + room.rect.y1 + 1) / 2;
-    const portrait = loader.load(new URL('../../assets/art-src/npc-pardoner.png', import.meta.url).href); portrait.colorSpace = THREE.SRGBColorSpace;
-    const pardoner = new THREE.Sprite(new THREE.SpriteMaterial({ map: portrait }));
+    const portrait = loader.load(new URL('../../assets/items/npc-pardoner.png', import.meta.url).href); portrait.colorSpace = THREE.SRGBColorSpace;
+    const pardoner = new THREE.Sprite(new THREE.SpriteMaterial({ map: portrait, alphaTest: .05, depthWrite: false }));
     pardoner.position.set(x, map.floor[Math.floor(y + 2) * map.w + Math.floor(x)] + 1.4, y + 2); pardoner.scale.set(1.6, 2.8, 1); this.group.add(pardoner);
     for (const [i, point] of (map.rooms[floor.pardoner].points?.pedestals ?? []).entries()) {
       const p = { x: point[0] + 0.5, y: point[1] + 0.5, z: map.floor[point[1] * map.w + point[0]] + 1 };
@@ -27,7 +27,7 @@ export class ShopView {
       const base = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 0.65, 8), new THREE.MeshStandardMaterial({ color: 0xa28c67 }));
       base.position.set(p.x, p.z - 0.65, p.y); this.group.add(base);
       const texture = loader.load(i === 4 ? CHART_ART : ITEM_ART[floor.stock[i]]); texture.colorSpace = THREE.SRGBColorSpace;
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }));
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, alphaTest: .05, depthWrite: false }));
       sprite.position.set(p.x, p.z, p.y); sprite.scale.set(0.8, 0.8, 1); this.group.add(sprite); this.cards.push(sprite);
     }
   }
@@ -38,7 +38,7 @@ export class ShopView {
     for (const [i, p] of stairPoints(this.map, this.floor.boss).slice(1).entries()) {
       this.points.push({ ...p, z: p.z + 1 });
       const texture = new THREE.TextureLoader().load(ITEM_ART[this.floor.stock[i]]); texture.colorSpace = THREE.SRGBColorSpace;
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture })); sprite.position.set(p.x, p.z + 1, p.y); sprite.scale.set(.8, .8, 1);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, alphaTest: .05, depthWrite: false })); sprite.position.set(p.x, p.z + 1, p.y); sprite.scale.set(.8, .8, 1);
       this.group.add(sprite); this.cards.push(sprite);
     }
   }

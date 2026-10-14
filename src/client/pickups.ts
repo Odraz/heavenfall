@@ -63,7 +63,7 @@ export class PickupView {
       } else {
         const texture = new THREE.TextureLoader().load(kind === 15 ? PAGE_ART : kind === 13 ? CHART_ART : ITEM_ART[ITEM_IDS[kind - 3]]); texture.colorSpace = THREE.SRGBColorSpace;
         geometry = new THREE.PlaneGeometry(0.8, 0.8);
-        material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+        material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, alphaTest: .05, transparent: true, depthWrite: false });
       }
       const mesh = new THREE.InstancedMesh(geometry, material, PICKUP_CAP);
       mesh.count = 0; mesh.frustumCulled = false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

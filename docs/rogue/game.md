@@ -89,7 +89,7 @@ The general hint panel includes `1 / 2: use carried items`, `F: the looked-at sh
 ### 2.1 Screens
 
 ```
-Title ──► Profiles ──► Main ──► Singleplayer ─────────────► Lobby (solo) ──► Loading ──► Floor ──► Results ──► Lobby
+Title / Main ──► Singleplayer ─────────────► Lobby (solo) ──► Loading ──► Floor ──► Results ──► Lobby
                           └──► Multiplayer ──► Host Setup ──► Lobby ─────────┘
                                           └──► Join ───────► Lobby
 ```
@@ -97,15 +97,15 @@ Title ──► Profiles ──► Main ──► Singleplayer ─────�
 | Screen | Contents | Actions |
 |---|---|---|
 | **Title** | Logo, tagline, settings (volumes, screen shake) | `Play` |
-| **Profiles** | Three fixed-size profile cards, one per slot (§13.1): name, the four characters' levels, relics owned `n/12`, heavens cleared. An empty slot shows `Empty`. | Per card: `Continue` (or `New` on an empty slot, asking for a name 1–16 characters), `Export`, `Delete` (two presses within 3 s). Below: `Import code` (a text field and a slot choice) and `Load file`. `Back`. |
-| **Main** | The profile name | `Singleplayer`, `Multiplayer`, `Change profile` |
+| **Profile** | One current browser profile, opened only through title Settings. | `Copy code`, `Import code` with explicit replacement confirmation, `Clear` with confirmation, `Back`. No slots, downloads or file uploads. |
+| **Main** | Editable `Player name` | `Singleplayer`, `Multiplayer`, `Settings`. Profile creation/opening happens on entry, without a separate first-launch screen. |
 | **Host Setup / Join** | As today (M8 §6) | As today |
 | **Lobby** | One view (§2.2), used in single player too | Everyone: pick a character, open `Talents`, `Relics`; host: pick the heaven, open `Edicts` (§2.5), `Start`; `Leave` |
 | **Loading** | The loading card, as today; plus `Building the Pearly Gates…` | — |
 | **Floor** | The game (§3–§12) | Pause: `Resume`, `Leave run` |
-| **Results** | Victory/Defeat, run time, the Sentence and its XP factor (§2.5), the table (kills, damage, deaths, revive assists, best streak, Rites taken, XP gained, levels `4 → 6`, relics claimed, deeds done), the streak crown (§10) | `Back to lobby`, `Copy save code`, `Leave` |
+| **Results** | Victory/Defeat, run time, the Sentence and its XP factor (§2.5), the table (kills, damage, deaths, revive assists, best streak, Rites taken, XP gained, levels `4 → 6`, relics claimed, deeds done), the streak crown (§10) | `Back to lobby`, `Leave` (solo: `Back to title`). Show one level when unchanged; an arrow only for an actual level change. |
 
-The Title's name field moves to the profile: the player's name in multiplayer is the profile name.
+The title name field edits the current profile name on entry; multiplayer uses that name. In-game Settings never exposes Profile. Class levels sit in each class card above HP; carried items and collection summary sit below class selection and above dungeon selection.
 
 ### 2.2 The Lobby and the loadout
 
@@ -601,8 +601,8 @@ Isaac's timed doors, as one rule: **seal the boss room before 14:00 of run time 
 
 - **2 slots** per player; each holds one item type, **stack cap 3** (an item row may set a lower cap).
 - **Keys 1 and 2** use the top item of slot 1 or 2. A global **1 s** cooldown between item uses.
-- **Deterministic routing:** storing/purchasing a charge chooses the lowest-index same-type stack below its catalog cap, otherwise the lowest-index empty slot. Two stacks of the same type are legal. If both manual press counters advance in one accepted tick, try slot 1 then slot 2, before that player's automatic item-pickup use. A successful first use starts the global cooldown and refuses the second; a rejected first spends nothing and leaves a legal second possible. Consume observed press edges even when refused; never queue the rejected use for a later cooldown or turn a counter jump into many uses.
-- **HUD:** two slots of the ability slots' size and frame, left of Q and E at the bottom-right, each with the item's icon, its count and the key label; an empty slot shows its frame only. Like the ability slots, they're never covered by art (UI rule).
+- **Deterministic routing:** storing/purchasing a charge chooses the lowest-index same-type stack below its catalog cap, otherwise the lowest-index empty slot. Two stacks of the same type are legal. If both manual press counters advance in one accepted tick, try slot 1 then slot 2, before that player's item-pickup storage. A successful first use starts the global cooldown and refuses the second; a rejected first spends nothing and leaves a legal second possible. Consume observed press edges even when refused; never queue the rejected use for a later cooldown or turn a counter jump into many uses.
+- **HUD:** two slots of the ability slots' size and frame, above Q and E at the bottom-right, each with the item's icon, its count and the key label; an empty slot shows its frame only. Like the ability slots, they're never covered by art (UI rule).
 - **Discard:** only in the Lobby (`Discard` on the character card). Items can't be given to others.
 - The inventory persists between runs (§13.4).
 
@@ -617,18 +617,13 @@ Isaac's timed doors, as one rule: **seal the boss room before 14:00 of run time 
 
 **Durations:** `self` effects **8 s**, `placed`/`thrown` areas **6 s** (an item row may set its own within 4–10 s).
 
-### 7.3 Item pickups ("used on pickup if not already active")
+### 7.3 Item pickups (store now, choose when to use)
 
-A world item pickup (from a clear reward, a prop, an elite) lies on the floor until the run ends (no fade). When a living human touches it (within 1 m):
+October 14 play feedback replaces automatic item activation. A world item remains until the run ends. A living connected human touching it within 1 m stores one charge in the lowest matching non-full stack, otherwise the lowest empty slot. If neither fits it remains on the floor. Contact never heals, shields, refreshes, throws, places an effect, starts cooldown, or marks the item tried. This applies in combat and valleys alike; bots never collect items.
 
-1. **If its effect is not active on that player, it's used at once**: `self` and `instant` on them, `placed` at their feet, `thrown` along their current aim. **Exception: a `placed` or `thrown` pickup touched during a valley** (no room in countdown or combat) skips this step, since in an empty room it would teach nothing; most clear rewards land in a valley (Appendix A.4).
-   - **Active** means: a `self` effect of that item is running on them; an `instant` item would change nothing now (a heal at full HP); a `placed`/`thrown` item of that type placed by them still exists.
-2. **Otherwise it goes into the inventory:** onto a slot holding that item below its cap, else into an empty slot.
-3. **Otherwise** (no room), a running `self` effect of that item is refreshed to its full duration; if there is none, the pickup stays on the floor.
+Keys 1/2 deliberately spend charges. Successful uses share the 1 s cooldown. Refused uses spend nothing. Catalog refresh/replacement rules, area limits and the single shield channel remain. A first successful use shows the item's name and one-line rule for 3 s and marks it tried.
 
-A first use of an item a player has never used shows its name and one-line rule for 3 s (and marks it `tried` in the profile, §13.2). Bots never touch item pickups. **Automatic and manual uses share the 1 s cooldown.** During it, a touched drop can only stack/store, else remains. A rejected manual use (dead player, active self effect unless its row explicitly permits refresh/replacement, heal at full HP, invalid landing or global area cap) consumes neither inventory nor cooldown. A successful catalog-authorized refresh consumes one charge and emits one use event. Manual same-type area reuse replaces that owner's old area; automatic pickup of an active area stores instead. Shield items use the one shield channel and may replace it only according to the catalog's explicit rule, with no expiration/replacement burst.
-
-**Why:** a free drop teaches the item where the player stands; buying is then an informed choice (Isaac's pill identification).
+**Why:** choosing when and where to spend a limited charge is the player's decision. Full inventory is readable and revisitable, rather than silently turning a valuable pickup into an unwanted effect.
 
 ### 7.4 Rules every item obeys
 
@@ -952,7 +947,7 @@ Bots stay simple:
 
 ### 13.1 Profiles
 
-- **Three profile slots per browser.** localStorage keys `heavenfall.profile.<1|2|3>` (JSON) and `heavenfall.profile.<n>.bak` (the previous good save). Every read and write is wrapped in try/catch. A normal new run additionally requires the durable stake handshake in §13.4; a failed admission save cannot leave the old carried items usable in storage while play begins. **Save order:** validate the current main save → back it up only if valid → write the new validated JSON to main. Never copy corrupt main over a good backup. On read, use valid main first, else valid backup with `Recovered previous save`; if both fail preserve both strings and allow export/recovery rather than overwriting them. A quota/security error leaves the last good save intact, shows `Progress is in memory; export before closing`, and allows an export of the current accepted profile. A host reward acknowledgment and successful local persistence are separate facts.
+- **One current profile per browser.** New saves use `heavenfall.profile.1` and `.bak`. Existing slot-1 saves remain current; if absent, use the most recently updated valid legacy slot without moving or deleting any legacy saves. Slot selection is not exposed. The current save retains its existing Web Lock and previous-good backup. Every read and write is wrapped in try/catch. A normal new run additionally requires the durable stake handshake in §13.4; a failed admission save cannot leave the old carried items usable in storage while play begins. **Save order:** validate the current main save → back it up only if valid → write the new validated JSON to main. Never copy corrupt main over a good backup. On read, use valid main first, else valid backup with `Recovered previous save`; if both fail preserve both strings and allow original-data copy/recovery in Profile. Only explicit confirmed import/clear may replace them, after archiving both strings under the current key plus `.recovery`. A newer-schema main is likewise never automatically replaced. A quota/security error leaves the last good save intact, shows `Progress is in memory; export before closing`, and allows an export of the current accepted profile. A host reward acknowledgment and successful local persistence are separate facts.
 - **One tab per profile, with the Web Locks API:** a tab using profile `n` holds `navigator.locks.request('heavenfall.profile.<n>', { ifAvailable: true }, …)` until it leaves that profile; the browser releases it on close/crash/reload. If unavailable, show `Open in another tab`. Delete/import-overwrite require the same exclusive lock. The slice supports secure-context browsers with Web Locks; if the API is missing, refuse persistent-profile writes and explain that a supported browser is required. **No timestamp-heartbeat fallback**: background throttling and non-atomic localStorage cannot safely enforce ownership. `?bot=1` tabs never lock, read or write a profile.
 - After the first finished run, the page calls `navigator.storage.persist()` once (Firefox asks; Chrome and Safari decide silently).
 
@@ -995,8 +990,8 @@ interface Profile {
 ### 13.3 Export and import
 
 - **Code:** `MG1.` + base64url(deflate-raw(UTF-8 JSON)) + `.` + CRC32 of the base64url part as 8 lowercase hex digits. The prefix is the code format version. About 1–2 KB.
-- **Export:** `Copy code` (clipboard) and `Download` (`meatgrinder-<name>.txt` holding the code), on the profile card and on Results (`Copy save code`).
-- **Import:** reject input over **64 KiB**, then check prefix/CRC, decode and inflate with a hard **256 KiB expanded UTF-8 limit**, parse, migrate and validate before writing. Validate exact record shapes, finite safe-integer non-negative XP/counters, 128-bit hex ids, bounded array lengths, unique known ids, heaven range and two inventory slots; treat imported text as data. Reject malformed/future versions without changing either key. Imported `run` is resolved as an abandoned attempt before use (inventory stays empty, checkpoint XP kept); a save code cannot resume a live host run. Confirm replacing a populated slot, with its good previous save backed up. If another slot holds the same profile id, generate a new id and clear `run`/`lastSettlement` (`Imported as a copy`). Export filenames sanitize profile names to letters/digits/dash/underscore, max 16 chars; displayed names are text, never markup.
+- **Export:** `Copy code` in title Settings → Profile only. No file upload/download or results export button. A failed accepted checkpoint retains emergency export/retry access so memory progress cannot be lost silently.
+- **Import:** reject input over **64 KiB**, then check prefix/CRC, decode and inflate with a hard **256 KiB expanded UTF-8 limit**, parse, migrate and validate before writing. Validate exact record shapes, finite safe-integer non-negative XP/counters, 128-bit hex ids, bounded array lengths, unique known ids, heaven range and two inventory slots; treat imported text as data. Reject malformed/future versions without changing either key. Imported `run` is resolved as an abandoned attempt before use (inventory stays empty, checkpoint XP kept); a save code cannot resume a live host run. Confirm replacing the current profile, with its good previous save backed up. Imported live attempts are abandoned and settlement context cleared. Displayed names are text, never markup.
 - A checksum catches truncated pastes, not cheating; the host's legality check (§9.8) is the only enforcement. The host also refuses a second `loadout` with an id already in the run (a friend importing your code).
 
 ### 13.4 The inventory across runs
@@ -1233,7 +1228,7 @@ The following are **adopted slice decisions**, retained to explain deviations fr
 7. **Should the boss also give a relic?** *Default: no; relics come from the chest, the Advocate's bargain and deeds.*
 8. **The talent content volume** (84 nodes, 12 abilities) is the MVP's biggest job. *Default: all of it in the MVP; first build one complete pilot class, then the remaining classes (§14.10). Rites supply early run growth and unlock later choices through legal gates.*
 9. **Bots as tabs** (today's dev bot) rather than "Add bot" in the Lobby. *Default: tabs in the MVP.*
-10. **Profile slots per browser.** *Default: 3.*
+10. **Profile per browser.** *October 14 decision: one current profile, code import/export in title Settings.*
 11. **Halo sharing:** "everybody's pockets" is kept literally, with a fixed budget per room (§6.1). *Default: as specified, now with 3-halo coins and ranged enemies weighted 10.*
 12. **Run length.** One floor per heaven (the coordinator's decision) of 10–11 rooms, about 20 minutes, with Pilgrim's Return. *Default: as specified; Isaac's multi-heaven chain is deferred (§15.2).*
 13. **Names.** "Rite" for the run-only node; "Sentence" for the Edict count (not "Judgment", which is the Gatekeeper's move); "Absolution" for the cosmetic rank; "the Sundial of Mercy"; "Pilgrim's Return". *Default: as named.*
@@ -1245,7 +1240,7 @@ The following are **adopted slice decisions**, retained to explain deviations fr
 19. **The level curve is slower:** level 10 at 49 500 XP, about 7 won runs (revision 1: 31 500, about 5). *Default: as specified.*
 20. **The boss HP table** changed to (1, 0.30), (2, 0.55), (3, 0.78), (4, 1.0) from a damage model (§11.2); revision 1 had 0.38 solo. *Default: as specified; the playtest decides.*
 21. **No running through uncleared rooms** (the leaf rule, §3.4). *Default: as specified.*
-22. **Placed and thrown pickups go to the inventory during a valley** instead of being used at once (§7.3). *Default: as specified.*
+22. **All consumable pickups go into inventory** and never auto-use or refresh (§7.3). *October 14 play-feedback decision.*
 23. **The coin flip 0.45 is kept** as decided, but the target also needed wider shape bands (0.30 / 0.40 / 0.50) once floors shrank to 10–11 rooms and the gate rule was added (§14.9). *Default: as specified.*
 24. **Pilgrim's Return is blocked while any room counts down**, even one holding for the party. *Decision: as specified; cancelling a scout countdown restores the valley. A future change must preserve host-timed channels and same-frame seal ordering.*
 25. **The crest:** a 2×2 room's last wave is 60% of its budget, Blessed only, normally arriving in 6 s. *Decision: at least 1 000 alive is a reference base-kit acceptance target, not a reason to suppress skilled kills. Actual peak/performance are measured in the implemented build (§4.6).*
@@ -1294,6 +1289,8 @@ The following are **adopted slice decisions**, retained to explain deviations fr
 ## Appendix A. Walkthroughs
 
 ### A.1 The example floor (generated)
+
+**October 14 note:** these walkthroughs are historical design scenarios. Their profile-slot and automatic-item-use examples are superseded by §§2, 7.3 and 13.1.
 
 Seed **`0x12EBAA83`** (pinned test seed i = 114), the Pearly Gates, **attempt 0 accepted**, `r = 1`, so `N` = 11. This is the historical layout prototype's output for §3.3 steps 1–10 (gen2.mjs, r1 review scratchpad); it is also the fallback floor's layout (rooms.md §5). Legend (here R0–R10 are **room numbers**, not milestones): `BR` the Breach (R0), `PD` the Pardoner (R5), `RQ` the Reliquary (R8), `CF` the Confessional (R9), `BS` the boss (R10), `Rn` combat room n; `===`/`||` join one room's slots, `---`/`|` are doors.
 

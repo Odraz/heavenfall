@@ -42,7 +42,7 @@ export function showResults(data: ResultsData, a: ResultsActions): ResultsView {
     ['Damage', (p) => p.damage.toLocaleString('en-US')],
     ['Deaths', (p) => String(p.deaths)],
     ['XP gained', p => String(p.runXp ?? 0)],
-    ['Levels', p => `${p.levelBefore ?? 1} → ${p.levelAfter ?? 1}`],
+    ['Level', p => (p.levelBefore ?? 1) === (p.levelAfter ?? 1) ? String(p.levelAfter ?? 1) : `${p.levelBefore ?? 1} → ${p.levelAfter ?? 1}`],
   ];
   if (data.players.length > 1) columns.push(['Revive assists', (p) => String(p.reviveAssists)]);
   const head = table.createTHead().insertRow();

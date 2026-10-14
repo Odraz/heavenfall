@@ -111,10 +111,10 @@ function setRecorded(on: boolean): void {
 
 /**
  * A `Settings` button in `buttons` that turns `panel` into the Settings view: its title, the sliders
- * and `Back`. The panel keeps its size meanwhile, so the window doesn't move. The returned function
+ * and `Back`. The panel keeps its minimum size but can grow to fit Settings. The returned function
  * goes back to the panel's own contents.
  */
-export function settingsButton(panel: HTMLElement, buttons: HTMLElement): () => void {
+export function settingsButton(panel: HTMLElement, buttons: HTMLElement, onProfile?: () => void): () => void {
   const open = document.createElement('button');
   open.type = 'button';
   open.className = 'button';
@@ -131,6 +131,10 @@ export function settingsButton(panel: HTMLElement, buttons: HTMLElement): () => 
   const sliders = volumeSliders(view);
   shakeToggle(sliders);
   const syncRecorded = recordedToggle(sliders);
+  if (onProfile) {
+    const profile = document.createElement('button'); profile.type = 'button'; profile.className = 'button';
+    profile.textContent = 'Profile'; profile.addEventListener('click', onProfile); view.appendChild(profile);
+  }
   const back = document.createElement('button');
   back.type = 'button';
   back.className = 'button secondary';
@@ -145,10 +149,10 @@ export function settingsButton(panel: HTMLElement, buttons: HTMLElement): () => 
     view.hidden = true;
     for (const e of hidden) e.hidden = false;
     hidden = [];
-    panel.style.height = '';
+    panel.style.minHeight = '';
   };
   open.addEventListener('click', () => {
-    panel.style.height = `${panel.offsetHeight}px`;
+    panel.style.minHeight = `${panel.offsetHeight}px`;
     hidden = [...panel.children].filter((e): e is HTMLElement => e instanceof HTMLElement && e !== view && !e.hidden);
     for (const e of hidden) e.hidden = true;
     syncRecorded();

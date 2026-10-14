@@ -316,9 +316,8 @@ export class Hud {
 
     // The bottom-left column (M9 §6.4): chat on top, then the party frames, then the own frame.
     this.leftColumn = el('div', 'hud-left', this.root);
-    this.wallet = el('div', 'halo-wallet', this.leftColumn);
+    this.wallet = el('div', 'halo-wallet', this.root);
     this.wallet.setAttribute('aria-label', 'Halo wallet');
-    this.wallet.style.cssText = 'color:#ffdc77;font-size:16px;text-shadow:1px 1px 2px #000;';
     this.setWallet(0);
     const chat = el('div', 'chat', this.leftColumn);
     this.chatMessages = el('div', 'chat-messages', chat);
@@ -353,7 +352,8 @@ export class Hud {
     this.hpBar = el('div', 'hp-bar', hp);
     this.hpFill = el('div', 'hp-fill', this.hpBar);
     this.shieldFill = el('div', 'shield-fill', this.hpBar);
-    this.xpLine = el('div', 'xp-line', hp);
+    this.xpLine = el('div', 'xp-line', this.root);
+    this.xpLine.setAttribute('role', 'progressbar'); this.xpLine.setAttribute('aria-label', 'Class experience');
     this.buff = el('div', 'buff-icon', hp);
     this.buff.hidden = true;
     const buffImg = el('img', '', this.buff);
@@ -456,8 +456,11 @@ export class Hud {
       if (stack) slot.icon.src = ITEM_ART[stack.item];
     });
     const level = levelForXp(state.xp), lo = xpForLevel(level), hi = level === 10 ? lo + 10000 : xpForLevel(level + 1);
-    this.xpLine.textContent = `Level ${level} · ${state.xp} XP${level > 1 ? ' · unspent points' : ''}`;
-    this.xpLine.style.background = `linear-gradient(to right, #83709a ${Math.min(100, 100 * (state.xp - lo) / (hi - lo))}%, #241e29 0)`;
+    const progress = level === 10 ? 100 : Math.min(100, 100 * (state.xp - lo) / (hi - lo));
+    this.xpLine.textContent = `Level ${level} · ${level === 10 ? 'MAX' : `${state.xp - lo} / ${hi - lo} XP`}`;
+    this.xpLine.setAttribute('aria-valuenow', String(Math.round(progress)));
+    this.xpLine.setAttribute('aria-valuemin', '0'); this.xpLine.setAttribute('aria-valuemax', '100');
+    this.xpLine.style.setProperty('--xp', `${progress}%`);
   }
   setItemCooldown(seconds: number): void {
     for (const slot of this.itemSlots) {
@@ -466,7 +469,7 @@ export class Hud {
     }
   }
 
-  setWallet(value: number): void { this.wallet.textContent = `Halos ${value}`; }
+  setWallet(value: number): void { this.wallet.textContent = String(value); this.wallet.setAttribute('aria-label', `Halos: ${value}`); }
 
   setHp(hp: number, shield: number, maxHp: number): void {
     const total = Math.max(maxHp, hp + shield);

@@ -30,7 +30,8 @@ export interface CarrierCheck {
 export const CANTOR_TELL = 75, CANTOR_BEAM = 90, CANTOR_RECOVERY = 60, CANTOR_COOLDOWN = 180;
 /** Radians per second. Tracking must leave room to strafe out of an active beam. */
 export const CANTOR_AIM_SPEED = Math.PI / 6, CANTOR_BEAM_TURN_SPEED = Math.PI / 18;
-export const CARRIER_MARK = 30, CARRIER_SWOOP = 15, CARRIER_RECOVERY = 45, CARRIER_COOLDOWN = 240;
+export const CARRIER_SWOOP = 30, CARRIER_RECOVERY = 45, CARRIER_COOLDOWN = 240;
+export const CARRIER_GRAB_RADIUS = 2.25, CARRIER_FLY_THROUGH = 4, CARRIER_MIN_HOLD = 90;
 export const COMMANDER_PHASES = ['idle', 'tell', 'active', 'carry', 'recover'] as const;
 export function turnToward(yaw: number, target: number, limit: number): number {
   const delta = Math.atan2(Math.sin(target - yaw), Math.cos(target - yaw));

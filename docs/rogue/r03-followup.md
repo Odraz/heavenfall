@@ -1,0 +1,48 @@
+# R03 play-feedback iteration — 2026-10-14
+
+Status: **awaiting-human-play**. Implementation based on `07d3588` on `rogue`. Verified production fingerprint: `0.1.0+07d3588.p11.r15.be59eccef768`. Requested by Tomas from `game-sp-session-2026-10-14.txt`. This iteration includes the specifically requested presentation changes and the Cantor/Carrier follow-up. It does not advance R04 or claim human fun acceptance.
+
+## Playable changes
+
+- First launch opens the title with editable Player name, Singleplayer, Multiplayer and Settings. Profile lives inside title Settings and is absent from in-game Settings. One current profile, Copy code, Import code and Clear; no slot picker, upload/download, extra profile gate or results export button. Import and Clear require deliberate confirmation. Existing saves remain in place and retain locking, durable admission, backup and emergency export/retry behavior. Unreadable or newer saves can be copied as original data in Profile; confirmed recovery archives both original strings before replacement. Legacy extra saves are not deleted: slot 1 remains current if present, otherwise the latest valid legacy profile is used.
+- Character levels sit inside their class cards above HP. Carried items and the collection summary appear between class selection and dungeon selection. Practice remains available after choosing a class; its profile is disposable.
+- The halo icon/count sits at top left. A framed experience bar sits at top centre, separate from HP. Item keys 1/2 form the row above Q/E. Small-window HUD spacing and the eighth class-card row are verified for overlap. Results show one level when unchanged and before/after only when it changes; the title and exit button stay inside a 640×360 viewport.
+- Consumables always go into a matching non-full stack, then an empty slot. When full they stay on the floor. Contact never spends a charge, heals, refreshes or throws an effect. The player chooses when to use 1/2.
+- Item, Chart, Rite and Pardoner artwork uses transparent outputs; world pickup materials honor alpha. Door/map rewards use coin, bottle and burning-page symbols with a map legend rather than unexplained letters.
+- Cantor facing and beam use interpolated accepted angles, including shortest-path wraparound. The open book shows a gold frontal ward during warning/singing; the same front 120 degrees reduces incoming damage by 80%. Closed-book idle/recovery takes full damage, providing a visible opening.
+- Carrier immediately rushes the nearest visible player within 20 m. No stationary mark, teammate-distance gate or crowd prerequisite. The one-second locked rush can be sidestepped. On grab, choose a collision-safe dry destination near a dense nearby group (at least three grounded Blessed), or lift/release at the grab location if none exists. Carry speed is 6 m/s; damage is 2 every half-second, subject to ordinary mitigation/shields. Existing rescue damage, control interruptions, movement escapes and carry deadlines remain. No fall damage.
+
+## Why these decisions
+
+Milestones constrain scope; they do not justify mechanics that hide the player's choices or make enemies inert. Manual consumables make inventory and timing meaningful. The Carrier announces itself by moving and can threaten without hidden crowd arithmetic; its locked rush, low damage, bounded hold and existing counters preserve agency. The Cantor has an explicit shielded phase and a punishable recovery. These replace the conflicting rules in game.md, items-relics.md and rooms.md.
+
+Protocol stays 11; rules version is 15, so differing gameplay builds cannot join each other. No new save schema is needed.
+
+## Verification
+
+- Focused unit checks: `npx vitest run --pool=threads src/sim/commanders.test.ts src/sim/consumables.test.ts src/client/commanders.test.ts src/client/commanderView.test.ts src/profile/profile.test.ts src/net/buildFingerprint.test.ts` — 87 passed before the final recovery regression was added.
+- **Final complete unit coverage: 1,096 checks passed in 100 files**, split into the functional suite and the two isolated timing checks. `npm test -- --pool=threads --exclude '**/*perf.test.ts'` — **1,094 passed in 98 files**, 115.23 s. Then `npx vitest run --pool=threads --reporter=verbose src/sim/perf.test.ts src/sim/hazards.perf.test.ts` — **2/2 passed**, 3.54 s: normal simulation **3.455 ms/tick**, hazard simulation **5.272 ms/tick**, both below the unchanged **8 ms** limits. Every test ran; no benchmark was requested or used.
+- Timing history: the earlier 1,095-test full suite passed in 99.97 s. After adding recovery coverage, combined 1,096-test runs passed 1,095 checks but failed the hazard stress limit at 10.713 and 8.617 ms/tick. The unchanged HEAD stress test passed in a temporary checkout, and the current stress test passed alone at 5.394 ms/tick (limit 8). The temporary checkout was removed. An intermediate run excluding only the hazard check also passed all 1,094 functional checks but missed the ordinary timing limit at 8.045 ms/tick. Those combined runs are not claimed green; final validation runs both timing checks separately.
+- `npm run typecheck` — passed.
+- `npm run build` — passed (721 ms in the final rebuild); inherited Vite configuration migration warnings remain.
+- Production browser coverage: **26 distinct checks passed across the final main run and targeted rerun**, using Windows D3D11 and actual PeerJS. Main command: `npx playwright test --config playwright.hardware.config.ts e2e/menus.spec.ts e2e/profiles.spec.ts e2e/commanders.spec.ts e2e/multiplayer.spec.ts e2e/rogue-floor.spec.ts e2e/rogue-pressure.spec.ts e2e/r03-art.spec.ts e2e/pickup-expiry.spec.ts e2e/renderer.spec.ts --grep-invert 'solo autopilot'`. It passed 23 checks; two stale assumptions failed and the final obsolete gold assertion was stopped. Corrected checks: `npx playwright test --config playwright.hardware.config.ts e2e/profiles.spec.ts e2e/pickup-expiry.spec.ts e2e/rogue-pressure.spec.ts --grep 'both carried|clear-reward gold|marked amphora'` — **3/3 passed, 1.6 min**. Marked amphorae already dropped Charts in R03; gold expiry now uses a genuine gold clear reward, and the practice test waits for the established playable/loading boundary before checking inventory.
+- Final compact Results follow-up after rebuilding: `npx playwright test --config playwright.hardware.config.ts e2e/rogue-floor.spec.ts --grep 'a second generated run'` — **1/1 passed, 43.4 s**, including bounds assertions, unchanged-level display, no export button, and starting a second run.
+- Full generated-floor victory/exit: the `solo autopilot` check in the earlier production run of `e2e/rogue-floor.spec.ts` **passed in 9.7 min**. The later changes concern profile recovery, presentation and test setup; this route/exit behavior is unchanged.
+- Visual inspection: title, profile, class selection, normal and 640×360 HUD, Cantor/Carrier encounters, Results, map rewards, all eleven shipped transparent sprites and the Chart rendered in the world. Browser alpha checks validate nonempty subjects with genuinely transparent surrounds. The class-card eighth-row overlap and compact HUD overlap found during inspection were fixed.
+- `git diff --check` — passed.
+
+The initial sandboxed browser run could not reach PeerJS and stalled at shutdown; it was stopped. Real networking, late join, retained admission, spent-item reconnect and host-exit recovery subsequently passed with network access. No benchmark requested or run. All profiles used for verification were isolated/disposable. Human combat feel and replayability remain the next playtest, not something asserted by automated checks. Existing music prompt/audio prompt edits and arena-4 music were left intact.
+
+## Artwork provenance
+
+Built-in imagegen background extraction, one call per source. Original files remain in `assets/art-src`. Runtime outputs are `assets/items/item-{balm,seal,feather,mirror,venom,frost,chain,plume}.png`, `chart-scroll.png`, `rite-page.png`, and `npc-pardoner.png`.
+
+Item prompt: “Use case: background-extraction. Edit target: supplied item-[id] game icon. Remove ONLY the flat green or magenta chroma-key background, replacing it with actual alpha transparency. Preserve the illustrated item, exact composition, colors, black outlines, small details, inner holes, and original square framing. Do not redesign, add text, shadows, border or background. Output a transparent PNG suitable for the existing game icon.”
+
+Other sprite prompt: “Use case: background-extraction. Edit the supplied [name] game sprite. Remove only its flat green chroma-key background and replace with actual alpha transparency, including gaps around the subject. Preserve original illustration, colors, pose, proportions, framing, aspect ratio, outlines and details. No redesign or added elements. Output a transparent PNG.”
+
+## Play this iteration
+
+Run `npm run dev`. The normal title now leads directly to Singleplayer. To try the current carried loadout without spending saved progress, choose Singleplayer, a class and Practice (disposable). Normal runs collect consumables from drops and the shop. Keys 1/2 use the two carried stacks. Never use your normal progress as debug scratch data.
+
+Commander fixtures: `/?dev=1&map=cantor&class=fallen&seed=7` and `/?dev=1&map=carrier&class=fallen&seed=7`. Enter the arena. Carrier grabs require invulnerability off. Dodge a rush sideways, then let one connect and escape with Falling Star; observe the small periodic damage. Against the Cantor, compare its open frontal ward with its exposed recovery and flank.

@@ -3,7 +3,7 @@ import { deflateRawSync } from 'node:zlib';
 import { copyInventory, storeItem, type Inventory } from '../data/items';
 import { absolutionForXp, createProfile, importProfile, levelForXp, parseProfile, saturatingAdd, validateProfile, xpForLevel } from './model';
 import { crc32, exportCode, importCode, exportFilename } from './codec';
-import { ProfileSession, readProfile, writeProfile, type SaveStorage } from './storage';
+import { currentProfileSlot, ProfileSession, readProfile, writeProfile, type SaveStorage } from './storage';
 
 const id = 'a'.repeat(32);
 function profile() { return createProfile('Tomas', id, 100); }
@@ -80,6 +80,14 @@ describe('bounded raw-DEFLATE profile codes', () => {
   });
 });
 describe('atomic profile storage boundaries', () => {
+  it('retains the current save and adopts an existing legacy save without deleting other profiles', () => {
+    const storage = new MemoryStorage(), p = profile();
+    writeProfile(storage, 2, p); expect(currentProfileSlot(storage)).toBe(2);
+    const before = storage.getItem('heavenfall.profile.2');
+    writeProfile(storage, 1, { ...p, id: 'c'.repeat(32) }); expect(currentProfileSlot(storage)).toBe(1);
+    expect(storage.getItem('heavenfall.profile.2')).toBe(before);
+    storage.setItem(key, '{broken'); expect(currentProfileSlot(storage)).toBe(1);
+  });
   it('backs up only a good main and recovers without overwriting corrupt data', () => {
     const storage = new MemoryStorage(), p = profile(); expect(writeProfile(storage, 1, p)).toBe(true);
     p.stats.runs = 1; expect(writeProfile(storage, 1, p)).toBe(true);
@@ -92,6 +100,20 @@ describe('atomic profile storage boundaries', () => {
     expect(readProfile(storage, 1).message).toContain('newer version'); expect(writeProfile(storage, 1, profile())).toBe(false);
     storage.setItem(key, 'bad'); storage.setItem(`${key}.bak`, 'also bad');
     expect(readProfile(storage, 1)).toMatchObject({ profile: null, corrupt: true, raw: ['bad', 'also bad'] });
+  });
+  it('requires explicit recovery replacement and preserves originals before any destructive write', () => {
+    const storage = new MemoryStorage(), raw = JSON.stringify({ ...profile(), schema: 2 });
+    storage.setItem(key, raw); storage.setItem(`${key}.bak`, 'broken backup');
+    const session = new ProfileSession(1, profile(), storage, { release() {} }, readProfile(storage, 1));
+    expect(session.save(profile(), true)).toBe(false); expect(storage.getItem(key)).toBe(raw);
+    storage.failKey = `${key}.recovery`;
+    expect(session.replace(profile())).toBe(false); expect(storage.getItem(key)).toBe(raw);
+    storage.failKey = key;
+    expect(session.replace(profile())).toBe(false); expect(session.recovery).not.toBeNull();
+    storage.failKey = '';
+    expect(session.replace(profile())).toBe(true); expect(session.recovery).toBeNull();
+    expect(JSON.parse(storage.getItem(`${key}.recovery`)!)).toEqual([raw, 'broken backup']);
+    expect(readProfile(storage, 1).profile).toEqual(profile());
   });
   it('does not accept a failed stake but retains an accepted checkpoint in memory for export', () => {
     const storage = new MemoryStorage(), p = profile(); writeProfile(storage, 1, p); storage.failKey = key;

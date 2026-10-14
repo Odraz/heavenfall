@@ -1,5 +1,8 @@
 # R03 report: durable run and consumables
 
+**October 14 play-feedback follow-up:** [current iteration and verification](r03-followup.md) supersedes the profile-slot UI, automatic pickup use, raw source-art integration and commander behavior described below. Earlier stage results remain historical evidence.
+
+
 Status: **awaiting-human-play**, 2026-10-14. Start SHA: `a7e002c` on `rogue`. Tomas's “Implement R03” authorizes this milestone; Gate B human acceptance remains unclaimed. Existing edits to `docs/music-prompts.md`, `docs/rogue/audio-prompts.md` and the untracked `assets/music/arena-4.mp3` are outside this work.
 
 ## Stage 1 — profile foundation

@@ -23,6 +23,11 @@ test('a second generated run after Results gets a fresh identity and accepts res
   await page.keyboard.press('KeyK');
   await ascend(page);
   expect((await state(page)).gameResult).toBe('victory');
+  await expect(page.getByRole('button', { name: 'Copy save code', exact: true })).toHaveCount(0);
+  await expect(page.locator('.results-table')).not.toContainText(/(\d+) → \1(?:\D|$)/);
+  const heading = await page.getByRole('heading', { name: 'Victory', exact: true }).boundingBox(), back = await page.getByRole('button', { name: 'Back to title', exact: true }).boundingBox();
+  expect(heading!.y).toBeGreaterThanOrEqual(0); expect(back!.y + back!.height).toBeLessThanOrEqual(360);
+  await page.screenshot({ path: test.info().outputPath('r03-results.png') });
   await page.getByRole('button', { name: 'Back to title' }).click();
   expect((await state(page)).runId).toBeNull();
   await page.getByLabel('Player name').fill('Again');

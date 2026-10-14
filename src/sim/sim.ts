@@ -2274,7 +2274,7 @@ export class Simulation {
   damageEnemy(slot: number, amount: number, source: number, force = amount, fromX = NaN, fromY = NaN, worldBurst = false, areaSource = Number.isFinite(fromX) && Number.isFinite(fromY)): void {
     if (!this.eAlive[slot] || amount <= 0) return;
     const cast = this.commanders.active.get(slot);
-    if (cast?.kind === 'beam' && !worldBurst && (source >= 0 || Number.isFinite(fromX) && Number.isFinite(fromY))) {
+    if (cast?.kind === 'beam' && (cast.phase === 'tell' || cast.phase === 'active') && !worldBurst && (source >= 0 || Number.isFinite(fromX) && Number.isFinite(fromY))) {
       const area = areaSource, attacker = this.slots[source];
       const x = area ? fromX : attacker?.x, y = area ? fromY : attacker?.y;
       if (x !== undefined && y !== undefined) { const factor = hymnalReduction(cast.yaw, x - this.eX[slot], y - this.eY[slot], area); amount *= factor; force *= factor; }

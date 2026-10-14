@@ -1,37 +1,26 @@
 import { generateFloor } from '../src/gen';
 import { PEARLY_POOL } from '../src/data/rooms/1';
-import { PINNED } from '../src/gen/pinned';
-import { propDefs } from '../src/data/props';
-import { lineOfSight } from '../src/sim/los';
 import { expect, state, test } from './fixtures';
-import { shootProp } from './prop-fixtures';
 
-test('uncollected gold retains its original host deadline through the quiet expiry cue', async ({ page }) => {
-  const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
-  const q = propDefs(g.floor).find((p) => p.marked)!;
-  const z = g.map.floor[Math.floor(q.y) * g.map.w + Math.floor(q.x)];
-  const points = [5, 6, 8].flatMap((radius) => Array.from({ length: 32 }, (_, i) =>
-    [q.x + radius * Math.cos(i * Math.PI / 16), q.y + radius * Math.sin(i * Math.PI / 16)]));
-  const at = points.find(([x, y]) => {
-    const c = Math.floor(x), r = Math.floor(y), cell = r * g.map.w + c;
-    return c > 0 && r > 0 && c < g.map.w - 1 && r < g.map.h - 1 && !g.map.solid[cell] &&
-      g.map.roomOf[cell] === q.room && g.map.floor[cell] === z && lineOfSight(g.map, x, y, z + 1.6, q.x, q.y, z + 0.5);
-  });
-  expect(at).toBeDefined();
-  await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&room=${q.room}&class=betrayer&god=1`);
+test('uncollected clear-reward gold retains its original host deadline through the quiet expiry cue', async ({ page }) => {
+  // Marked amphorae now contain Charts. Use a real authored gold clear reward,
+  // selected from deterministic small-room seeds, without injecting a pickup.
+  let seed = 1, room = -1;
+  for (; seed <= 64; seed++) {
+    const g = generateFloor(seed, 1, 1, PEARLY_POOL);
+    room = g.def.rooms.findIndex((r, i) => r.kind === 'combat' && r.shape === '1x1' && g.floor.rewards[i].kind === 'gold');
+    if (room >= 0) break;
+  }
+  expect(room).toBeGreaterThanOrEqual(0);
+  await page.setViewportSize({ width: 640, height: 360 });
+  await page.goto(`/?dev=1&map=rogue&seed=${seed}&room=${room}&class=betrayer&god=1`);
   await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
   await page.waitForFunction(() => window.__heavenfall.activePhase === 'combat');
-  // Isolate this pickup's wallet effect: a live commander can kill minions and
-  // legitimately pay unrelated coins while we stand outside the gold's attraction range.
-  // The existing dev cleanup input grants no kill rewards and leaves props untouched.
-  while ((((await state(page)).clearedMask >>> q.room) & 1) === 0) {
+  while ((((await state(page)).clearedMask >>> room) & 1) === 0) {
     await page.keyboard.press('KeyK'); await page.waitForTimeout(250);
   }
-  await page.evaluate(([x, y]) => window.__heavenfallTeleport!(x, y), at!);
-  await expect.poll(async () => Math.hypot((await state(page)).self.x - at![0], (await state(page)).self.y - at![1])).toBeLessThan(0.2);
-  await shootProp(page, q.id);
-  await page.waitForFunction(() => window.__heavenfall.pickups.some((p) => p.kind === 1));
-  const gold = (await state(page)).pickups.find((p) => p.kind === 1)!;
+  await page.waitForFunction(() => window.__heavenfall.pickups.some(p => p.kind === 1));
+  const gold = (await state(page)).pickups.find(p => p.kind === 1)!;
   const seen = (await state(page)).lastSnapshotTick;
   await page.screenshot({ path: test.info().outputPath('halo-steady.png') });
   await page.waitForFunction((tick) => window.__heavenfall.lastSnapshotTick >= tick + 515, seen);

@@ -35,7 +35,7 @@ export class MapView {
     this.full.className = 'full-map'; this.full.hidden = true;
     const layout = document.createElement('div'); layout.className = 'map-layout';
     const side = document.createElement('div'); side.className = 'map-legend';
-    this.legend.width = 190; this.legend.height = 290;
+    this.legend.width = 190; this.legend.height = 380;
     this.names.className = 'map-player-names';
     side.append(this.legend, this.names); layout.append(this.plate, side); this.full.append(layout);
     this.roomsList.className = 'map-room-list'; this.roomsList.setAttribute('aria-label', 'Known rooms');
@@ -146,6 +146,11 @@ export class MapView {
     (Object.keys(ICON_PATHS) as MapIcon[]).forEach((icon, i) => {
       drawMapIcon(ctx, icon, 16, 42 + i * 20, 16);
       ctx.fillText(icon[0].toUpperCase() + icon.slice(1), 34, 47 + i * 20);
+    });
+    const rewards = [{ kind: 'gold' }, { kind: 'item', item: 'balm' }, { kind: 'rite' }, { kind: 'nothing' }] as const;
+    rewards.forEach((reward, i) => {
+      drawRewardIcon(ctx, reward, 16, 294 + i * 22, 18);
+      ctx.fillStyle = '#e8dcc0'; ctx.fillText(['Halos', 'Consumable', 'Rite page', 'No clear reward'][i], 34, 299 + i * 22);
     });
   }
   dispose(): void {

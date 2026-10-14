@@ -25,7 +25,7 @@ import { showResults, type ResultsData, type ResultsView } from './ui/results';
 import { hideTooltip } from './ui/tooltip';
 import { initAudio, setMusic, sfx } from './audio/audio';
 import { profileLoadout, profilesScreen, saveCodeButton } from './ui/profiles';
-import { ProfileSession } from './profile/storage';
+import { ProfileSession, currentProfileSlot, openCurrentProfile, readProfile } from './profile/storage';
 import { abandonAttempt, applyProgress, stakeProfile, type ProgressState } from './profile/lifecycle';
 
 const params = parseParams(window.location.search);
@@ -102,20 +102,32 @@ let inviteId = params.join;
 /** Title (§3). `message` is the message line, cleared by the next button press. */
 function toTitle(message = ''): void {
   resetGameDebug();
-  if (!disposable && !profileSession) {
-    show('title', profilesScreen(session => { profileSession = session; toTitle(); })); return;
-  }
+  let profileName = profileSession?.profile.name;
+  try { profileName ??= disposable ? undefined : readProfile(localStorage, currentProfileSlot(localStorage)).profile?.name; } catch { /* Storage errors are shown on entry. */ }
+  let opening = false;
+  const enter = (name: string, next: () => void, recovery = false): void => {
+    if (opening) return;
+    if (disposable) { next(); return; }
+    opening = true;
+    void (async () => {
+      try {
+        if (!profileSession) profileSession = await openCurrentProfile(name, localStorage, recovery);
+        else if (profileSession.profile.name !== name && !profileSession.save({ ...profileSession.profile, name }, true)) throw new Error(profileSession.message);
+        next();
+      } catch (error) { toTitle(error instanceof Error ? error.message : String(error)); }
+      finally { opening = false; }
+    })();
+  };
   show(
     'title',
     titleScreen({
-      profileName: profileSession?.profile.name,
-      onChangeProfile: profileSession ? () => { profileSession?.close(); profileSession = null; lastProgress = null; toTitle(); } : undefined,
-      onPractice: profileSession ? () => toSingleplayerSetup(profileSession!.profile.name, true) : undefined,
+      profileName,
+      onProfile: disposable ? undefined : name => enter(name, () => show('title', profilesScreen(profileSession!, () => { if (profileSession?.recovery) { profileSession.close(); profileSession = null; } toTitle(); }, () => { lastProgress = null; })), true),
       message,
       joinId: inviteId,
-      onJoinInvite: (name) => toJoin(name, inviteId),
-      onSingleplayer: (name) => toSingleplayerSetup(name),
-      onMultiplayer: (name) => toMultiplayer(name),
+      onJoinInvite: (name) => enter(name, () => toJoin(name, inviteId)),
+      onSingleplayer: (name) => enter(name, () => toSingleplayerSetup(name)),
+      onMultiplayer: (name) => enter(name, () => toMultiplayer(name)),
     }),
   );
 }
@@ -198,7 +210,6 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
     onResults: (data) => {
       end();
       const view = showResults(data, { onLeave: () => toTitle() });
-      if (profileSession) saveCodeButton(view.el, () => profileSession!.profile);
       show('results', view.el);
     },
     onLeave: () => {
@@ -458,7 +469,6 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
       showLobby(false);
     };
     const view = showResults(data, { onLeave: () => (ended ? toTitle() : end('', true)), onBackToLobby: backToLobby });
-    if (profileSession) saveCodeButton(view.el, () => profileSession!.profile);
     results = view;
     show('results', view.el);
     if (auto) setTimeout(() => results === view && !ended && backToLobby(), BOT_RESULTS_MS);
