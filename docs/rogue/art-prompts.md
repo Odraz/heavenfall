@@ -15,28 +15,30 @@ Map icons, door sigils, reward plates, state markers, rings, lanes, timers, text
 
 Save every image as PNG with exactly this name: Part A in `assets/art-src/reference/`, Part B in `assets/art-src/`. "Needed by" is the milestone ([implementation.md](implementation.md)) whose play checkpoint first shows the image; until it arrives the game uses a labeled placeholder. **Required** images must exist before the slice is accepted; **optional** ones have a coded or reused fallback.
 
-**Checked means source received**, not integrated or accepted in the game. For partially received families, the missing files are listed below. Runtime preparation and human acceptance remain tracked in [asset-manifest.md](asset-manifest.md).
+**Checked means source received**, not integrated or accepted in the game. Every received source is stored as PNG under its target name; JPEG/JFIF downloads are converted on receipt (see the dated receipts). For partially received families, the missing files are listed below. Runtime preparation and human acceptance remain tracked in [asset-manifest.md](asset-manifest.md).
 
 **Part A: model references** (`assets/art-src/reference/`)
 - [x] A1 The Dominion, needed by R2, required: `dominion-design.png` (do this first), `dominion-turnaround.png`, `dominion-wings.png`, `dominion-mace.png`
-- [ ] A2 The Gatekeeper's trumpet, needed by R7, required: `gatekeeper-trumpet.png`, `gatekeeper-trumpet-raised.png`
+- [x] A2 The Gatekeeper's trumpet, needed by R7, required: `gatekeeper-trumpet.png`, `gatekeeper-trumpet-raised.png`
 - [x] A3 The Lectern Cantor, needed by the R2 commander follow-up, required: `cantor-design.png` (do this first), `cantor-turnaround.png`, `cantor-hymnal.png`
 - [x] A4 The Stray-Carrier, needed by the R2 commander follow-up (after the Cantor), required: `carrier-design.png` (do this first), `carrier-turnaround.png`, `carrier-wings.png`, `carrier-shroud.png`
 
 **Part B: game assets** (`assets/art-src/`)
 - [x] B1 Breakable props, needed by R2, required: `amphora-tall.png` (pilot, do it first), `amphora-squat.png`, `amphora-lily.png`, `amphora-marked.png`, `sanctuary-lamp.png`, `blessing-chalice.png`
 - [x] B2 Pickups, needed by R2 (halo, mote) and R4 (page), required: `gold-halo.png`, `heal-mote.png`, `rite-page.png`
-- [ ] B3 The Pardoner's stall, needed by R3, required: `npc-pardoner.png`, `pardoner-box.png`, `shop-pedestal.png`, `chart-scroll.png`. **3/4 received; missing `shop-pedestal.png`.**
+- [x] B3 The Pardoner's stall, needed by R3, required: `npc-pardoner.png`, `pardoner-box.png`, `shop-pedestal.png`, `chart-scroll.png`.
 - [x] B4 The Confessional, needed by R1 (shell) and R4 (Advocate), required: `confessional-grille.png`, `tex-confessional-wood.png`
-- [ ] B5 Rewards and challenges, needed by R6, required: `shared-key.png`, `reliquary-chest.png`, `reliquary-chest-open.png`, `judgment-bell.png`, `sundial.png`
+- [x] B5 Rewards and challenges, needed by R6, required: `shared-key.png`, `reliquary-chest.png`, `reliquary-chest-open.png`, `judgment-bell.png`, `sundial.png`
 - [ ] B6 Boss parts, needed by R7, required: `watcher-open.png`, `watcher-closed.png`, `judgment-seal.png`
-- [ ] B7 Item icons, needed by R3, required: `item-balm.png` (pilot), `item-seal.png`, `item-feather.png`, `item-mirror.png`, `item-venom.png`, `item-frost.png`, `item-chain.png`, `item-plume.png`. **7/8 received; missing `item-plume.png`.**
-- [ ] B8 Relic icons, needed by R6, required: `relic-usher.png` (pilot), `relic-thurible.png`, `relic-link.png`, `relic-tile.png`, `relic-qseal.png`, `relic-eseal.png`, `relic-comb.png`, `relic-wheel.png`, `relic-unbroken.png`, `relic-mercy.png`, `relic-armageddon.png`, `relic-sentence3.png`
-- [ ] B9 New ability icons, needed by R4 (Betrayer's three) and R5 (the other nine), required: `icon-judas-coin.png` (pilot), `icon-way-back.png`, `icon-silver-wire.png`, `icon-gatebreaker.png`, `icon-rain-of-fire.png`, `icon-cast-out.png`, `icon-bread-of-angels.png`, `icon-trial-by-fire.png`, `icon-cloud-of-witnesses.png`, `icon-well-of-giants.png`, `icon-ring-of-giants.png`, `icon-boundary-chain.png`
+- [x] B7 Item icons, needed by R3, required: `item-balm.png` (pilot), `item-seal.png`, `item-feather.png`, `item-mirror.png`, `item-venom.png`, `item-frost.png`, `item-chain.png`, `item-plume.png`.
+- [x] B8 Relic icons, needed by R6, required: `relic-usher.png` (pilot), `relic-thurible.png`, `relic-link.png`, `relic-tile.png`, `relic-qseal.png`, `relic-eseal.png`, `relic-comb.png`, `relic-wheel.png`, `relic-unbroken.png`, `relic-mercy.png`, `relic-armageddon.png`, `relic-sentence3.png`
+- [x] B9 New ability icons, needed by R4 (Betrayer's three) and R5 (the other nine), required: `icon-judas-coin.png` (pilot), `icon-way-back.png`, `icon-silver-wire.png`, `icon-gatebreaker.png`, `icon-rain-of-fire.png`, `icon-cast-out.png`, `icon-bread-of-angels.png`, `icon-trial-by-fire.png`, `icon-cloud-of-witnesses.png`, `icon-well-of-giants.png`, `icon-ring-of-giants.png`, `icon-boundary-chain.png`.
 - [x] B10 Hazard and effect textures, needed by R2, required: `tex-refiner-channel.png`, `fx-flames.png`
 - [ ] B11 Optional: 6 combo emblems `combo-<id>.png` (R6) and 72 talent icons `talent-<class>-<tree>-<node>.png` (R4–R5). Without them the cards show the class glyph and the talent's name.
 
 **Totals:** 13 model references + 57 required game assets + 78 optional icons. Earlier drafts also listed `fx-embers`, `fx-incense-wisp` and `silent-trumpet`; the first two are covered by the existing `ember.png` and `fx-smoke.png`, and the trumpet is now the A2 model reference.
+
+**Current receipt status — 2026-10-14:** 67/70 required sources received (all 13 model references and 54 game assets). Only B6, the boss parts (`watcher-open.png`, `watcher-closed.png`, `judgment-seal.png`), is still missing, along with the optional B11 icons. The dated receipts below record each batch.
 
 ### Received sources — 2026-10-12
 
@@ -68,6 +70,24 @@ The original downloads are preserved byte for byte under `tmp/asset-originals-20
 - **Cantor's back:** plain white with one gold band down the spine, as asked: the front and back read differently.
 - **Carrier's proportions:** the shroud reaches just below the feet and pools to the sides, rather than trailing two body lengths; the arms are only slightly long in the design and normal in the turnaround. Both still read; the model can lengthen the shroud.
 - **Carrier's wings:** `carrier-wings.png` shows the pair from behind plus one more wing, half-spread rather than fully spread, and the third view is not a true side profile. Usable for feather texture and outline; the spread pose is set in Blender.
+
+### Received sources — 2026-10-14
+
+**A2, B5 and B8 received (19 sources), and the JFIF sources supplied on 2026-10-13 normalized (14: `shop-pedestal`, `item-plume` and all twelve B9 icons).** All 33 were converted to PNG under their target names at original resolution (2048 × 2048, except the chest pair at 2400 × 1792, the trumpet sheet at 3168 × 1344 and the pedestal at 1696 × 2528), with decoded pixels verified unchanged. The originals are preserved byte for byte, with SHA-256 hashes in `receipt.json`, under `tmp/asset-originals-2026-10-14/`. Generation tool, generation date and subscription plan are unconfirmed. This receipt does not approve the pilots (`relic-usher`, `icon-judas-coin`) or replace the in-game acceptance check.
+
+**Preparation notes from source inspection:**
+
+- **A2:** the trumpet sheet matches the prompt (grey background, bell to the right, small orderly eyes, a blank banner), though the bell has light shading rather than flat color. The raised pose keeps the existing Gatekeeper's design and key; the mouthpiece is held away from the helmet, as asked.
+- **Reliquary chest:** the open and closed images line up (body, feet and keyhole plate in the same place), so the lid can swap without a jump. The roof panels read as pale blue glass rather than enamel. The open chest's inner light is a soft glow; check how it keys.
+- **Key, bell and sundial** match their prompts and read at 32 px. The key's bit has cross-shaped teeth rather than three square ones.
+- **`relic-link`:** the link is drawn bent into a twist, so at small size it can read as two links. Its white-gold burst has soft rays beyond the outline that keying will clip.
+- **`relic-wheel`:** twelve spokes, not eight, and its speed streaks sit outside the outline as soft smoke. Keying will cut them; the wheel still reads.
+- **`relic-tile`** has three chains, not two. **`relic-mercy`** has two crossed gold lines rather than one sundial shadow line; at 48 px it is still distinct from `item-seal` (a lump without a ribbon, not a round stamp). **`relic-armageddon`:** the gold ring has a soft glow outside the outline.
+- **The relic set at 48 px:** the two Plea seals read as a pair (round and square), and no two relics are confusable. The comb has six teeth.
+- **`icon-judas-coin`:** a darker inner square with a visible edge sits inside the charcoal background, like a frame. Crop to it or regenerate before approving the pilot.
+- **`icon-silver-wire`:** the symbol fills well under 80% of the square and is faint at 48 px. **`icon-cloud-of-witnesses`:** the witnesses' faces are skull-like, and at 48 px the hooded figure is lost in the smoke.
+- **The other B9 icons** match the existing icons' background and line weight. The Binder's three read as a pit, a ring and a staked fence at 48 px; the boundary chain is strung between its stakes rather than lying on the floor, which still reads as a fence.
+- **`shop-pedestal`** (empty cushion) and **`item-plume`** (three feathers, gold band) match their prompts.
 
 ---
 

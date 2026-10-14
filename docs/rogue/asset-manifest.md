@@ -10,6 +10,8 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 
 **Art receipt, 2026-10-12.** 27 user-provided JPEG/JFIF sources (4 model references, 23 game assets) converted to PNG at original resolution, with decoded pixels verified unchanged. Redundant original downloads were moved out of the source tree during the 2026-10-13 cleanup; normalized PNG sources are retained. Historical originals remain recoverable from Git and an ignored local archive at `tmp/asset-originals-2026-10-13/`. Generation tool, generation date and subscription plan remain unknown. No runtime art was exported or accepted; preparation notes and remaining sources are in [art-prompts.md](art-prompts.md#received-sources--2026-10-12).
 
+**Art receipt, 2026-10-14.** A2, B5 and B8 received (19 sources); with the 14 JFIF sources supplied on 2026-10-13 (`shop-pedestal`, `item-plume`, all twelve B9 icons), 33 sources were converted to PNG at original resolution, with decoded pixels verified unchanged. Originals and SHA-256 hashes are in the ignored local archive `tmp/asset-originals-2026-10-14/`. Generation tool, generation date and subscription plan remain unknown. Only B6 (3 boss parts) is still missing. No new runtime art was exported or accepted; preparation notes are in [art-prompts.md](art-prompts.md#received-sources--2026-10-14).
+
 **Historical R2.2 fallback, 2026-10-13.** All six B1 prop sources remain `received`; none is visually accepted. Inspected amphora/lamp sources have a solid green background requiring preparation. `src/client/props.ts` currently renders labeled coded ivory variants, a marked cross/glint, red-black lamp and gold chalice in one billboard atlas; accepted breaks drive shards, blast smoke/rings and heal feedback. The three S1 prop families now have named synthesized entries and accepted event mappings; their received MP3s still need runtime cutting in R2.3.
 
 **Historical R2.6 fallback, 2026-10-13.** S1's 51 mono runtime takes, including all three prop families, are integrated and remain pending human listening acceptance. A1/B1/B2/B10 runtime art retains the documented coded presentation; received sources are preserved without implying approval. `src/client/spawnView.ts` supplies pooled gold warning beams/progress disks, with finite synthesized arrival and crest cues in `src/audio/sfx.ts`. Unintegrated S2 Dominion, S3 pickup and S8 fire recordings remain explicit synthesized fallbacks. No new generated art or recording is claimed.
@@ -32,8 +34,8 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 | carrier-wings | model-ref | yes | R2 follow-up | received | `assets/art-src/reference/carrier-wings.png` | — | Stray-Carrier enemy (via model) | — | — | — | A4; half-spread, no true profile; never shown in game; original archived locally |
 | carrier-shroud | model-ref | yes | R2 follow-up | received | `assets/art-src/reference/carrier-shroud.png` | — | Stray-Carrier enemy (via model) | — | — | — | A4; never shown in game; original archived locally |
 | dominion-atlas | atlas | yes | R2 | integrated-review | `scripts/blender/dominion.py` | `assets/sprites/dominion/atlas.png` + `atlas.json` | idle/walk/cast/pain/death, eight runtime directions | local Blender model from supplied references | 2026-10-13 | — | Same shared materials, rig and renderer as the existing enemies; pending human acceptance |
-| gatekeeper-trumpet | model-ref | yes | R7 | requested | — | — | trumpet added to Gatekeeper model | — | — | — | A2; fallback: existing Gatekeeper with coded gold bar raised |
-| gatekeeper-trumpet-raised | model-ref | yes | R7 | requested | — | — | Gatekeeper raised pose (50%) | — | — | — | A2 |
+| gatekeeper-trumpet | model-ref | yes | R7 | received | `assets/art-src/reference/gatekeeper-trumpet.png` | — | trumpet added to Gatekeeper model | — | — | — | A2; fallback: existing Gatekeeper with coded gold bar raised; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| gatekeeper-trumpet-raised | model-ref | yes | R7 | received | `assets/art-src/reference/gatekeeper-trumpet-raised.png` | — | Gatekeeper raised pose (50%) | — | — | — | A2; see art-prompts.md 2026-10-14 receipt; original archived locally |
 | amphora-tall | sprite | yes | R2 | integrated-review | `assets/art-src/amphora-tall.png` | `assets/sprites/amphora-tall.png` | Host prop/pickup presentation | — | — | — | Prepared from supplied art; pending human visual acceptance |
 | amphora-squat | sprite | yes | R2 | integrated-review | `assets/art-src/amphora-squat.png` | `assets/sprites/amphora-squat.png` | Host prop/pickup presentation | — | — | — | Prepared from supplied art; pending human visual acceptance |
 | amphora-lily | sprite | yes | R2 | integrated-review | `assets/art-src/amphora-lily.png` | `assets/sprites/amphora-lily.png` | Host prop/pickup presentation | — | — | — | Prepared from supplied art; pending human visual acceptance |
@@ -45,15 +47,15 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 | rite-page | sprite | yes | R4 | received | `assets/art-src/rite-page.png` | — | Rite page pickup | — | — | — | B2; R3 door/map plate glyph is coded; original archived locally and in Git history |
 | npc-pardoner | sprite | yes | R3 | received | `assets/art-src/npc-pardoner.png` | — | Pardoner's stall figure | — | — | — | B3; source portrait preview integrated; cutout pending; original archived locally and in Git history |
 | pardoner-box | sprite | yes | R3 | received | `assets/art-src/pardoner-box.png` | — | Pardoner's stall | — | — | — | B3; original archived locally and in Git history |
-| shop-pedestal | sprite | yes | R3 | received | `assets/art-src/shop-pedestal.jfif` | — | stall pedestal; item shown = its B7 sprite | — | — | — | B3; source on disk, cutout and runtime integration pending; fallback: coded pedestal |
+| shop-pedestal | sprite | yes | R3 | received | `assets/art-src/shop-pedestal.png` | — | stall pedestal; item shown = its B7 sprite | — | — | — | B3; source on disk, cutout and runtime integration pending; fallback: coded pedestal |
 | chart-scroll | sprite | yes | R3 | received | `assets/art-src/chart-scroll.png` | — | the Chart for sale | — | — | — | B3; original archived locally and in Git history |
 | confessional-grille | sprite | yes | R1 (shell), R4 | received | `assets/art-src/confessional-grille.png` | — | Confessional; the Advocate = two ember eyes in it | — | — | — | B4; R1.5 visual check: stone surround and visible lit body detail fail the panel-only/eyes-only prompt; source preserved, no runtime export. R1.5 uses the brief's existing-wall fallback; original archived locally and in Git history |
 | tex-confessional-wood | texture | yes | R1 (shell), R4 | received | `assets/art-src/tex-confessional-wood.png` | — | Confessional walls and door leaf | — | — | — | B4; R1.5 visual check: framed tops/bottoms do not join as a seamless vertical tile; source preserved, no runtime export. Existing wall texture retained; original archived locally and in Git history |
-| shared-key | sprite | yes | R6 | requested | — | — | key; beam = fx-beam | — | — | — | B5; fallback: coded key glyph |
-| reliquary-chest | sprite | yes | R6 | requested | — | — | Reliquary closed; beam = fx-beam | — | — | — | B5; fallback: coded box |
-| reliquary-chest-open | sprite | yes | R6 | requested | — | — | Reliquary open | — | — | — | B5 |
-| judgment-bell | sprite | yes | R6 | requested | — | — | Bell of Judgment; chain and shaft coded | — | — | — | B5; fallback: coded bell glyph |
-| sundial | sprite | yes | R6 | requested | — | — | HUD icon under minimap; Confessional prop | — | — | — | B5; fallback: coded gnomon glyph |
+| shared-key | sprite | yes | R6 | received | `assets/art-src/shared-key.png` | — | key; beam = fx-beam | — | — | — | B5; fallback: coded key glyph; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| reliquary-chest | sprite | yes | R6 | received | `assets/art-src/reliquary-chest.png` | — | Reliquary closed; beam = fx-beam | — | — | — | B5; fallback: coded box; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| reliquary-chest-open | sprite | yes | R6 | received | `assets/art-src/reliquary-chest-open.png` | — | Reliquary open | — | — | — | B5; aligned with the closed chest; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| judgment-bell | sprite | yes | R6 | received | `assets/art-src/judgment-bell.png` | — | Bell of Judgment; chain and shaft coded | — | — | — | B5; fallback: coded bell glyph; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| sundial | sprite | yes | R6 | received | `assets/art-src/sundial.png` | — | HUD icon under minimap; Confessional prop | — | — | — | B5; fallback: coded gnomon glyph; see art-prompts.md 2026-10-14 receipt; original archived locally |
 | watcher-open | sprite | yes | R7 | requested | — | — | Gatekeeper's Watchers | — | — | — | B6; rims, tethers coded; fallback: coded eye glyph |
 | watcher-closed | sprite | yes | R7 | requested | — | — | Gatekeeper's Watchers | — | — | — | B6 |
 | judgment-seal | sprite | yes | R7 | requested | — | — | Judgment Seal on a held player | — | — | — | B6; fallback: coded lock glyph |
@@ -64,31 +66,31 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 | item-venom | icon | yes | R3 | received | `assets/art-src/item-venom.png` | — | Bitter Water | — | — | — | B7, magenta background; original archived locally and in Git history |
 | item-frost | icon | yes | R3 | received | `assets/art-src/item-frost.png` | — | Ash of Stillness | — | — | — | B7; original archived locally and in Git history |
 | item-chain | icon | yes | R3 | received | `assets/art-src/item-chain.png` | — | Chain Vial | — | — | — | B7; original archived locally and in Git history |
-| item-plume | icon | yes | R3 | received | `assets/art-src/item-plume.jfif` | — | Plume of Expulsion | — | — | — | B7; source preview integrated, cutout and visual acceptance pending |
-| relic-usher | icon | yes | R6 | requested | — | — | Usher's Badge | — | — | — | B8 pilot; fallback: name on card |
-| relic-thurible | icon | yes | R6 | requested | — | — | Broken Thurible | — | — | — | B8 |
-| relic-link | icon | yes | R6 | requested | — | — | Last Link | — | — | — | B8 |
-| relic-tile | icon | yes | R6 | requested | — | — | Petitioner's Tile | — | — | — | B8 |
-| relic-qseal | icon | yes | R6 | requested | — | — | Seal of the First Plea | — | — | — | B8 |
-| relic-eseal | icon | yes | R6 | requested | — | — | Seal of the Last Plea | — | — | — | B8 |
-| relic-comb | icon | yes | R6 | requested | — | — | Comb of the Host | — | — | — | B8 |
-| relic-wheel | icon | yes | R6 | requested | — | — | Wheel of Review | — | — | — | B8 |
-| relic-unbroken | icon | yes | R6 | requested | — | — | Unbroken Quill | — | — | — | B8 |
-| relic-mercy | icon | yes | R6 | requested | — | — | Mercy's Wax | — | — | — | B8 |
-| relic-armageddon | icon | yes | R6 | requested | — | — | Choral Fragment | — | — | — | B8 |
-| relic-sentence3 | icon | yes | R6 | requested | — | — | Counterseal | — | — | — | B8 |
-| icon-judas-coin | icon | yes | R4 | requested | — | — | Judas Coin (Q/E slot) | — | — | — | B9 pilot; fallback: ability name in slot |
-| icon-way-back | icon | yes | R4 | requested | — | — | The Way Back | — | — | — | B9 |
-| icon-silver-wire | icon | yes | R4 | requested | — | — | Silver Wire | — | — | — | B9 |
-| icon-gatebreaker | icon | yes | R5 | requested | — | — | Gatebreaker | — | — | — | B9 |
-| icon-rain-of-fire | icon | yes | R5 | requested | — | — | Rain of Fire | — | — | — | B9 |
-| icon-cast-out | icon | yes | R5 | requested | — | — | Cast Out | — | — | — | B9 |
-| icon-bread-of-angels | icon | yes | R5 | requested | — | — | Bread of Angels | — | — | — | B9 |
-| icon-trial-by-fire | icon | yes | R5 | requested | — | — | Trial by Fire | — | — | — | B9 |
-| icon-cloud-of-witnesses | icon | yes | R5 | requested | — | — | Cloud of Witnesses | — | — | — | B9 |
-| icon-well-of-giants | icon | yes | R5 | requested | — | — | The Well of the Giants | — | — | — | B9 |
-| icon-ring-of-giants | icon | yes | R5 | requested | — | — | Ring of the Giants | — | — | — | B9 |
-| icon-boundary-chain | icon | yes | R5 | requested | — | — | The Boundary Chain | — | — | — | B9 |
+| item-plume | icon | yes | R3 | received | `assets/art-src/item-plume.png` | — | Plume of Expulsion | — | — | — | B7; source preview integrated, cutout and visual acceptance pending |
+| relic-usher | icon | yes | R6 | received | `assets/art-src/relic-usher.png` | — | Usher's Badge | — | — | — | B8 pilot; fallback: name on card; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| relic-thurible | icon | yes | R6 | received | `assets/art-src/relic-thurible.png` | — | Broken Thurible | — | — | — | B8; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| relic-link | icon | yes | R6 | received | `assets/art-src/relic-link.png` | — | Last Link | — | — | — | B8; twisted link, soft burst beyond outline; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| relic-tile | icon | yes | R6 | received | `assets/art-src/relic-tile.png` | — | Petitioner's Tile | — | — | — | B8; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| relic-qseal | icon | yes | R6 | received | `assets/art-src/relic-qseal.png` | — | Seal of the First Plea | — | — | — | B8; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| relic-eseal | icon | yes | R6 | received | `assets/art-src/relic-eseal.png` | — | Seal of the Last Plea | — | — | — | B8; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| relic-comb | icon | yes | R6 | received | `assets/art-src/relic-comb.png` | — | Comb of the Host | — | — | — | B8; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| relic-wheel | icon | yes | R6 | received | `assets/art-src/relic-wheel.png` | — | Wheel of Review | — | — | — | B8; twelve spokes, streaks outside outline; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| relic-unbroken | icon | yes | R6 | received | `assets/art-src/relic-unbroken.png` | — | Unbroken Quill | — | — | — | B8; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| relic-mercy | icon | yes | R6 | received | `assets/art-src/relic-mercy.png` | — | Mercy's Wax | — | — | — | B8; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| relic-armageddon | icon | yes | R6 | received | `assets/art-src/relic-armageddon.png` | — | Choral Fragment | — | — | — | B8; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| relic-sentence3 | icon | yes | R6 | received | `assets/art-src/relic-sentence3.png` | — | Counterseal | — | — | — | B8; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| icon-judas-coin | icon | yes | R4 | received | `assets/art-src/icon-judas-coin.png` | — | Judas Coin (Q/E slot) | — | — | — | B9 pilot; fallback: ability name in slot; inner frame to crop before pilot approval; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| icon-way-back | icon | yes | R4 | received | `assets/art-src/icon-way-back.png` | — | The Way Back | — | — | — | B9; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| icon-silver-wire | icon | yes | R4 | received | `assets/art-src/icon-silver-wire.png` | — | Silver Wire | — | — | — | B9; faint at 48 px; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| icon-gatebreaker | icon | yes | R5 | received | `assets/art-src/icon-gatebreaker.png` | — | Gatebreaker | — | — | — | B9; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| icon-rain-of-fire | icon | yes | R5 | received | `assets/art-src/icon-rain-of-fire.png` | — | Rain of Fire | — | — | — | B9; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| icon-cast-out | icon | yes | R5 | received | `assets/art-src/icon-cast-out.png` | — | Cast Out | — | — | — | B9; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| icon-bread-of-angels | icon | yes | R5 | received | `assets/art-src/icon-bread-of-angels.png` | — | Bread of Angels | — | — | — | B9; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| icon-trial-by-fire | icon | yes | R5 | received | `assets/art-src/icon-trial-by-fire.png` | — | Trial by Fire | — | — | — | B9; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| icon-cloud-of-witnesses | icon | yes | R5 | received | `assets/art-src/icon-cloud-of-witnesses.png` | — | Cloud of Witnesses | — | — | — | B9; figure lost at 48 px; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| icon-well-of-giants | icon | yes | R5 | received | `assets/art-src/icon-well-of-giants.png` | — | The Well of the Giants | — | — | — | B9; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| icon-ring-of-giants | icon | yes | R5 | received | `assets/art-src/icon-ring-of-giants.png` | — | Ring of the Giants | — | — | — | B9; see art-prompts.md 2026-10-14 receipt; original archived locally |
+| icon-boundary-chain | icon | yes | R5 | received | `assets/art-src/icon-boundary-chain.png` | — | The Boundary Chain | — | — | — | B9; see art-prompts.md 2026-10-14 receipt; original archived locally |
 | tex-refiner-channel | texture | yes | R2 | integrated-review | `assets/art-src/tex-refiner-channel.png` | `assets/textures/tex-refiner-channel.jpg` | Refiner channel floor; active flame and clear dim | — | — | — | Prepared from supplied art; pending human visual acceptance |
 | fx-flames | texture | yes | R2 | received | `assets/art-src/fx-flames.png` | — | Refiner's Fire (scrolling); all fire effects R4–R5 | — | — | — | B10; fallback: fx-glow; original archived locally and in Git history |
 | combo-expulsion | icon | no | R6 | requested | — | — | Order of Expulsion badge | — | — | — | B11 optional; default: combo badge (coded) |
