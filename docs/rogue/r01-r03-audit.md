@@ -251,7 +251,7 @@ Add what feels off here, one line each ("when X happens, it feels Y"). I'll map 
 | More item drops from breakables | B1: move item drops from the crowd to breakables | 4 |
 | Enemies still drop too few halos | B1: rebalance income, prices and drops together | 4 |
 
-Batches: **1** bugs and doc sync; **2** UI pass with mockups first; **3** readability; **4** combat and economy tuning, then a playtest; **5** behavior-neutral code cleanup before R04. Still open without a note: A4 (Carrier numbers), B3 (pressure stack), E (code).
+Batches: **1** bugs and doc sync; **2** UI pass with mockups first; **3** readability; **4** combat and economy tuning, then a playtest; **5** behavior-neutral code cleanup before R04. Still open without a note: E (code). A4 and A6 were decided in batch 4; B3 (pressure stack) waits for the playtest.
 
 ## Batch 1 results
 
@@ -403,3 +403,40 @@ When a run is refused at start (for example, the browser can't write the save), 
 - `npm run build`: passed.
 - Browser checks (the batch 3 list plus `e2e/multiplayer.spec.ts`): **55/55 passed** (14.2 min), `--grep-invert 'solo autopilot'`; the solo autopilot traversal wasn't rerun, as route and exit code didn't change.
 - In game: the Pardoner stands beside the plinth, and the Chart and Balm rest on the marble pedestals.
+
+## Batch 4 results
+
+2026-10-15, uncommitted on `rogue` (base `891bedc`). Rules version 18 → 19, so builds before and after this batch can't join each other. Protocol stays 11; the Dominion launch's `{dx, dy}` now carries the host's velocity in m/s instead of a unit direction.
+
+**Your decisions (2026-10-15):** keep the enemy item chances and slightly raise breakables'; Dominion enemy damage 40 → 10 so the edge only throws Blessed; keep the Carrier as coded but use the rescue threshold for the rush; no items while carried (A6); no pressure change (B3). The rest of the proposal was accepted as written.
+
+| Finding | Change | Files |
+|---|---|---|
+| B1 halos | Room budgets ×1.5: 1×1 72/90/108, 2×1 and 1×2 108/126/144, 2×2 180/198. A gold halo from a clear and a Rite page (until R04) pay **24** (was 6). Commander gold (6, from the budget) and prices are unchanged. On the 40 measured floors: about 735 budget halos per floor (was 491), so about 650 per player with ~75% collection, rewards and breakables; solo kills drop a coin every 2.3 Blessed (was 3.5), four players every 6 (was 8.8). | `src/sim/economy.ts`, `src/data/pickups.ts`, `src/sim/pickups.ts`, `src/sim/sim.ts`, `src/gen/rewards.ts` |
+| B1 items | Enemy item chances unchanged (Blessed 2%, ranged 12%, commanders 50%). Breakables: combat rooms 70 / 10 / 10 / **10%** item (was 5%), other rooms 80 / 10 / 5 / **5%** item (was none). | `src/data/props.ts`, `src/sim/sim.ts` |
+| Item strength | Balm heals 40% of max HP (Betrayer 48, Heretic 60, Binder 96, Fallen 160); Seal 100 shield; Feather 12 s; Mirror 5 m, 8 s; Bitter Water 10 per pulse; Ash 10 s; Chain binds 2.5 s; Plume throws 5 m and deals 20 (credited to the thrower). Prices unchanged. | `src/data/items.ts`, `src/sim/consumables.ts`, `src/sim/sim.ts`, `src/client/game.ts` |
+| B2 Dominion | Damage fades linearly from its feet to the 6 m edge: players 110 → 50, enemies 40 → 10 (Blessed die within 4 m, beyond they're only thrown), launch speed 15 → 9 m/s for both. Slam kills are world kills: coins, no player credit. The movement allowance uses the 15 m/s maximum. | `src/data/dominion.ts`, `src/sim/sim.ts`, `src/client/localPlayer.ts`, `src/net/messages.ts` |
+| Cantor | No damage change. Its pulses carry 120 burst force, so every crowd body it kills bursts away from the book. | `src/data/commanders.ts`, `src/sim/commanders.ts` |
+| A4 Carrier | Code numbers kept. The rush now stops at the rescue threshold (a fifth of its HP: 200, solo 80), counted fresh per rush, instead of at any damage. | `src/sim/commanders.ts` |
+| A4/A6 docs | rooms.md §6.3 now states the build's numbers and that the carried player can only look around: no movement, attacks, abilities or items (commit `83481d2`'s lockout, which also means Shadowstep and Falling Star no longer free a carried player). | `docs/rogue/rooms.md` |
+
+Docs: game.md §4.9 (props), §6.1 (gold values, budget table), §6.4 (gold 24, Rite page 24), §7.4 (item limits: heal up to 40% max HP, shield up to 100, bind up to 2.5 s); rooms.md §6 (Dominion), §6.2 (Cantor bursts), §6.3 (Carrier), §8 (props); items-relics.md catalog. The map and "Reward:" line now read `Rite page · 24 halos` instead of the milestone text `(R03 fixture)`.
+
+**Worth a look in the playtest:** the Balm on the Fallen (160) now out-heals one Communion (120), which bends the "items don't replace the Heretic" rule; game.md §7.4 says so. If that feels wrong, cap the Balm (for example at 80 HP).
+
+**New tests:**
+- `shop.test.ts`: a gold clear reward drops 24 and credits every human; Rite pages pay 24.
+- `props.test.ts`: the new breakable thresholds in combat and other rooms.
+- `consumables.test.ts`: Balm's share of max HP, the 100 Seal, Water's 10 per pulse, Chain's 2.5 s bind, Plume's 20 damage only to thrown bodies.
+- `dominion.test.ts`: damage and launch by distance for players and enemies; a Blessed at 2 m dies and pays its coin with no player credit while one at 5.5 m survives and is thrown; the 72-halo reservation covers three of four elites.
+- `commanders.test.ts`: the rush survives one shot, stops at the threshold, and its damage doesn't count toward the following carry's rescue.
+- `localPlayer.test.ts`: the client applies the launch velocity it receives.
+
+**Checks:**
+
+- `npm run typecheck`: passed.
+- `npm test -- --pool=threads --exclude '**/*perf.test.ts'`: **1,137 passed in 102 files**.
+- Both timing checks run alone: passed with the unchanged 8 ms limits, but one run of each read over the limit (10.2 and 9.9 ms/tick) while other processes were busy. Back to back against an untouched HEAD worktree, three alternating runs each: hazard stress 4.59–4.82 (HEAD) vs 4.45–4.50 ms/tick (batch 4), main check 3.21–3.28 vs 3.19–3.23. No regression.
+- `npm run build`: passed.
+- Browser checks (the batch 3 list plus `e2e/multiplayer.spec.ts`), `--grep-invert 'solo autopilot'`: **54 passed, 1 failed** (13.9 min). The failure was the hint-window check still expecting the Feather's old "8 seconds"; after updating it, `e2e/profiles.spec.ts` passed **8/8**. The solo autopilot traversal wasn't rerun; route and exit code didn't change.
+- Not done: no benchmark, no in-game look. The feel of the new numbers needs your playtest.

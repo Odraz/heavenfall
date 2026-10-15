@@ -1,6 +1,6 @@
 /** The host simulation: pure TypeScript, no three.js or DOM (§2.2). */
 import { CLASSES, type ClassId } from '../data/classes';
-import { copyInventory, emptyInventory, ITEM_IDS, isItemId, type Inventory, type ItemId } from '../data/items';
+import { copyInventory, emptyInventory, FEATHER_SPEED, ITEM_IDS, isItemId, PLUME_LIFT, PLUME_THROW, type Inventory, type ItemId } from '../data/items';
 import { Consumables } from './consumables';
 import { VictoryExit } from './victory';
 import { levelForXp } from '../profile/model';
@@ -120,8 +120,8 @@ import { lineOfSight, raycastTerrain } from './los';
 import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
-import { COIN, DROPPED_ITEM_LIFETIME, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, PICKUP_CAP, itemDrop, type PickupRecord } from '../data/pickups';
-import { PROP_HEIGHT, PROP_BLAST_PLAYER_DAMAGE, type PropDef } from '../data/props';
+import { COIN, DROPPED_ITEM_LIFETIME, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, PICKUP_CAP, REWARD_GOLD_VALUE, RITE_PAGE_HALOS, itemDrop, type PickupRecord } from '../data/pickups';
+import { LOOT_ROLL, PROP_HEIGHT, PROP_BLAST_PLAYER_DAMAGE, type PropDef } from '../data/props';
 import { Props, type Prop } from './props';
 import { HaloLedger, HALO_WEIGHT, haloBudget, moteCap } from './economy';
 import { Pickups } from './pickups';
@@ -130,7 +130,7 @@ import { Commanders, carryPathClear, type beamSegment } from './commanders';
 import { hymnalReduction } from '../data/commanders';
 import { directionalSpeedFactor } from '../data/movement';
 import { dominionLeapClear } from './dominionLeap';
-import { DOMINION_ALIVE_CAP, DOMINION_COOLDOWN_TICKS, DOMINION_REACH, DOMINION_RADIUS, DOMINION_HEIGHT_TOLERANCE, DOMINION_PLAYER_DAMAGE, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_VZ, DOMINION_LEAP_CHARGE_TICKS, DOMINION_LEAP_LEAD_SECONDS, DOMINION_LEAP_MIN_RANGE, DOMINION_LEAP_MAX_RANGE, DOMINION_TELL_TICKS, DOMINION_MELEE_RANGE, DOMINION_MELEE_DAMAGE, dominionLeapPosition, type DominionLeap, type DominionCast, type DominionPhase } from '../data/dominion';
+import { DOMINION_ALIVE_CAP, DOMINION_COOLDOWN_TICKS, DOMINION_REACH, DOMINION_RADIUS, DOMINION_HEIGHT_TOLERANCE, DOMINION_ENEMY_DAMAGE, DOMINION_PLAYER_DAMAGE, DOMINION_LAUNCH_SPEED, dominionFalloff, DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_VZ, DOMINION_LEAP_CHARGE_TICKS, DOMINION_LEAP_LEAD_SECONDS, DOMINION_LEAP_MIN_RANGE, DOMINION_LEAP_MAX_RANGE, DOMINION_TELL_TICKS, DOMINION_MELEE_RANGE, DOMINION_MELEE_DAMAGE, dominionLeapPosition, type DominionLeap, type DominionCast, type DominionPhase } from '../data/dominion';
 import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, reviveSlowdown, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
 
 /** Linear party scaling, including half-player bots (rogue game.md §0). */
@@ -963,7 +963,7 @@ export class Simulation {
       const elapsed = Math.max(0, nowMs - p.lastAcceptMs) / 1000;
       const launched = Math.max(0, Math.min(nowMs, p.launchUntilMs) - p.lastAcceptMs) / 1000;
       const walkingSpeed = p.speed * directionalSpeedFactor(p.yaw, x - p.x, y - p.y);
-      const maxD = 1.2 * (walkingSpeed * elapsed + Math.max(0, DOMINION_LAUNCH_SPEED - walkingSpeed) * Math.min(elapsed, launched)) + 0.5;
+      const maxD = 1.2 * (walkingSpeed * elapsed + Math.max(0, DOMINION_LAUNCH_SPEED.center - walkingSpeed) * Math.min(elapsed, launched)) + 0.5;
       const dx = x - p.x;
       const dy = y - p.y;
       const d = Math.hypot(dx, dy);
@@ -1007,7 +1007,7 @@ export class Simulation {
     }
   }
 
-  /** Moves a player on the host and tells its client (§9.3). */
+  /** Moves a player on the host and tells its client (§9.3). `launch` is a horizontal velocity in m/s. */
   teleport(p: SimPlayer, x: number, y: number, z: number, launch?: { dx: number; dy: number }, carry?: boolean): void {
     if (carry === undefined) this.commanders.releasePlayer(p.id, false);
     p.x = x;
@@ -2357,7 +2357,7 @@ export class Simulation {
     } else if (drop.kind === 15 && !p.bot) {
       const recipients = this.pageRecipients.get(drop.id);
       if (!recipients?.delete(p.offerKey)) return false;
-      p.wallet += 6; this.publishInventory(p);
+      p.wallet += RITE_PAGE_HALOS; this.publishInventory(p);
       if (recipients.size) return false; // A page retains other humans' personal entitlements.
       this.pageRecipients.delete(drop.id);
     } else return false;
@@ -2402,7 +2402,7 @@ export class Simulation {
     const reward = this.floor?.rewards[room], point = this.map.rooms[room].points?.reward;
     if (!reward || !point || reward.kind === 'nothing') return;
     const kind = reward.kind === 'gold' ? GOLD_HALO : reward.kind === 'item' ? ITEM_FIRST + ITEM_IDS.indexOf(reward.item) : 15;
-    const drop = this.pickups.drop(kind, room, point[0] + 0.5, point[1] + 0.5, this.tick);
+    const drop = this.pickups.drop(kind, room, point[0] + 0.5, point[1] + 0.5, this.tick, reward.kind === 'gold' ? REWARD_GOLD_VALUE : 0);
     if (reward.kind === 'rite' && drop) this.pageRecipients.set(drop.id, new Set(this.rewardRecipients.get(room) ?? []));
   }
   private revealChart(): void {
@@ -2437,11 +2437,11 @@ export class Simulation {
     if (p.family === 'loot') {
       if (p.marked) this.pickups.drop(this.floor ? 13 : GOLD_HALO, p.room, p.x, p.y, this.tick);
       else {
-        const combat = ['combat', 'boss'].includes(this.map.rooms[p.room].kind);
+        const odds = ['combat', 'boss'].includes(this.map.rooms[p.room].kind) ? LOOT_ROLL.combat : LOOT_ROLL.other;
         const roll = this.random();
-        if (roll >= (combat ? 0.75 : 0.85) && roll < (combat ? 0.85 : 0.95)) this.pickups.drop(COIN, p.room, p.x, p.y, this.tick);
-        else if (roll >= (combat ? 0.85 : 0.95) && roll < (combat ? 0.95 : 1)) this.pickups.drop(HEAL_MOTE, p.room, p.x, p.y, this.tick);
-        else if (combat && roll >= 0.95) this.pickups.drop(itemDrop(this.random), p.room, p.x, p.y, this.tick, 0, DROPPED_ITEM_LIFETIME);
+        if (roll >= odds.nothing && roll < odds.coin) this.pickups.drop(COIN, p.room, p.x, p.y, this.tick);
+        else if (roll >= odds.coin && roll < odds.mote) this.pickups.drop(HEAL_MOTE, p.room, p.x, p.y, this.tick);
+        else if (roll >= odds.mote) this.pickups.drop(itemDrop(this.random), p.room, p.x, p.y, this.tick, 0, DROPPED_ITEM_LIFETIME);
       }
     } else if (p.family === 'blessing' && origin === 'player') {
       for (const q of this.players) {
@@ -2634,12 +2634,16 @@ export class Simulation {
     this.eKbFrom[slot] = this.tick;
     this.eKbUntil[slot] = this.tick + ticks(seconds);
   }
-  /** Item control is a real 0.4-second flight; its hit cylinder follows gravity, not client VFX. */
-  itemLaunch(slot: number, x: number, y: number): void {
-    if (this.immune(slot) || this.isRooted(slot) || !this.eGrounded[slot] || this.tick < this.eKbUntil[slot]) return;
-    this.knockAway(slot, x, y, 2, .4);
-    this.eVz[slot] = 4; this.eGrounded[slot] = 0;
+  /**
+   * Plume of Expulsion's throw: a real half-second flight whose hit cylinder follows gravity, not client
+   * VFX. Returns whether the body was thrown (and so takes the Plume's damage).
+   */
+  itemLaunch(slot: number, x: number, y: number): boolean {
+    if (this.immune(slot) || this.isRooted(slot) || !this.eGrounded[slot] || this.tick < this.eKbUntil[slot]) return false;
+    this.knockAway(slot, x, y, PLUME_THROW, .5);
+    this.eVz[slot] = PLUME_LIFT; this.eGrounded[slot] = 0;
     this.commanders.cancel(slot); this.dominions.cancel(slot, this.tick);
+    return true;
   }
 
   /** Knocks an enemy away from (cx, cy); one exactly there goes along a fixed angle from its slot. */
@@ -2697,7 +2701,7 @@ export class Simulation {
     for (const p of this.players) {
       const carried = !!this.commanders.carriedBy(p.id);
       if (carried) this.cancelPlayerActions(p);
-      p.speed = CLASSES[p.classId].speed + (this.tick < p.featherUntil ? 2 : 0);
+      p.speed = CLASSES[p.classId].speed + (this.tick < p.featherUntil ? FEATHER_SPEED : 0);
       for (const slot of [0, 1] as const) if (p.pendingItems[slot]) { p.pendingItems[slot] = false; this.items.manual(p, slot); }
       p.cdQ = Math.max(0, p.cdQ - TICK_DT);
       p.cdE = Math.max(0, p.cdE - TICK_DT);
@@ -3784,22 +3788,27 @@ export class Simulation {
       if (eligible(this.eX[q], this.eY[q], this.eZ[q], def.height)) victims.push(q);
     }
     for (const q of victims) {
+      const distance = Math.hypot(this.eX[q] - x, this.eY[q] - y);
+      // A world hit: no player credit, but a kill still pays its coins (game.md §6.1).
+      this.damageEnemy(q, Math.round(dominionFalloff(DOMINION_ENEMY_DAMAGE, distance)), -1, undefined, x, y, true);
+      if (!this.eAlive[q]) continue;
       this.dominions.cancel(q, this.tick);
       this.commanders.cancel(q);
       this.ePullStart[q] = -1;
-      this.knockAway(q, x, y, DOMINION_LAUNCH_SPEED * DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_SECONDS);
+      this.knockAway(q, x, y, dominionFalloff(DOMINION_LAUNCH_SPEED, distance) * DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_SECONDS);
       this.eVz[q] = DOMINION_LAUNCH_VZ; this.eGrounded[q] = 0;
       this.eMeleeNext[q] = -1; this.eCast[q] = 0; this.eCastT[q] = 0;
     }
     for (const p of this.players) if (this.livingTargetable(p) && eligible(p.x, p.y, p.z, PLAYER_HEIGHT)) {
       const immune = this.isInvulnerable(p);
-      this.damagePlayer(p, DOMINION_PLAYER_DAMAGE);
-      if (immune || p.dead) continue;
       const dx = p.x - x, dy = p.y - y, distance = Math.hypot(dx, dy);
+      this.damagePlayer(p, Math.round(dominionFalloff(DOMINION_PLAYER_DAMAGE, distance)));
+      if (immune || p.dead) continue;
       // Reuse the acknowledged host correction: stale pre-impact positions cannot undo the launch.
-      const direction = distance > 1e-9 ? { dx: dx / distance, dy: dy / distance } : { dx: Math.cos(p.yaw), dy: Math.sin(p.yaw) };
+      const speed = dominionFalloff(DOMINION_LAUNCH_SPEED, distance);
+      const launch = distance > 1e-9 ? { dx: dx / distance * speed, dy: dy / distance * speed } : { dx: Math.cos(p.yaw) * speed, dy: Math.sin(p.yaw) * speed };
       p.dash = null; p.landingTick = -1;
-      this.teleport(p, p.x, p.y, p.z, direction);
+      this.teleport(p, p.x, p.y, p.z, launch);
     }
   }
 

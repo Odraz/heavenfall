@@ -2,7 +2,8 @@
 import type { RoomShape } from '../data/dungeons/types';
 
 const HALOS: Record<RoomShape, readonly number[]> = {
-  '1x1': [0, 48, 60, 72], '2x1': [0, 72, 84, 96], '1x2': [0, 72, 84, 96], '2x2': [0, 0, 120, 132],
+  // Audit batch 4: ×1.5 the R02 budgets, so the crowd visibly pays and the shop is affordable.
+  '1x1': [0, 72, 90, 108], '2x1': [0, 108, 126, 144], '1x2': [0, 108, 126, 144], '2x2': [0, 0, 180, 198],
 };
 export const HALO_WEIGHT = [1, 3, 3] as const;
 export function haloBudget(shape: RoomShape, band: number): number { return HALOS[shape][band] ?? 0; }

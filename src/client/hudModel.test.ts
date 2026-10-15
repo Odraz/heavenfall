@@ -23,7 +23,7 @@ describe('HUD model', () => {
 
   it('describes each carried stack with its key, name, count and rule', () => {
     expect(carriedHints([{ item: 'balm', count: 2 }, null])).toEqual([
-      { slot: 1, item: 'balm', text: '1 · Balm of the Rejected ×2: heal yourself for 40 HP.' },
+      { slot: 1, item: 'balm', text: '1 · Balm of the Rejected ×2: heal yourself for 40% of your max HP.' },
     ]);
     expect(carriedHints([null, { item: 'feather', count: 1 }]).map((h) => h.slot)).toEqual([2]);
     expect(carriedHints([null, null])).toEqual([]);

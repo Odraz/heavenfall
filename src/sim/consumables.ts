@@ -1,5 +1,5 @@
 /** R03 item authority. A flight owns its area reservation from acceptance to expiry. */
-import { ITEMS, storeItem, type ItemId } from '../data/items';
+import { BALM_HEAL_FRACTION, CHAIN_BIND_SECONDS, FEATHER_SPEED, ITEMS, PLUME_DAMAGE, SEAL_SHIELD, VENOM_DAMAGE, storeItem, type ItemId } from '../data/items';
 import { CLASSES } from '../data/classes';
 import { ENEMIES, GATEKEEPER } from '../data/enemies';
 import { aimDir, rayCylinder } from './combat';
@@ -26,7 +26,7 @@ export class Consumables {
   get flights(): number { return this.effects.filter(e => e.activatedTick < 0).length; }
   records(): ItemEffect[] { return this.effects.map(({ cells: _c, attempted: _a, ...record }) => ({ ...record })); }
   active(p: SimPlayer, item: ItemId): boolean {
-    return item === 'balm' ? p.hp >= p.maxHp : item === 'seal' ? p.shield >= 50 : item === 'feather'
+    return item === 'balm' ? p.hp >= p.maxHp : item === 'seal' ? p.shield >= SEAL_SHIELD : item === 'feather'
       ? p.featherUntil > this.sim.tick : this.effects.some(e => e.owner === p.id && e.item === item);
   }
   pickup(p: SimPlayer, item: ItemId): boolean {
@@ -48,12 +48,12 @@ export class Consumables {
     let effect: Area | undefined;
     if (item === 'balm') {
       if (p.hp >= p.maxHp) return false;
-      sim.heal(p, 40);
+      sim.heal(p, p.maxHp * BALM_HEAL_FRACTION);
     } else if (item === 'seal') {
-      if (p.shield >= 50) return false;
-      sim.giveShield(p, 50, 8); p.sealUntil = tick + 240;
+      if (p.shield >= SEAL_SHIELD) return false;
+      sim.giveShield(p, SEAL_SHIELD, def.duration / 30); p.sealUntil = tick + def.duration;
     } else if (item === 'feather') {
-      p.featherUntil = tick + 240; p.speed = CLASSES[p.classId].speed + 2;
+      p.featherUntil = tick + def.duration; p.speed = CLASSES[p.classId].speed + FEATHER_SPEED;
     } else {
       const room = sim.pickups.roomAt(p.x, p.y), ground = this.floor(p.x, p.y, room);
       if (room === 255 || ground === null || this.nextId > 0xffffffff) return false;
@@ -145,7 +145,7 @@ export class Consumables {
   private covers(e: Area, s: number): boolean {
     const sim = this.sim, map = sim.map, def = ENEMIES[sim.eType[s]], x = sim.eX[s], y = sim.eY[s], z = sim.eZ[s];
     if (sim.pickups.roomAt(x, y) !== e.room) return false;
-    if (e.item === 'mirror') return distToCylinder(e.x, e.y, e.z + 1, x, y, z, def.radius, def.height) <= 4 && lineOfSight(map, e.x, e.y, e.z + 1, x, y, z + def.height / 2);
+    if (e.item === 'mirror') return distToCylinder(e.x, e.y, e.z + 1, x, y, z, def.radius, def.height) <= ITEMS.mirror.radius && lineOfSight(map, e.x, e.y, e.z + 1, x, y, z + def.height / 2);
     const cell = Math.floor(y) * map.w + Math.floor(x);
     return (!def.flying || sim.eGrounded[s] === 1 && Math.abs(z - map.floor[cell]) < .05) &&
       Math.abs(z - e.z) <= 1 && e.cells.has(cell) && Math.hypot(x - e.x, y - e.y) <= ITEMS[e.item].radius &&
@@ -154,7 +154,7 @@ export class Consumables {
   private affect(apply: boolean): void {
     const sim = this.sim, areas = this.effects.filter(e => e.activatedTick >= 0 && sim.tick < e.endTick);
     if (!areas.length) return;
-    const hits: Array<{ s: number; area: Area }> = [];
+    const hits: Array<{ s: number; area: Area }> = [], throws: Array<{ s: number; area: Area }> = [];
     for (let k = 0; k < sim.activeCount; k++) {
       const s = sim.active[k]; let venom: Area | undefined;
       for (const e of areas) {
@@ -165,20 +165,22 @@ export class Consumables {
         if (e.item === 'venom' && (!venom || e.activatedTick > venom.activatedTick || e.activatedTick === venom.activatedTick && (e.owner < venom.owner || e.owner === venom.owner && e.id < venom.id))) venom = e;
         if ((e.item === 'chain' || e.item === 'plume') && !e.attempted.has(sim.eIncarnation[s])) {
           e.attempted.add(sim.eIncarnation[s]);
-          if (e.item === 'chain') sim.root(s, 1); else sim.itemLaunch(s, e.x, e.y);
+          if (e.item === 'chain') sim.root(s, CHAIN_BIND_SECONDS); else if (sim.itemLaunch(s, e.x, e.y)) throws.push({ s, area: e });
         }
       }
       if (venom && (sim.tick - venom.activatedTick) % 15 === 0 && (this.venomLife[s] !== sim.eIncarnation[s] || sim.tick - this.venomAt[s] >= 15)) {
         this.venomLife[s] = sim.eIncarnation[s]; this.venomAt[s] = sim.tick; hits.push({ s, area: venom });
       }
     }
-    for (const { s, area } of hits) sim.damageEnemy(s, 5, sim.playerById(area.owner)?.index ?? -1, 5, area.x, area.y);
+    // Damage after the scan: a kill compacts the active list.
+    for (const { s, area } of hits) sim.damageEnemy(s, VENOM_DAMAGE, sim.playerById(area.owner)?.index ?? -1, VENOM_DAMAGE, area.x, area.y);
+    for (const { s, area } of throws) if (sim.eAlive[s]) sim.damageEnemy(s, PLUME_DAMAGE, sim.playerById(area.owner)?.index ?? -1, PLUME_DAMAGE, area.x, area.y);
   }
   reflection(x: number, y: number, z: number, dx: number, dy: number, dz: number, max: number): { distance: number; area: ItemEffect } | null {
     let result: { distance: number; area: ItemEffect } | null = null;
     for (const e of this.effects) {
       if (e.item !== 'mirror' || e.activatedTick < 0 || this.sim.tick >= e.endTick) continue;
-      const ox = x - e.x, oy = y - e.y, oz = z - e.z - 1, b = ox * dx + oy * dy + oz * dz, c = ox * ox + oy * oy + oz * oz - 16;
+      const ox = x - e.x, oy = y - e.y, oz = z - e.z - 1, b = ox * dx + oy * dy + oz * dz, c = ox * ox + oy * oy + oz * oz - ITEMS.mirror.radius ** 2;
       const disc = b * b - c; if (disc < 0) continue;
       const distance = c <= 0 ? 0 : -b - Math.sqrt(disc);
       if (distance < 0 || distance > max || result && (distance > result.distance || distance === result.distance && e.id > result.area.id)) continue;

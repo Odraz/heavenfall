@@ -1,6 +1,6 @@
 /** Local player movement, run every render frame on the player's own main thread (§2.2, §5.2). */
 import { FALLING_STAR_TIME, SHADOWSTEP_SPEED, SHADOWSTEP_TIME } from '../data/weapons';
-import { DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_VZ } from '../data/dominion';
+import { DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_VZ } from '../data/dominion';
 import { directionalSpeedFactor } from '../data/movement';
 import { arcPoint } from './fallingStarAim';
 import { JUMP_VZ, PLAYER_RADIUS } from '../sim/constants';
@@ -78,7 +78,7 @@ export class LocalPlayer {
     const b = this.body;
     if (this.launch) {
       const force = this.launch, slice = Math.min(dt, force.remaining);
-      stepBody(map, b, force.dx * DOMINION_LAUNCH_SPEED * slice, force.dy * DOMINION_LAUNCH_SPEED * slice, dt, this.moveResult);
+      stepBody(map, b, force.dx * slice, force.dy * slice, dt, this.moveResult);
       force.remaining -= dt;
       if (force.remaining <= 1e-9) this.launch = null;
       return;
@@ -109,7 +109,7 @@ export class LocalPlayer {
     stepBody(map, b, dirX * speed * dt, dirY * speed * dt, dt, this.moveResult);
   }
 
-  /** Moves the player instantly, as for a teleport. */
+  /** Moves the player instantly, as for a teleport. `launch` is the host's horizontal velocity in m/s. */
   teleport(x: number, y: number, z: number, launch?: { dx: number; dy: number }): void {
     this.carried = false;
     this.leap = null;

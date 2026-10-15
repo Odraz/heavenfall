@@ -9,6 +9,7 @@ import { Simulation } from './sim';
 import { HaloLedger, haloBudget } from './economy';
 import { BLESSED } from '../data/enemies';
 import { sealNow } from './testutil/sims';
+import { GOLD_HALO, REWARD_GOLD_VALUE, RITE_PAGE_HALOS } from '../data/pickups';
 
 describe('R3 shop transactions', () => {
   it('keeps Rite-page entitlements personal across reconnect and gives no reward to a later arrival', () => {
@@ -22,10 +23,22 @@ describe('R3 shop transactions', () => {
       Object.assign(sim.playerById(id)!, { x: page.x, y: page.y, z: sim.pickups.floor(page.x, page.y) }); sim.step();
     };
     sim.removePlayer(1, true); sim.addPlayer({ id: 2, name: 'Late', classId: 'binder' }); touch(2);
-    expect(sim.playerById(2)!.wallet).toBe(0); touch(0); touch(0); expect(sim.playerById(0)!.wallet).toBe(6);
+    expect(sim.playerById(2)!.wallet).toBe(0); touch(0); touch(0); expect(sim.playerById(0)!.wallet).toBe(RITE_PAGE_HALOS);
     expect(sim.pickups.live.some(p => p.id === page.id)).toBe(true);
     sim.addPlayer({ id: 1, name: 'B', classId: 'heretic' }); touch(1);
-    expect(sim.playerById(1)!.wallet).toBe(6); expect(sim.pickups.live.some(p => p.id === page.id)).toBe(false);
+    expect(sim.playerById(1)!.wallet).toBe(RITE_PAGE_HALOS); expect(sim.pickups.live.some(p => p.id === page.id)).toBe(false);
+  });
+  it('a gold clear reward is worth a quarter room budget, credited to every human (audit batch 4)', () => {
+    // The pinned floor rolls no gold, so its route Rite room pays gold here.
+    const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL), room = g.floor.rewards.findIndex(r => r.kind === 'rite');
+    g.floor.rewards[room] = { kind: 'gold' }; g.def.rooms[room].waves = [];
+    const sim = new Simulation({ dungeon: g.def, floor: g.floor, seed: 1, startRoom: room, god: true,
+      players: [{ id: 0, name: 'A', classId: 'fallen' }, { id: 1, name: 'B', classId: 'heretic' }] });
+    sim.step(); sealNow(sim, room);
+    const gold = sim.pickups.live.find(p => p.kind === GOLD_HALO)!;
+    expect(gold.value).toBe(REWARD_GOLD_VALUE);
+    Object.assign(sim.players[0], { x: gold.x, y: gold.y, z: sim.pickups.floor(gold.x, gold.y) }); sim.step();
+    expect(sim.players.map(p => p.wallet)).toEqual([24, 24]);
   });
   it('free Chart contact reveals the party without spending a slot or wallet', () => {
     const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);

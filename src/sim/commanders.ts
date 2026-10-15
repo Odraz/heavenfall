@@ -1,5 +1,5 @@
 import { BLESSED, CANTOR, CARRIER, ENEMIES, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
-import { CANTOR_AIM_SPEED, CANTOR_BEAM_TURN_SPEED, CANTOR_BEAM, CANTOR_COOLDOWN, CANTOR_RECOVERY, CANTOR_TELL, CARRIER_COOLDOWN, CARRIER_RECOVERY, CARRIER_SWOOP, CARRIER_GRAB_RADIUS, CARRIER_FLY_THROUGH, CARRIER_MIN_HOLD, CARRIER_MIN_FLIGHT, CARRIER_TRACK_TICKS, CARRIER_FLIGHT_HEIGHT, CARRIER_DAMAGE, CARRIER_DAMAGE_INTERVAL, COMMANDER_RECORD_CAP, turnToward, type CommanderCast } from '../data/commanders';
+import { CANTOR_AIM_SPEED, CANTOR_BEAM_TURN_SPEED, CANTOR_BEAM, CANTOR_COOLDOWN, CANTOR_RECOVERY, CANTOR_TELL, CARRIER_COOLDOWN, CARRIER_RECOVERY, CARRIER_SWOOP, CARRIER_GRAB_RADIUS, CARRIER_FLY_THROUGH, CARRIER_MIN_HOLD, CARRIER_MIN_FLIGHT, CARRIER_TRACK_TICKS, CARRIER_FLIGHT_HEIGHT, CARRIER_DAMAGE, CARRIER_DAMAGE_INTERVAL, CANTOR_BEAM_FORCE, COMMANDER_RECORD_CAP, turnToward, type CommanderCast } from '../data/commanders';
 import { ENEMY_SLOTS, PLAYER_HEIGHT, PLAYER_RADIUS } from './constants';
 import { circleOverlapsCell } from './movement';
 import { lineOfSight, raycastTerrain } from './los';
@@ -87,11 +87,10 @@ export class Commanders {
     if (carried && p && correction) s.teleport(p, p.x, p.y, p.z, undefined, false);
   }
   remove(slot: number): void { this.cancel(slot); this.active.delete(slot); this.origins.delete(slot); this.carrierChecks.delete(slot); }
+  /** Rush and carry share one rule: a fifth of the Carrier's HP in accepted damage stops it (audit batch 4). */
   damaged(slot: number, amount: number): void {
     const c = this.active.get(slot);
-    if (!c || amount <= 0) return;
-    if (c.kind === 'carry' && c.phase === 'active') { this.cancel(slot); return; }
-    if (c.phase !== 'carry') return;
+    if (!c || amount <= 0 || c.kind !== 'carry' || c.phase !== 'active' && c.phase !== 'carry') return;
     this.rescueDamage[slot] += amount;
     if (this.rescueDamage[slot] >= this.rescueThreshold[slot] - 1e-6) this.cancel(slot);
   }
@@ -150,7 +149,10 @@ export class Commanders {
     if (hold) s.eState[slot] = c.phase === 'tell' ? ST_WINDUP : ST_ATTACKING;
     return hold;
   }
-  /** Called after separation built the spatial hashes. No full-enemy scan per beam pulse. */
+  /**
+   * Called after separation built the spatial hashes. No full-enemy scan per beam pulse.
+   * Crowd kills burst away from the book, so the beam visibly hurts the horde (audit batch 4).
+   */
   pulse(): void {
     const s = this.sim;
     for (const c of this.active.values()) {
@@ -162,7 +164,7 @@ export class Commanders {
       for (const slot of s.commanderBeamCandidates(b)) {
         if (!s.eAlive[slot] || s.eType[slot] > 2 || s.roomAt(s.eX[slot], s.eY[slot]) !== c.room) continue;
         const d = ENEMIES[s.eType[slot]];
-        if (beamHits(b, s.eX[slot], s.eY[slot], s.eZ[slot], d.height, d.radius) && visible(s.eX[slot], s.eY[slot], s.eZ[slot], d.height)) s.damageEnemy(slot, 20, -1);
+        if (beamHits(b, s.eX[slot], s.eY[slot], s.eZ[slot], d.height, d.radius) && visible(s.eX[slot], s.eY[slot], s.eZ[slot], d.height)) s.damageEnemy(slot, 20, -1, CANTOR_BEAM_FORCE, b.x, b.y, true);
       }
     }
   }
@@ -211,7 +213,7 @@ export class Commanders {
         this.start(c, p, CARRIER_SWOOP);
         if (c.targetId !== p.id || c.phaseTick !== s.tick) return false;
         c.phase = 'active'; c.yaw = Math.atan2(p.y - c.y, p.x - c.x);
-        c.dropX = p.x; c.dropY = p.y;
+        c.dropX = p.x; c.dropY = p.y; this.rescueDamage[slot] = 0;
         this.origins.set(slot, { x: c.x, y: c.y, z: c.z }); check.reason = 'rushing';
       }
     }

@@ -106,18 +106,28 @@ describe('Lectern Cantor authority', () => {
 });
 
 describe('Stray-Carrier authority', () => {
-  it('interrupts a charge on any positive damage, but never on a zero-damage hit', () => {
+  it('interrupts a rush at the rescue threshold, counted fresh for each rush', () => {
     const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
-    sim.damageEnemy(slot, 0, p.index); expect(c.phase).toBe('active');
+    const threshold = sim.eHp[slot] * 0.2;
+    sim.damageEnemy(slot, 0, p.index); sim.damageEnemy(slot, threshold - 1, p.index); expect(c.phase).toBe('active');
     sim.damageEnemy(slot, 1, p.index); expect(c.phase).toBe('recover');
     expect(sim.commanders.readyAt[slot]).toBe(sim.tick + 240);
     advance(sim, slot, CARRIER_SWOOP); expect(sim.commanders.carriedBy(p.id)).toBeUndefined();
   });
-  it('lets the targeted player prevent a grab by shooting the charging Carrier', () => {
+  it('one shot no longer stops a rush, but the rescue threshold does', () => {
     const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
     aimAt(sim, p, slot); p.fire = 1; sim.step();
-    expect(p.shots).toBe(1); expect(sim.eHp[slot]).toBe(940); expect(c.phase).toBe('recover');
-    expect(sim.commanders.carriedBy(p.id)).toBeUndefined();
+    expect(p.shots).toBe(1); expect(sim.eHp[slot]).toBe(940); expect(c.phase).not.toBe('recover');
+    const { sim: other, slot: rusher, p: q, c: cast } = fixture(CARRIER); other.commanders.readyAt[rusher] = 0; other.commanders.update(rusher);
+    other.damageEnemy(rusher, other.eHp[rusher] * 0.2, q.index); expect(cast.phase).toBe('recover');
+    advance(other, rusher, CARRIER_SWOOP); expect(other.commanders.carriedBy(q.id)).toBeUndefined();
+  });
+  it('damage taken during a rush does not count toward the carry rescue that follows', () => {
+    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    sim.damageEnemy(slot, sim.eHp[slot] * 0.2 - 1, p.index);
+    for (let i = 0; i < CARRIER_SWOOP && c.phase === 'active'; i++) advance(sim, slot, 1);
+    expect(c.phase).toBe('carry');
+    sim.damageEnemy(slot, 1, p.index); expect(c.phase).toBe('carry');
   });
   for (const classId of ['fallen', 'heretic', 'binder', 'betrayer'] as const) it(`blocks attacks, abilities and items for a carried ${classId} without spending resources`, () => {
     const { sim, p, c } = grab(1, classId);

@@ -1,5 +1,5 @@
 /** Bounded authoritative world drops (game.md §14.12); never pays directly on overflow. */
-import { COIN, CURRENCY_LIFETIME, GOLD_HALO, HEAL_MOTE, ORDINARY_PICKUP_CAP, PENDING_PICKUP_CAP, PICKUP_CAP, PICKUP_KIND_COUNT, STRUCTURAL_FIRST, type PickupRecord } from '../data/pickups';
+import { COIN, CURRENCY_LIFETIME, GOLD_HALO, GOLD_HALO_VALUE, PROP_COIN_VALUE, HEAL_MOTE, ORDINARY_PICKUP_CAP, PENDING_PICKUP_CAP, PICKUP_CAP, PICKUP_KIND_COUNT, STRUCTURAL_FIRST, type PickupRecord } from '../data/pickups';
 import { TICK_DT } from './constants';
 import { lineOfSight } from './los';
 import type { GameMap } from './map';
@@ -26,7 +26,7 @@ export class Pickups {
     return lineOfSight(this.map, a.x, a.y, this.floor(a.x, a.y) + 0.1, b.x, b.y, this.floor(b.x, b.y) + 0.1);
   }
   /** `lifetime` is in ticks; -1 never fades. */
-  drop(kind: number, room: number, x: number, y: number, tick: number, value = kind === GOLD_HALO ? 6 : kind === COIN ? 3 : 0,
+  drop(kind: number, room: number, x: number, y: number, tick: number, value = kind === GOLD_HALO ? GOLD_HALO_VALUE : kind === COIN ? PROP_COIN_VALUE : 0,
     lifetime = kind <= HEAL_MOTE ? CURRENCY_LIFETIME : -1): PickupRecord | null {
     if (!Number.isInteger(kind) || kind < 0 || kind >= PICKUP_KIND_COUNT || !Number.isFinite(x) || !Number.isFinite(y) ||
       !Number.isInteger(room) || room < 0 || room >= 32 || !Number.isInteger(value) || value < 0 || value > 99) return null;

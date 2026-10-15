@@ -1,4 +1,5 @@
 import { ITEM_IDS, ITEMS, type ItemId } from '../data/items';
+import { REWARD_GOLD_VALUE, RITE_PAGE_HALOS } from '../data/pickups';
 import { fmix32, makeRng } from './hash';
 import type { Layout } from './layout';
 
@@ -24,4 +25,4 @@ export function shopStock(seed: number): ItemId[] {
   return result;
 }
 export const rewardLabel = (reward: ClearReward): string => reward.kind === 'item' ? ITEMS[reward.item].name
-  : reward.kind === 'gold' ? '6 halos' : reward.kind === 'rite' ? 'Rite · 6 halos (R03 fixture)' : 'No clear reward';
+  : reward.kind === 'gold' ? `${REWARD_GOLD_VALUE} halos` : reward.kind === 'rite' ? `Rite page · ${RITE_PAGE_HALOS} halos` : 'No clear reward';

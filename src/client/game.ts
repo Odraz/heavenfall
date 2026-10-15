@@ -116,6 +116,7 @@ import { ClientRooms, roomMessage } from './rooms';
 import { PickupView } from './pickups';
 import { PropView } from './props';
 import { propDefs } from '../data/props';
+import { FEATHER_SPEED } from '../data/items';
 import { MapView, type MapPlayer } from './mapView';
 import { ShopView } from './shop';
 import type { InventoryState } from '../net/messages';
@@ -2239,7 +2240,7 @@ export class Game {
     this.rewardShafts.update(now, this.snaps.newest, rewardIds, (x, y) => this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)], this.scene.camera.position);
     const itemTick = this.snaps.estimatedTick(simNow);
     this.itemView.update(itemTick);
-    this.player.speed = CLASSES[this.classId].speed + (!this.dead && itemTick < (this.inventory?.featherUntil ?? 0) ? 2 : 0);
+    this.player.speed = CLASSES[this.classId].speed + (!this.dead && itemTick < (this.inventory?.featherUntil ?? 0) ? FEATHER_SPEED : 0);
     this.hud.setItemCooldown(this.inventory ? Math.max(0, this.inventory.itemReadyTick - itemTick) / 30 : 0);
     this.props.update(this.scene.camera, this.snaps.estimatedTick(simNow));
     const dominionTick = this.snaps.estimatedTick(simNow);

@@ -142,8 +142,9 @@ describe('prop effects and recovery', () => {
     expect(behindWall.hp).toBe(behindWall.maxHp); expect(outside.hp).toBe(outside.maxHp);
   });
   it('loot tables follow combat/noncombat thresholds and the eight item weights total 100', () => {
-    for (const [combat, cases] of [[true, [[0.74, -1], [0.75, COIN], [0.85, HEAL_MOTE], [0.95, ITEM_FIRST + 7]]],
-      [false, [[0.84, -1], [0.85, COIN], [0.95, HEAL_MOTE], [0.999, HEAL_MOTE]]]] as const) {
+    // The item roll reuses the stubbed value: 0.9 lands on Chain Vial, 0.95 on Plume of Expulsion.
+    for (const [combat, cases] of [[true, [[0.69, -1], [0.7, COIN], [0.8, HEAL_MOTE], [0.89, HEAL_MOTE], [0.9, ITEM_FIRST + 6]]],
+      [false, [[0.79, -1], [0.8, COIN], [0.9, HEAL_MOTE], [0.94, HEAL_MOTE], [0.95, ITEM_FIRST + 7]]]] as const) {
       for (const [roll, kind] of cases) {
         const sim = make([prop(1, 'loot', 8.5)]); sim.map.rooms[0].kind = combat ? 'combat' : 'breach'; sim.random = () => roll;
         sim.props.break(1, 0); expect(sim.pickups.live.map((p) => p.kind)).toEqual(kind < 0 ? [] : [kind]);

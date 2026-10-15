@@ -28,6 +28,8 @@ export interface CarrierCheck {
   readyTick: number;
 }
 export const CANTOR_TELL = 75, CANTOR_BEAM = 90, CANTOR_RECOVERY = 60, CANTOR_COOLDOWN = 180;
+/** Burst force of a beam pulse on the crowd: twice a Chorister's HP, so every crowd body it kills bursts. */
+export const CANTOR_BEAM_FORCE = 120;
 /** Radians per second. Tracking must leave room to strafe out of an active beam. */
 export const CANTOR_AIM_SPEED = Math.PI / 6, CANTOR_BEAM_TURN_SPEED = Math.PI / 18;
 export const CARRIER_SWOOP = 30, CARRIER_RECOVERY = 45, CARRIER_COOLDOWN = 240;

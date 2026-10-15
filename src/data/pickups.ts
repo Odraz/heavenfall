@@ -1,6 +1,13 @@
 /** Stable wire kinds (rogue game.md §§6, 7, 14.12). Never reorder. */
 export const COIN = 0, GOLD_HALO = 1, HEAL_MOTE = 2;
 export const ITEM_FIRST = 3, ITEM_LAST = 10, STRUCTURAL_FIRST = 11, PICKUP_KIND_COUNT = 16;
+/** A gold halo from a commander, a coin from a loot prop (game.md §6.1). */
+export const GOLD_HALO_VALUE = 6, PROP_COIN_VALUE = 3;
+/**
+ * A clear-reward gold halo and a Rite page's halos until R04 (audit batch 4: the door preview must
+ * promise a reward worth a detour, about a quarter of one room's budget).
+ */
+export const REWARD_GOLD_VALUE = 24, RITE_PAGE_HALOS = 24;
 export const PICKUP_CAP = 160, ORDINARY_PICKUP_CAP = 128, PENDING_PICKUP_CAP = 32;
 /** Ticks before an uncollected coin, gold halo or heal mote fades (game.md §6.1). */
 export const CURRENCY_LIFETIME = 600;

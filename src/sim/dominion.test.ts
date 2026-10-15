@@ -3,7 +3,7 @@ import { Dominions } from './dominion';
 import { DOMINION, BLESSED, CHORISTER, CHERUB, GATEKEEPER, ENEMIES } from '../data/enemies';
 import { COIN, GOLD_HALO, HEAL_MOTE, ITEM_FIRST } from '../data/pickups';
 import type { DominionCast, DominionPhase, DominionLeap } from '../data/dominion';
-import { dominionLeapPosition } from '../data/dominion';
+import { DOMINION_ENEMY_DAMAGE, DOMINION_LAUNCH_SPEED, DOMINION_PLAYER_DAMAGE, dominionFalloff, dominionLeapPosition } from '../data/dominion';
 import { dominionLeapClear } from './dominionLeap';
 import { waveCounts } from '../gen/stamp';
 import { Simulation, scaleCount, partyMultiplier, waveSize } from './sim';
@@ -82,8 +82,8 @@ describe('Dominion host geometry, controls and drops', () => {
     for (let i = 0; i < 30; i++) sim.step(); expect(p.hp).toBe(96);
     sim.dominions.readyAt[slot] = 0; sim.step(); const cast = sim.dominions.checkpoint()[0];
     while (sim.tick < cast.impactTick - 1) sim.step(); expect(p.hp).toBe(96);
-    sim.step(); expect(p.hp).toBe(16);
-    for (let i = 0; i < 29; i++) sim.step(); expect(p.hp).toBe(16);
+    sim.step(); expect(p.hp).toBe(4); // 92 at 1.8 m
+    for (let i = 0; i < 29; i++) sim.step(); expect(p.hp).toBe(4);
   });
   it('only chooses living same-room players 16–48 metres away with a clear arc and dry landing', () => {
     const { sim, slot } = fixture(room(80, 25)), p = sim.players[0];
@@ -122,14 +122,15 @@ describe('Dominion host geometry, controls and drops', () => {
     expect(sim.events.filter((e) => e.event.type === 'dominionCast' && e.event.phase === 'strike')).toEqual([]);
     expect(sim.eZ[slot]).toBeGreaterThanOrEqual(0);
   });
-  it('starts at five metres and launches a surviving player outward after an 80-damage hit', () => {
+  it('starts at five metres and launches a surviving player outward with the edge-side damage and speed', () => {
     const { sim, slot } = fixture(), p = sim.players[0];
     put(sim, p, sim.eX[slot] + 5, sim.eY[slot]); sim.root(slot, 10);
     sim.step(); expect(sim.dominions.active.has(slot)).toBe(true);
     const impact = sim.dominions.checkpoint()[0].impactTick;
     while (sim.tick < impact) sim.step();
-    expect(p.hp).toBe(40);
-    expect(sim.events.find((e) => e.event.type === 'teleport')?.event).toMatchObject({ launch: { dx: 1, dy: 0 } });
+    // One sixth of the way in from the 6 m edge: 50 + 60 / 6 damage, 9 + 6 / 6 m/s.
+    expect(p.hp).toBe(60);
+    expect(sim.events.find((e) => e.event.type === 'teleport')?.event).toMatchObject({ launch: { dx: 10, dy: 0 } });
   });
   it('gates launch acknowledgement, bounds the extra movement allowance and clears it on teleport', () => {
     const { sim, slot } = fixture(), p = sim.players[0]; slam(sim, slot);
@@ -157,7 +158,7 @@ describe('Dominion host geometry, controls and drops', () => {
       slam(sim, slot);
       const launches = sim.events.filter((e) => e.event.type === 'teleport' && e.event.launch);
       expect(launches.length, mode).toBe(mode === 'shield' || mode === 'center' ? 1 : 0);
-      if (mode === 'shield') { expect(p.hp).toBe(120); expect(p.shield).toBe(70); }
+      if (mode === 'shield') { expect(p.hp).toBe(120); expect(p.shield).toBe(60); } // 90 at 2 m
       if (mode === 'lethal') expect(p.dead).toBe(true);
     }
   });
@@ -200,11 +201,12 @@ describe('Dominion host geometry, controls and drops', () => {
     sim.eZ[high] = 1.51;
     const elite = sim.placeEnemy(DOMINION, 11, 11, 0), boss = sim.placeEnemy(GATEKEEPER, 12, 12, 0), flyer = sim.placeEnemy(CHERUB, 13, 12, 0);
     const grounded = sim.placeEnemy(CHERUB, 13, 9, 0); sim.eZ[grounded] = 0;
+    for (const s of [near, edge, grounded]) sim.eHp[s] = 1000; // survive the slam's damage to show the throw
     sim.players[0].z = 1; sim.giveShield(sim.players[0], 150, 20);
     slam(sim, slot);
     for (const s of [near, edge, grounded, elite]) { expect(sim.eAlive[s]).toBe(1); expect(sim.eVz[s]).toBe(9); }
     for (const s of [far, high, elite, boss, flyer]) expect(sim.eAlive[s]).toBe(1);
-    expect(sim.players[0].shield).toBe(70); expect(sim.players[0].hp).toBe(120);
+    expect(sim.players[0].shield).toBe(60); expect(sim.players[0].hp).toBe(120); // 90 at 2 m
     expect(sim.players[0].kills).toBe(0); expect(sim.players[0].damage).toBe(0);
   });
   it('blocks a tall obstacle while admitting the +1m dais through body-center sight', () => {
@@ -212,7 +214,7 @@ describe('Dominion host geometry, controls and drops', () => {
     heights[12] = heights[12].slice(0, 10) + '4' + heights[12].slice(11);
     const { sim, slot } = fixture(heights);
     const blocked = sim.placeEnemy(BLESSED, 14, 10, 0);
-    const dais = sim.placeEnemy(BLESSED, 10, 12, 0); sim.eZ[dais] = 1;
+    const dais = sim.placeEnemy(BLESSED, 10, 12, 0); sim.eZ[dais] = 1; sim.eHp[dais] = 1000;
     slam(sim, slot); expect(sim.eAlive[blocked]).toBe(1); expect(sim.eAlive[dais]).toBe(1); expect(sim.eVz[dais]).toBe(9);
   });
   for (const control of ['stun', 'silence', 'removeEnemy'] as const) it(`${control} immediately sends one terminal cancellation`, () => {
@@ -223,19 +225,33 @@ describe('Dominion host geometry, controls and drops', () => {
     expect(sim.events.filter((e) => e.event.type === 'dominionCast' && e.event.phase === 'cancel')).toHaveLength(1);
     expect(sim.pickups.live).toHaveLength(0);
   });
-  it('throws enemies up and away without damage, death rewards or fabricated player credit', () => {
+  it('hurts and throws enemies by distance, without fabricated player credit', () => {
     const { sim, slot } = fixture();
     const victim = sim.placeEnemy(CHORISTER, 13, 10, 0); sim.eWave[victim] = 0;
     sim.rooms[0].waveAlive[0]++;
     sim.haloLedgers.set(0, new HaloLedger(12, HALO_WEIGHT[CHORISTER]));
-    const hp = sim.eHp[victim], x = sim.eX[victim];
+    const hp = sim.eHp[victim], x = sim.eX[victim], distance = Math.hypot(sim.eX[victim] - sim.eX[slot], sim.eY[victim] - sim.eY[slot]);
     slam(sim, slot);
-    expect(sim.eAlive[victim]).toBe(1); expect(sim.eHp[victim]).toBe(hp);
-    expect(sim.players[0].kills).toBe(0); expect(sim.pickups.live).toEqual([]);
+    expect(sim.eAlive[victim]).toBe(1); expect(sim.eHp[victim]).toBe(hp - Math.round(dominionFalloff(DOMINION_ENEMY_DAMAGE, distance)));
+    expect(sim.players[0].kills).toBe(0); expect(sim.players[0].damage).toBe(0); expect(sim.pickups.live).toEqual([]);
     expect(sim.haloLedgers.get(0)?.paid).toBe(0);
     for (let i = 0; i < 15; i++) sim.step();
-    expect(sim.eX[victim] - x).toBeCloseTo(6, 1); expect(sim.eZ[victim]).toBeGreaterThan(1.9);
-    expect(sim.eHp[victim]).toBe(hp);
+    expect(sim.eX[victim] - x).toBeCloseTo(dominionFalloff(DOMINION_LAUNCH_SPEED, distance) * 0.5, 1); expect(sim.eZ[victim]).toBeGreaterThan(1.9);
+  });
+  it('kills Blessed near its feet for their coins, but only throws them at the edge', () => {
+    const { sim, slot } = fixture();
+    const [x, y] = [sim.eX[slot], sim.eY[slot]];
+    const near = sim.placeEnemy(BLESSED, 13, 10, 0), edge = sim.placeEnemy(BLESSED, 13, 10, 0);
+    sim.eX[near] = x + 2; sim.eY[near] = y; sim.eX[edge] = x; sim.eY[edge] = y + 5.5;
+    for (const s of [near, edge]) { sim.eWave[s] = 0; sim.rooms[0].waveAlive[0]++; }
+    sim.haloLedgers.set(0, new HaloLedger(2, 2 * HALO_WEIGHT[BLESSED]));
+    slam(sim, slot);
+    // 30 at 2 m kills a 20 HP Blessed; 12.5 at 5.5 m does not.
+    expect(sim.eAlive[near]).toBe(0); expect(sim.eAlive[edge]).toBe(1);
+    expect(sim.eHp[edge]).toBe(ENEMIES[BLESSED].hp - Math.round(dominionFalloff(DOMINION_ENEMY_DAMAGE, 5.5)));
+    expect(sim.eVz[edge]).toBe(9);
+    expect(sim.haloLedgers.get(0)?.paid).toBe(1); expect(sim.pickups.live.filter((p) => p.kind === COIN)).toHaveLength(1);
+    expect(sim.players[0].kills).toBe(0);
   });
   it('cannot restart a dead simultaneous caster after an accepted slam triggers Shroud', () => {
     const { sim, slot } = fixture(); const second = sim.placeEnemy(DOMINION, 14, 10, 0);
@@ -266,20 +282,20 @@ describe('Dominion authored group scaling and reservations', () => {
     const sim = new Simulation({ dungeon, players: Array.from({ length: party }, (_, id) => ({ id, name: `P${id}`, classId: 'betrayer' as const })), seed: 1, god: true });
     sim.random = () => 0.99; sealAt(sim);
     const ledger = sim.haloLedgers.get(0)!;
-    expect(ledger.budget).toBe(48); expect(ledger.reservedElites).toBe(2);
-    expect(ledger.remainder).toBe(36);
+    expect(ledger.budget).toBe(72); expect(ledger.reservedElites).toBe(3);
+    expect(ledger.remainder).toBe(54);
     let dry = 0, longestDry = 0;
     for (let i = 0; i < scaleCount(200, party); i++) {
       const before = ledger.paid, slot = sim.placeEnemy(BLESSED, 20, 5, 0); sim.eWave[slot] = 0;
       sim.damageEnemy(slot, 10000, -1);
       dry = ledger.paid === before ? dry + 1 : 0; longestDry = Math.max(longestDry, dry);
     }
-    expect(ledger.paid).toBe(31); expect(longestDry).toBeLessThanOrEqual(6);
-    expect(sim.pickups.live.filter((p) => p.kind === COIN).reduce((sum, p) => sum + p.value, 0)).toBe(31);
+    expect(ledger.paid).toBe(46); expect(longestDry).toBeLessThanOrEqual(4);
+    expect(sim.pickups.live.filter((p) => p.kind === COIN).reduce((sum, p) => sum + p.value, 0)).toBe(46);
     for (let i = 0; i < scaleCount(10, party); i++) {
       const slot = sim.placeEnemy(CHORISTER, 20, 5, 0); sim.eWave[slot] = 0; sim.damageEnemy(slot, 10000, -1);
     }
-    expect(ledger.paid).toBe(36);
+    expect(ledger.paid).toBe(54);
   });
   it('filters tags before safety, prefers eligible affinity and never stalls fodder on a blocked elite point', () => {
     const dungeon = arenaDungeon([{ blessed: 12, choristers: 4, cherubs: 0, dominions: 1 }]);
@@ -314,7 +330,8 @@ describe('Dominion authored group scaling and reservations', () => {
     expect(ENEMIES[DOMINION]).toEqual({ hp: 1500, radius: 0.45, height: 3.2, speed: 3.5, flying: false, draw: 1.9 });
   });
   it('scales HP per rounded group, reserves first elites and does not stall fodder behind the alive cap', () => {
-    const dungeon = arenaDungeon([{ blessed: 40, choristers: 0, cherubs: 0, dominions: 3 }]);
+    // A 72-halo room reserves gold for floor(72 / 24) = 3 of its 4 elites.
+    const dungeon = arenaDungeon([{ blessed: 40, choristers: 0, cherubs: 0, dominions: 4 }]);
     dungeon.rooms[0].shape = '1x1'; dungeon.rooms[0].band = 1;
     const sim = new Simulation({ dungeon, players: Array.from({ length: 4 }, (_, id) => ({ id, name: `P${id}`, classId: 'betrayer' as const })), seed: 1, god: true });
     sim.random = () => 0.5; sealAt(sim);
@@ -325,18 +342,23 @@ describe('Dominion authored group scaling and reservations', () => {
     const slots = Array.from(sim.active.subarray(0, sim.activeCount)), elites = slots.filter((s) => sim.eType[s] === DOMINION);
     expect(elites).toHaveLength(2); expect(slots.filter((s) => sim.eType[s] === BLESSED)).toHaveLength(40);
     expect(sim.rooms[0].queue[0].spawned).toEqual([40, 0, 0, 2]); expect(sim.rooms[0].waveFullySpawned[0]).toBe(false);
-    expect(sim.haloLedgers.get(0)?.reservedElites).toBe(2);
+    expect(sim.haloLedgers.get(0)?.reservedElites).toBe(3);
     expect(elites.map((s) => sim.eGoldEntitled[s])).toEqual([1, 1]);
     sim.random = () => 0.1; sim.damageEnemy(elites[0], 10000, -1);
     expect(sim.pickups.live.filter((p) => p.kind === GOLD_HALO)).toHaveLength(1);
     expect(sim.pickups.live.filter((p) => p.kind === HEAL_MOTE)).toHaveLength(2);
     expect(sim.pickups.live.filter((p) => p.kind >= ITEM_FIRST)).toHaveLength(1);
+    const next = () => Array.from(sim.active.subarray(0, sim.activeCount)).find((s) => sim.eType[s] === DOMINION && !elites.includes(s))!;
+    sim.step(); expect(sim.rooms[0].waveFullySpawned[0]).toBe(false);
+    const third = next(); elites.push(third);
+    expect(sim.eGoldEntitled[third]).toBe(1);
+    sim.damageEnemy(third, 10000, -1);
     sim.step(); expect(sim.rooms[0].waveFullySpawned[0]).toBe(true);
-    const third = Array.from(sim.active.subarray(0, sim.activeCount)).find((s) => sim.eType[s] === DOMINION && !elites.includes(s))!;
-    expect(sim.eGoldEntitled[third]).toBe(0);
-    sim.damageEnemy(third, 10000, -1); sim.damageEnemy(third, 10000, -1);
-    expect(sim.pickups.live.filter((p) => p.kind === GOLD_HALO)).toHaveLength(1);
-    expect(sim.pickups.live.filter((p) => p.kind === HEAL_MOTE)).toHaveLength(4);
+    const fourth = next();
+    expect(sim.eGoldEntitled[fourth]).toBe(0);
+    sim.damageEnemy(fourth, 10000, -1); sim.damageEnemy(fourth, 10000, -1);
+    expect(sim.pickups.live.filter((p) => p.kind === GOLD_HALO)).toHaveLength(2);
+    expect(sim.pickups.live.filter((p) => p.kind === HEAL_MOTE)).toHaveLength(4); // the 1×1 room's mote cap
     expect(sim.pickups.live.filter((p) => p.kind === COIN)).toHaveLength(0);
   });
   for (const party of [1, 1.5, 2, 2.5, 3, 4]) it(`keeps the group's HP budget at party ${party}`, () => {
@@ -411,7 +433,8 @@ for (const turn of [false, true]) it(`a ${turn ? 'turning' : 'straight'} runner 
   const cast = sim.dominions.checkpoint()[0]; expect(cast.leap).toBeDefined();
   expect(cast.leap!.x - p.x).toBeGreaterThan(8.5);
   while (sim.tick < cast.impactTick) run(turn);
-  expect(p.hp).toBe(turn ? p.maxHp : p.maxHp - 80);
+  const distance = Math.hypot(p.x - cast.leap!.x, p.y - cast.leap!.y);
+  expect(p.hp).toBe(turn ? p.maxHp : p.maxHp - Math.round(dominionFalloff(DOMINION_PLAYER_DAMAGE, distance)));
   const strike = sim.events.find((e) => e.event.type === 'dominionCast' && e.event.phase === 'strike');
   expect(strike?.event).toMatchObject({ x: cast.leap!.x, y: cast.leap!.y });
 });

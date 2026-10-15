@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BLESSED, CHERUB, GATEKEEPER } from '../data/enemies';
+import { ITEMS, PLUME_DAMAGE } from '../data/items';
 import { INPUT_DEFAULTS, enemyAt, makeSim, put, room } from './testutil/sims';
 import { dungeonOf } from './testutil/maps';
 import { PROJ_ARROW, PROJ_CENSER, PROJ_GLOBE, type SimPlayer } from './sim';
@@ -44,13 +45,14 @@ describe('R03 consumable transactions', () => {
     const sim = fixture(), p = sim.players[0]; p.inventory = [{ item: 'balm', count: 3 }, { item: 'feather', count: 3 }];
     sim.applyInput(0, input(p, 0, 255, 255), 0); sim.step(); expect(p.inventory[1]?.count).toBe(3);
     sim.applyInput(0, input(p, 1, 0, 0), 33); sim.step();
-    expect(p.inventory[0]?.count).toBe(3); expect(p.inventory[1]?.count).toBe(2); expect(p.featherUntil).toBe(sim.tick + 240);
+    expect(p.inventory[0]?.count).toBe(3); expect(p.inventory[1]?.count).toBe(2); expect(p.featherUntil).toBe(sim.tick + ITEMS.feather.duration);
     p.hp = 30; sim.applyInput(0, input(p, 2, 1, 1), 66); sim.step(); step(sim, 30);
     expect(p.hp).toBe(30); expect(p.inventory[0]?.count).toBe(3); // no queued retry
     sim.applyInput(0, input(p, 3, 2, 2), 1100); sim.step();
-    expect(p.hp).toBe(70); expect(p.inventory[0]?.count).toBe(2); expect(p.inventory[1]?.count).toBe(2);
-    sim.applyInput(0, input(p, 4, 1, 1), 1133); step(sim, 31); expect(p.hp).toBe(70); // stale reverse edge
-    sim.applyInput(0, input(p, 5, 2, 2), 2200); sim.step(); expect(p.hp).toBe(70); // stale history cannot rearm an old counter
+    // Balm heals 40% of the Heretic's 150 max HP.
+    expect(p.hp).toBe(90); expect(p.inventory[0]?.count).toBe(2); expect(p.inventory[1]?.count).toBe(2);
+    sim.applyInput(0, input(p, 4, 1, 1), 1133); step(sim, 31); expect(p.hp).toBe(90); // stale reverse edge
+    sim.applyInput(0, input(p, 5, 2, 2), 2200); sim.step(); expect(p.hp).toBe(90); // stale history cannot rearm an old counter
   });
   it('stores useful contacts on cooldown, leaves full stacks, and rejects all bot consumption', () => {
     const sim = fixture(), p = sim.players[0]; p.hp = 20;
@@ -62,10 +64,10 @@ describe('R03 consumable transactions', () => {
   it('shares one shield without replacement/depletion bursts, and Feather refreshes without stacking', () => {
     const sim = fixture(), p = sim.players[0]; p.god = false;
     sim.giveShield(p, 150, 8, p); expect(sim.items.use(p, 'seal')).toBe(false);
-    p.shield = 49; expect(sim.items.use(p, 'seal')).toBe(true); expect(p.shieldCaster).toBeNull();
-    sim.damagePlayer(p, 60); expect(p.hp).toBe(140); expect(sim.events.some(e => e.event.type === 'shroudBurst')).toBe(false);
+    p.shield = 99; expect(sim.items.use(p, 'seal')).toBe(true); expect(p.shieldCaster).toBeNull();
+    sim.damagePlayer(p, 110); expect(p.hp).toBe(140); expect(sim.events.some(e => e.event.type === 'shroudBurst')).toBe(false);
     p.itemReadyTick = 0; sim.items.use(p, 'feather'); const speed = p.speed;
-    step(sim, 30); sim.items.use(p, 'feather'); expect(p.speed).toBe(speed); expect(p.featherUntil).toBe(sim.tick + 240);
+    step(sim, 30); sim.items.use(p, 'feather'); expect(p.speed).toBe(speed); expect(p.featherUntil).toBe(sim.tick + ITEMS.feather.duration);
     sim.damagePlayer(p, 10000); expect(p.featherUntil).toBe(0);
   });
   it('stores valley areas, reserves four owner slots, replaces same-type and rejects a fifth without charge', () => {
@@ -131,12 +133,12 @@ describe('catalog area rules', () => {
     sim.items.use(sim.players[0], 'venom');
     for (let tick = 1; tick <= 3; tick++) { sim.tick = tick; sim.items.update(); }
     const first = sim.items.records()[0];
-    expect(first.activatedTick).toBe(3); expect(sim.eHp[target]).toBe(995);
+    expect(first.activatedTick).toBe(3); expect(sim.eHp[target]).toBe(990);
     sim.tick = 5; sim.items.use(sim.players[1], 'venom'); sim.items.update();
     sim.tick = 8; sim.items.update(); sim.tick = 9; sim.items.update(); // newest landing cannot reset damage interval
-    expect(sim.eHp[target]).toBe(995);
+    expect(sim.eHp[target]).toBe(990);
     for (let tick = 10; tick <= 191; tick++) { sim.tick = tick; sim.items.update(); }
-    expect(sim.eHp[target]).toBeGreaterThanOrEqual(935); expect(sim.eHp[target]).toBeLessThanOrEqual(945);
+    expect(sim.eHp[target]).toBeGreaterThanOrEqual(870); expect(sim.eHp[target]).toBeLessThanOrEqual(890);
     expect(sim.players[1].damage).toBeGreaterThan(0);
   });
   it('a single Water area emits exactly twelve non-lingering pulses', () => {
@@ -144,22 +146,24 @@ describe('catalog area rules', () => {
     const target = enemyAt(sim, BLESSED, 6.5, 5.5); sim.eHp[target] = 1000;
     sim.items.use(p, 'venom');
     for (let tick = 1; tick <= 210; tick++) { sim.tick = tick; sim.items.update(); }
-    expect(sim.eHp[target]).toBe(940); expect(sim.items.effects).toHaveLength(0);
+    expect(sim.eHp[target]).toBe(880); expect(sim.items.effects).toHaveLength(0);
   });
   it('Ash ends on exit and Vial attempts once per incarnation, without extending an older bind', () => {
     const sim = fixture(), p = sim.players[0]; p.pitch = -Math.PI / 2; sim.items.use(p, 'frost'); step(sim, 3);
     const s = enemyAt(sim, BLESSED, 6.5, 5.5); sim.items.update(); expect(sim.items.slowed[s]).toBe(1);
     sim.eX[s] = 20; sim.items.update(); expect(sim.items.slowed[s]).toBe(0);
     p.itemReadyTick = 0; sim.items.use(p, 'chain'); sim.eX[s] = 6.5; sim.items.update(); const end = sim.eRootUntil[s];
+    expect(end).toBe(sim.tick + 75); // 2.5 s
     sim.tick = end + 1; sim.items.update(); expect(sim.isRooted(s)).toBe(false);
     sim.eIncarnation[s]++; sim.items.update(); expect(sim.isRooted(s)).toBe(true);
     sim.eRootUntil[s] = sim.tick + 300; p.itemReadyTick = 0; sim.items.use(p, 'chain'); expect(sim.eRootUntil[s]).toBe(sim.tick + 300);
   });
-  it('Plume skips bound/airborne/boss once, and launches an eligible body without damage', () => {
+  it('Plume skips bound/airborne/boss once, and throws an eligible body for 20 damage', () => {
     const sim = fixture(), p = sim.players[0]; p.pitch = -Math.PI / 2;
     const bound = enemyAt(sim, BLESSED, 6, 5), free = enemyAt(sim, BLESSED, 6, 6), boss = enemyAt(sim, GATEKEEPER, 7, 5);
-    sim.eRootUntil[bound] = 10; sim.items.use(p, 'plume'); step(sim, 3);
-    expect(sim.eGrounded[free]).toBe(0); expect(sim.eHp[free]).toBe(20); expect(sim.eKbUntil[boss]).toBe(0);
+    sim.eHp[free] = 100; sim.eRootUntil[bound] = 10; sim.items.use(p, 'plume'); step(sim, 3);
+    expect(sim.eGrounded[free]).toBe(0); expect(sim.eHp[free]).toBe(100 - PLUME_DAMAGE); expect(sim.eKbUntil[boss]).toBe(0);
+    expect(sim.eHp[bound]).toBe(20); expect(p.damage).toBe(PLUME_DAMAGE);
     sim.tick = 11; sim.items.update(); expect(sim.eKbUntil[bound]).toBe(0);
   });
   it.each([PROJ_ARROW, PROJ_GLOBE])('reflects projectile %i once in place, preserving base damage and harmless allies/souls', kind => {

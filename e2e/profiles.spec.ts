@@ -165,8 +165,8 @@ test('both carried keys respect refused use and cooldown in a normal run from an
   await expect(page.getByRole('progressbar', { name: 'Class experience' })).toHaveAttribute('aria-valuetext', /^Level 1, /);
   // The hint window describes both carried stacks (audit batch 3).
   await page.keyboard.press('KeyH');
-  await expect(page.getByText('1 · Balm of the Rejected ×2: heal yourself for 40 HP.', { exact: true })).toBeVisible();
-  await expect(page.getByText('2 · Pilgrim’s Feather ×3: move 2 m/s faster for 8 seconds.', { exact: true })).toBeVisible();
+  await expect(page.getByText('1 · Balm of the Rejected ×2: heal yourself for 40% of your max HP.', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 · Pilgrim’s Feather ×3: move 2 m/s faster for 12 seconds.', { exact: true })).toBeVisible();
   await page.keyboard.press('KeyH');
   await page.keyboard.press('Digit1'); await page.keyboard.press('Digit2');
   await expect(page.getByLabel('Item 2: Pilgrim’s Feather ×2', { exact: true })).toBeVisible();

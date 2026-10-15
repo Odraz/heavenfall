@@ -27,7 +27,9 @@ async function observeLaunch(page: Page): Promise<void> {
   }));
   expect(Math.max(...samples.map((s) => s.z - before.self.z))).toBeGreaterThan(1.5);
   expect(Math.max(...samples.map((s) => Math.hypot(s.x - cast.x, s.y - cast.y))) - distance).toBeGreaterThan(2);
-  expect(Math.min(...samples.map((s) => s.hp))).toBeLessThanOrEqual(before.players.find((p) => p.classId === 'fallen')!.hp - 48);
+  // The slam fades from 110 at its feet to 50 at the edge; the Fallen's armor takes 40%. Allow 1 HP for rounding.
+  const slam = Math.round(50 + 60 * Math.max(0, 1 - distance / 6));
+  expect(Math.min(...samples.map((s) => s.hp))).toBeLessThanOrEqual(before.players.find((p) => p.classId === 'fallen')!.hp - slam * 0.6 + 1);
   await page.screenshot({ path: test.info().outputPath('dominion-launch.png') });
 }
 

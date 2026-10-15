@@ -396,7 +396,7 @@ Three families, one silhouette and color each, constant across heavens (the heav
 
 | Family | Looks | Broken by | Effect |
 |---|---|---|---|
-| **Loot** (vase, urn) | white/ivory | any player hit or blast | Drops: 75% nothing, 10% a coin (3 halos, §6.1), 10% a heal mote, 5% an item (§7.3). In non-combat rooms: 85% nothing, 10% a coin, 5% a mote, no items. |
+| **Loot** (vase, urn) | white/ivory | any player hit or blast | Drops: 70% nothing, 10% a coin (3 halos, §6.1), 10% a heal mote, 10% an item (§7.3). In non-combat rooms: 80% nothing, 10% a coin, 5% a mote, 5% an item ([audit](r01-r03-audit.md) batch 4). |
 | **Blast** (censer, reliquary of oil) | saturated red, a black stripe | any player hit or blast | After 0.2 s: 60 dmg to enemies and 40 to players within 4 m, with ordinary mitigation/shields/LOS; chains to other blast props in range. |
 | **Blessing** (chalice, shrine) | gold | any player hit | One visible area effect for players within 6 m (rooms.md picks one per heaven, e.g. a heal pulse of 30 HP). |
 
@@ -519,7 +519,7 @@ Backtracking was a quarter of the run's time (r1-fun finding 5). The rule: **fro
 
 ### 6.1 Halos (currency)
 
-- **What:** angels drop **coins** worth **1** (silver-gold ring); loot-prop coins are worth **3**, and **gold halos** are worth **6** (larger). One-halo enemy coins create more reward moments within the same room budget (October 13 playtest follow-up). Each player has their own **wallet**, starting each run at 0. Halos don't carry over between runs (run currency, like Isaac's coins).
+- **What:** angels drop **coins** worth **1** (silver-gold ring); loot-prop coins are worth **3**, and **gold halos** are worth **6** from a commander or **24** as a clear reward (larger). One-halo enemy coins create more reward moments within the same room budget (October 13 playtest follow-up). Each player has their own **wallet**, starting each run at 0. Halos don't carry over between runs (run currency, like Isaac's coins).
 - **Pickup:** a coin within **4 m** of a living player flies to the nearest one at 14 m/s and is collected at 0.8 m. **Every pickup credits its value to every connected human's wallet** (the brief's "goes to everybody's pockets"). Bots collect too, and their pickups credit the humans.
 - **Fade:** a coin on the floor disappears **20 s** after dropping (10 s under the Edict of Poverty), gently shrinking for its last 3 s without blinking. Currency has no additive glow. Uncollected means lost. This is the "going in pays" rule: halos drop in the crowd and wait only so long.
 - **World pickup reach:** automatic pickup/attraction requires a living eligible collector in the pickup's owning room, 3D distance from accepted feet to its supporting-floor point within that pickup's listed range, and unobstructed geometry line of sight. Attraction follows collision-safe motion and rechecks ownership/range before collection; a wall, closed leaf or another terrace cannot pull a coin/mote through terrain or consume a pickup below the player's floor. If the chosen collector becomes invalid, attraction stops/reselects; it never reserves the reward forever. Hovering draw height is cosmetic. Bots qualify only for coins/motes. Key/Chart/item/page contacts use the same rule at their own stated touch range; F interactions instead use the accepted eye and the object's visible interaction anchor, with their stated range and line of sight. A Bell's hanging anchor is reachable from a grounded player's eye.
@@ -527,12 +527,12 @@ Backtracking was a quarter of the run's time (r1-fun finding 5). The rule: **fro
 
   | Shape | band 1 | band 2 | band 3 |
   |---|---|---|---|
-  | 1×1 | 48 | 60 | 72 |
-  | 2×1 / 1×2 | 72 | 84 | 96 |
-  | 2×2 | — | 120 | 132 |
+  | 1×1 | 72 | 90 | 108 |
+  | 2×1 / 1×2 | 108 | 126 | 144 |
+  | 2×2 | — | 180 | 198 |
 
 - **Drop rule** (host, at seal, from the scaled spawn list): reserve `min(eliteCount, floor(H/24))` gold-halo entitlements for elites in wave then spawn-index order. At most one quarter of the budget belongs to elites, so their new per-wave presence cannot drain the crowd's rewards. Other elites drop no coin. The remainder `R = H − 6 × reservedCount` is spread over the non-elite enemies by weight (**Blessed 1, Chorister 3, Cherub 3**): each reward-eligible death (including world kills, §14.11) adds `R × w ÷ W` to a fixed-point/rational room accumulator (`W` = total non-elite weight) and drops a 1-halo coin each time it crosses an integer. Track paid amount and cap at `R` so floating-point drift cannot overpay or lose the final coin. Uncredited cleanup forfeits that enemy's coin entitlement; a bell's wave drops none. The halo budget never grows for Edict-added elites.
-- **Why Blessed still drop:** diving into the crowd must pay (pillar 2). October 13 pressure feedback quadruples room budgets and reduces the ranged weight from ten to three: Blessed kills now distribute substantially more visible rewards, while a ranged kill still pays more. Party sizes retain equal total room income. R03 must re-evaluate shop prices against this new income; older 105–125-halo examples are historical and no longer current tuning.
+- **Why Blessed still drop:** diving into the crowd must pay (pillar 2). October 13 pressure feedback quadruples room budgets and reduces the ranged weight from ten to three: Blessed kills now distribute substantially more visible rewards, while a ranged kill still pays more. Party sizes retain equal total room income. [Audit](r01-r03-audit.md) batch 4 raised the budgets by half again (about 735 halos on an average floor, from 491) because the crowd still paid too rarely, most visibly at four players; prices stayed. R03 must re-evaluate shop prices against this new income; older 105–125-halo examples are historical and no longer current tuning.
 - **Why a budget instead of a per-kill chance:** with "everybody's pockets" and enemies scaling ×0.4 → ×1.0 with party size, per-kill drops would give each player of a 4-party 2.5 times the solo income. A fixed per-room budget, credited to everyone, gives **every player the same income per room at any party size**, so prices can be fixed.
 
 ### 6.2 Heal motes
@@ -547,7 +547,7 @@ Backtracking was a quarter of the run's time (r1-fun finding 5). The rule: **fro
 
 ### 6.4 The clear reward and its preview
 
-- **The raw roll** (per combat room, fixed by the floor seed, so doors can preview it): `u = fmix32(seed ^ imul(roomIndex + 1, 0x27D4EB2F)) / 2^32`. **`u < 0.30` nothing; `< 0.55` a gold halo (6); `< 0.75` an item pickup**, the item `weightedPick` over the items' drop weights with `mulberry32(that same hash)`; **else a Rite** (§9.10). Historical raw-roll measurement over 200 000 rooms: 29.9 / 25.0 / 20.0 / 25.1%. **Early build-choice guarantee:** the **first combat room** on the unique Breach→Confessional route always pays a Rite; override its raw result if necessary. This consumes no RNG draw and is stored in `Floor`; all previews show the final result, visible from the Breach. Other rooms keep their raw rewards. A fresh player following that preview gets a kit choice after the first fight. Offers may still convert to halos when a developed build has no eligible node (§9.10).
+- **The raw roll** (per combat room, fixed by the floor seed, so doors can preview it): `u = fmix32(seed ^ imul(roomIndex + 1, 0x27D4EB2F)) / 2^32`. **`u < 0.30` nothing; `< 0.55` a gold halo (24); `< 0.75` an item pickup**, the item `weightedPick` over the items' drop weights with `mulberry32(that same hash)`; **else a Rite** (§9.10). Until R04 adds talents, a Rite page pays its toucher **24 halos** (audit batch 4: the door preview must promise something worth a detour; it was 6). Historical raw-roll measurement over 200 000 rooms: 29.9 / 25.0 / 20.0 / 25.1%. **Early build-choice guarantee:** the **first combat room** on the unique Breach→Confessional route always pays a Rite; override its raw result if necessary. This consumes no RNG draw and is stored in `Floor`; all previews show the final result, visible from the Breach. Other rooms keep their raw rewards. A fresh player following that preview gets a kit choice after the first fight. Offers may still convert to halos when a developed build has no eligible node (§9.10).
 - **On the clear** it appears on the room's reward spot, announced by a white-gold shaft from the sky, a handbell cue and a line naming the reward under "Room cleared"; a pulsing pillar marks it until it is collected ([audit](r01-r03-audit.md) batch 3). A gold halo and an item are single pickups (the item goes to the first human who touches it, §7.3); **a Rite is one per unclosed human in the ordinary encounter's seal recipient set** (§4.3): touching their page entitlement creates their own offer (bots and subsequent first-time joiners get none). A disconnected recipient retains it for rejoin, without an automatic choice.
 - **The preview:** the roll shows on the room's door plates and on the map before the room is cleared (§3.4, §5.2). So the party knows what each fight pays and can skip the empty frames (the Sundial, §6.8).
 - The key room and the Reliquary get their roll **too**, beside the key or the chest.
@@ -628,9 +628,9 @@ Keys 1/2 deliberately spend charges. Successful uses share the 1 s cooldown. Ref
 ### 7.4 Rules every item obeys
 
 1. **One visible effect.** No hidden riders.
-2. **Healing and shielding stay separate**, and **items don't replace the Heretic:** a heal item heals the user only, at most **40 HP** (a third of Communion); a shield item shields the user only, at most **50** (a third of Martyr's Shroud's 150). No item heals or shields others; no item revives.
+2. **Healing and shielding stay separate**, and **items don't replace the Heretic:** a heal item heals the user only, at most **40% of their max HP**; a shield item shields the user only, at most **100** (two thirds of Martyr's Shroud's 150). Audit batch 4 raised both from 40 HP and 50 because items felt weak; the Balm now out-heals one Communion (120) only on the Fallen (160). No item heals or shields others; no item revives.
 3. **No fire-rate items** (Field of Blood's job), **no taunt** (Blasphemy's), no silence (Discord's).
-4. **States** (§4.11): an item may apply `slowed`, `airborne`, `bound` for at most 1 s, and its area makes enemies in it `pooled`; never `taunted`, `silenced` or `censed`.
+4. **States** (§4.11): an item may apply `slowed`, `airborne`, `bound` for at most 2.5 s (audit batch 4; was 1 s), and its area makes enemies in it `pooled`; never `taunted`, `silenced` or `censed`.
 5. **Prefer placed and thrown items** (they reward *where* as well as *when*); at most a third of a heaven's items are `self`.
 6. An area item that affects players affects every player in it; one that affects enemies affects every enemy in it.
 7. Numbers fit their advertised encounter: offensive/control items must matter against 300 Blessed. The one anti-projectile item is deliberately situational in ranged and boss rooms; its card and door focus let the player plan for it. Do not add a second unrelated effect just to make every item universal.
