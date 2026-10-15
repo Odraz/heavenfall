@@ -463,7 +463,7 @@ Left 4 Dead's car alarm, as one rule: **ring a cleared room's bell, fight one ha
 ### 5.1 Minimap and full map
 
 - **Minimap:** always on, **top-right**, a fixed 200 × 200 px plate. **1 slot = 28 px**, so the whole 7 × 7 grid (196 px) always fits: it never scrolls, pans or resizes. Below it, in a fixed column: halos, the key icon (if the party has the key: the holder's name), the Sundial while it is lit (§6.8), and *enemies remaining* (moved from the top-right, shown only in combat).
-- **Full map:** **hold M** to show it, release to hide (like Tab's score sheet). While it is shown the player can still move, but the mouse moves a **map cursor** instead of the view and LMB/RMB don't fire (LMB on a room starts Pilgrim's Return, §5.5). A centered 588 × 588 px plate (1 slot = 84 px) dimming the view by 40%, with a fixed legend column on its right and player names. Not shown while chat is open or on Pause. The HUD's HP, ability and inventory slots stay visible and on top.
+- **Full map:** **hold M** to show it, release to hide (like Tab's score sheet). While it is shown the player can still move, but the mouse moves a **map cursor** instead of the view and LMB/RMB don't fire (LMB on a room starts Pilgrim's Return, §5.5). A centered 588 × 588 px plate (1 slot = 84 px) dimming the view by 40%, with a fixed legend column on its right and player names. Windows under 784 px tall scale the plate down so its frame stays clear of the experience bar (1280 × 720: 524 px); the cursor follows the scaled plate. Not shown while chat is open or on Pause. The HUD's HP, ability and inventory slots stay visible and on top.
 - **Why both:** the minimap answers "where am I" in a fight; the full map is for route decisions in the valleys.
 
 ### 5.2 What each state shows

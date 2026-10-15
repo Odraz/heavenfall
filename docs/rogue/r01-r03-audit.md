@@ -440,3 +440,34 @@ Docs: game.md §4.9 (props), §6.1 (gold values, budget table), §6.4 (gold 24, 
 - `npm run build`: passed.
 - Browser checks (the batch 3 list plus `e2e/multiplayer.spec.ts`), `--grep-invert 'solo autopilot'`: **54 passed, 1 failed** (13.9 min). The failure was the hint-window check still expecting the Feather's old "8 seconds"; after updating it, `e2e/profiles.spec.ts` passed **8/8**. The solo autopilot traversal wasn't rerun; route and exit code didn't change.
 - Not done: no benchmark, no in-game look. The feel of the new numbers needs your playtest.
+
+## C results (the rest of the UI restyle)
+
+2026-10-15, uncommitted on `rogue` (base `2e44fb1`). This finishes C1–C3 for everything batch 2 didn't cover. It's in batch 2's approved look, so no new mockups. Presentation only: no simulation, protocol or rules change.
+
+| Item | Change | Files |
+|---|---|---|
+| Minimap | The same 200 px plate in the ability slots' painted gold frame (`ui-slot-frame.png`), on warm soot instead of purple-black. Moved to 8 px from the corner so the frame ends where Enemies remaining starts. | `src/style.css`, `src/client/mapView.ts` |
+| Full map | The hint window's painted panel frame around a soot plate. The panel's own fill tiled into a visible grid at this size, so soot fills it instead. "Floor map" is a Cinzel gold heading with "Hold M" beside it, the legend uses the body font, and player names are in Cinzel. Your room's outline and the cursor are the game's gold; visited rooms are warm stone instead of cold grey. On windows under 784 px tall the plate scales down so its frame stays below the experience bar (524 px at 1280×720). | `src/style.css`, `src/client/mapView.ts`, `src/client/mapIcons.ts`, game.md §5.1 |
+| Room, shop and victory messages | Cinzel on the HUD band that fades at both ends, like the experience bar. Room and shop text is ivory, the victory hint gold. Before, long room messages wrapped at half the screen width. They now stay on one line, up to 80% of the width. The victory hint moved from 12% to 160 px, below the room message, so they no longer overlap when you shop after the victory. | `src/style.css` |
+| Save notice | Danger red from the tokens, ivory text. | `src/style.css` |
+| Tokens | New `--parchment`, `--parchment-dim`, `--parchment-faint`, `--warning`, the item-slot rims (`--rim-gold`, `--rim-dark`, `--rim-deep`) and wells (`--well`, `--well-deep`). These replace the raw hex values batch 2 and 3 repeated. | `src/style.css` |
+| C3 | No one-line rules remain. Each override moved into its owning rule: the boss bar and countdown line at 72 px, hints at 266 px, the persistent class card's eighth row. The small-screen block split into a Results part and a HUD part, next to the rules they change. | `src/style.css` |
+
+Not changed: the loading screen's Georgia italic lore. It predates R01 and reads as a book quote on purpose.
+
+**Noticed, not changed (B4):** two room messages still show milestone text: `The Gatekeeper · Inherited fight fixture (authored encounter arrives in R7)` and `The Confessional · Empty shell (Advocate arrives in R4)`.
+
+**New tests:**
+- `src/style.test.ts`: no one-line rules in `style.css`; every `var(--…)` is declared (or set at run time); no purple-black `#19151b`/`#18141b` in the stylesheet or the map code.
+- `e2e/rogue-floor.spec.ts`: the minimap uses the slot frame and ends above Enemies remaining; at 1280×720 the full map's frame sits below the experience bar and inside the window; at 640×360 the room message is in Cinzel and inside the window.
+
+**Checks:**
+
+- `npm run typecheck`: passed.
+- `npm test -- --pool=threads --exclude '**/*perf.test.ts'`: **1,140 passed in 103 files**.
+- Both timing checks run alone: **2/2**, with the unchanged 8 ms limits.
+- `npm run build`: passed.
+- `npx playwright test --config playwright.hardware.config.ts e2e/rogue-floor.spec.ts e2e/profiles.spec.ts e2e/menus.spec.ts e2e/rogue-pressure.spec.ts e2e/multiplayer.spec.ts --grep-invert 'solo autopilot'`: **19/19 passed** (4.0 min). After one last CSS value (the full map's dim back to the spec's 40%): typecheck, `src/style.test.ts`, the build and `e2e/rogue-floor.spec.ts` again, **4/4 passed**. The solo autopilot traversal wasn't rerun; route and exit code didn't change.
+- In game (dev build, 1280×720): framed minimap, framed full map with the Cinzel legend heading, and the room, shop and victory messages stacked without overlap.
+- No benchmark was run.

@@ -10,6 +10,19 @@ import { drawRewardIcon, loadRewardArt } from './rewardIcon';
 
 export interface MapPlayer { id: number; name: string; classId: ClassId; x: number; y: number; yaw: number }
 const CLASS_COLORS: Record<ClassId, string> = { fallen: '#e05a42', heretic: '#f0c76a', binder: '#85b6e6', betrayer: '#b38bd4' };
+// The :root tokens in style.css (soot, parchment, gold), which canvas drawing can't read.
+const INK = {
+  plate: 'rgba(27, 21, 19, 0.88)',
+  line: '#e8dcc0',
+  door: '#e8dcc080',
+  visited: '#6e6253',
+  combat: '#b03a2e',
+  own: '#f3c64b',
+  outline: '#1b1513',
+  note: '#b9ac97',
+};
+const DISPLAY_FONT = "'Cinzel', Georgia, serif";
+const BODY_FONT = "'Segoe UI', system-ui, sans-serif";
 export const MAP_STATES = ['Undiscovered', 'Discovered', 'Visited'] as const;
 export function mapState(knowledge: number, phase: number): string {
   return phase === PHASE_COMBAT ? 'Combat' : phase === PHASE_COUNTDOWN ? 'Countdown' :
@@ -41,8 +54,9 @@ export class MapView {
     this.roomsList.className = 'map-room-list'; this.roomsList.setAttribute('aria-label', 'Known rooms');
     parent.append(this.mini, this.full, this.roomsList);
     this.drawLegend();
-    // Reward art arrives asynchronously; the map redraws itself, the legend once.
+    // Reward art and Cinzel arrive asynchronously; the map redraws itself, the legend once each.
     void loadRewardArt().then(() => this.drawLegend());
+    void document.fonts?.load(`700 16px ${DISPLAY_FONT}`).then(() => this.drawLegend());
     document.addEventListener('mousemove', this.mousemove);
   }
 
@@ -78,15 +92,16 @@ export class MapView {
   private draw(canvas: HTMLCanvasElement, slot: number, pad: number, now: number, players: MapPlayer[], ownRoom: number, full: boolean): void {
     const ctx = canvas.getContext('2d')!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#19151b'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // The full map lies on the panel's own fill; the minimap needs a plate over the world.
+    if (!full) { ctx.fillStyle = INK.plate; ctx.fillRect(0, 0, canvas.width, canvas.height); }
     if (!this.floor) {
-      ctx.fillStyle = '#e8dcc0'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillStyle = INK.line; ctx.font = `14px ${BODY_FONT}`; ctx.textAlign = 'center';
       ctx.fillText('No map in the fixture', canvas.width / 2, canvas.height / 2); return;
     }
     const floor = this.floor;
     const project = (x: number, y: number): [number, number] => [pad + ((x - BAND) / SLOT + floor.slotOrigin[0]) * slot, pad + ((y - BAND) / SLOT + floor.slotOrigin[1]) * slot];
     // One vestibule connector per pair; never draw toward an unknown room.
-    ctx.strokeStyle = '#e8dcc080'; ctx.lineWidth = 2;
+    ctx.strokeStyle = INK.door; ctx.lineWidth = 2;
     floor.rooms.forEach((r, i) => {
       if (!this.model.states[i].knowledge) return;
       for (const door of r.doors) {
@@ -110,13 +125,13 @@ export class MapView {
       ctx.globalAlpha = 1;
       if (st.phase === PHASE_COMBAT || st.phase === PHASE_COUNTDOWN) {
         ctx.globalAlpha = 0.7 + 0.3 * Math.sin(now / 1000 * Math.PI * 2);
-        ctx.fillStyle = '#b03a2e'; ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = INK.combat; ctx.fillRect(x, y, w, h);
       } else if (st.phase === PHASE_CLEARED || st.knowledge === 2) {
         ctx.globalAlpha = st.phase === PHASE_CLEARED ? 0.8 : 1;
-        ctx.fillStyle = st.phase === PHASE_CLEARED ? '#e8dcc0' : '#6b6b6b'; ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = st.phase === PHASE_CLEARED ? INK.line : INK.visited; ctx.fillRect(x, y, w, h);
       }
       ctx.globalAlpha = st.knowledge === 1 ? 0.5 : 1;
-      ctx.lineWidth = ownRoom === i ? 3 : 2; ctx.strokeStyle = ownRoom === i ? '#ffd27a' : '#e8dcc0'; ctx.strokeRect(x, y, w, h);
+      ctx.lineWidth = ownRoom === i ? 3 : 2; ctx.strokeStyle = ownRoom === i ? INK.own : INK.line; ctx.strokeRect(x, y, w, h);
       ctx.globalAlpha = st.knowledge === 1 ? 0.6 : 1;
       const room = this.model.map.rooms[i], size = full ? 40 : 16;
       drawMapIcon(ctx, roomIcon(room, i === floor.reliquary), x + w / 2, y + h / 2, size, st.phase === PHASE_CLEARED);
@@ -128,24 +143,28 @@ export class MapView {
       const room = this.model.roomAt(p.x, p.y);
       if (room !== 255 && !this.model.states[room].knowledge) continue;
       const [x, y] = project(p.x, p.y); ctx.fillStyle = CLASS_COLORS[p.classId];
-      ctx.strokeStyle = '#19151b'; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = INK.outline; ctx.lineWidth = 1.5;
       ctx.beginPath();
       if (p.id === this.localId) {
         ctx.save(); ctx.translate(x, y); ctx.rotate(p.yaw);
         ctx.moveTo(6, 0); ctx.lineTo(-4, -4); ctx.lineTo(-2, 0); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
       } else { ctx.arc(x, y, full ? 5 : 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
-      if (full) { ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.strokeText(p.name, x, y - 10); ctx.fillText(p.name, x, y - 10); }
+      if (full) { ctx.font = `600 12px ${BODY_FONT}`; ctx.textAlign = 'center'; ctx.strokeText(p.name, x, y - 10); ctx.fillText(p.name, x, y - 10); }
     }
     if (full) {
-      ctx.strokeStyle = '#ffd27a'; ctx.lineWidth = 2; const { x, y } = this.cursor;
+      ctx.strokeStyle = INK.own; ctx.lineWidth = 2; const { x, y } = this.cursor;
       ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x + 6, y); ctx.moveTo(x, y - 6); ctx.lineTo(x, y + 6); ctx.stroke();
     }
   }
 
   private drawLegend(): void {
     const ctx = this.legend.getContext('2d')!; ctx.clearRect(0, 0, this.legend.width, this.legend.height);
-    ctx.font = '14px sans-serif'; ctx.fillStyle = '#e8dcc0';
-    ctx.fillText('Hold M · Floor map', 4, 18);
+    ctx.font = `700 16px ${DISPLAY_FONT}`; ctx.fillStyle = INK.own;
+    ctx.fillText('Floor map', 4, 18);
+    const after = 4 + ctx.measureText('Floor map').width + 10;
+    ctx.font = `13px ${BODY_FONT}`; ctx.fillStyle = INK.note;
+    ctx.fillText('Hold M', after, 18);
+    ctx.font = `14px ${BODY_FONT}`; ctx.fillStyle = INK.line;
     (Object.keys(ICON_PATHS) as MapIcon[]).forEach((icon, i) => {
       drawMapIcon(ctx, icon, 16, 42 + i * 20, 16);
       ctx.fillText(icon[0].toUpperCase() + icon.slice(1), 34, 47 + i * 20);
@@ -153,9 +172,9 @@ export class MapView {
     const rewards = [{ kind: 'gold' }, { kind: 'item', item: 'balm' }, { kind: 'rite' }] as const;
     rewards.forEach((reward, i) => {
       drawRewardIcon(ctx, reward, 16, 294 + i * 24, 20);
-      ctx.fillStyle = '#e8dcc0'; ctx.fillText(['Halos', 'Consumable', 'Rite page'][i], 34, 299 + i * 24);
+      ctx.fillStyle = INK.line; ctx.fillText(['Halos', 'Consumable', 'Rite page'][i], 34, 299 + i * 24);
     });
-    ctx.fillStyle = '#b9ac97'; ctx.fillText('No mark: no clear reward', 4, 299 + 3 * 24);
+    ctx.fillStyle = INK.note; ctx.fillText('No mark: no clear reward', 4, 299 + 3 * 24);
   }
   dispose(): void {
     this.parent.classList.remove('map-open');

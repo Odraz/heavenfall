@@ -64,6 +64,10 @@ test('the map shows Breach neighbours; holding M keeps movement and diverts mous
   await expect(known).toContainText(`${def.rooms[0].name} — Cleared`);
   for (const i of neighbours) await expect(known).toContainText(`${def.rooms[i].name} — Discovered`);
   await expect(page.getByLabel('Floor minimap')).toBeVisible();
+  // The minimap sits in the ability slots' painted frame, above Enemies remaining (audit C).
+  const mini = await page.getByLabel('Floor minimap').boundingBox();
+  expect(mini!.y + mini!.height).toBeLessThanOrEqual(await page.locator('.remaining').evaluate((e) => parseFloat(getComputedStyle(e).top)));
+  expect(await page.getByLabel('Floor minimap').evaluate((e) => getComputedStyle(e).borderImageSource)).toMatch(/ui-slot-frame/);
   await page.locator('.game-canvas').click({ position: { x: 500, y: 300 } });
   await page.waitForFunction(() => document.pointerLockElement !== null);
   const before = await state(page);
@@ -71,6 +75,9 @@ test('the map shows Breach neighbours; holding M keeps movement and diverts mous
   await expect(page.getByLabel('Full floor map')).toBeVisible();
   // The minimap would only cover the full map's legend (audit batch 2).
   await expect(page.getByLabel('Floor minimap')).toBeHidden();
+  // The framed map fits the window below the experience bar (audit C).
+  const plate = await page.locator('.map-layout').boundingBox(), xp = await page.locator('.xp-line').boundingBox();
+  expect(plate!.y).toBeGreaterThanOrEqual(xp!.y + xp!.height); expect(plate!.y + plate!.height).toBeLessThanOrEqual(720);
   await page.mouse.move(660, 340);
   await page.mouse.down({ button: 'left' }); await page.mouse.down({ button: 'right' });
   await page.keyboard.down('KeyW');
@@ -96,6 +103,10 @@ test('empty special rooms identify their later-milestone fixtures', async ({ pag
   await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&room=${floor.pardoner}&class=fallen&god=1`);
   await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
   await expect(page.locator('.room-message')).toHaveText('The Pardoner · Personal stock · Aim and press F to buy');
+  // Cinzel on the HUD band, and inside the window even at 640 px (audit C).
+  const message = page.locator('.room-message'), box = await message.boundingBox();
+  expect(await message.evaluate((e) => getComputedStyle(e).fontFamily)).toMatch(/^Cinzel/);
+  expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.x + box!.width).toBeLessThanOrEqual(640);
   const { def } = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
   const [x, y] = def.rooms[floor.confessional].entry[0].cells[0];
   await page.evaluate(([x, y]) => window.__heavenfallTeleport!(x + 0.5, y + 0.5), [x, y]);

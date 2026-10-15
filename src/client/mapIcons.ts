@@ -31,9 +31,10 @@ export function drawMapIcon(ctx: CanvasRenderingContext2D, icon: MapIcon, x: num
   ctx.translate(x - size / 2, y - size / 2);
   ctx.scale(size / 24, size / 24);
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  ctx.strokeStyle = dark ? '#e8dcc0' : '#19151b'; ctx.lineWidth = 4;
+  // Parchment and soot from the style.css tokens; a dark glyph on cleared (parchment) rooms.
+  ctx.strokeStyle = dark ? '#e8dcc0' : '#1b1513'; ctx.lineWidth = 4;
   ctx.stroke(path);
-  ctx.strokeStyle = dark ? '#292329' : '#fff8e8'; ctx.lineWidth = 1.8;
+  ctx.strokeStyle = dark ? '#2a211b' : '#fff8e8'; ctx.lineWidth = 1.8;
   ctx.stroke(path);
   ctx.restore();
 }
