@@ -25,7 +25,7 @@ import { showResults, type ResultsData, type ResultsView } from './ui/results';
 import { hideTooltip } from './ui/tooltip';
 import { initAudio, setMusic, sfx } from './audio/audio';
 import { profileLoadout, profilesScreen, saveCodeButton } from './ui/profiles';
-import { ProfileSession, currentProfileSlot, openCurrentProfile, readProfile } from './profile/storage';
+import { ProfileSession, openCurrentProfile, readProfile } from './profile/storage';
 import { abandonAttempt, applyProgress, stakeProfile, type ProgressState } from './profile/lifecycle';
 
 const params = parseParams(window.location.search);
@@ -105,7 +105,7 @@ let inviteId = params.join;
 function toTitle(message = ''): void {
   resetGameDebug();
   let profileName = profileSession?.profile.name;
-  try { profileName ??= disposable ? undefined : readProfile(localStorage, currentProfileSlot(localStorage)).profile?.name; } catch { /* Storage errors are shown on entry. */ }
+  try { profileName ??= disposable ? undefined : readProfile(localStorage).profile?.name; } catch { /* Storage errors are shown on entry. */ }
   let opening = false;
   const enter = (name: string, next: () => void, recovery = false): void => {
     if (opening) return;
@@ -225,7 +225,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
     game.handleCtrl(msg);
   };
   await game.prepare();
-  host.start(run, roster, params.god, params.benchArena, params.benchBurst, startRoom);
+  host.start(run, roster, params.god, params.benchArena, params.benchBurst, startRoom, params.dev);
 }
 
 // ------------------------------------------------------------------ multiplayer (§3, §9)
@@ -254,7 +254,7 @@ function toHostSetup(name: string): void {
       const host = new HostSession(0);
       createHostNet(() => left).then(
         (net) => {
-          host.hostLobby(net, dungeonId === 'rogue' ? null : dungeonId, password, name, params.god, params.bot, profileSession?.profile, !disposable && dungeonId === 'rogue');
+          host.hostLobby(net, dungeonId === 'rogue' ? null : dungeonId, password, name, params.god, params.bot, profileSession?.profile, !disposable && dungeonId === 'rogue', params.dev);
           enterLobby({ transport: host.local, playerId: 0, host, client: null, gameId: net.gameId, net: net.stats }, null, false);
         },
         (e: unknown) => {

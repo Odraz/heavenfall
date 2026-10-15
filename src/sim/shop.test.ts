@@ -47,7 +47,7 @@ describe('R3 shop transactions', () => {
     const p = sim.players[0]; p.wallet = 10; p.inventory = [{ item: 'balm', count: 3 }, { item: 'seal', count: 2 }];
     const before = structuredClone(p.inventory);
     sim.pickups.drop(13, 0, p.x, p.y, 0); sim.step();
-    expect(sim.chartRevealed).toBe(true); expect(p.wallet).toBe(10); expect(p.inventory).toEqual(before);
+    expect(sim.rewards.chartRevealed).toBe(true); expect(p.wallet).toBe(10); expect(p.inventory).toEqual(before);
     expect(sim.pickups.live.some(p => p.kind === 13)).toBe(false);
   });
   it('cannot charge a full inventory or sold stock, stacks matching slots first, and retries never charge again', () => {
@@ -79,7 +79,7 @@ describe('R3 shop transactions', () => {
     stand(0); sim.interact(0, 2, 0); sim.interact(0, 2, 0);
     expect(a.sold).toBe(1); expect(b.sold).toBe(0); expect(a.wallet).toBe(1000 - ITEMS[g.floor.stock[0]].price);
     stand(4); const wallet = a.wallet; sim.interact(0, 3, 4); sim.interact(0, 4, 4);
-    expect(a.wallet).toBe(wallet - 120); expect(sim.chartRevealed).toBe(true);
+    expect(a.wallet).toBe(wallet - 120); expect(sim.rewards.chartRevealed).toBe(true);
     expect(sim.rooms.every(r => r.knowledge > 0)).toBe(true);
   });
   it('measures collected pinned-room income through world deaths and contacts without bypassing wallets', () => {
@@ -90,7 +90,7 @@ describe('R3 shop transactions', () => {
     for (const [i, room] of g.def.rooms.entries()) {
       if (room.kind !== 'combat') continue;
       const budget = haloBudget(room.shape!, room.band!); expected += budget;
-      sim.haloLedgers.set(i, new HaloLedger(budget, 100));
+      sim.rewards.haloLedgers.set(i, new HaloLedger(budget, 100));
       const [x, y] = room.points!.reward!; Object.assign(p, { x: x + .5, y: y + .5, z: g.map.floor[y * g.map.w + x] });
       for (let n = 0; n < 100; n++) {
         const s = sim.placeEnemy(BLESSED, x, y, i); sim.eWave[s] = 0;

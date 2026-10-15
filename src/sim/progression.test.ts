@@ -6,7 +6,7 @@ describe('host XP and retained bodies', () => {
   it('pays accepted world deaths to connected humans once, excluding absent records and bots', () => {
     const sim = makeSim(room(20, 20), ['fallen', 'binder', 'betrayer']); sim.players[2].bot = true;
     const absent = sim.players[1]; sim.removePlayer(1, true);
-    const s = enemyAt(sim, BLESSED, 10, 10); sim.eXp[s] = 2.5;
+    const s = enemyAt(sim, BLESSED, 10, 10); sim.rewards.eXp[s] = 2.5;
     sim.damageEnemy(s, 1000, -1); sim.damageEnemy(s, 1000, -1);
     expect(sim.players[0].runXp).toBe(2.5); expect(sim.players[1].runXp).toBe(0); expect(absent.runXp).toBe(0);
   });
@@ -20,7 +20,7 @@ describe('host XP and retained bodies', () => {
   });
   it('does not pay XP for arbitrary cleanup and disables god/K in normal attempts', () => {
     const sim = makeSim(room(20, 20), ['fallen'], { progressionEnabled: true });
-    const s = enemyAt(sim, BLESSED, 10, 10); sim.eXp[s] = 60;
+    const s = enemyAt(sim, BLESSED, 10, 10); sim.rewards.eXp[s] = 60;
     sim.killAll(); sim.toggleDevGod(0); expect(sim.eAlive[s]).toBe(1); expect(sim.players[0].devGod).toBe(false);
     sim.removeEnemy(s, true); expect(sim.players[0].runXp).toBe(0);
   });

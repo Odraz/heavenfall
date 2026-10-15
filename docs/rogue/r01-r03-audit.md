@@ -251,7 +251,7 @@ Add what feels off here, one line each ("when X happens, it feels Y"). I'll map 
 | More item drops from breakables | B1: move item drops from the crowd to breakables | 4 |
 | Enemies still drop too few halos | B1: rebalance income, prices and drops together | 4 |
 
-Batches: **1** bugs and doc sync; **2** UI pass with mockups first; **3** readability; **4** combat and economy tuning, then a playtest; **5** behavior-neutral code cleanup before R04. Still open without a note: E (code). A4 and A6 were decided in batch 4; B3 (pressure stack) waits for the playtest.
+Batches: **1** bugs and doc sync; **2** UI pass with mockups first; **3** readability; **4** combat and economy tuning, then a playtest; **5** behavior-neutral code cleanup before R04. E (code) was done on 2026-10-15 (see *E results*). A4 and A6 were decided in batch 4; B3 (pressure stack) waits for the playtest.
 
 ## Batch 1 results
 
@@ -471,3 +471,33 @@ Not changed: the loading screen's Georgia italic lore. It predates R01 and reads
 - `npx playwright test --config playwright.hardware.config.ts e2e/rogue-floor.spec.ts e2e/profiles.spec.ts e2e/menus.spec.ts e2e/rogue-pressure.spec.ts e2e/multiplayer.spec.ts --grep-invert 'solo autopilot'`: **19/19 passed** (4.0 min). After one last CSS value (the full map's dim back to the spec's 40%): typecheck, `src/style.test.ts`, the build and `e2e/rogue-floor.spec.ts` again, **4/4 passed**. The solo autopilot traversal wasn't rerun; route and exit code didn't change.
 - In game (dev build, 1280×720): framed minimap, framed full map with the Cinzel legend heading, and the room, shop and victory messages stacked without overlap.
 - No benchmark was run.
+
+## E results (code cleanup)
+
+2026-10-15, uncommitted on `rogue` (base `c7aec6e`). No gameplay change: rules version and protocol are unchanged, and builds before and after can join each other. **Your decisions (2026-10-15):** drop the three-slot profile scan (E5); leave E6 (pickups per room in snapshots) for later, since it changes what snapshots carry.
+
+| Finding | Change | Files |
+|---|---|---|
+| E1 | `sim.ts` 4,422 → 4,176 lines. Enemy XP and drops, halo budgets, heal motes, prop loot, pickup collection, clear rewards, Rite page entitlements and the Chart moved to a new `Rewards` module. The shop interaction (reach, aim, sight, purchase) moved into `shop.ts`; `Simulation.interact` keeps only the request bookkeeping. The Dominion's slam targeting, leap landing, flight and strike moved into `DominionBehavior` in `dominion.ts`, next to the existing deadline class. Party scaling helpers moved to `party.ts` so the new modules don't import from `sim.ts`. | `src/sim/rewards.ts` (new), `src/sim/party.ts` (new), `src/sim/shop.ts`, `src/sim/dominion.ts`, `src/sim/sim.ts`, `src/sim/constants.ts` |
+| E2 | Named pickup kinds `CHART` (13) and `RITE_PAGE` (15); shop source IDs `SOURCE_CHART` (4) and `SOURCE_STAIR_FIRST/LAST` (5–8) with `stockIndex()`, used by host and client; exit timers in `victory.ts` (`EXIT_ALL_IN_TICKS` 90, `EXIT_FIRST_ENTRY_TICKS` 900, `EXIT_HARD_TICKS` 3600, `EXIT_CHOICE_HOLD_TICKS` 1800); `CARRIER_PARTY_HOLD` (105). Reward, item and Carrier numbers in the moved code are named too. | `src/data/pickups.ts`, `src/data/commanders.ts`, `src/sim/victory.ts`, `src/client/shop.ts`, `src/client/pickups.ts` |
+| E3 | The Carrier's text diagnostics are recorded only when the game runs with `dev=1` (a `diagnostics` start option from the page through the host session and worker). Without it the simulation keeps no reasons. The F3 overlay shows them as before. | `src/sim/commanders.ts`, `src/sim/sim.ts`, `src/sim/worker.ts`, `src/sim/workerMessages.ts`, `src/client/hostSession.ts`, `src/main.ts` |
+| E4 | `commanders.ts`, `consumables.ts`, `profile/model.ts`, `profile/storage.ts`, the `Dominions` class and `stairPoints` rewritten in the older style: one statement per line, descriptive names (`cast`, `sim` instead of `c`, `s`), named limits, spec citations. Average line length is 47–48 characters (was 63–75); no line is over 200 characters (was 13). | as listed |
+| E5 | The profile is read and written only under `heavenfall.profile.1` and its `.bak`, so your current save still loads. Slots 2 and 3 are no longer read, moved or deleted. game.md §13.1 and the decision register say so. | `src/profile/storage.ts`, `src/main.ts`, `docs/rogue/game.md` |
+
+**How "no behavior change" was checked:** before touching any code, a temporary test ran 25 complete combat rooms (five generated floors, five rooms each, four players shooting, using abilities and items, 2,400 ticks each) and hashed every snapshot, every event, and the wallets, XP, HP and kills after each tick. The runs covered Dominion slams, leaps and cancels, room clears with rewards, pickups, broken and exploding props, and item effects. The hashes were identical after each step (rewards and shop, Dominion, Carrier rewrite, style pass) and on the final code. The temporary test is not committed.
+
+**New tests:**
+- `commanders.test.ts`: without `dev=1` a Carrier records no diagnostics; with it, the record reads "initial delay", then "rushing" with its target.
+- `profile.test.ts`: the save stays under `heavenfall.profile.1`; a save that exists only in slot 2 isn't read, and isn't changed by a write. (Replaces the legacy-slot adoption test.)
+- Existing tests now read reward state from `sim.rewards` and the leap choice from `sim.dominionBehavior.leapTarget`.
+
+**Checks:**
+
+- `npm run typecheck`: passed.
+- `npm test -- --pool=threads --exclude '**/*perf.test.ts'`: **1,141 passed in 103 files**.
+- Both timing checks run alone: **2/2**, unchanged 8 ms limits (main 3.15 ms/tick, hazard stress 4.71 ms/tick).
+- `npm run build`: passed.
+- `npx playwright test --config playwright.hardware.config.ts e2e/commanders.spec.ts e2e/dominion.spec.ts e2e/r02-checkpoint.spec.ts e2e/rogue-pressure.spec.ts e2e/rogue-floor.spec.ts e2e/profiles.spec.ts e2e/menus.spec.ts e2e/pickup-expiry.spec.ts e2e/r03-art.spec.ts e2e/multiplayer.spec.ts --grep-invert 'solo autopilot'`: **55/55 passed** (12.4 min). The solo autopilot traversal wasn't rerun; route and exit behavior didn't change.
+- No benchmark was run.
+
+**Still open:** E6 (per-room pickups in snapshots), by your decision. `sim.ts` is still the largest module; R04's talents should add their own modules rather than grow it.

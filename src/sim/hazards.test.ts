@@ -50,7 +50,7 @@ describe('accepted fire contact and world damage', () => {
   });
   it('settles an ordinary world death once with no player killer and no cleanup loot', () => {
     const sim = fixture(); put(sim, sim.players[0], 4.5, 8.5);
-    sim.haloLedgers.set(0, new HaloLedger(3, 1));
+    sim.rewards.haloLedgers.set(0, new HaloLedger(3, 1));
     const s = sim.placeEnemy(BLESSED, 10, 8, 0); sim.stun(s, 100); sim.eHp[s] = 60.5;
     sim.eWave[s] = 0;
     sim.rooms[0].waveAlive[0] = 1;
@@ -58,7 +58,7 @@ describe('accepted fire contact and world damage', () => {
     aimAt(sim, sim.players[0], s); sim.players[0].fire = 1; sim.random = () => 0.5;
     sim.step(); expect(sim.eAlive[s]).toBe(0); expect(sim.ePooled[s]).toBe(0); expect(sim.players[0].kills).toBe(0);
     expect(sim.events.some((m) => m.event.type === 'bursts' && m.event.list[2] === -1)).toBe(true);
-    expect(sim.haloLedgers.get(0)?.paid).toBe(3); expect(sim.pickups.live).toHaveLength(3);
+    expect(sim.rewards.haloLedgers.get(0)?.paid).toBe(3); expect(sim.pickups.live).toHaveLength(3);
     const count = sim.pickups.live.length; sim.step(); expect(sim.pickups.live).toHaveLength(count);
   });
 });

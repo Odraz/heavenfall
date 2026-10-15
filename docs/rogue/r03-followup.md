@@ -37,6 +37,7 @@ The initial sandboxed browser run could not reach PeerJS and stalled at shutdown
 
 - **`83481d2`, 2026-10-14** (recorded afterwards by the [R01–R03 audit](r01-r03-audit.md), D2): a charging Carrier is interrupted by any damage; carry damage 10 every 0.5 s; the solo carry and earliest release are both 3 s; the rush tracks for 0.2 s before locking; a grabbed player's blocked actions no longer replay after release; Settings grew to fit its controls. Rules 15 → 17. The Carrier numbers differ from rooms.md §6.3 and await your decision (audit A4); the Settings growth was reverted by audit batch 1.
 - **Audit batch 1, 2026-10-15:** random item drops fade after 60 s; Settings and Profile panels keep their size; the level-up notice no longer mentions R04. Rules 17 → 18. Evidence is in the [audit report](r01-r03-audit.md#batch-1-results).
+- **Audit E, 2026-10-15:** behavior-neutral code cleanup before R04: rewards, the shop interaction and Dominion behavior moved out of `sim.ts`; Carrier diagnostics recorded only with `dev=1`; the profile is read from the one `heavenfall.profile.1` key (the R03 stage 2 slots 2–3 are no longer read). Rules and protocol unchanged. Evidence is in the [audit report](r01-r03-audit.md#e-results-code-cleanup).
 
 ## Artwork provenance
 

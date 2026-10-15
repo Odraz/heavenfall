@@ -1,30 +1,101 @@
+/** The Cantor and the Stray-Carrier, the commanders of the Choristers and Cherubs (rogue rooms.md §6.1–§6.3). */
 import { BLESSED, CANTOR, CARRIER, ENEMIES, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
-import { CANTOR_AIM_SPEED, CANTOR_BEAM_TURN_SPEED, CANTOR_BEAM, CANTOR_COOLDOWN, CANTOR_RECOVERY, CANTOR_TELL, CARRIER_COOLDOWN, CARRIER_RECOVERY, CARRIER_SWOOP, CARRIER_GRAB_RADIUS, CARRIER_FLY_THROUGH, CARRIER_MIN_HOLD, CARRIER_MIN_FLIGHT, CARRIER_TRACK_TICKS, CARRIER_FLIGHT_HEIGHT, CARRIER_DAMAGE, CARRIER_DAMAGE_INTERVAL, CANTOR_BEAM_FORCE, COMMANDER_RECORD_CAP, turnToward, type CommanderCast } from '../data/commanders';
+import {
+  CANTOR_AIM_SPEED,
+  CANTOR_BEAM,
+  CANTOR_BEAM_FORCE,
+  CANTOR_BEAM_TURN_SPEED,
+  CANTOR_COOLDOWN,
+  CANTOR_RECOVERY,
+  CANTOR_TELL,
+  CARRIER_COOLDOWN,
+  CARRIER_DAMAGE,
+  CARRIER_DAMAGE_INTERVAL,
+  CARRIER_FLIGHT_HEIGHT,
+  CARRIER_FLY_THROUGH,
+  CARRIER_GRAB_RADIUS,
+  CARRIER_MIN_FLIGHT,
+  CARRIER_MIN_HOLD,
+  CARRIER_PARTY_HOLD,
+  CARRIER_RECOVERY,
+  CARRIER_SWOOP,
+  CARRIER_TRACK_TICKS,
+  COMMANDER_RECORD_CAP,
+  turnToward,
+  type CarrierCheck,
+  type CommanderCast,
+} from '../data/commanders';
 import { ENEMY_SLOTS, PLAYER_HEIGHT, PLAYER_RADIUS } from './constants';
 import { circleOverlapsCell } from './movement';
 import { lineOfSight, raycastTerrain } from './los';
 import type { GameMap } from './map';
 import type { Simulation, SimPlayer } from './sim';
-import type { CarrierCheck } from '../data/commanders';
+
+/** The Cantor targets visible players within this range; the Carrier within CARRIER_SIGHT. */
+const CANTOR_SIGHT = 25;
+const CARRIER_SIGHT = 20;
+/** The beam leaves the book this far in front of the Cantor, 2 m up, and reaches up to 30 m. */
+const BEAM_FORWARD = 0.6;
+const BEAM_HEIGHT = 2;
+const BEAM_LENGTH = 30;
+/** The beam's pitch is limited to ±35°. */
+const BEAM_MAX_PITCH = 35 * Math.PI / 180;
+/** An idle Cantor turns toward the nearest player at this speed (rad/s). */
+const CANTOR_IDLE_TURN = Math.PI / 2;
+/** A beam pulse every 10 ticks: 10 damage to players, 20 to the crowd (rooms.md §6.2). */
+const BEAM_PULSE_TICKS = 10;
+const BEAM_PLAYER_DAMAGE = 10;
+const BEAM_ENEMY_DAMAGE = 20;
+/** The Carrier waits 3 s after spawning before its first rush. */
+const CARRIER_FIRST_DELAY = 90;
+/** Rush and carry stop at this share of the Carrier's HP in accepted damage (rooms.md §6.3). */
+const RESCUE_SHARE = 0.2;
+/** A rush is considered only on one tick in this many, staggered by slot. */
+const RUSH_CHECK_TICKS = 15;
+/** The drop: a crowd of at least 3 Blessed in one 4 m square, within 7 m (solo) or 10 m of the victim. */
+const CROWD_SQUARE = 4;
+const CROWD_MIN = 3;
+const DROP_RANGE_SOLO = 7;
+const DROP_RANGE = 10;
+/** The carry climbs to 6 m above the ground over 0.5 s, then moves at 6 m/s. */
+const CARRY_HEIGHT = 6;
+const CARRY_CLIMB_TICKS = 15;
+const CARRY_SPEED = 6 / 30;
+/** The carry ends within this distance of its destination, once CARRIER_MIN_HOLD has passed. */
+const DROP_REACH = 0.5;
+/** A cast is refused when its deadline could pass the 32-bit tick limit. */
+const CAST_HEADROOM = 300;
 
 /** Conservative swept footprint. Walls/leaves and room boundaries block even above their tops. */
 export function carryPathClear(map: GameMap, room: number, ax: number, ay: number, az: number, bx: number, by: number, bz: number, dryEnd = false): boolean {
   const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay, bz - az) / 0.2));
   for (let n = 0; n <= steps; n++) {
-    const f = n / steps, x = ax + (bx - ax) * f, y = ay + (by - ay) * f, z = az + (bz - az) * f;
-    for (let r = Math.floor(y - 1); r <= Math.floor(y + 1); r++) for (let c = Math.floor(x - 1); c <= Math.floor(x + 1); c++) {
-      if (!circleOverlapsCell(x, y, 1, c, r)) continue;
-      const i = r * map.w + c;
-      if (c < 0 || r < 0 || c >= map.w || r >= map.h || map.roomOf[i] !== room || map.solid[i] || !Number.isFinite(map.floor[i]) || map.floor[i] > z + 0.01 || dryEnd && n === steps && map.hazard[i]) return false;
+    const f = n / steps;
+    const x = ax + (bx - ax) * f;
+    const y = ay + (by - ay) * f;
+    const z = az + (bz - az) * f;
+    for (let r = Math.floor(y - 1); r <= Math.floor(y + 1); r++) {
+      for (let c = Math.floor(x - 1); c <= Math.floor(x + 1); c++) {
+        if (!circleOverlapsCell(x, y, 1, c, r)) continue;
+        const i = r * map.w + c;
+        if (c < 0 || r < 0 || c >= map.w || r >= map.h || map.roomOf[i] !== room) return false;
+        if (map.solid[i] || !Number.isFinite(map.floor[i]) || map.floor[i] > z + 0.01) return false;
+        if (dryEnd && n === steps && map.hazard[i]) return false;
+      }
     }
   }
   return true;
 }
 
-export function beamSegment(map: GameMap, c: CommanderCast): { x: number; y: number; z: number; dx: number; dy: number; dz: number; length: number } {
-  const x = c.x + 0.6 * Math.cos(c.yaw), y = c.y + 0.6 * Math.sin(c.yaw), z = c.z + 2;
-  const dx = Math.cos(c.yaw) * Math.cos(c.pitch), dy = Math.sin(c.yaw) * Math.cos(c.pitch), dz = Math.sin(c.pitch);
-  const length = raycastTerrain(map, x, y, z, dx, dy, dz, 30);
+/** The Cantor's beam: from the book along its yaw and pitch, stopped by terrain (rooms.md §6.2). */
+export function beamSegment(map: GameMap, cast: CommanderCast): { x: number; y: number; z: number; dx: number; dy: number; dz: number; length: number } {
+  const x = cast.x + BEAM_FORWARD * Math.cos(cast.yaw);
+  const y = cast.y + BEAM_FORWARD * Math.sin(cast.yaw);
+  const z = cast.z + BEAM_HEIGHT;
+  const dx = Math.cos(cast.yaw) * Math.cos(cast.pitch);
+  const dy = Math.sin(cast.yaw) * Math.cos(cast.pitch);
+  const dz = Math.sin(cast.pitch);
+  const length = raycastTerrain(map, x, y, z, dx, dy, dz, BEAM_LENGTH);
   return { x, y, z, dx, dy, dz, length };
 }
 
@@ -32,16 +103,23 @@ export function beamSegment(map: GameMap, c: CommanderCast): { x: number; y: num
 export function beamHits(b: ReturnType<typeof beamSegment>, x: number, y: number, z: number, height: number, radius: number): boolean {
   const radius2 = (radius + 0.5) ** 2;
   const cuts = [0, b.length];
-  if (Math.abs(b.dz) > 1e-9) for (const capZ of [z, z + height]) {
-    const t = (capZ - b.z) / b.dz; if (t > 0 && t < b.length) cuts.push(t);
+  if (Math.abs(b.dz) > 1e-9) {
+    for (const capZ of [z, z + height]) {
+      const t = (capZ - b.z) / b.dz;
+      if (t > 0 && t < b.length) cuts.push(t);
+    }
   }
   cuts.sort((a, b) => a - b);
   for (let i = 0; i < cuts.length - 1; i++) {
-    const lo = cuts[i], hi = cuts[i + 1], midZ = b.z + b.dz * (lo + hi) / 2;
+    const lo = cuts[i];
+    const hi = cuts[i + 1];
+    const midZ = b.z + b.dz * (lo + hi) / 2;
     const cap = midZ < z ? z : midZ > z + height ? z + height : undefined;
-    const dz = cap === undefined ? 0 : b.dz, oz = cap === undefined ? 0 : b.z - cap;
+    const dz = cap === undefined ? 0 : b.dz;
+    const oz = cap === undefined ? 0 : b.z - cap;
     const denominator = b.dx ** 2 + b.dy ** 2 + dz ** 2;
-    const t = Math.max(lo, Math.min(hi, denominator > 1e-12 ? -((b.x - x) * b.dx + (b.y - y) * b.dy + oz * dz) / denominator : lo));
+    const closest = denominator > 1e-12 ? -((b.x - x) * b.dx + (b.y - y) * b.dy + oz * dz) / denominator : lo;
+    const t = Math.max(lo, Math.min(hi, closest));
     if ((b.x + b.dx * t - x) ** 2 + (b.y + b.dy * t - y) ** 2 + (oz + dz * t) ** 2 <= radius2) return true;
   }
   return false;
@@ -55,220 +133,419 @@ export class Commanders {
   private readonly rescueThreshold = new Float64Array(ENEMY_SLOTS);
   private readonly origins = new Map<number, { x: number; y: number; z: number }>();
   private nextId = 1;
+  /** Why each Carrier last did or didn't rush, for the dev overlay; recorded only with `dev=1`. */
   private readonly carrierChecks = new Map<number, CarrierCheck>();
+
   constructor(private readonly sim: Simulation) {}
-  checkpoint(): CommanderCast[] { return [...this.active.values()].map((c) => ({ ...c })); }
-  diagnostics(): CarrierCheck[] {
-    return [...this.carrierChecks.values()].map((check) => ({ ...check, phase: this.active.get(check.slot)!.phase, readyTick: this.readyAt[check.slot] }));
+
+  checkpoint(): CommanderCast[] {
+    return [...this.active.values()].map((cast) => ({ ...cast }));
   }
-  hasFamily(type: number, room: number): boolean { return [...this.active.values()].some((c) => c.room === room && (c.kind === 'beam' ? CANTOR : CARRIER) === type); }
+
+  diagnostics(): CarrierCheck[] {
+    return [...this.carrierChecks.values()].map((check) => ({
+      ...check,
+      phase: this.active.get(check.slot)!.phase,
+      readyTick: this.readyAt[check.slot],
+    }));
+  }
+
+  hasFamily(type: number, room: number): boolean {
+    return [...this.active.values()].some((cast) => cast.room === room && (cast.kind === 'beam' ? CANTOR : CARRIER) === type);
+  }
+
   spawn(slot: number): void {
-    const s = this.sim, type = s.eType[slot];
+    const sim = this.sim;
+    const type = sim.eType[slot];
     if (type !== CANTOR && type !== CARRIER) return;
     if (this.nextId > 0xffffffff || this.active.size >= COMMANDER_RECORD_CAP) throw new Error('commander record capacity exhausted');
-    const p = s.players.find((p) => s.livingTargetable(p));
-    this.active.set(slot, { kind: type === CANTOR ? 'beam' : 'carry', slot, incarnation: s.eIncarnation[slot], room: s.eRoom[slot], castId: this.nextId++,
-      phase: 'idle', startTick: s.tick, phaseTick: s.tick, endTick: s.tick, targetId: -1,
-      x: s.eX[slot], y: s.eY[slot], z: s.eZ[slot], yaw: p ? Math.atan2(p.y - s.eY[slot], p.x - s.eX[slot]) : 0, pitch: 0,
-      targetX: s.eX[slot], targetY: s.eY[slot], targetZ: s.eZ[slot], dropX: s.eX[slot], dropY: s.eY[slot] });
-    this.readyAt[slot] = s.tick + (type === CARRIER ? 90 : 0);
-    if (type === CARRIER) this.carrierChecks.set(slot, { slot, phase: 'idle', tick: s.tick, targetId: -1, distance: 0, nearbyBlessed: 0, crowdCount: 0, reason: 'initial delay', readyTick: this.readyAt[slot] });
-    this.rescueThreshold[slot] = s.eHp[slot] * 0.2;
+    const x = sim.eX[slot];
+    const y = sim.eY[slot];
+    const z = sim.eZ[slot];
+    const p = sim.players.find((p) => sim.livingTargetable(p));
+    this.active.set(slot, {
+      kind: type === CANTOR ? 'beam' : 'carry', slot, incarnation: sim.eIncarnation[slot], room: sim.eRoom[slot], castId: this.nextId++,
+      phase: 'idle', startTick: sim.tick, phaseTick: sim.tick, endTick: sim.tick, targetId: -1,
+      x, y, z, yaw: p ? Math.atan2(p.y - y, p.x - x) : 0, pitch: 0,
+      targetX: x, targetY: y, targetZ: z, dropX: x, dropY: y,
+    });
+    this.readyAt[slot] = sim.tick + (type === CARRIER ? CARRIER_FIRST_DELAY : 0);
+    if (type === CARRIER && sim.diagnostics) {
+      this.carrierChecks.set(slot, { slot, phase: 'idle', tick: sim.tick, targetId: -1, distance: 0, nearbyBlessed: 0, crowdCount: 0,
+        reason: 'initial delay', readyTick: this.readyAt[slot] });
+    }
+    this.rescueThreshold[slot] = sim.eHp[slot] * RESCUE_SHARE;
   }
-  carriedBy(id: number): CommanderCast | undefined { return [...this.active.values()].find((c) => c.kind === 'carry' && c.phase === 'carry' && c.targetId === id); }
-  releasePlayer(id: number, correction = true): void { const c = this.carriedBy(id); if (c) this.cancel(c.slot, correction); }
+
+  carriedBy(id: number): CommanderCast | undefined {
+    return [...this.active.values()].find((cast) => cast.kind === 'carry' && cast.phase === 'carry' && cast.targetId === id);
+  }
+
+  releasePlayer(id: number, correction = true): void {
+    const cast = this.carriedBy(id);
+    if (cast) this.cancel(cast.slot, correction);
+  }
+
+  /** Ends a tell, beam, rush or carry into recovery; a carried player is corrected to where they are. */
   cancel(slot: number, correction = true): void {
-    const c = this.active.get(slot), s = this.sim;
-    if (!c || c.phase === 'idle' || c.phase === 'recover') return;
-    const carried = c.phase === 'carry', p = s.players.find((p) => p.id === c.targetId);
-    c.phase = 'recover'; c.phaseTick = s.tick; c.endTick = s.tick + (c.kind === 'beam' ? CANTOR_RECOVERY : CARRIER_RECOVERY);
-    this.readyAt[slot] = s.tick + (c.kind === 'beam' ? CANTOR_COOLDOWN : CARRIER_COOLDOWN);
+    const cast = this.active.get(slot);
+    const sim = this.sim;
+    if (!cast || cast.phase === 'idle' || cast.phase === 'recover') return;
+    const carried = cast.phase === 'carry';
+    const p = sim.players.find((p) => p.id === cast.targetId);
+    cast.phase = 'recover';
+    cast.phaseTick = sim.tick;
+    cast.endTick = sim.tick + (cast.kind === 'beam' ? CANTOR_RECOVERY : CARRIER_RECOVERY);
+    this.readyAt[slot] = sim.tick + (cast.kind === 'beam' ? CANTOR_COOLDOWN : CARRIER_COOLDOWN);
     this.origins.delete(slot);
-    if (carried && p && correction) s.teleport(p, p.x, p.y, p.z, undefined, false);
+    if (carried && p && correction) sim.teleport(p, p.x, p.y, p.z, undefined, false);
   }
-  remove(slot: number): void { this.cancel(slot); this.active.delete(slot); this.origins.delete(slot); this.carrierChecks.delete(slot); }
+
+  remove(slot: number): void {
+    this.cancel(slot);
+    this.active.delete(slot);
+    this.origins.delete(slot);
+    this.carrierChecks.delete(slot);
+  }
+
   /** Rush and carry share one rule: a fifth of the Carrier's HP in accepted damage stops it (audit batch 4). */
   damaged(slot: number, amount: number): void {
-    const c = this.active.get(slot);
-    if (!c || amount <= 0 || c.kind !== 'carry' || c.phase !== 'active' && c.phase !== 'carry') return;
+    const cast = this.active.get(slot);
+    if (!cast || amount <= 0 || cast.kind !== 'carry' || cast.phase !== 'active' && cast.phase !== 'carry') return;
     this.rescueDamage[slot] += amount;
     if (this.rescueDamage[slot] >= this.rescueThreshold[slot] - 1e-6) this.cancel(slot);
   }
-  private target(c: CommanderCast): SimPlayer | undefined {
-    return this.sim.players.find((p) => p.id === c.targetId && this.sim.livingTargetable(p) && this.sim.roomAt(p.x, p.y) === c.room);
+
+  /** Updates a Carrier's dev diagnostics, when they are recorded. */
+  private note(slot: number, fields: Partial<CarrierCheck>): void {
+    const check = this.carrierChecks.get(slot);
+    if (check) Object.assign(check, fields);
   }
-  private sees(c: CommanderCast, p: SimPlayer, range: number): boolean {
-    return this.sim.livingTargetable(p) && this.sim.roomAt(p.x, p.y) === c.room && Math.hypot(p.x - c.x, p.y - c.y) <= range &&
-      lineOfSight(this.sim.map, c.x, c.y, c.z + ENEMIES[this.sim.eType[c.slot]].height / 2, p.x, p.y, p.z + PLAYER_HEIGHT / 2);
+
+  private target(cast: CommanderCast): SimPlayer | undefined {
+    const sim = this.sim;
+    return sim.players.find((p) => p.id === cast.targetId && sim.livingTargetable(p) && sim.roomAt(p.x, p.y) === cast.room);
   }
-  private start(c: CommanderCast, p: SimPlayer, duration: number): void {
-    if (this.nextId > 0xffffffff || this.sim.tick + 300 > 0xffffffff) return;
-    c.castId = this.nextId++; c.startTick = c.phaseTick = this.sim.tick; c.endTick = this.sim.tick + duration;
-    this.sim.eCast[c.slot] = 0; this.sim.eCastT[c.slot] = 0;
-    c.phase = 'tell'; c.targetId = p.id; c.targetX = p.x; c.targetY = p.y; c.targetZ = p.z;
+
+  private sees(cast: CommanderCast, p: SimPlayer, range: number): boolean {
+    const sim = this.sim;
+    const near = sim.livingTargetable(p) && sim.roomAt(p.x, p.y) === cast.room && Math.hypot(p.x - cast.x, p.y - cast.y) <= range;
+    if (!near) return false;
+    const eye = cast.z + ENEMIES[sim.eType[cast.slot]].height / 2;
+    return lineOfSight(sim.map, cast.x, cast.y, eye, p.x, p.y, p.z + PLAYER_HEIGHT / 2);
   }
+
+  private start(cast: CommanderCast, p: SimPlayer, duration: number): void {
+    const sim = this.sim;
+    if (this.nextId > 0xffffffff || sim.tick + CAST_HEADROOM > 0xffffffff) return;
+    cast.castId = this.nextId++;
+    cast.startTick = cast.phaseTick = sim.tick;
+    cast.endTick = sim.tick + duration;
+    sim.eCast[cast.slot] = 0;
+    sim.eCastT[cast.slot] = 0;
+    cast.phase = 'tell';
+    cast.targetId = p.id;
+    cast.targetX = p.x;
+    cast.targetY = p.y;
+    cast.targetZ = p.z;
+  }
+
   /** Returns whether this commander owns its movement this tick. */
   update(slot: number): boolean {
-    const c = this.active.get(slot), s = this.sim;
-    if (!c) return false;
-    c.x = s.eX[slot]; c.y = s.eY[slot]; c.z = s.eZ[slot];
-    if (s.roomAt(c.x, c.y) !== c.room) { this.cancel(slot); return false; }
-    const blocked = s.isStunned(slot) || s.tick < s.eSilenceUntil[slot] || !s.eGrounded[slot] ||
-      c.kind === 'carry' && (s.isRooted(slot) || s.tick < s.eTauntUntil[slot]);
+    const cast = this.active.get(slot);
+    const sim = this.sim;
+    if (!cast) return false;
+    cast.x = sim.eX[slot];
+    cast.y = sim.eY[slot];
+    cast.z = sim.eZ[slot];
+    if (sim.roomAt(cast.x, cast.y) !== cast.room) {
+      this.cancel(slot);
+      return false;
+    }
+    const blocked = sim.isStunned(slot) || sim.tick < sim.eSilenceUntil[slot] || !sim.eGrounded[slot] ||
+      cast.kind === 'carry' && (sim.isRooted(slot) || sim.tick < sim.eTauntUntil[slot]);
     if (blocked) {
-      const check = this.carrierChecks.get(slot); if (check) { check.reason = 'controlled'; check.tick = s.tick; }
-      this.cancel(slot); return false;
+      this.note(slot, { reason: 'controlled', tick: sim.tick });
+      this.cancel(slot);
+      return false;
     }
-    if (c.phase === 'recover' && s.tick >= c.endTick) c.phase = 'idle';
-    if (c.kind === 'beam') return this.cantor(c);
-    return this.carrier(c);
+    if (cast.phase === 'recover' && sim.tick >= cast.endTick) cast.phase = 'idle';
+    if (cast.kind === 'beam') return this.cantor(cast);
+    return this.carrier(cast);
   }
-  private cantor(c: CommanderCast): boolean {
-    const s = this.sim, slot = c.slot;
-    const taunted = s.tick < s.eTauntUntil[slot];
-    if (taunted) { const p = s.players.find((p) => p.classId === 'fallen' && s.livingTargetable(p) && s.roomAt(p.x, p.y) === c.room); if (p) c.targetId = p.id; }
-    if (c.phase === 'idle' && s.tick >= this.readyAt[slot]) {
-      const targets = s.players.filter((p) => this.sees(c, p, 25) && (!taunted || p.classId === 'fallen'));
-      targets.sort((a, b) => Math.hypot(b.x - c.x, b.y - c.y) - Math.hypot(a.x - c.x, a.y - c.y) || a.index - b.index);
-      if (targets[0]) this.start(c, targets[0], CANTOR_TELL);
+
+  /** The Cantor (rooms.md §6.2): a tell on the farthest visible player, then a beam that turns slowly. */
+  private cantor(cast: CommanderCast): boolean {
+    const sim = this.sim;
+    const slot = cast.slot;
+    const taunted = sim.tick < sim.eTauntUntil[slot];
+    if (taunted) {
+      const fallen = sim.players.find((p) => p.classId === 'fallen' && sim.livingTargetable(p) && sim.roomAt(p.x, p.y) === cast.room);
+      if (fallen) cast.targetId = fallen.id;
     }
-    const p = this.target(c);
-    if (c.phase === 'tell' && !p) { this.cancel(slot); return true; }
-    if (p && c.phase !== 'idle') { c.targetX = p.x; c.targetY = p.y; c.targetZ = p.z; }
-    if (c.phase === 'idle') {
-      const nearest = s.players.filter((p) => s.livingTargetable(p) && s.roomAt(p.x, p.y) === c.room).sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
-      if (nearest) { c.targetX = nearest.x; c.targetY = nearest.y; c.targetZ = nearest.z; }
+    if (cast.phase === 'idle' && sim.tick >= this.readyAt[slot]) {
+      const targets = sim.players.filter((p) => this.sees(cast, p, CANTOR_SIGHT) && (!taunted || p.classId === 'fallen'));
+      targets.sort((a, b) => Math.hypot(b.x - cast.x, b.y - cast.y) - Math.hypot(a.x - cast.x, a.y - cast.y) || a.index - b.index);
+      if (targets[0]) this.start(cast, targets[0], CANTOR_TELL);
     }
-    const turn = (c.phase === 'active' || c.phase === 'recover' ? CANTOR_BEAM_TURN_SPEED : c.phase === 'tell' ? CANTOR_AIM_SPEED : Math.PI / 2) / 30;
-    c.yaw = turnToward(c.yaw, Math.atan2(c.targetY - c.y, c.targetX - c.x), turn);
-    const pitch = Math.max(-35 * Math.PI / 180, Math.min(35 * Math.PI / 180, Math.atan2(c.targetZ + PLAYER_HEIGHT / 2 - c.z - 2, Math.max(0.01, Math.hypot(c.targetX - c.x, c.targetY - c.y) - 0.6))));
-    c.pitch += Math.max(-turn, Math.min(turn, pitch - c.pitch));
-    if (c.phase === 'tell' && s.tick >= c.endTick) { c.phase = 'active'; c.phaseTick = s.tick; c.endTick = s.tick + CANTOR_BEAM; }
-    if (c.phase === 'active' && s.tick >= c.endTick) this.cancel(slot);
-    const hold = c.phase !== 'idle' || s.players.some((p) => this.sees(c, p, 25));
-    if (hold) s.eState[slot] = c.phase === 'tell' ? ST_WINDUP : ST_ATTACKING;
+    const p = this.target(cast);
+    if (cast.phase === 'tell' && !p) {
+      this.cancel(slot);
+      return true;
+    }
+    if (p && cast.phase !== 'idle') {
+      cast.targetX = p.x;
+      cast.targetY = p.y;
+      cast.targetZ = p.z;
+    }
+    if (cast.phase === 'idle') {
+      const inRoom = sim.players.filter((p) => sim.livingTargetable(p) && sim.roomAt(p.x, p.y) === cast.room);
+      const nearest = inRoom.sort((a, b) => Math.hypot(a.x - cast.x, a.y - cast.y) - Math.hypot(b.x - cast.x, b.y - cast.y))[0];
+      if (nearest) {
+        cast.targetX = nearest.x;
+        cast.targetY = nearest.y;
+        cast.targetZ = nearest.z;
+      }
+    }
+    const beaming = cast.phase === 'active' || cast.phase === 'recover';
+    const turn = (beaming ? CANTOR_BEAM_TURN_SPEED : cast.phase === 'tell' ? CANTOR_AIM_SPEED : CANTOR_IDLE_TURN) / 30;
+    cast.yaw = turnToward(cast.yaw, Math.atan2(cast.targetY - cast.y, cast.targetX - cast.x), turn);
+    const rise = cast.targetZ + PLAYER_HEIGHT / 2 - cast.z - BEAM_HEIGHT;
+    const run = Math.max(0.01, Math.hypot(cast.targetX - cast.x, cast.targetY - cast.y) - BEAM_FORWARD);
+    const pitch = Math.max(-BEAM_MAX_PITCH, Math.min(BEAM_MAX_PITCH, Math.atan2(rise, run)));
+    cast.pitch += Math.max(-turn, Math.min(turn, pitch - cast.pitch));
+    if (cast.phase === 'tell' && sim.tick >= cast.endTick) {
+      cast.phase = 'active';
+      cast.phaseTick = sim.tick;
+      cast.endTick = sim.tick + CANTOR_BEAM;
+    }
+    if (cast.phase === 'active' && sim.tick >= cast.endTick) this.cancel(slot);
+    const hold = cast.phase !== 'idle' || sim.players.some((p) => this.sees(cast, p, CANTOR_SIGHT));
+    if (hold) sim.eState[slot] = cast.phase === 'tell' ? ST_WINDUP : ST_ATTACKING;
     return hold;
   }
+
   /**
    * Called after separation built the spatial hashes. No full-enemy scan per beam pulse.
    * Crowd kills burst away from the book, so the beam visibly hurts the horde (audit batch 4).
    */
   pulse(): void {
-    const s = this.sim;
-    for (const c of this.active.values()) {
-      c.x = s.eX[c.slot]; c.y = s.eY[c.slot]; c.z = s.eZ[c.slot];
-      if (c.kind !== 'beam' || c.phase !== 'active' || (s.tick - c.phaseTick) % 10 !== 0) continue;
-      const b = beamSegment(s.map, c);
-      const visible = (x: number, y: number, z: number, h: number) => lineOfSight(s.map, b.x, b.y, b.z, x, y, z + h / 2);
-      for (const p of s.players) if (s.livingTargetable(p) && s.roomAt(p.x, p.y) === c.room && beamHits(b, p.x, p.y, p.z, PLAYER_HEIGHT, PLAYER_RADIUS) && visible(p.x, p.y, p.z, PLAYER_HEIGHT)) s.damagePlayer(p, 10);
-      for (const slot of s.commanderBeamCandidates(b)) {
-        if (!s.eAlive[slot] || s.eType[slot] > 2 || s.roomAt(s.eX[slot], s.eY[slot]) !== c.room) continue;
-        const d = ENEMIES[s.eType[slot]];
-        if (beamHits(b, s.eX[slot], s.eY[slot], s.eZ[slot], d.height, d.radius) && visible(s.eX[slot], s.eY[slot], s.eZ[slot], d.height)) s.damageEnemy(slot, 20, -1, CANTOR_BEAM_FORCE, b.x, b.y, true);
+    const sim = this.sim;
+    for (const cast of this.active.values()) {
+      cast.x = sim.eX[cast.slot];
+      cast.y = sim.eY[cast.slot];
+      cast.z = sim.eZ[cast.slot];
+      if (cast.kind !== 'beam' || cast.phase !== 'active' || (sim.tick - cast.phaseTick) % BEAM_PULSE_TICKS !== 0) continue;
+      const b = beamSegment(sim.map, cast);
+      const visible = (x: number, y: number, z: number, h: number) => lineOfSight(sim.map, b.x, b.y, b.z, x, y, z + h / 2);
+      for (const p of sim.players) {
+        if (!sim.livingTargetable(p) || sim.roomAt(p.x, p.y) !== cast.room) continue;
+        if (beamHits(b, p.x, p.y, p.z, PLAYER_HEIGHT, PLAYER_RADIUS) && visible(p.x, p.y, p.z, PLAYER_HEIGHT)) sim.damagePlayer(p, BEAM_PLAYER_DAMAGE);
+      }
+      for (const slot of sim.commanderBeamCandidates(b)) {
+        // Only the crowd (Blessed, Choristers and Cherubs) takes beam damage.
+        if (!sim.eAlive[slot] || sim.eType[slot] > 2 || sim.roomAt(sim.eX[slot], sim.eY[slot]) !== cast.room) continue;
+        const def = ENEMIES[sim.eType[slot]];
+        const x = sim.eX[slot];
+        const y = sim.eY[slot];
+        const z = sim.eZ[slot];
+        if (beamHits(b, x, y, z, def.height, def.radius) && visible(x, y, z, def.height)) {
+          sim.damageEnemy(slot, BEAM_ENEMY_DAMAGE, -1, CANTOR_BEAM_FORCE, b.x, b.y, true);
+        }
       }
     }
   }
-  /** One enemy pass, row-major ties, then nearest dry footprint to the winning centroid. */
-  dropPoint(c: CommanderCast, p: SimPlayer): { x: number; y: number } | undefined {
-    const s = this.sim, rect = s.map.rooms[c.room].rect, squares = new Map<number, { count: number; x: number; y: number }>();
-    const check = this.carrierChecks.get(c.slot);
-    if (check) Object.assign(check, { tick: s.tick, targetId: p.id, distance: Math.hypot(p.x - c.x, p.y - c.y), nearbyBlessed: 0, crowdCount: 0, reason: 'crowd too small' });
-    const cols = Math.ceil((rect.x1 - rect.x0 + 1) / 4), range = s.solo ? 7 : 10;
-    for (let k = 0; k < s.activeCount; k++) {
-      const q = s.active[k];
-      if (s.eType[q] !== BLESSED || !s.eGrounded[q] || s.roomAt(s.eX[q], s.eY[q]) !== c.room || Math.hypot(s.eX[q] - p.x, s.eY[q] - p.y) > range) continue;
-      const key = Math.floor((s.eY[q] - rect.y0) / 4) * cols + Math.floor((s.eX[q] - rect.x0) / 4);
-      const v = squares.get(key) ?? { count: 0, x: 0, y: 0 }; v.count++; v.x += s.eX[q]; v.y += s.eY[q]; squares.set(key, v);
-      if (check) { check.nearbyBlessed++; check.crowdCount = Math.max(check.crowdCount, v.count); }
+
+  /**
+   * Where a carry takes its victim (rooms.md §6.3): the 4 m square with the most Blessed near the
+   * victim, row-major ties, then the nearest dry footprint to its centroid with a clear carry path.
+   */
+  dropPoint(cast: CommanderCast, p: SimPlayer): { x: number; y: number } | undefined {
+    const sim = this.sim;
+    const rect = sim.map.rooms[cast.room].rect;
+    const squares = new Map<number, { count: number; x: number; y: number }>();
+    const cols = Math.ceil((rect.x1 - rect.x0 + 1) / CROWD_SQUARE);
+    const range = sim.solo ? DROP_RANGE_SOLO : DROP_RANGE;
+    let nearbyBlessed = 0;
+    let crowdCount = 0;
+    for (let k = 0; k < sim.activeCount; k++) {
+      const q = sim.active[k];
+      if (sim.eType[q] !== BLESSED || !sim.eGrounded[q] || sim.roomAt(sim.eX[q], sim.eY[q]) !== cast.room) continue;
+      if (Math.hypot(sim.eX[q] - p.x, sim.eY[q] - p.y) > range) continue;
+      const key = Math.floor((sim.eY[q] - rect.y0) / CROWD_SQUARE) * cols + Math.floor((sim.eX[q] - rect.x0) / CROWD_SQUARE);
+      const square = squares.get(key) ?? { count: 0, x: 0, y: 0 };
+      square.count++;
+      square.x += sim.eX[q];
+      square.y += sim.eY[q];
+      squares.set(key, square);
+      nearbyBlessed++;
+      crowdCount = Math.max(crowdCount, square.count);
     }
-    const winner = [...squares.entries()].filter(([, v]) => v.count >= 3).sort((a, b) => b[1].count - a[1].count || a[0] - b[0])[0];
+    this.note(cast.slot, { tick: sim.tick, targetId: p.id, distance: Math.hypot(p.x - cast.x, p.y - cast.y), nearbyBlessed, crowdCount,
+      reason: 'crowd too small' });
+    const crowds = [...squares.entries()].filter(([, square]) => square.count >= CROWD_MIN);
+    const winner = crowds.sort((a, b) => b[1].count - a[1].count || a[0] - b[0])[0];
     if (!winner) return;
-    if (check) check.reason = 'drop path blocked';
-    const v = winner[1], cx = v.x / v.count, cy = v.y / v.count;
+    this.note(cast.slot, { reason: 'drop path blocked' });
+    const crowd = winner[1];
+    const cx = crowd.x / crowd.count;
+    const cy = crowd.y / crowd.count;
     const cells: Array<{ x: number; y: number; d: number }> = [];
-    for (let r = Math.max(rect.y0, Math.floor(cy) - 4); r <= Math.min(rect.y1, Math.floor(cy) + 4); r++) for (let col = Math.max(rect.x0, Math.floor(cx) - 4); col <= Math.min(rect.x1, Math.floor(cx) + 4); col++) {
-      const x = col + 0.5, y = r + 0.5, i = r * s.map.w + col;
-      if (Math.hypot(x - p.x, y - p.y) > range || s.map.hazard[i] || s.map.solid[i] || !Number.isFinite(s.map.floor[i])) continue;
-      cells.push({ x, y, d: (x - cx) ** 2 + (y - cy) ** 2 });
+    for (let r = Math.max(rect.y0, Math.floor(cy) - 4); r <= Math.min(rect.y1, Math.floor(cy) + 4); r++) {
+      for (let col = Math.max(rect.x0, Math.floor(cx) - 4); col <= Math.min(rect.x1, Math.floor(cx) + 4); col++) {
+        const x = col + 0.5;
+        const y = r + 0.5;
+        const i = r * sim.map.w + col;
+        if (Math.hypot(x - p.x, y - p.y) > range || sim.map.hazard[i] || sim.map.solid[i] || !Number.isFinite(sim.map.floor[i])) continue;
+        cells.push({ x, y, d: (x - cx) ** 2 + (y - cy) ** 2 });
+      }
     }
     cells.sort((a, b) => a.d - b.d || a.y - b.y || a.x - b.x);
-    for (const q of cells) {
-      const ground = s.map.floor[Math.floor(q.y) * s.map.w + Math.floor(q.x)], height = Math.max(p.z, ground) + 6;
-      if (carryPathClear(s.map, c.room, p.x, p.y, p.z, p.x, p.y, height) && carryPathClear(s.map, c.room, p.x, p.y, height, q.x, q.y, height) && carryPathClear(s.map, c.room, q.x, q.y, height, q.x, q.y, ground, true)) {
-        if (check) check.reason = 'ready';
-        return { x: q.x, y: q.y };
+    for (const cell of cells) {
+      const ground = sim.map.floor[Math.floor(cell.y) * sim.map.w + Math.floor(cell.x)];
+      const height = Math.max(p.z, ground) + CARRY_HEIGHT;
+      const lift = carryPathClear(sim.map, cast.room, p.x, p.y, p.z, p.x, p.y, height);
+      const across = lift && carryPathClear(sim.map, cast.room, p.x, p.y, height, cell.x, cell.y, height);
+      if (across && carryPathClear(sim.map, cast.room, cell.x, cell.y, height, cell.x, cell.y, ground, true)) {
+        this.note(cast.slot, { reason: 'ready' });
+        return { x: cell.x, y: cell.y };
       }
     }
   }
-  private carrier(c: CommanderCast): boolean {
-    const s = this.sim, slot = c.slot;
-    const check = this.carrierChecks.get(slot)!;
-    if (c.phase === 'idle' && s.tick >= this.readyAt[slot] && s.tick % 15 === slot % 15) {
-      const targets = s.players.filter(p => this.sees(c, p, 20) && !this.carriedBy(p.id));
-      targets.sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y) || a.index - b.index);
-      const p = targets[0];
-      Object.assign(check, { tick: s.tick, targetId: p?.id ?? -1, distance: p ? Math.hypot(p.x - c.x, p.y - c.y) : 0,
-        nearbyBlessed: 0, crowdCount: 0, reason: p ? 'swoop path blocked' : 'no visible target in range' });
-      if (p && carryPathClear(s.map, c.room, c.x, c.y, c.z, p.x, p.y, p.z + 2)) {
-        this.start(c, p, CARRIER_SWOOP);
-        if (c.targetId !== p.id || c.phaseTick !== s.tick) return false;
-        c.phase = 'active'; c.yaw = Math.atan2(p.y - c.y, p.x - c.x);
-        c.dropX = p.x; c.dropY = p.y; this.rescueDamage[slot] = 0;
-        this.origins.set(slot, { x: c.x, y: c.y, z: c.z }); check.reason = 'rushing';
-      }
-    }
-    if (c.phase === 'idle') return false;
-    if (c.phase === 'recover') {
+
+  /** The Stray-Carrier (rooms.md §6.3): rush a visible player, lift them and carry them toward the crowd. */
+  private carrier(cast: CommanderCast): boolean {
+    const sim = this.sim;
+    const slot = cast.slot;
+    if (cast.phase === 'idle' && sim.tick >= this.readyAt[slot] && sim.tick % RUSH_CHECK_TICKS === slot % RUSH_CHECK_TICKS) this.tryRush(cast);
+    if (cast.phase === 'idle') return false;
+    if (cast.phase === 'recover') {
       // A wall can shorten the fly-through, but must not leave a missed dive parked at head height.
-      const ground = s.map.floor[Math.floor(c.y) * s.map.w + Math.floor(c.x)];
-      const z = Math.max(c.z, Math.min(c.z + 6 / 30, ground + CARRIER_FLIGHT_HEIGHT));
-      if (carryPathClear(s.map, c.room, c.x, c.y, c.z, c.x, c.y, z)) s.eZ[slot] = z;
-      s.eState[slot] = ST_ATTACKING; return true;
+      const ground = sim.map.floor[Math.floor(cast.y) * sim.map.w + Math.floor(cast.x)];
+      const z = Math.max(cast.z, Math.min(cast.z + 6 / 30, ground + CARRIER_FLIGHT_HEIGHT));
+      if (carryPathClear(sim.map, cast.room, cast.x, cast.y, cast.z, cast.x, cast.y, z)) sim.eZ[slot] = z;
+      sim.eState[slot] = ST_ATTACKING;
+      return true;
     }
-    const p = this.target(c);
-    if (!p || c.phase === 'carry' && s.isInvulnerable(p)) { this.cancel(slot); return true; }
-    if (c.phase === 'active') {
-      const o = this.origins.get(slot)!, f = Math.min(1, (s.tick - c.phaseTick) / CARRIER_SWOOP);
-      // Brief acquisition, then a committed flight: backing away is caught, a late sidestep can evade.
-      if (s.tick - c.phaseTick <= CARRIER_TRACK_TICKS) {
-        c.yaw = turnToward(c.yaw, Math.atan2(p.y - o.y, p.x - o.x), Math.PI / 30);
-        const reach = Math.hypot(p.x - o.x, p.y - o.y);
-        c.targetX = o.x + Math.cos(c.yaw) * reach; c.targetY = o.y + Math.sin(c.yaw) * reach; c.targetZ = p.z;
-      }
-      const distance = Math.hypot(c.targetX - o.x, c.targetY - o.y);
-      const length = Math.max(CARRIER_MIN_FLIGHT, distance + CARRIER_FLY_THROUGH), travel = length * f;
-      const x = o.x + Math.cos(c.yaw) * travel, y = o.y + Math.sin(c.yaw) * travel;
-      // Two parabolic wings meet with zero vertical slope at the grab point.
-      const low = c.targetZ + 2, ground = s.map.floor[Math.floor(y) * s.map.w + Math.floor(x)];
-      const high = Math.max(o.z, c.targetZ + CARRIER_FLIGHT_HEIGHT, Number.isFinite(ground) ? ground + CARRIER_FLIGHT_HEIGHT : 0);
-      const z = travel <= distance ? low + (o.z - low) * (1 - travel / Math.max(distance, 1e-9)) ** 2 :
-        low + (high - low) * ((travel - distance) / (length - distance)) ** 2;
-      if (!carryPathClear(s.map, c.room, c.x, c.y, c.z, x, y, z)) { this.cancel(slot); return true; }
-      s.eX[slot] = x; s.eY[slot] = y; s.eZ[slot] = z; s.eState[slot] = ST_ATTACKING;
-      // Sweep the grab along this tick's flight, rather than checking only the final position.
-      const dx = x - c.x, dy = y - c.y;
-      const t = Math.max(0, Math.min(1, ((p.x - c.x) * dx + (p.y - c.y) * dy) / Math.max(dx * dx + dy * dy, 1e-9)));
-      const grabX = c.x + dx * t, grabY = c.y + dy * t, grabZ = c.z + (z - c.z) * t;
-      if (!s.isInvulnerable(p) && !this.carriedBy(p.id) && Math.hypot(p.x - grabX, p.y - grabY) <= CARRIER_GRAB_RADIUS &&
-        Math.abs(p.z + 2 - grabZ) <= 2 && carryPathClear(s.map, c.room, grabX, grabY, grabZ, p.x, p.y, p.z + 2)) {
-        const drop = this.dropPoint(c, p); c.dropX = drop?.x ?? p.x; c.dropY = drop?.y ?? p.y;
-        c.phase = 'carry'; c.phaseTick = s.tick; c.endTick = s.tick + (s.solo ? CARRIER_MIN_HOLD : 105); this.rescueDamage[slot] = 0;
-        this.origins.set(slot, { x: p.x, y: p.y, z: p.z });
-        s.cancelPlayerActions(p);
-        s.teleport(p, p.x, p.y, p.z, undefined, true);
-      } else if (s.tick >= c.endTick) this.cancel(slot);
-    } else if (c.phase === 'carry') {
-      const o = this.origins.get(slot)!;
-      const ground = s.map.floor[Math.floor(p.y) * s.map.w + Math.floor(p.x)];
-      const climb = Math.min(1, (s.tick - c.phaseTick) / 15), z = climb < 1 ? o.z + (ground + 6 - o.z) * climb : Math.max(p.z, ground + 6);
-      const dx = c.dropX - p.x, dy = c.dropY - p.y, distance = Math.hypot(dx, dy), step = climb < 1 ? 0 : Math.min(distance, 6 / 30);
-      const x = p.x + dx / Math.max(distance, 1e-9) * step, y = p.y + dy / Math.max(distance, 1e-9) * step;
-      if (!carryPathClear(s.map, c.room, p.x, p.y, p.z, x, y, z)) { this.cancel(slot); return true; }
-      p.x = x; p.y = y; p.z = z; p.moveVx = p.moveVy = 0;
-      s.eX[slot] = x; s.eY[slot] = y; s.eZ[slot] = z + PLAYER_HEIGHT; c.yaw = Math.atan2(dy, dx); s.eState[slot] = ST_ATTACKING;
-      if ((s.tick - c.phaseTick) % CARRIER_DAMAGE_INTERVAL === 0) s.damagePlayer(p, CARRIER_DAMAGE);
-      if (p.dead || s.tick >= c.endTick || climb === 1 && distance <= 0.5 && s.tick - c.phaseTick >= CARRIER_MIN_HOLD) this.cancel(slot);
+    const p = this.target(cast);
+    if (!p || cast.phase === 'carry' && sim.isInvulnerable(p)) {
+      this.cancel(slot);
+      return true;
     }
+    if (cast.phase === 'active') this.rush(cast, p);
+    else if (cast.phase === 'carry') this.carry(cast, p);
     return true;
+  }
+
+  /** Starts a rush at the nearest visible player whose swoop path is clear. */
+  private tryRush(cast: CommanderCast): void {
+    const sim = this.sim;
+    const slot = cast.slot;
+    const targets = sim.players.filter((p) => this.sees(cast, p, CARRIER_SIGHT) && !this.carriedBy(p.id));
+    targets.sort((a, b) => Math.hypot(a.x - cast.x, a.y - cast.y) - Math.hypot(b.x - cast.x, b.y - cast.y) || a.index - b.index);
+    const p = targets[0];
+    this.note(slot, { tick: sim.tick, targetId: p?.id ?? -1, distance: p ? Math.hypot(p.x - cast.x, p.y - cast.y) : 0,
+      nearbyBlessed: 0, crowdCount: 0, reason: p ? 'swoop path blocked' : 'no visible target in range' });
+    if (!p || !carryPathClear(sim.map, cast.room, cast.x, cast.y, cast.z, p.x, p.y, p.z + 2)) return;
+    this.start(cast, p, CARRIER_SWOOP);
+    // A refused start (exhausted cast IDs) leaves the Carrier idle.
+    if (cast.targetId !== p.id || cast.phaseTick !== sim.tick) return;
+    cast.phase = 'active';
+    cast.yaw = Math.atan2(p.y - cast.y, p.x - cast.x);
+    cast.dropX = p.x;
+    cast.dropY = p.y;
+    this.rescueDamage[slot] = 0;
+    this.origins.set(slot, { x: cast.x, y: cast.y, z: cast.z });
+    this.note(slot, { reason: 'rushing' });
+  }
+
+  /** Brief acquisition, then a committed flight: backing away is caught, a late sidestep can evade. */
+  private rush(cast: CommanderCast, p: SimPlayer): void {
+    const sim = this.sim;
+    const slot = cast.slot;
+    const origin = this.origins.get(slot)!;
+    const f = Math.min(1, (sim.tick - cast.phaseTick) / CARRIER_SWOOP);
+    if (sim.tick - cast.phaseTick <= CARRIER_TRACK_TICKS) {
+      cast.yaw = turnToward(cast.yaw, Math.atan2(p.y - origin.y, p.x - origin.x), Math.PI / 30);
+      const reach = Math.hypot(p.x - origin.x, p.y - origin.y);
+      cast.targetX = origin.x + Math.cos(cast.yaw) * reach;
+      cast.targetY = origin.y + Math.sin(cast.yaw) * reach;
+      cast.targetZ = p.z;
+    }
+    const distance = Math.hypot(cast.targetX - origin.x, cast.targetY - origin.y);
+    const length = Math.max(CARRIER_MIN_FLIGHT, distance + CARRIER_FLY_THROUGH);
+    const travel = length * f;
+    const x = origin.x + Math.cos(cast.yaw) * travel;
+    const y = origin.y + Math.sin(cast.yaw) * travel;
+    // Two parabolic wings meet with zero vertical slope at the grab point.
+    const low = cast.targetZ + 2;
+    const ground = sim.map.floor[Math.floor(y) * sim.map.w + Math.floor(x)];
+    const high = Math.max(origin.z, cast.targetZ + CARRIER_FLIGHT_HEIGHT, Number.isFinite(ground) ? ground + CARRIER_FLIGHT_HEIGHT : 0);
+    const z = travel <= distance
+      ? low + (origin.z - low) * (1 - travel / Math.max(distance, 1e-9)) ** 2
+      : low + (high - low) * ((travel - distance) / (length - distance)) ** 2;
+    if (!carryPathClear(sim.map, cast.room, cast.x, cast.y, cast.z, x, y, z)) {
+      this.cancel(slot);
+      return;
+    }
+    sim.eX[slot] = x;
+    sim.eY[slot] = y;
+    sim.eZ[slot] = z;
+    sim.eState[slot] = ST_ATTACKING;
+    // Sweep the grab along this tick's flight, rather than checking only the final position.
+    const dx = x - cast.x;
+    const dy = y - cast.y;
+    const t = Math.max(0, Math.min(1, ((p.x - cast.x) * dx + (p.y - cast.y) * dy) / Math.max(dx * dx + dy * dy, 1e-9)));
+    const grabX = cast.x + dx * t;
+    const grabY = cast.y + dy * t;
+    const grabZ = cast.z + (z - cast.z) * t;
+    const grabbable = !sim.isInvulnerable(p) && !this.carriedBy(p.id) && Math.hypot(p.x - grabX, p.y - grabY) <= CARRIER_GRAB_RADIUS &&
+      Math.abs(p.z + 2 - grabZ) <= 2 && carryPathClear(sim.map, cast.room, grabX, grabY, grabZ, p.x, p.y, p.z + 2);
+    if (!grabbable) {
+      if (sim.tick >= cast.endTick) this.cancel(slot);
+      return;
+    }
+    const drop = this.dropPoint(cast, p);
+    cast.dropX = drop?.x ?? p.x;
+    cast.dropY = drop?.y ?? p.y;
+    cast.phase = 'carry';
+    cast.phaseTick = sim.tick;
+    cast.endTick = sim.tick + (sim.solo ? CARRIER_MIN_HOLD : CARRIER_PARTY_HOLD);
+    this.rescueDamage[slot] = 0;
+    this.origins.set(slot, { x: p.x, y: p.y, z: p.z });
+    sim.cancelPlayerActions(p);
+    sim.teleport(p, p.x, p.y, p.z, undefined, true);
+  }
+
+  /** Climbs to 6 m, then flies toward the drop, hurting the victim every 0.5 s. */
+  private carry(cast: CommanderCast, p: SimPlayer): void {
+    const sim = this.sim;
+    const slot = cast.slot;
+    const origin = this.origins.get(slot)!;
+    const ground = sim.map.floor[Math.floor(p.y) * sim.map.w + Math.floor(p.x)];
+    const climb = Math.min(1, (sim.tick - cast.phaseTick) / CARRY_CLIMB_TICKS);
+    const z = climb < 1 ? origin.z + (ground + CARRY_HEIGHT - origin.z) * climb : Math.max(p.z, ground + CARRY_HEIGHT);
+    const dx = cast.dropX - p.x;
+    const dy = cast.dropY - p.y;
+    const distance = Math.hypot(dx, dy);
+    const step = climb < 1 ? 0 : Math.min(distance, CARRY_SPEED);
+    const x = p.x + dx / Math.max(distance, 1e-9) * step;
+    const y = p.y + dy / Math.max(distance, 1e-9) * step;
+    if (!carryPathClear(sim.map, cast.room, p.x, p.y, p.z, x, y, z)) {
+      this.cancel(slot);
+      return;
+    }
+    p.x = x;
+    p.y = y;
+    p.z = z;
+    p.moveVx = p.moveVy = 0;
+    sim.eX[slot] = x;
+    sim.eY[slot] = y;
+    sim.eZ[slot] = z + PLAYER_HEIGHT;
+    cast.yaw = Math.atan2(dy, dx);
+    sim.eState[slot] = ST_ATTACKING;
+    if ((sim.tick - cast.phaseTick) % CARRIER_DAMAGE_INTERVAL === 0) sim.damagePlayer(p, CARRIER_DAMAGE);
+    const arrived = climb === 1 && distance <= DROP_REACH && sim.tick - cast.phaseTick >= CARRIER_MIN_HOLD;
+    if (p.dead || sim.tick >= cast.endTick || arrived) this.cancel(slot);
   }
 }

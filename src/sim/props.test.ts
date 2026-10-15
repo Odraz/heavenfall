@@ -163,7 +163,7 @@ describe('prop effects and recovery', () => {
   it('chains lamps after six ticks in stable ID order, ignores chalices, and world kills have no player credit', () => {
     const sim = make([prop(3, 'blast', 10.5), prop(1, 'blast', 6.5), prop(2, 'blessing', 7.5)], ['betrayer', 'heretic']);
     put(sim, sim.players[0], 6.5, 7.5); put(sim, sim.players[1], 28.5, 9.5);
-    const s = sim.placeEnemy(BLESSED, 8, 5, 0); sim.eStunUntil[s] = 9999; sim.eWave[s] = 0; sim.haloLedgers.set(0, new HaloLedger(3, 1));
+    const s = sim.placeEnemy(BLESSED, 8, 5, 0); sim.eStunUntil[s] = 9999; sim.eWave[s] = 0; sim.rewards.haloLedgers.set(0, new HaloLedger(3, 1));
     sim.props.break(1, 0); const sync = sim.floorSync(sim.runId);
     expect(sync.brokenProps).toEqual([1]); expect(sync.propBlasts).toEqual([{ id: 1, impactTick: 6 }]);
     for (let i = 0; i < 5; i++) sim.step(); expect(sim.eAlive[s]).toBe(1);

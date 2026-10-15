@@ -127,7 +127,7 @@ describe('R2 pickups', () => {
   });
   it('only accepted damage deaths settle ordinary ledger and capped mote rewards', () => {
     const sim = makeSim(room(20, 20), ['fallen'], { noWaves: true });
-    sim.map.rooms[0].shape = '1x1'; sim.haloLedgers.set(0, new HaloLedger(12, 4)); sim.random = () => 0;
+    sim.map.rooms[0].shape = '1x1'; sim.rewards.haloLedgers.set(0, new HaloLedger(12, 4)); sim.random = () => 0;
     put(sim, sim.players[0], 18, 18);
     for (let i = 0; i < 4; i++) {
       const s = sim.placeEnemy(BLESSED, 5, 5, 0); sim.eWave[s] = 0;

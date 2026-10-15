@@ -1,15 +1,16 @@
 /** The host simulation: pure TypeScript, no three.js or DOM (§2.2). */
 import { CLASSES, type ClassId } from '../data/classes';
-import { copyInventory, emptyInventory, FEATHER_SPEED, ITEM_IDS, isItemId, PLUME_LIFT, PLUME_THROW, type Inventory, type ItemId } from '../data/items';
+import { copyInventory, emptyInventory, FEATHER_SPEED, isItemId, PLUME_LIFT, PLUME_THROW, type Inventory, type ItemId } from '../data/items';
 import { Consumables } from './consumables';
+import { Rewards } from './rewards';
 import { VictoryExit } from './victory';
 import { levelForXp } from '../profile/model';
 import type { Profile } from '../profile/model';
 import { saturatingAdd } from '../profile/model';
 import type { Floor } from '../gen/generate';
 import { ScopedRequests } from '../net/requests';
-import { buyItem, CHART_PRICE, stairPoints, type InteractionResult } from './shop';
-import type { DungeonDef, WaveDef } from '../data/dungeons/types';
+import { interactShop, stairPoints, type InteractionResult } from './shop';
+import type { DungeonDef } from '../data/dungeons/types';
 import {
   BLESSED,
   CHERUB,
@@ -99,6 +100,7 @@ import {
 import {
   ENEMY_SLOTS,
   MAX_LIVING_ENEMIES,
+  ROOM_NONE,
   PLAYER_EYE,
   PLAYER_HEIGHT,
   PLAYER_RADIUS,
@@ -120,41 +122,19 @@ import { lineOfSight, raycastTerrain } from './los';
 import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
-import { COIN, DROPPED_ITEM_LIFETIME, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, PICKUP_CAP, REWARD_GOLD_VALUE, RITE_PAGE_HALOS, itemDrop, type PickupRecord } from '../data/pickups';
-import { LOOT_ROLL, PROP_HEIGHT, PROP_BLAST_PLAYER_DAMAGE, type PropDef } from '../data/props';
+import { bossMultiplier, partyMultiplier, scaleCount, waveSize } from './party';
+import { PICKUP_CAP } from '../data/pickups';
+import { PROP_HEIGHT, PROP_BLAST_PLAYER_DAMAGE, type PropDef } from '../data/props';
 import { Props, type Prop } from './props';
-import { HaloLedger, HALO_WEIGHT, haloBudget, moteCap } from './economy';
 import { Pickups } from './pickups';
-import { Dominions } from './dominion';
+import { DominionBehavior, Dominions } from './dominion';
 import { Commanders, carryPathClear, type beamSegment } from './commanders';
 import { hymnalReduction } from '../data/commanders';
 import { directionalSpeedFactor } from '../data/movement';
-import { dominionLeapClear } from './dominionLeap';
-import { DOMINION_ALIVE_CAP, DOMINION_COOLDOWN_TICKS, DOMINION_REACH, DOMINION_RADIUS, DOMINION_HEIGHT_TOLERANCE, DOMINION_ENEMY_DAMAGE, DOMINION_PLAYER_DAMAGE, DOMINION_LAUNCH_SPEED, dominionFalloff, DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_VZ, DOMINION_LEAP_CHARGE_TICKS, DOMINION_LEAP_LEAD_SECONDS, DOMINION_LEAP_MIN_RANGE, DOMINION_LEAP_MAX_RANGE, DOMINION_TELL_TICKS, DOMINION_MELEE_RANGE, DOMINION_MELEE_DAMAGE, dominionLeapPosition, type DominionLeap, type DominionCast, type DominionPhase } from '../data/dominion';
+import { DOMINION_ALIVE_CAP, DOMINION_COOLDOWN_TICKS, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_SECONDS, DOMINION_MELEE_RANGE, DOMINION_MELEE_DAMAGE } from '../data/dominion';
 import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, reviveSlowdown, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
 
-/** Linear party scaling, including half-player bots (rogue game.md §0). */
-export function partyMultiplier(partySize: number): number {
-  return (2 + 2 * Math.max(1, Math.min(4, partySize))) / 10;
-}
-
-/**
- * The Gatekeeper's HP and Judgment's interrupt multiplier: 0.3 for a solo game (M12 follow-up §3.3,
- * was 0.4), the party-size multiplier otherwise.
- */
-export function bossMultiplier(partySize: number, solo = partySize === 1): number {
-  return solo ? 0.3 : partyMultiplier(partySize);
-}
-
-/** A wave's enemies for the party size, each type and its squad (M12 follow-up §4.2) scaled. */
-export function waveSize(w: WaveDef, partySize: number): number {
-  return scaleCount(w.blessed, partySize) + scaleCount(w.choristers, partySize) + scaleCount(w.cherubs, partySize) + scaleCount(w.dominions ?? 0, partySize) + (w.squad ? scaleCount(w.squad.count, partySize) : 0);
-}
-
-/** Scales one enemy count for the party size, rounding up (§7.5). */
-export function scaleCount(count: number, partySize: number): number {
-  return Math.max(0, Math.ceil(count * partyMultiplier(partySize) - 1e-9));
-}
+export { bossMultiplier, partyMultiplier, scaleCount, waveSize } from './party';
 
 export interface SimPlayerInit {
   profile?: Profile;
@@ -189,6 +169,8 @@ export interface SimOptions {
   noWaves?: boolean;
   /** Dev entry: fixtures clear rooms before N; generated floors clear every other room. */
   startRoom?: number;
+  /** `dev=1`: record the Carrier's decision reasons for the host's debug overlay (never sent to peers). */
+  diagnostics?: boolean;
 }
 
 export interface SimEvent {
@@ -481,8 +463,7 @@ export const BOSS_CAST_NONE = 0;
 export const BOSS_CAST_VOLLEY = 1;
 export const BOSS_CAST_JUDGMENT = 2;
 
-/** No room is active (the snapshot's `activeRoom`, rogue game.md §14.3). */
-export const ROOM_NONE = 255;
+export { ROOM_NONE } from './constants';
 
 /** Human quorum countdown (rogue game.md §4.3), shortened when everyone is inside. */
 const COUNTDOWN = 20;
@@ -545,18 +526,14 @@ export function segmentDistance(
 
 export class Simulation {
   readonly floor: Floor | null;
-  chartRevealed = false;
   victory: VictoryExit | null = null;
   admissionClosed = false;
   get won(): boolean { return this.victory !== null; }
   readonly items = new Consumables(this);
-  private readonly rewardRecipients = new Map<number, Set<string>>();
-  private readonly pageRecipients = new Map<number, Set<string>>();
+  readonly rewards = new Rewards(this);
   private nextOfferKey = 1;
   readonly progressionEnabled: boolean;
   readonly retainedPlayers = new Map<number, { player: SimPlayer; tick: number }>();
-  readonly eXp = new Float64Array(ENEMY_SLOTS);
-  halosCredited = 0;
   readonly map: GameMap;
   readonly runId: string;
   /** The players in the game, sorted by ID. */
@@ -567,6 +544,8 @@ export class Simulation {
   readonly benchRoom: number;
   private readonly benchBurst: boolean;
   readonly noWaves: boolean;
+  /** Records local debug diagnostics (`dev=1`); gameplay never reads them. */
+  readonly diagnostics: boolean;
   /** Every player is invulnerable (`god=1`). */
   private readonly god: boolean;
   /** Seeded PRNG for all simulation randomness (§2.2); tests may replace it. */
@@ -590,13 +569,9 @@ export class Simulation {
   readonly pickups: Pickups;
   readonly props: Props;
   readonly dominions: Dominions;
+  readonly dominionBehavior = new DominionBehavior(this);
   readonly commanders = new Commanders(this);
-  readonly eGoldEntitled = new Uint8Array(ENEMY_SLOTS);
-  private readonly eliteGold = new Map<number, number[]>();
-  private readonly elitePlaced = new Map<number, number[]>();
   private livingDominions = 0;
-  readonly haloLedgers = new Map<number, HaloLedger>();
-  private readonly moteDrops = new Map<number, number>();
   readonly eType = new Uint8Array(ENEMY_SLOTS);
   readonly eState = new Uint8Array(ENEMY_SLOTS);
   readonly eX = new Float64Array(ENEMY_SLOTS);
@@ -785,10 +760,11 @@ export class Simulation {
     this.spawnWarnings = new SpawnWarnings((phase, warning) => this.emit('all', { type: 'spawnWarning', phase, warning }));
     this.pickups = new Pickups(this.map, (p) => this.emit('all', { type: 'pickupState', pickup: { ...p } }));
     this.props = new Props(this.map, opts.props ?? [], (p, origin) => this.propBroken(p, origin));
-    this.dominions = new Dominions((phase, cast) => this.dominionPhase(phase, cast));
+    this.dominions = new Dominions((phase, cast) => this.dominionBehavior.castPhase(phase, cast));
     this.benchRoom = opts.benchRoom ?? -1;
     this.benchBurst = !!opts.benchBurst && this.benchRoom >= 0;
     this.noWaves = !!opts.noWaves;
+    this.diagnostics = !!opts.diagnostics;
     this.random = mulberry32(opts.seed);
     this.rooms = this.map.rooms.map((a, i) => ({
       phase: a.kind === 'breach' ? PHASE_CLEARED : PHASE_IDLE,
@@ -888,16 +864,15 @@ export class Simulation {
     this.discoverNeighbours(ai);
   }
 
-  private roomState(ai: number): void {
+  roomState(ai: number): void {
     const { phase, knowledge, entrySocket } = this.rooms[ai];
     this.emit('all', { type: 'roomState', room: ai, phase, knowledge, entrySocket });
   }
 
   /** R1 has one reliable payload per revision; capture identity when the event is emitted. */
-  private emit(to: number | 'all', event: GameEvent): void {
+  emit(to: number | 'all', event: GameEvent): void {
     this.events.push({ to, tick: this.tick, revision: ++this.stateRevision, event });
   }
-  itemEvent(event: GameEvent): void { this.emit('all', event); }
 
   /** The active room's phase (countdown or combat), PHASE_IDLE when no room is active (rogue game.md §14.3). */
   get activePhase(): number {
@@ -1136,7 +1111,7 @@ export class Simulation {
         dash: null, landingTick: -1, teleportId: p.teleportId,
         revive: old.dead ? Math.max(0, old.revive - elapsed * REVIVE_DECAY) : 0 });
       this.retainedPlayers.delete(init.id);
-    } else if (!p.bot) p.wallet = this.halosCredited;
+    } else if (!p.bot) p.wallet = this.rewards.halosCredited;
     return p;
   }
 
@@ -1194,7 +1169,7 @@ export class Simulation {
     this.updateHazardDamage();
     this.items.membership();
     this.updateSouls();
-    this.pickups.update(this.tick, this.players, (drop, collector) => this.collectPickup(drop, this.slots[collector.id]!));
+    this.pickups.update(this.tick, this.players, (drop, collector) => this.rewards.collect(drop, this.slots[collector.id]!));
     this.recoverEnemies();
     this.checkVictory();
     this.updateExit();
@@ -1251,8 +1226,7 @@ export class Simulation {
   }
   private updateExit(): void {
     if (!this.victory || this.result) return;
-    const pending = [...this.pageRecipients.values()].some(set => this.players.some(p => p.connected && !p.bot && set.has(p.offerKey)));
-    if (this.victory.update(this.tick, this.players, pending)) this.finish('victory');
+    if (this.victory.update(this.tick, this.players, this.rewards.pagesPending())) this.finish('victory');
     else if (this.tick % 30 === 0) this.emit('all', { type: 'victoryState', state: { ...this.victory.state } });
   }
 
@@ -1478,7 +1452,7 @@ export class Simulation {
       } else if (this.eRecoveryFailed[s] < 0) this.eRecoveryFailed[s] = this.tick;
       else if (this.tick - this.eRecoveryFailed[s] >= ticks(10)) {
         console.warn('diagnostic: unreachable enemy removed', { room: ai, slot: s });
-        this.settleEnemyXp(s);
+        this.rewards.settleXp(s);
         this.removeEnemy(s, true);
       }
     }
@@ -1533,25 +1507,13 @@ export class Simulation {
   private startRoom(ai: number): void {
     if (this.won) return;
     if (this.map.rooms[ai].boss) this.admissionClosed = true;
-    this.rewardRecipients.set(ai, new Set(this.players.filter(p => p.connected && !p.bot).map(p => p.offerKey)));
     const a = this.map.rooms[ai];
     const st = this.rooms[ai];
     st.phase = PHASE_COMBAT;
     this.activeRoom = ai;
     // Freeze P at the seal: connected humans plus half-player bots.
     st.partySize = this.partySize();
-    if (a.kind === 'combat' && a.shape && a.band) {
-      const weight = a.waves.reduce((sum, w) => sum + HALO_WEIGHT[BLESSED] * scaleCount(w.blessed, st.partySize) +
-        HALO_WEIGHT[CHORISTER] * scaleCount(w.choristers, st.partySize) + HALO_WEIGHT[CHERUB] * scaleCount(w.cherubs, st.partySize), 0);
-      const counts = a.waves.map((w) => scaleCount(w.dominions ?? 0, st.partySize));
-      const budget = haloBudget(a.shape, a.band);
-      // More commanders must not take the crowd's reward budget: reserve at most one quarter.
-      const ledger = new HaloLedger(budget, weight, Math.min(counts.reduce((sum, n) => sum + n, 0), Math.floor(budget / 24)));
-      this.haloLedgers.set(ai, ledger);
-      let gold = ledger.reservedElites;
-      this.eliteGold.set(ai, counts.map((n) => { const granted = Math.min(gold, n); gold -= granted; return granted; }));
-      this.elitePlaced.set(ai, counts.map(() => 0));
-    }
+    this.rewards.roomSealed(ai);
     this.updateLeaves();
     this.invalidateFields();
     this.roomState(ai);
@@ -1653,8 +1615,7 @@ export class Simulation {
       const allWavesStarted = this.noWaves || st.wave >= a.waves.length - 1;
       if (!allWavesStarted || st.queue.length > 0 || st.squad || st.alive > 0) return;
       st.phase = PHASE_CLEARED;
-      this.awardXp(100);
-      this.clearReward(ai);
+      this.rewards.roomCleared(ai);
       this.items.clearCombat(ai);
       for (const { player } of this.retainedPlayers.values()) if (player.dead) {
         player.dead = false; player.hp = player.maxHp * 0.5; player.revive = 0; player.shield = 0;
@@ -2156,24 +2117,14 @@ export class Simulation {
     this.eGrounded[slot] = 1;
     this.eHp[slot] = def.hp;
     if (isCommander(type)) this.livingDominions++;
-    this.eGoldEntitled[slot] = 0;
-    this.eXp[slot] = 0;
-    if (wave >= 0) {
-      const w = this.map.rooms[room].waves[wave], party = this.rooms[room].partySize;
-      const group = isCommander(type) ? 3 : type;
-      const counts = [w.blessed, w.choristers, w.cherubs, w.dominions ?? 0];
-      const count = scaleCount(counts[group] ?? 0, party);
-      if (count > 0) this.eXp[slot] = (w.xp?.[group] ?? counts[group] * [1, 6, 4, 60][group]) / count;
-    }
     this.dominions.reset(slot);
     this.dominions.leapReadyAt[slot] = this.tick + DOMINION_COOLDOWN_TICKS;
     if (isCommander(type) && wave >= 0) {
       const n4 = this.map.rooms[room].waves[wave].dominions ?? 0;
       const party = this.rooms[room].partySize, count = scaleCount(n4, party);
       if (count > 0) this.eHp[slot] *= n4 * partyMultiplier(party) / count;
-      const placed = this.elitePlaced.get(room);
-      if (placed) this.eGoldEntitled[slot] = placed[wave]++ < (this.eliteGold.get(room)?.[wave] ?? 0) ? 1 : 0;
     }
+    this.rewards.enemySpawned(slot, type, room, wave);
     this.eRoom[slot] = room;
     this.eWave[slot] = wave;
     this.home[slot] = ROOM_NONE;
@@ -2306,8 +2257,7 @@ export class Simulation {
     this.eHurtTick[slot] = this.tick;
     // 5. Death and kill credit.
     if (this.eHp[slot] <= 0) {
-      this.settleEnemyXp(slot);
-      this.enemyDrops(slot);
+      this.rewards.enemyKilled(slot);
       if (shooter) {
         shooter.kills++;
         this.noteBurst(slot, shooter, fromX, fromY);
@@ -2316,105 +2266,22 @@ export class Simulation {
     }
   }
 
-  /** Only accepted damage deaths reach this path; recovery/dev removal never settles rewards. */
-  private enemyDrops(slot: number): void {
-    const room = this.eRoom[slot], type = this.eType[slot], def = this.map.rooms[room];
-    if (!def?.shape || type === GATEKEEPER || this.leashed[slot]) return;
-    const x = this.eX[slot], y = this.eY[slot];
-    if (this.eWave[slot] >= 0) {
-      const coins = this.haloLedgers.get(room)?.death(HALO_WEIGHT[type as 0 | 1 | 2] ?? 0) ?? 0;
-      for (let i = 0; i < coins; i++) this.pickups.drop(COIN, room, x, y, this.tick, 1);
-      if (isCommander(type)) {
-        if (this.eGoldEntitled[slot]) this.pickups.drop(GOLD_HALO, room, x, y, this.tick);
-        this.eGoldEntitled[slot] = 0;
-        this.dropMote(room, x, y); this.dropMote(room, x, y);
-      }
-      // Reward ordinary wave kills too; cleanup, leashed enemies and boss adds never roll items.
-      const itemChance = isCommander(type) ? 0.5 : type === BLESSED ? 0.02 : 0.12;
-      if (this.random() < itemChance) this.pickups.drop(itemDrop(this.random), room, x, y, this.tick, 0, DROPPED_ITEM_LIFETIME);
-    }
-    if ((type === CHORISTER || type === CHERUB) && this.random() < 0.35) this.dropMote(room, x, y);
-  }
 
-  private dropMote(room: number, x: number, y: number): void {
-    const count = this.moteDrops.get(room) ?? 0;
-    if (count >= moteCap(this.map.rooms[room]?.shape)) return;
-    this.moteDrops.set(room, count + 1);
-    this.pickups.drop(HEAL_MOTE, room, x, y, this.tick);
-  }
 
-  private collectPickup(drop: PickupRecord, p: SimPlayer): boolean {
-    if (drop.kind === COIN || drop.kind === GOLD_HALO) {
-      this.halosCredited += drop.value;
-      for (const human of this.players) if (human.connected && !human.bot) human.wallet += drop.value;
-    } else if (drop.kind === HEAL_MOTE) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.08);
-    else if (drop.kind >= ITEM_FIRST && drop.kind < ITEM_FIRST + ITEM_IDS.length && !p.bot) {
-      const item = ITEM_IDS[drop.kind - ITEM_FIRST];
-      if (!this.items.pickup(p, item)) return false;
-      this.publishInventory(p);
-    } else if (drop.kind === 13 && !p.bot) {
-      this.revealChart();
-    } else if (drop.kind === 15 && !p.bot) {
-      const recipients = this.pageRecipients.get(drop.id);
-      if (!recipients?.delete(p.offerKey)) return false;
-      p.wallet += RITE_PAGE_HALOS; this.publishInventory(p);
-      if (recipients.size) return false; // A page retains other humans' personal entitlements.
-      this.pageRecipients.delete(drop.id);
-    } else return false;
-    this.emit('all', { type: 'pickupCollected', id: drop.id, kind: drop.kind, playerId: p.id, x: drop.x, y: drop.y, z: this.pickups.floor(drop.x, drop.y) });
-    return true;
-  }
 
-  private awardXp(amount: number): void {
-    for (const p of this.players) if (p.connected && !p.bot) {
-      const adjusted = amount - p.xpCorrection, sum = p.runXp + adjusted;
-      p.xpCorrection = (sum - p.runXp) - adjusted; p.runXp = sum;
-    }
-  }
 
   inventoryState(p: SimPlayer): InventoryState {
-    return { playerId: p.id, inventory: copyInventory(p.inventory), wallet: p.wallet, sold: p.sold, chart: this.chartRevealed,
+    return { playerId: p.id, inventory: copyInventory(p.inventory), wallet: p.wallet, sold: p.sold, chart: this.rewards.chartRevealed,
       nextRequestId: p.requests.next, itemReadyTick: p.itemReadyTick, featherUntil: p.featherUntil, sealUntil: p.sealUntil, itemsTried: [...p.itemsTried], xp: saturatingAdd(p.xpBase, Math.floor(p.runXp)), runXp: Math.floor(p.runXp) };
   }
   publishInventory(p: SimPlayer): void { this.emit(p.id, { type: 'inventory', state: this.inventoryState(p) }); }
-  /** Accepted eye/range/aim/LOS, evaluated again at commit rather than trusting the visible card. */
+  /** A shop request (rogue game.md §6.6), executed once per request ID like every scoped request. */
   interact(playerId: number, requestId: number, sourceId: number): void {
-    const p = this.playerById(playerId); if (!p || p.bot) return;
-    const result = p.requests.execute(requestId, `shop:${sourceId}`, () => {
-      const original = sourceId < 5 ? sourceId : sourceId - 5;
-      const room = this.floor ? sourceId < 5 ? this.floor.pardoner : this.floor.boss : -1;
-      const point = this.floor && sourceId < 5 ? this.map.rooms[this.floor.pardoner].points?.pedestals?.[sourceId] : null;
-      const stair = this.won && this.floor && sourceId >= 5 && sourceId <= 8 ? stairPoints(this.map, this.floor.boss)[original + 1] : null;
-      if ((!point && !stair) || !Number.isInteger(sourceId) || !p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
-      const x = stair ? stair.x : point![0] + .5, y = stair ? stair.y : point![1] + .5, z = stair ? stair.z + 1 : this.map.floor[point![1] * this.map.w + point![0]] + 1;
-      const dx = x - p.x, dy = y - p.y, dz = z - p.z - PLAYER_EYE, d = Math.hypot(dx, dy, dz), aim = aimDir(p.yaw, p.pitch);
-      if (d > 2 || this.pickups.roomAt(p.x, p.y) !== room || !lineOfSight(this.map, p.x, p.y, p.z + PLAYER_EYE, x, y, z) || d > 0.01 && (dx * aim[0] + dy * aim[1] + dz * aim[2]) / d < 0.8) return { accepted: false, reason: 'Look at a pedestal within 2 m' };
-      if (sourceId !== 4) return buyItem(p, this.floor!.stock, original);
-      if (this.chartRevealed) return { accepted: false, reason: 'Chart already revealed' };
-      if (p.wallet < CHART_PRICE) return { accepted: false, reason: 'Not enough halos' };
-      p.wallet -= CHART_PRICE; this.revealChart();
-      return { accepted: true, reason: "Pardoner’s Chart revealed the floor" };
-    });
+    const p = this.playerById(playerId);
+    if (!p || p.bot) return;
+    const result = p.requests.execute(requestId, `shop:${sourceId}`, () => interactShop(this, p, sourceId));
     this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale interaction; try again' }) });
     this.publishInventory(p);
-  }
-  private clearReward(room: number): void {
-    const reward = this.floor?.rewards[room], point = this.map.rooms[room].points?.reward;
-    if (!reward || !point || reward.kind === 'nothing') return;
-    const kind = reward.kind === 'gold' ? GOLD_HALO : reward.kind === 'item' ? ITEM_FIRST + ITEM_IDS.indexOf(reward.item) : 15;
-    const drop = this.pickups.drop(kind, room, point[0] + 0.5, point[1] + 0.5, this.tick, reward.kind === 'gold' ? REWARD_GOLD_VALUE : 0);
-    if (reward.kind === 'rite' && drop) this.pageRecipients.set(drop.id, new Set(this.rewardRecipients.get(room) ?? []));
-  }
-  private revealChart(): void {
-    if (this.chartRevealed) return;
-    this.chartRevealed = true;
-    this.rooms.forEach((r, i) => { r.knowledge = Math.max(1, r.knowledge); this.roomState(i); });
-    for (const other of this.players) this.publishInventory(other);
-  }
-  private settleEnemyXp(slot: number): void {
-    if (this.eType[slot] === GATEKEEPER) this.awardXp(1500);
-    else if (this.eXp[slot] > 0) { this.awardXp(this.eXp[slot]); this.eXp[slot] = 0; }
-    else if (this.leashed[slot] && this.eType[slot] === BLESSED) this.awardXp(1);
   }
 
   /** A credited kill bursts when its tick's force reaches 2× the type's max HP, heavy at 4× (M12 §4.1). */
@@ -2434,16 +2301,8 @@ export class Simulation {
   private propBroken(p: Prop, origin: 'player' | 'world'): void {
     const z = p.z + PROP_HEIGHT[p.family] / 2;
     const targets: number[] = [];
-    if (p.family === 'loot') {
-      if (p.marked) this.pickups.drop(this.floor ? 13 : GOLD_HALO, p.room, p.x, p.y, this.tick);
-      else {
-        const odds = ['combat', 'boss'].includes(this.map.rooms[p.room].kind) ? LOOT_ROLL.combat : LOOT_ROLL.other;
-        const roll = this.random();
-        if (roll >= odds.nothing && roll < odds.coin) this.pickups.drop(COIN, p.room, p.x, p.y, this.tick);
-        else if (roll >= odds.coin && roll < odds.mote) this.pickups.drop(HEAL_MOTE, p.room, p.x, p.y, this.tick);
-        else if (roll >= odds.mote) this.pickups.drop(itemDrop(this.random), p.room, p.x, p.y, this.tick, 0, DROPPED_ITEM_LIFETIME);
-      }
-    } else if (p.family === 'blessing' && origin === 'player') {
+    if (p.family === 'loot') this.rewards.propLoot(p);
+    else if (p.family === 'blessing' && origin === 'player') {
       for (const q of this.players) {
         if (!this.livingTargetable(q) || this.roomAt(q.x, q.y) !== p.room ||
           distToCylinder(p.x, p.y, z, q.x, q.y, q.z, PLAYER_RADIUS, PLAYER_HEIGHT) > 6 ||
@@ -2647,7 +2506,7 @@ export class Simulation {
   }
 
   /** Knocks an enemy away from (cx, cy); one exactly there goes along a fixed angle from its slot. */
-  private knockAway(slot: number, cx: number, cy: number, dist: number, seconds: number): void {
+  knockAway(slot: number, cx: number, cy: number, dist: number, seconds: number): void {
     let dx = this.eX[slot] - cx;
     let dy = this.eY[slot] - cy;
     if (Math.hypot(dx, dy) < 1e-6) {
@@ -3452,7 +3311,7 @@ export class Simulation {
         this.pReflected[slot] = 1; this.pRoom[slot] = reflection.area.room;
         const caster = this.playerById(reflection.area.owner);
         if (caster) { this.pOwner[slot] = caster.index; this.pReflectOwner.set(slot, caster); }
-        this.itemEvent({ type: 'itemReflected', playerId: reflection.area.owner, projectile: slot, x: rx, y: ry, z: rz });
+        this.emit('all', { type: 'itemReflected', playerId: reflection.area.owner, projectile: slot, x: rx, y: ry, z: rz });
         this.updateReflected(slot, len - t); return;
       }
     }
@@ -3604,7 +3463,7 @@ export class Simulation {
   }
 
   /** An enemy's eye: the Gatekeeper's is 5 m above its feet, every other enemy's at its body center (§2.3). */
-  private eyeZ(slot: number): number {
+  eyeZ(slot: number): number {
     return this.eZ[slot] + (this.eType[slot] === GATEKEEPER ? BOSS_EYE : ENEMIES[this.eType[slot]].height / 2);
   }
 
@@ -3676,7 +3535,7 @@ export class Simulation {
       }
       const familyHolding = this.commanders.update(slot);
       if (familyHolding && type === CARRIER) continue;
-      if (type === DOMINION && this.updateDominionFlight(slot)) continue;
+      if (type === DOMINION && this.dominionBehavior.flight(slot)) continue;
       if (this.ePullStart[slot] >= 0) {
         this.updatePull(slot);
         continue;
@@ -3699,118 +3558,13 @@ export class Simulation {
       else if (type === BLESSED) this.updateMelee(slot);
       else if (type !== DOMINION && type !== CANTOR) this.updateCast(slot);
     }
-    this.updateDominions();
+    if (this.livingDominions > 0) this.dominionBehavior.update();
   }
 
-  private dominionInRange(slot: number): boolean {
-    const p = this.slots[this.eTarget[slot]];
-    const room = this.roomAt(this.eX[slot], this.eY[slot]);
-    return room !== ROOM_NONE && this.livingTargetable(p) && this.roomAt(p!.x, p!.y) === room &&
-      Math.hypot(p!.x - this.eX[slot], p!.y - this.eY[slot]) <= DOMINION_REACH && Math.abs(p!.z - this.eZ[slot]) <= DOMINION_HEIGHT_TOLERANCE &&
-      lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eyeZ(slot), p!.x, p!.y, p!.z + PLAYER_HEIGHT / 2);
-  }
 
-  private dominionLeapTarget(slot: number): DominionLeap | undefined {
-    const room = this.roomAt(this.eX[slot], this.eY[slot]);
-    const choices: DominionLeap[] = [];
-    for (const p of this.players) {
-      if (!this.livingTargetable(p) || this.roomAt(p.x, p.y) !== room) continue;
-      const distance = Math.hypot(p.x - this.eX[slot], p.y - this.eY[slot]);
-      if (distance < DOMINION_LEAP_MIN_RANGE || distance > DOMINION_LEAP_MAX_RANGE) continue;
-      const recent = this.nowMs >= p.lastAcceptMs && this.nowMs - p.lastAcceptMs <= 250 && this.nowMs >= p.speedCheckSkipUntil && this.nowMs >= p.launchUntilMs;
-      // Prefer a one-second lead; shorten it when geometry or leap reach makes it unsafe.
-      for (const fraction of [1, 0.75, 0.5, 0.25, 0]) {
-        const lead = recent ? DOMINION_LEAP_LEAD_SECONDS * fraction : 0;
-        const x = p.x + p.moveVx * lead, y = p.y + p.moveVy * lead;
-        const reach = Math.hypot(x - this.eX[slot], y - this.eY[slot]);
-        if (reach < DOMINION_LEAP_MIN_RANGE || reach > DOMINION_LEAP_MAX_RANGE || this.roomAt(x, y) !== room) continue;
-        const z = groundHeight(this.map, x, y, ENEMIES[DOMINION].radius, Infinity, false, true);
-        if (!Number.isFinite(z)) continue;
-        const leap: DominionLeap = { fromX: Math.fround(this.eX[slot]), fromY: Math.fround(this.eY[slot]), fromZ: Math.fround(this.eZ[slot]), x: Math.fround(x), y: Math.fround(y), z: Math.fround(z) };
-        if (dominionLeapClear(this.map, room, leap)) { choices.push(leap); break; }
-        if (!recent || p.moveVx === 0 && p.moveVy === 0) break;
-      }
-    }
-    return choices.length ? choices[Math.floor(this.random() * choices.length)] : undefined;
-  }
 
-  private updateDominionFlight(slot: number): boolean {
-    const cast = this.dominions.active.get(slot), leap = cast?.leap;
-    if (!cast || !leap) return false;
-    const flightStart = cast.startTick + DOMINION_LEAP_CHARGE_TICKS;
-    if (this.isRooted(slot) || this.isStunned(slot) || this.tick < this.eSilenceUntil[slot] ||
-      this.roomAt(this.eX[slot], this.eY[slot]) !== cast.room || this.tick < flightStart && !this.eGrounded[slot]) {
-      this.dominions.cancel(slot, this.tick); return false;
-    }
-    if (this.tick < flightStart) { this.eState[slot] = ST_WINDUP; return true; }
-    const duration = DOMINION_TELL_TICKS - DOMINION_LEAP_CHARGE_TICKS;
-    const from = Math.max(0, (this.tick - 1 - flightStart) / duration), to = Math.min(1, (this.tick - flightStart) / duration);
-    if (!dominionLeapClear(this.map, cast.room, leap, from, to)) { this.dominions.cancel(slot, this.tick); return false; }
-    const [x, y, z] = dominionLeapPosition(leap, to);
-    this.eVz[slot] = to < 1 ? (z - this.eZ[slot]) / TICK_DT : 0;
-    this.eX[slot] = x; this.eY[slot] = y; this.eZ[slot] = to < 1 ? z : leap.z;
-    this.eGrounded[slot] = to >= 1 ? 1 : 0; this.eState[slot] = ST_WINDUP;
-    return true;
-  }
 
-  private updateDominions(): void {
-    if (this.livingDominions === 0) return;
-    // Resolve the bounded casters after ordinary movement; displacement can cancel other casts.
-    const slots: number[] = [];
-    for (let k = 0; k < this.activeCount; k++) if (this.eType[this.active[k]] === DOMINION) slots.push(this.active[k]);
-    for (const s of slots) {
-      if (!this.eAlive[s] || this.eSpawnTick[s] === this.tick) continue; // A prior slam may trigger an owned Shroud burst that kills this caster.
-      const ownFlight = this.dominions.active.get(s)?.leap !== undefined;
-      const leap = this.tick % 15 === s % 15 && !this.dominions.holding(s, this.tick) && this.tick >= this.dominions.readyAt[s] && this.tick >= this.dominions.leapReadyAt[s] && !this.isRooted(s) && !this.isStunned(s) && this.tick >= this.eSilenceUntil[s] && this.eGrounded[s] ? this.dominionLeapTarget(s) : undefined;
-      this.dominions.update(s, this.tick, { incarnation: this.eIncarnation[s], room: this.roomAt(this.eX[s], this.eY[s]),
-        grounded: this.eGrounded[s] === 1 || ownFlight, stunned: this.isStunned(s), silenced: this.tick < this.eSilenceUntil[s], inRange: this.dominionInRange(s), leap });
-      if (!this.eAlive[s]) continue;
-      if (this.dominions.holding(s, this.tick)) {
-        this.eMeleeNext[s] = -1;
-        this.eState[s] = this.dominions.active.has(s) ? ST_WINDUP : ST_ATTACKING;
-      } else if (!this.isStunned(s) && this.eGrounded[s]) this.updateMelee(s);
-      else this.eMeleeNext[s] = -1;
-    }
-  }
 
-  private dominionPhase(phase: DominionPhase, cast: DominionCast): void {
-    const s = cast.slot, x = cast.leap?.x ?? this.eX[s], y = cast.leap?.y ?? this.eY[s], z = cast.leap?.z ?? this.eZ[s];
-    this.emit('all', { type: 'dominionCast', phase, cast: { ...cast }, x, y, z });
-    if (phase !== 'strike') return;
-    const eligible = (vx: number, vy: number, vz: number, height: number) => this.roomAt(vx, vy) === cast.room &&
-      Math.hypot(vx - x, vy - y) <= DOMINION_RADIUS + 1e-9 && Math.abs(vz - z) <= DOMINION_HEIGHT_TOLERANCE + 1e-9 &&
-      lineOfSight(this.map, x, y, z + ENEMIES[DOMINION].height / 2, vx, vy, vz + height / 2);
-    const victims: number[] = [];
-    for (let k = 0; k < this.activeCount; k++) {
-      const q = this.active[k], type = this.eType[q], def = ENEMIES[type];
-      if (q === s || type === GATEKEEPER || !this.eGrounded[q]) continue;
-      if (def.flying && Math.abs(this.eZ[q] - groundHeight(this.map, this.eX[q], this.eY[q], def.radius, Infinity, false, true)) > 0.05) continue;
-      if (eligible(this.eX[q], this.eY[q], this.eZ[q], def.height)) victims.push(q);
-    }
-    for (const q of victims) {
-      const distance = Math.hypot(this.eX[q] - x, this.eY[q] - y);
-      // A world hit: no player credit, but a kill still pays its coins (game.md §6.1).
-      this.damageEnemy(q, Math.round(dominionFalloff(DOMINION_ENEMY_DAMAGE, distance)), -1, undefined, x, y, true);
-      if (!this.eAlive[q]) continue;
-      this.dominions.cancel(q, this.tick);
-      this.commanders.cancel(q);
-      this.ePullStart[q] = -1;
-      this.knockAway(q, x, y, dominionFalloff(DOMINION_LAUNCH_SPEED, distance) * DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_SECONDS);
-      this.eVz[q] = DOMINION_LAUNCH_VZ; this.eGrounded[q] = 0;
-      this.eMeleeNext[q] = -1; this.eCast[q] = 0; this.eCastT[q] = 0;
-    }
-    for (const p of this.players) if (this.livingTargetable(p) && eligible(p.x, p.y, p.z, PLAYER_HEIGHT)) {
-      const immune = this.isInvulnerable(p);
-      const dx = p.x - x, dy = p.y - y, distance = Math.hypot(dx, dy);
-      this.damagePlayer(p, Math.round(dominionFalloff(DOMINION_PLAYER_DAMAGE, distance)));
-      if (immune || p.dead) continue;
-      // Reuse the acknowledged host correction: stale pre-impact positions cannot undo the launch.
-      const speed = dominionFalloff(DOMINION_LAUNCH_SPEED, distance);
-      const launch = distance > 1e-9 ? { dx: dx / distance * speed, dy: dy / distance * speed } : { dx: Math.cos(p.yaw) * speed, dy: Math.sin(p.yaw) * speed };
-      p.dash = null; p.landingTick = -1;
-      this.teleport(p, p.x, p.y, p.z, launch);
-    }
-  }
 
   private updatePull(slot: number): void {
     const o = slot * 6;
@@ -4120,7 +3874,7 @@ export class Simulation {
    * Blessed melee (§7.1): while within 1.2 m horizontally and less than 1.5 m apart in height, 5 damage
    * on the 8th tick in range (0.267 s, M12 §3.2), then every 1 s. Leaving range resets the timer.
    */
-  private updateMelee(slot: number): void {
+  updateMelee(slot: number): void {
     const dominion = this.eType[slot] === DOMINION;
     const t = this.eTarget[slot];
     let inRange = false;

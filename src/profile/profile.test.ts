@@ -3,7 +3,7 @@ import { deflateRawSync } from 'node:zlib';
 import { copyInventory, storeItem, type Inventory } from '../data/items';
 import { absolutionForXp, createProfile, importProfile, levelForXp, parseProfile, saturatingAdd, validateProfile, xpForLevel } from './model';
 import { crc32, exportCode, importCode, exportFilename } from './codec';
-import { currentProfileSlot, ProfileSession, readProfile, writeProfile, type SaveStorage } from './storage';
+import { PROFILE_KEY, ProfileSession, readProfile, writeProfile, type SaveStorage } from './storage';
 
 const id = 'a'.repeat(32);
 function profile() { return createProfile('Tomas', id, 100); }
@@ -13,7 +13,7 @@ class MemoryStorage implements SaveStorage {
   setItem(k: string, v: string) { if (k === this.failKey) throw new Error('Quota exceeded'); this.data.set(k, v); }
   removeItem(k: string) { this.data.delete(k); }
 }
-const key = 'heavenfall.profile.1';
+const key = PROFILE_KEY;
 describe('profile schema and compatibility', () => {
   it('roundtrips independent characters and two carried stacks', () => {
     const p = profile(); p.characters.binder.xp = 7500; p.inventory = [{ item: 'seal', count: 2 }, { item: 'seal', count: 1 }];
@@ -80,31 +80,33 @@ describe('bounded raw-DEFLATE profile codes', () => {
   });
 });
 describe('atomic profile storage boundaries', () => {
-  it('retains the current save and adopts an existing legacy save without deleting other profiles', () => {
+  it('keeps one save under the existing slot-1 key and leaves old slot 2-3 saves untouched (audit E5)', () => {
+    expect(key).toBe('heavenfall.profile.1');
     const storage = new MemoryStorage(), p = profile();
-    writeProfile(storage, 2, p); expect(currentProfileSlot(storage)).toBe(2);
-    const before = storage.getItem('heavenfall.profile.2');
-    writeProfile(storage, 1, { ...p, id: 'c'.repeat(32) }); expect(currentProfileSlot(storage)).toBe(1);
-    expect(storage.getItem('heavenfall.profile.2')).toBe(before);
-    storage.setItem(key, '{broken'); expect(currentProfileSlot(storage)).toBe(1);
+    const legacy = JSON.stringify({ ...p, id: 'c'.repeat(32) });
+    storage.setItem('heavenfall.profile.2', legacy);
+    expect(readProfile(storage).profile).toBeNull();
+    expect(writeProfile(storage, p)).toBe(true);
+    expect(readProfile(storage).profile).toEqual(p);
+    expect(storage.getItem('heavenfall.profile.2')).toBe(legacy);
   });
   it('backs up only a good main and recovers without overwriting corrupt data', () => {
-    const storage = new MemoryStorage(), p = profile(); expect(writeProfile(storage, 1, p)).toBe(true);
-    p.stats.runs = 1; expect(writeProfile(storage, 1, p)).toBe(true);
+    const storage = new MemoryStorage(), p = profile(); expect(writeProfile(storage, p)).toBe(true);
+    p.stats.runs = 1; expect(writeProfile(storage, p)).toBe(true);
     storage.setItem(key, '{broken');
-    expect(readProfile(storage, 1)).toMatchObject({ profile: { stats: { runs: 0 } }, message: 'Recovered previous save' });
-    const backup = storage.getItem(`${key}.bak`); expect(writeProfile(storage, 1, p)).toBe(true); expect(storage.getItem(`${key}.bak`)).toBe(backup);
+    expect(readProfile(storage)).toMatchObject({ profile: { stats: { runs: 0 } }, message: 'Recovered previous save' });
+    const backup = storage.getItem(`${key}.bak`); expect(writeProfile(storage, p)).toBe(true); expect(storage.getItem(`${key}.bak`)).toBe(backup);
   });
   it('preserves a future main and both corrupt strings for recovery', () => {
     const storage = new MemoryStorage(); storage.setItem(key, JSON.stringify({ ...profile(), schema: 2 })); storage.setItem(`${key}.bak`, JSON.stringify(profile()));
-    expect(readProfile(storage, 1).message).toContain('newer version'); expect(writeProfile(storage, 1, profile())).toBe(false);
+    expect(readProfile(storage).message).toContain('newer version'); expect(writeProfile(storage, profile())).toBe(false);
     storage.setItem(key, 'bad'); storage.setItem(`${key}.bak`, 'also bad');
-    expect(readProfile(storage, 1)).toMatchObject({ profile: null, corrupt: true, raw: ['bad', 'also bad'] });
+    expect(readProfile(storage)).toMatchObject({ profile: null, corrupt: true, raw: ['bad', 'also bad'] });
   });
   it('requires explicit recovery replacement and preserves originals before any destructive write', () => {
     const storage = new MemoryStorage(), raw = JSON.stringify({ ...profile(), schema: 2 });
     storage.setItem(key, raw); storage.setItem(`${key}.bak`, 'broken backup');
-    const session = new ProfileSession(1, profile(), storage, { release() {} }, readProfile(storage, 1));
+    const session = new ProfileSession(profile(), storage, { release() {} }, readProfile(storage));
     expect(session.save(profile(), true)).toBe(false); expect(storage.getItem(key)).toBe(raw);
     storage.failKey = `${key}.recovery`;
     expect(session.replace(profile())).toBe(false); expect(storage.getItem(key)).toBe(raw);
@@ -113,11 +115,11 @@ describe('atomic profile storage boundaries', () => {
     storage.failKey = '';
     expect(session.replace(profile())).toBe(true); expect(session.recovery).toBeNull();
     expect(JSON.parse(storage.getItem(`${key}.recovery`)!)).toEqual([raw, 'broken backup']);
-    expect(readProfile(storage, 1).profile).toEqual(profile());
+    expect(readProfile(storage).profile).toEqual(profile());
   });
   it('does not accept a failed stake but retains an accepted checkpoint in memory for export', () => {
-    const storage = new MemoryStorage(), p = profile(); writeProfile(storage, 1, p); storage.failKey = key;
-    let released = false; const session = new ProfileSession(1, p, storage, { release: () => { released = true; } });
+    const storage = new MemoryStorage(), p = profile(); writeProfile(storage, p); storage.failKey = key;
+    let released = false; const session = new ProfileSession(p, storage, { release: () => { released = true; } });
     const next = profile(); next.characters.binder.xp = 100;
     expect(session.save(next, true)).toBe(false); expect(session.profile.characters.binder.xp).toBe(0);
     expect(session.save(next)).toBe(false); expect(session.profile.characters.binder.xp).toBe(100);

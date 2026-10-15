@@ -36,6 +36,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 // Multiplayer
 let lobby: Lobby | null = null;
 let god = false;
+let diagnostics = false;
 const connPlayer = new Map<number, number>();
 const playerConn = new Map<number, number>();
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -136,7 +137,7 @@ function start(m: Extract<MainToWorker, { t: 'start' }>): void {
   const { def, map, floor } = loadRunMap(m);
   sim = new Simulation({
     dungeon: def, map, floor, props: propDefs(floor), runId: m.runId, players: m.players, seed: m.simSeed, god: !m.progressionEnabled && m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
-    startRoom: m.startRoom, progressionEnabled: m.progressionEnabled,
+    startRoom: m.startRoom, progressionEnabled: m.progressionEnabled, diagnostics: !!m.diagnostics,
   });
   runId = m.runId;
   localPlayerId = m.localPlayerId;
@@ -157,6 +158,7 @@ function host(m: Extract<MainToWorker, { t: 'host' }>): void {
   lobby = new Lobby({ heaven: m.heaven, fixture: m.fixture, password: m.password, version: __BUILD_VERSION__, hostName: m.name, hostBot: m.bot,
     profile: m.bot ? undefined : validProfile(m.profile), progressionEnabled: m.progressionEnabled });
   god = m.god;
+  diagnostics = !!m.diagnostics;
   localPlayerId = 0;
   send(0, lobby.lobbyMessage());
   heartbeatTimer = setInterval(() => post({ t: 'heartbeat', loading: lobby?.loadingIds() ?? [] }), PING_MS);
@@ -333,7 +335,7 @@ function checkLoadTimeout(): void {
 function maybeGo(): void {
   if (!lobby?.allReady()) return;
   const players = lobby.go().map(p => ({ ...p, profile: lobby!.profile(p.id) }));
-  start({ ...lobby.run!, t: 'start', players, god, benchArena: -1, benchBurst: false, localPlayerId: 0 });
+  start({ ...lobby.run!, t: 'start', players, god, benchArena: -1, benchBurst: false, localPlayerId: 0, diagnostics });
 }
 
 ctx.onmessage = (e: MessageEvent<MainToWorker>) => {

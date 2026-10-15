@@ -18,9 +18,11 @@ export type MainToWorker =
       localPlayerId: number;
       /** Dev room/arena override, resolved after loading the generated floor or fixture. */
       startRoom?: number;
+      /** `dev=1`: the host records local debug diagnostics. */
+      diagnostics?: boolean;
     } & RunConfig)
   /** Multiplayer: the host clicked `Create`; the worker opens the lobby with the host as player 0. */
-  | { t: 'host'; heaven: 1; fixture: string | null; password: string; name: string; god: boolean; bot: boolean; profile?: Profile; progressionEnabled?: boolean }
+  | { t: 'host'; heaven: 1; fixture: string | null; password: string; name: string; god: boolean; bot: boolean; profile?: Profile; progressionEnabled?: boolean; diagnostics?: boolean }
   /** The host clicked `Start` in the Lobby. */
   | { t: 'startGame' }
   /** A `ctrl` message from the host's own player, through `LocalTransport`. */

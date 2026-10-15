@@ -5,7 +5,7 @@ import type { InventoryState } from '../net/messages';
 import type { GameMap } from '../sim/map';
 import { aimDir } from '../sim/combat';
 import { lineOfSight } from '../sim/los';
-import { CHART_PRICE, stairPoints } from '../sim/shop';
+import { CHART_PRICE, SOURCE_CHART, stairPoints, stockIndex } from '../sim/shop';
 import type { VictoryState } from '../sim/victory';
 import { ITEM_ART, CHART_ART } from './itemArt';
 import { spriteUrl } from '../render/atlas';
@@ -59,7 +59,8 @@ export class ShopView {
       const ground = p.z - 1, base = new THREE.Sprite(pedestalMaterial);
       base.position.set(p.x, ground + PEDESTAL_HEIGHT / 2, p.y); base.scale.set(PEDESTAL_HEIGHT * 223 / 384, PEDESTAL_HEIGHT, 1); base.name = 'shop-pedestal';
       this.group.add(base);
-      const texture = loader.load(i === 4 ? CHART_ART : ITEM_ART[floor.stock[i]]); texture.colorSpace = THREE.SRGBColorSpace;
+      const texture = loader.load(i === SOURCE_CHART ? CHART_ART : ITEM_ART[floor.stock[i]]);
+      texture.colorSpace = THREE.SRGBColorSpace;
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, alphaTest: .05, depthWrite: false }));
       // Resting on the cushion; the purchase point (p) stays where the host checks the aim.
       sprite.position.set(p.x, ground + PEDESTAL_HEIGHT + 0.3, p.y); sprite.scale.set(0.8, 0.8, 1); sprite.renderOrder = 1;
@@ -77,7 +78,11 @@ export class ShopView {
       this.group.add(sprite); this.cards.push(sprite);
     }
   }
-  update(state: InventoryState): void { this.cards.forEach((c, i) => { c.visible = i === 4 ? !state.chart : (state.sold & (1 << (i >= 5 ? i - 5 : i))) === 0; }); }
+  update(state: InventoryState): void {
+    this.cards.forEach((c, i) => {
+      c.visible = i === SOURCE_CHART ? !state.chart : (state.sold & (1 << stockIndex(i))) === 0;
+    });
+  }
   target(p: { x: number; y: number; z: number }, yaw: number, pitch: number, reach = 4): number {
     const aim = aimDir(yaw, pitch); let best = -1, distance = reach;
     this.points.forEach((point, i) => {
@@ -89,12 +94,12 @@ export class ShopView {
   }
   label(index: number, state: InventoryState | null): string {
     if (!this.floor || index < 0) return '';
-    const stockIndex = index >= 5 ? index - 5 : index;
-    const sold = index === 4 ? state?.chart : !!((state?.sold ?? 0) & (1 << stockIndex));
+    const stock = stockIndex(index);
+    const sold = index === SOURCE_CHART ? state?.chart : !!((state?.sold ?? 0) & (1 << stock));
     if (sold) return 'Sold';
-    if (index === 4) return `Pardoner’s Chart · ${CHART_PRICE} halos · F within 2 m`;
-    const item = ITEMS[this.floor.stock[stockIndex]];
-    const fresh = state && !state.itemsTried.includes(this.floor.stock[stockIndex]) ? 'New · ' : '';
+    if (index === SOURCE_CHART) return `Pardoner’s Chart · ${CHART_PRICE} halos · F within 2 m`;
+    const item = ITEMS[this.floor.stock[stock]];
+    const fresh = state && !state.itemsTried.includes(this.floor.stock[stock]) ? 'New · ' : '';
     return `${fresh}${item.name} · ${item.price} halos · ${item.rule} · F within 2 m`;
   }
   dispose(): void {

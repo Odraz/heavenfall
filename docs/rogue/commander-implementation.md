@@ -46,7 +46,7 @@ For the Carrier, being across the room is not enough: in solo it needs eight liv
 
 
 
-Carrier retains the exact authored crowd rule. In a developer session, F3 now shows the last authoritative acquisition decision, the largest nearby square count out of eight, nearby Blessed count, target distance and cooldown. The same local-host information is available as `window.__heavenfall.carrierChecks`, including a decision tick. No diagnostic data is added to remote snapshots. Normal running can keep the crowd too scattered to trigger a swoop; the reported live session still needs this decision data to distinguish crowd rejection from a blocked path.
+Carrier retains the exact authored crowd rule. In a developer session (`dev=1`; the simulation records these only then, [audit](r01-r03-audit.md) E3), F3 now shows the last authoritative acquisition decision, the largest nearby square count out of eight, nearby Blessed count, target distance and cooldown. The same local-host information is available as `window.__heavenfall.carrierChecks`, including a decision tick. No diagnostic data is added to remote snapshots. Normal running can keep the crowd too scattered to trigger a swoop; the reported live session still needs this decision data to distinguish crowd rejection from a blocked path.
 
 Human acceptance remains open for silhouette readability in crowds, beam brightness and choir balance, the Carrier's dodge/rescue timing, and solo encounter feel. Automated checks do not establish those judgments.
 

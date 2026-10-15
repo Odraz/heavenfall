@@ -11,12 +11,12 @@ import type { ClassId } from '../data/classes';
 import { PHASE_CLEARED, SnapshotAssembler, decodeSnapshot } from '../net/protocol';
 import { arenaDungeon, sealAt } from './testutil/arenas';
 
-function fixture(type = CANTOR, party = 1, classId: ClassId = 'betrayer') {
+function fixture(type = CANTOR, party = 1, classId: ClassId = 'betrayer', diagnostics = false) {
   const dungeon = dungeonOf(room(48, 32));
   dungeon.rooms = [{ id: 'families', name: 'Families', kind: 'combat', shape: '1x1', band: 2,
     rect: { x0: 1, y0: 1, x1: 48, y1: 32 }, entry: [{ socket: 0, cells: [[1, 1], [2, 1], [3, 1], [4, 1]] }], leaves: [],
     waves: [{ blessed: 32, choristers: 1, cherubs: 0, dominions: 1, commander: 'cantor' }], boss: false }];
-  const sim = new Simulation({ dungeon, noWaves: true, seed: 1, players: Array.from({ length: party }, (_, id) => ({ id, name: `P${id}`, classId })) });
+  const sim = new Simulation({ dungeon, noWaves: true, seed: 1, diagnostics, players: Array.from({ length: party }, (_, id) => ({ id, name: `P${id}`, classId })) });
   sim.rooms[0].phase = PHASE_CLEARED;
   sim.players.forEach((p, i) => put(sim, p, 20.5 + i * 3, 10.5)); sim.refreshFields();
   const slot = sim.placeEnemy(type, 10, 10, 0);
@@ -178,6 +178,19 @@ describe('Stray-Carrier authority', () => {
     sim.commanders.update(slot); expect(c.phase).toBe('active'); expect(c.targetId).toBe(0);
     advance(sim, slot, 30); expect(c.phase).toBe('carry');
     sim.removeEnemy(slot); expect(sim.commanders.diagnostics()).toEqual([]);
+  });
+  it('records Carrier decision reasons only for the dev overlay (audit E3)', () => {
+    const quiet = fixture(CARRIER);
+    quiet.sim.commanders.readyAt[quiet.slot] = 0;
+    quiet.sim.commanders.update(quiet.slot);
+    expect(quiet.c.phase).toBe('active');
+    expect(quiet.sim.commanders.diagnostics()).toEqual([]);
+    const dev = fixture(CARRIER, 1, 'betrayer', true);
+    expect(dev.sim.commanders.diagnostics()).toEqual([expect.objectContaining({ slot: dev.slot, phase: 'idle', reason: 'initial delay' })]);
+    dev.sim.commanders.readyAt[dev.slot] = 0;
+    dev.sim.commanders.update(dev.slot);
+    expect(dev.c.phase).toBe('active');
+    expect(dev.sim.commanders.diagnostics()).toEqual([expect.objectContaining({ slot: dev.slot, phase: 'active', targetId: 0, reason: 'rushing' })]);
   });
   it('requires range and line of sight, and refuses unsafe drop footprints', () => {
     const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0;

@@ -38,12 +38,12 @@ export class HostSession {
   }
 
   /** Singleplayer: starts the game at once. */
-  start(run: RunConfig, players: SimPlayerInit[], god: boolean, benchArena: number, benchBurst = false, startRoom?: number): void {
-    this.post({ ...run, t: 'start', players, god, benchArena, benchBurst, localPlayerId: this.localPlayerId, startRoom });
+  start(run: RunConfig, players: SimPlayerInit[], god: boolean, benchArena: number, benchBurst = false, startRoom?: number, diagnostics = false): void {
+    this.post({ ...run, t: 'start', players, god, benchArena, benchBurst, localPlayerId: this.localPlayerId, startRoom, diagnostics });
   }
 
   /** Multiplayer: opens the lobby in the worker and connects the clients' connections to it. */
-  hostLobby(net: HostNet, fixture: string | null, password: string, name: string, god: boolean, bot: boolean, profile?: Profile, progressionEnabled = false): void {
+  hostLobby(net: HostNet, fixture: string | null, password: string, name: string, god: boolean, bot: boolean, profile?: Profile, progressionEnabled = false, diagnostics = false): void {
     this.net = net;
     net.onCtrl = (conn, msg) => this.post({ t: 'connCtrl', conn, msg });
     net.onInput = (conn, buf) => {
@@ -54,7 +54,7 @@ export class HostSession {
       this.unbind(conn);
       this.post({ t: 'connClosed', conn });
     };
-    this.post({ t: 'host', heaven: 1, fixture, password, name, god, bot, profile, progressionEnabled });
+    this.post({ t: 'host', heaven: 1, fixture, password, name, god, bot, profile, progressionEnabled, diagnostics });
   }
 
   /** The host's `Start` in the Lobby. */
