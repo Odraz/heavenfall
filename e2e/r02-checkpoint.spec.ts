@@ -5,9 +5,10 @@ import { lineOfSight } from '../src/sim/los';
 import { expect, state, test } from './fixtures';
 import { shootProp } from './prop-fixtures';
 
-// These are the published Gate B selections, deliberately independent of future repins.
+// These are the published Gate B selections, deliberately independent of future repins. R03's XP
+// metadata (fb67379) moved the floor hash from de6939ce; the room selections are unchanged (audit A8).
 const seed = 317434499;
-const hash = 'de6939ce';
+const hash = '74928d57';
 const selections = [
   { label: 'small', room: 7, templateId: 'pg-c-1x1-flyers-03', name: 'The Ziggurat', band: 3 },
   { label: 'horde', room: 3, templateId: 'pg-c-2x2-horde-flyers-01', name: 'Courtyard of Clouds', band: 2 },
@@ -42,7 +43,7 @@ for (const classId of ['fallen', 'heretic', 'binder', 'betrayer'] as const) {
   }
 }
 
-test('Gate B real PeerJS late entry restores a live gold pickup and broken prop, shares collection, and resets on a new menu run', async ({ page: a, browser }) => {
+test('Gate B real PeerJS late entry restores a live Chart pickup and broken prop, shares collection, and resets on a new menu run', async ({ page: a, browser }) => {
   test.setTimeout(180_000);
   const owned = await browser.browserType().launch(test.info().project.use.launchOptions ?? {});
   const context = await owned.newContext({ viewport: { width: 320, height: 180 }, baseURL: 'http://localhost:4173' });
@@ -87,20 +88,22 @@ test('Gate B real PeerJS late entry restores a live gold pickup and broken prop,
     await a.evaluate(([x, y]) => window.__heavenfallTeleport!(x, y), firingPoint!);
     await expect.poll(async () => Math.hypot((await state(a)).self.x - firingPoint![0], (await state(a)).self.y - firingPoint![1])).toBeLessThan(0.2);
     await shootProp(a, q.id);
-    await a.waitForFunction(() => window.__heavenfall.pickups.some((p) => p.kind === 1));
-    const gold = (await state(a)).pickups.find((p) => p.kind === 1)!;
+    // Since R03 the marked amphora drops the Chart (kind 13), not a gold halo (audit A8).
+    await a.waitForFunction(() => window.__heavenfall.pickups.some((p) => p.kind === 13));
+    const chart = (await state(a)).pickups.find((p) => p.kind === 13)!;
     await a.evaluate(([x, y]) => window.__heavenfallTeleport!(x, y), [first.self.x, first.self.y]);
     await b.evaluate(() => window.__heavenfallReady!());
-    await b.waitForFunction((id) => window.__heavenfall.screen === 'inGame' && window.__heavenfall.pickups.some((p) => p.id === id), gold.id, { timeout: 3000 });
+    await b.waitForFunction((id) => window.__heavenfall.screen === 'inGame' && window.__heavenfall.pickups.some((p) => p.id === id), chart.id, { timeout: 3000 });
     const late = await state(b);
     expect(late.brokenProps).toContain(q.id);
-    expect(late.pickups.find((p) => p.id === gold.id)?.kind).toBe(1);
+    expect(late.pickups.find((p) => p.id === chart.id)?.kind).toBe(13);
     expect([late.runId, late.seed, late.floorHash]).toEqual([first.runId, first.seed, first.floorHash]);
     expect(late.wallet).toBe(0);
     expect(late.floorSyncTick).toBeGreaterThan(0);
     await a.evaluate(([x, y]) => window.__heavenfallTeleport!(x, y), [q.x, q.y]);
-    await Promise.all([a, b].map((p) => p.waitForFunction(() => window.__heavenfall.wallet === 6, null, { timeout: 3000 })));
-    await Promise.all([a, b].map((p) => p.waitForFunction((id) => !window.__heavenfall.pickups.some((q) => q.id === id), gold.id)));
+    // One collection removes the Chart for both players and pays no halos.
+    await Promise.all([a, b].map((p) => p.waitForFunction((id) => !window.__heavenfall.pickups.some((q) => q.id === id), chart.id)));
+    for (const p of [a, b]) expect((await state(p)).wallet).toBe(0);
     await a.keyboard.press('Escape');
     await a.getByRole('button', { name: 'Leave game', exact: true }).click();
     await b.waitForFunction(() => window.__heavenfall.screen === 'title', null, { timeout: 6000 });

@@ -8,6 +8,35 @@ import { lineOfSight } from '../sim/los';
 import { CHART_PRICE, stairPoints } from '../sim/shop';
 import type { VictoryState } from '../sim/victory';
 import { ITEM_ART, CHART_ART } from './itemArt';
+import { spriteUrl } from '../render/atlas';
+
+/** The pedestal sprite's height; its cushion top is where the stock rests. */
+const PEDESTAL_HEIGHT = 1;
+/** Half the Pardoner sprite's width plus a margin: no raised cell may come this close. */
+const PARDONER_CLEARANCE = 0.9;
+
+/**
+ * Where the Pardoner stands: on the room's base floor just beside the central plinth (rooms.md
+ * `pg-s-pardoner-01`, the indulgence box he stands behind), never inside it. Tries each side of the
+ * room's center at 3.2 m, the plinth's half-width plus his clearance; ties keep the first side.
+ */
+export function pardonerSpot(map: GameMap, room: number): { x: number; y: number; z: number } {
+  const rect = map.rooms[room].rect, cx = (rect.x0 + rect.x1 + 1) / 2, cy = (rect.y0 + rect.y1 + 1) / 2;
+  let base = Infinity;
+  for (let r = rect.y0; r <= rect.y1; r++) for (let c = rect.x0; c <= rect.x1; c++) {
+    const i = r * map.w + c;
+    if (map.roomOf[i] === room && !map.solid[i] && Number.isFinite(map.floor[i])) base = Math.min(base, map.floor[i]);
+  }
+  const clear = (x: number, y: number): boolean => {
+    for (let r = Math.floor(y - PARDONER_CLEARANCE); r <= Math.floor(y + PARDONER_CLEARANCE); r++) for (let c = Math.floor(x - PARDONER_CLEARANCE); c <= Math.floor(x + PARDONER_CLEARANCE); c++) {
+      const i = r * map.w + c;
+      if (c < 0 || r < 0 || c >= map.w || r >= map.h || map.roomOf[i] !== room || map.solid[i] || Math.abs(map.floor[i] - base) > 0.01) return false;
+    }
+    return true;
+  };
+  for (const [dx, dy] of [[0, 3.2], [0, -3.2], [3.2, 0], [-3.2, 0]]) if (clear(cx + dx, cy + dy)) return { x: cx + dx, y: cy + dy, z: base };
+  return { x: cx, y: cy + 3.2, z: base };
+}
 
 export class ShopView {
   readonly group = new THREE.Group();
@@ -17,18 +46,24 @@ export class ShopView {
   constructor(private readonly map: GameMap, private readonly floor: Floor | null) {
     if (!floor) return;
     const loader = new THREE.TextureLoader();
-    const room = map.rooms[floor.pardoner], x = (room.rect.x0 + room.rect.x1 + 1) / 2, y = (room.rect.y0 + room.rect.y1 + 1) / 2;
+    const spot = pardonerSpot(map, floor.pardoner);
     const portrait = loader.load(new URL('../../assets/items/npc-pardoner.png', import.meta.url).href); portrait.colorSpace = THREE.SRGBColorSpace;
     const pardoner = new THREE.Sprite(new THREE.SpriteMaterial({ map: portrait, alphaTest: .05, depthWrite: false }));
-    pardoner.position.set(x, map.floor[Math.floor(y + 2) * map.w + Math.floor(x)] + 1.4, y + 2); pardoner.scale.set(1.6, 2.8, 1); this.group.add(pardoner);
+    pardoner.position.set(spot.x, spot.z + 1.4, spot.y); pardoner.scale.set(1.6, 2.8, 1); this.group.add(pardoner);
+    // The painted stall pedestal (unlit, like every billboard); a lit mesh rendered black here.
+    const pedestalArt = loader.load(spriteUrl('shop-pedestal')); pedestalArt.colorSpace = THREE.SRGBColorSpace;
+    const pedestalMaterial = new THREE.SpriteMaterial({ map: pedestalArt, alphaTest: .05, depthWrite: false });
     for (const [i, point] of (map.rooms[floor.pardoner].points?.pedestals ?? []).entries()) {
       const p = { x: point[0] + 0.5, y: point[1] + 0.5, z: map.floor[point[1] * map.w + point[0]] + 1 };
       this.points.push(p);
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 0.65, 8), new THREE.MeshStandardMaterial({ color: 0xa28c67 }));
-      base.position.set(p.x, p.z - 0.65, p.y); this.group.add(base);
+      const ground = p.z - 1, base = new THREE.Sprite(pedestalMaterial);
+      base.position.set(p.x, ground + PEDESTAL_HEIGHT / 2, p.y); base.scale.set(PEDESTAL_HEIGHT * 223 / 384, PEDESTAL_HEIGHT, 1); base.name = 'shop-pedestal';
+      this.group.add(base);
       const texture = loader.load(i === 4 ? CHART_ART : ITEM_ART[floor.stock[i]]); texture.colorSpace = THREE.SRGBColorSpace;
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, alphaTest: .05, depthWrite: false }));
-      sprite.position.set(p.x, p.z, p.y); sprite.scale.set(0.8, 0.8, 1); this.group.add(sprite); this.cards.push(sprite);
+      // Resting on the cushion; the purchase point (p) stays where the host checks the aim.
+      sprite.position.set(p.x, ground + PEDESTAL_HEIGHT + 0.3, p.y); sprite.scale.set(0.8, 0.8, 1); sprite.renderOrder = 1;
+      this.group.add(sprite); this.cards.push(sprite);
     }
   }
   victory(state: VictoryState): void {

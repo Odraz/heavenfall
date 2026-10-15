@@ -63,6 +63,8 @@ test('a refused durable stake never places a player or spends the stored carry',
   });
   await page.getByRole('button', { name: 'Singleplayer', exact: true }).click(); await page.getByRole('button', { name: /The Fallen/ }).click();
   await page.getByRole('button', { name: 'Start', exact: true }).click();
+  // A refused start returns to the title and says why, instead of waiting on Loading forever.
+  await page.waitForFunction(() => window.__heavenfall.screen === 'title');
   await expect(page.getByText(/Progress is in memory/)).toBeVisible();
   expect(await page.evaluate(() => window.__heavenfall.lastSnapshotTick)).toBe(0);
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!));
@@ -161,6 +163,11 @@ test('both carried keys respect refused use and cooldown in a normal run from an
   await expect(page.locator('.hp-fill')).toHaveAttribute('data-tier', 'ok');
   await expect(page.locator('.halo-wallet .halo-icon')).toHaveAttribute('src', /gold-halo/);
   await expect(page.getByRole('progressbar', { name: 'Class experience' })).toHaveAttribute('aria-valuetext', /^Level 1, /);
+  // The hint window describes both carried stacks (audit batch 3).
+  await page.keyboard.press('KeyH');
+  await expect(page.getByText('1 · Balm of the Rejected ×2: heal yourself for 40 HP.', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 · Pilgrim’s Feather ×3: move 2 m/s faster for 8 seconds.', { exact: true })).toBeVisible();
+  await page.keyboard.press('KeyH');
   await page.keyboard.press('Digit1'); await page.keyboard.press('Digit2');
   await expect(page.getByLabel('Item 2: Pilgrim’s Feather ×2', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Item 1: Balm of the Rejected ×2', { exact: true })).toBeVisible();

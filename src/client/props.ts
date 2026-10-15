@@ -74,7 +74,25 @@ export class PropView {
     // One material/draw for every prop; no per-frame texture uploads.
     const material = this.billboards.mesh.material as THREE.ShaderMaterial;
     material.vertexShader = 'attribute vec2 propCharge; varying vec2 vCharge; varying vec2 vLocal;\n' + material.vertexShader.replace('vUv = mix', 'vCharge = propCharge; vLocal = uv; vUv = mix');
-    material.fragmentShader = 'varying vec2 vCharge; varying vec2 vLocal;\n' + material.fragmentShader.replace('if (c.a < 0.5)', `
+    // Hairline cracks mark every breakable (audit batch 3): white porcelain and lamps break; stone,
+    // bronze and gold furniture never do. Drawn in the shared shader, so no new draw or texture.
+    material.fragmentShader = `varying vec2 vCharge; varying vec2 vLocal;
+      float crackSeg(vec2 p, vec2 a, vec2 b) {
+        vec2 ab = b - a; float t = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0);
+        return length(p - a - ab * t);
+      }
+      float crack(vec2 uv, vec2 center, float k) {
+        vec2 p = (uv - center) / k;
+        float d = crackSeg(p, vec2(0.0, 0.20), vec2(-0.05, 0.08));
+        d = min(d, crackSeg(p, vec2(-0.05, 0.08), vec2(0.04, 0.0)));
+        d = min(d, crackSeg(p, vec2(0.04, 0.0), vec2(-0.04, -0.12)));
+        d = min(d, crackSeg(p, vec2(-0.04, -0.12), vec2(0.01, -0.20)));
+        d = min(d, crackSeg(p, vec2(-0.05, 0.08), vec2(-0.12, 0.04)));
+        d = min(d, crackSeg(p, vec2(0.04, 0.0), vec2(0.11, -0.04)));
+        d = min(d, crackSeg(p, vec2(-0.04, -0.12), vec2(-0.10, -0.16)));
+        return 1.0 - smoothstep(0.004, 0.009, d * k);
+      }
+` + material.fragmentShader.replace('if (c.a < 0.5)', `
       if (vCharge.x > 1.5) {
         float fill = vCharge.y;
         vec2 liquid = (vLocal - vec2(0.5, 0.90 + 0.055 * fill)) / vec2(0.43, 0.037);
@@ -86,6 +104,9 @@ export class PropView {
         if (vLocal.y > 0.34 && vLocal.y < 0.68 && vLocal.x > 0.33 && vLocal.x < 0.67)
           c.rgb = mix(c.rgb, vec3(0.16, 0.025, 0.025), 0.94);
       }
+      // Loot amphora body, lamp glass or chalice cup.
+      float line = vCharge.x > 1.5 ? crack(vLocal, vec2(0.5, 0.84), 0.45) : vCharge.x > 0.5 ? crack(vLocal, vec2(0.5, 0.62), 0.8) : crack(vLocal, vec2(0.52, 0.48), 1.0);
+      c.rgb = mix(c.rgb, vec3(0.17, 0.13, 0.12), 0.85 * line);
       if (c.a < 0.5)`);
   }
   update(camera: THREE.Camera, tick: number): void {

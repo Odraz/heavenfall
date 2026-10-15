@@ -428,6 +428,18 @@ export const SFX = {
       part({ wave: 'square', freq: 587.33, delay: 0.24, decay: 0.1, sustain: 0.6, hold: 0.35, release: 0.3, volume: 0.17, duty: 0.25, vibratoRate: 6, vibratoDepth: 0.2 }),
     ],
   },
+  /**
+   * A clear reward arriving (audit batch 3): one large handbell strike, its inharmonic partial and a
+   * long ring-out. Synthesized until a recorded handbell take is made.
+   */
+  rewardArrive: {
+    priority: PRIO_ABILITY,
+    parts: [
+      part({ wave: 'sine', freq: 784, attack: 0.003, decay: 0.08, sustain: 0.45, hold: 0.1, release: 1.6, volume: 0.26 }),
+      part({ wave: 'sine', freq: 2164, attack: 0.002, decay: 0.05, sustain: 0.25, release: 0.7, volume: 0.09 }),
+      part({ wave: 'sine', freq: 1568, delay: 0.01, decay: 0.06, sustain: 0.35, hold: 0.05, release: 1.1, volume: 0.11 }),
+    ],
+  },
   /** Used only when there's no music sting (M8 §9.2). */
   victory: {
     priority: PRIO_ABILITY,

@@ -1,6 +1,8 @@
 import { CARRIER_SWOOP } from '../data/commanders';
 import { CommanderProjection } from './commanders';
 import { CommanderView } from './commanderView';
+import { RewardShafts, rewardPickupIds, rewardSpot } from './rewardShaft';
+import { rewardLabel } from '../gen/rewards';
 /** The in-game client: input or bot, local movement, snapshots, interpolation, rendering and feedback. */
 import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
@@ -118,7 +120,6 @@ import { MapView, type MapPlayer } from './mapView';
 import { ShopView } from './shop';
 import type { InventoryState } from '../net/messages';
 import { ItemView } from './itemView';
-import { ITEMS } from '../data/items';
 import type { VictoryState } from '../sim/victory';
 import { levelForXp } from '../profile/model';
 
@@ -414,6 +415,7 @@ export class Game {
   private readonly props: PropView;
   private readonly commanders: CommanderProjection;
   private readonly commanderView: CommanderView;
+  private readonly rewardShafts: RewardShafts;
   private readonly dominion: DominionProjection;
   private readonly dominionView = new DominionView();
   private readonly hazards: HazardView;
@@ -532,8 +534,10 @@ export class Game {
     this.scene.scene.add(this.props.billboards.mesh);
     this.dominion = new DominionProjection(o.runId);
     this.commanders = new CommanderProjection(o.runId);
-    this.commanderView = new CommanderView(o.textures.fx.beam);
+    this.commanderView = new CommanderView(o.textures.fx.beam, o.textures.fx.glow);
     this.scene.scene.add(this.commanderView.group);
+    this.rewardShafts = new RewardShafts(o.textures.fx.beam);
+    this.scene.scene.add(this.rewardShafts.group);
     this.spawnWarnings = new SpawnProjection(o.runId, this.map);
     this.scene.scene.add(this.spawnView.group);
     this.scene.scene.add(this.dominionView.group);
@@ -980,7 +984,6 @@ export class Game {
       case 'victoryState': this.setVictory(e.state); break;
       case 'itemUsed':
         if (e.instance) this.itemView.state(e.instance);
-        if (e.playerId === this.localId && e.first) this.hud.centerText(`${ITEMS[e.item].name} · ${ITEMS[e.item].rule}`, 3000, now);
         if (e.item === 'balm') this.particles.healColumn(e.x, e.y, e.z);
         if (e.item === 'seal') this.vfx.ring(now, e.x, e.y, e.z + 1, 0x7bbdff, 0, 1, 650);
         break;
@@ -1031,7 +1034,13 @@ export class Game {
         break;
       case 'roomState':
         if (e.phase === PHASE_COMBAT) this.hud.centerText('The doors are sealed', 2000, now);
-        else if (e.phase === PHASE_CLEARED && this.map.rooms[e.room].kind === 'combat') this.hud.centerText('Room cleared', 2000, now);
+        else if (e.phase === PHASE_CLEARED && this.map.rooms[e.room].kind === 'combat') {
+          // The clear reward comes down from the sky and is named under the clear (audit batch 3).
+          const reward = this.o.floor?.rewards[e.room], spot = rewardSpot(this.map, e.room);
+          const named = reward && reward.kind !== 'nothing' && spot;
+          this.hud.centerText('Room cleared', named ? 3000 : 2000, now, named ? `Reward: ${rewardLabel(reward)}` : null);
+          if (named) { this.rewardShafts.arrive(spot.x, spot.y, spot.z, now); this.sounds.rewardArrived(); }
+        }
         break;
       case 'playerRevived': {
         // The hellfire pillar where the player rises (M8 §3.1); the soul sinks back into the body.
@@ -2226,6 +2235,8 @@ export class Game {
     this.drawStarPreview();
     this.drawBillboards(now, ents, enemyZ);
     this.pickups.update(this.snaps.newest, this.scene.camera, this.snaps.estimatedTick(now));
+    const rewardIds = this.o.floor ? rewardPickupIds([...this.pickups.model.records.values()].map((r) => r.pickup), this.o.floor, this.map) : new Set<number>();
+    this.rewardShafts.update(now, this.snaps.newest, rewardIds, (x, y) => this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)], this.scene.camera.position);
     const itemTick = this.snaps.estimatedTick(simNow);
     this.itemView.update(itemTick);
     this.player.speed = CLASSES[this.classId].speed + (!this.dead && itemTick < (this.inventory?.featherUntil ?? 0) ? 2 : 0);
@@ -2673,6 +2684,7 @@ export class Game {
     this.props.dispose();
     this.dominionView.dispose();
     this.commanderView.dispose();
+    this.rewardShafts.dispose();
     this.spawnView.dispose();
     this.hazards.dispose();
     this.hum?.stop();

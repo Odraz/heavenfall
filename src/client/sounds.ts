@@ -157,6 +157,8 @@ export class GameSounds {
   }
 
   levelUp(): void { sfx('abilityReady'); sfx('goldPickup', null, .6, .12); }
+  /** A clear reward arriving from the sky (audit batch 3); heard room-wide, not positional. */
+  rewardArrived(): void { sfx('rewardArrive'); }
 
   /**
    * A complete snapshot: others' shots, enemy casts, new projectiles, the Gatekeeper, own HP changes,

@@ -300,6 +300,15 @@ Commit `41d66a7` (October 14 play feedback) removed the `Practice (disposable)` 
 
 Not changed: the Carrier numbers (A4) wait for your decision; rooms.md now says where the code differs.
 
+### A8. The Gate B checkpoint browser suite has failed since R03 stage 2 (found during batch 3 preparation)
+
+`e2e/r02-checkpoint.spec.ts` was never run in the R03 reports. On 2026-10-15 all 21 of its checks failed, for two stale assumptions, not runtime bugs:
+
+- The 20 room-link checks expect floor hash `de6939ce`. Commit `fb67379` (R03 stage 2) added XP metadata, which changed the pinned hash to `74928d57` (`src/gen/pinned.ts`). The room selections themselves still match.
+- The late-entry check waits for a gold halo from the marked amphora. Since R03 stage 3 (`4599aae`) that amphora drops the Chart; `e2e/pickup-expiry.spec.ts` was updated for this, but this test wasn't.
+
+Fix with batch 3: update the hash and make the late-entry check use the Chart pickup.
+
 ## Batch 2 results
 
 2026-10-15, built from the approved mockups (`tmp/mockups/batch2.html`, not committed), with layout A for the item slots. Presentation only: no simulation, protocol or rules change.
@@ -335,3 +344,62 @@ All new CSS uses the `:root` tokens (new: `--heal`, `--danger`, `--xp`, `--hud-b
 - `npx playwright test --config playwright.hardware.config.ts e2e/profiles.spec.ts` rerun after that fix: **8/8 passed**.
 - I inspected the saved screenshots (in-game HUD, Profile, class selection) against the mockups.
 - No benchmark was run.
+
+## Batch 3 results
+
+2026-10-15, from the approved look proposals (`tmp/mockups/batch3.html`, not committed), with option A for breakables. You changed one thing: hurting spells and their warnings stay gold, Heaven's color. So the Dominion wall is gold, not amber to red. Presentation only: no simulation, protocol or rules change.
+
+| Item | Change | Files |
+|---|---|---|
+| Reward arrival | On a combat clear with a reward, a white-gold shaft comes down from the sky onto the reward spot (0.6 s), and "Room cleared" gets a second line, `Reward: …`, plus a handbell cue (`rewardArrive`, synthesized). A warm, slowly pulsing pillar then marks the reward until it's collected. In play the white pillar vanished against the bright sky, so it was tuned warmer and wider; it reaches the sky, while the room's sun shafts stop at the windows. | `src/client/rewardShaft.ts`, `src/client/game.ts`, `src/client/hud.ts`, `src/client/sounds.ts`, `src/audio/sfx.ts`, `src/style.css` |
+| Breakables | Hairline cracks drawn in the props shader on every amphora, lamp and chalice. The lily urn is drawn as grey stone at atlas build. | `src/client/props.ts`, `src/render/atlas.ts` |
+| Item hints | The first-use popup is gone. The hint window (H) has a Carried section with each slot's key, name, count and rule, or "Nothing carried". A slot pulses three times when it receives an untried item type, including at run start. | `src/client/hud.ts`, `src/client/hudModel.ts`, `src/client/game.ts`, `src/style.css` |
+| Dominion tell | A golden wall rises from the ring's edge, from 0.25 m to 3 m and from faint to bright as the tell fills, with a bright top edge. Leaps use the same wall at the landing ring. | `src/client/dominionView.ts` |
+| Cantor beam | During the damaging phase, a 2.6 m soft glow around the 1 m gold body, a wider white core that swells on each pulse, flares at the book and the beam's end, and a bright knot running along it every 10 ticks. The warning ray is unchanged. Hit enemies use their existing hurt flash. | `src/client/commanderView.ts` |
+| A8 | Gate B checks use the R03 floor hash `74928d57`; the late-entry check uses the marked amphora's Chart. | `e2e/r02-checkpoint.spec.ts` |
+
+Docs: game.md §6.4 (reward arrival) and §7.3 (no popup, hint window, slot pulse); rooms.md §6 (the golden wall) and §6.2 (beam presentation).
+
+**Later asset work:** a recorded handbell take for `rewardArrive`, in your Suno real-objects format (for example "a large brass handbell struck once on a wooden bench, long natural ring-out"). Your uncommitted `docs/rogue/audio-prompts.md` edits were left untouched, so the prompt isn't written there yet.
+
+**New tests:**
+- `src/client/rewardShaft.test.ts`: on the pinned floor, only the reward kind created on the reward spot counts (not the same kind elsewhere, or a coin on the spot); rooms without a reward are ignored; the pillar pulse stays visible.
+- `src/client/dominionView.test.ts`: the wall rises and brightens with the tell, is capped at 3 m, and is drawn at the accepted ring.
+- `src/client/commanderView.test.ts`: no glow or flares during the warning; glow, flares and knot during the beam, with the knot moving from the book.
+- `src/client/hudModel.test.ts`: Carried lines, and which slots pulse.
+- `e2e/profiles.spec.ts`: H shows both carried items' lines in game.
+
+**Checks:**
+
+- `npm run typecheck`: passed.
+- `npm test -- --pool=threads --exclude '**/*perf.test.ts'`: **1,133 passed in 101 files**.
+- Both timing checks run alone: **2/2**, unchanged 8 ms limit. The hazard stress test read 6.98 ms/tick, up from 4.6–4.9 in batches 1–2. Batch 3 changes no simulation code, so this is most likely machine load, but watch it.
+- `npm run build`: passed.
+- Browser checks: `npx playwright test --config playwright.hardware.config.ts e2e/commanders.spec.ts e2e/dominion.spec.ts e2e/r02-checkpoint.spec.ts e2e/rogue-pressure.spec.ts e2e/rogue-floor.spec.ts e2e/profiles.spec.ts e2e/menus.spec.ts e2e/pickup-expiry.spec.ts e2e/r03-art.spec.ts --grep-invert 'solo autopilot'`: **52 passed, 2 failed** (14.1 min). All 21 Gate B checks now pass (A8 fixed). **Not yet investigated:**
+  Both failures were investigated and resolved (see *Batch 3 follow-up* below).
+- In game (dev build, 1280×720): cracks visible on an amphora; the reward pillar visible above the room after a dev-key clear.
+
+### Batch 3 follow-up
+
+**The two failed browser checks:**
+- **Dominion tell check:** a test race, not a game bug. Both checks passed 3/3 when run alone. The test waited until a cast existed, then read the state again later; a 1.5 s tell can end in between. It now reads the cast in the same step that finds it.
+- **Refused-save check:** it exposed a real bug (A9).
+
+### A9. A refused singleplayer start stayed on Loading forever (fixed)
+
+When a run is refused at start (for example, the browser can't write the save), the game correctly refuses it. But in singleplayer the screen stayed on Loading, and the reason was only appended to its bottom. That is also why the browser check was flaky. Now the refused start returns to the title and shows the reason there (`src/main.ts`). The browser check asserts that and passed 3/3.
+
+### A10. The shop's black pedestals and clipping Pardoner (your screenshots, fixed)
+
+- **Black pedestals:** they were lit meshes (`MeshStandardMaterial`) in a scene with no lights, so they rendered black. Your R03 stall art `assets/art-src/shop-pedestal.png` had never been used. It's now cut out with `scripts/cutout.py` (`assets/sprites/shop-pedestal.png`, 384 px tall) and drawn as a 1 m billboard. The stock rests on its cushion; the purchase point is unchanged.
+- **Clipping Pardoner:** he was drawn 2 m from the room center, half inside the template's 4×4 m, 1.5 m plinth. Now he stands on the room's base floor 3.2 m from the center, on the first side with clear floor within 0.9 m (`pardonerSpot` in `src/client/shop.ts`).
+- **New test:** `src/client/shop.test.ts` checks 8 generated floors in more than one orientation. In each, he stands on the base floor with no raised or solid cell within 0.9 m.
+- **Still open:** the template says the plinth holds the Pardoner's *indulgence box*, but the room shows a fountain decoration there, and your `pardoner-box.png` art isn't used yet.
+
+**Checks after the follow-up:**
+- `npm run typecheck`: passed.
+- `npm test -- --pool=threads --exclude '**/*perf.test.ts'`: **1,134 passed in 102 files**.
+- Both timing checks run alone: **2/2**, with the hazard stress test back at 4.58 ms/tick. The earlier 6.98 was machine load.
+- `npm run build`: passed.
+- Browser checks (the batch 3 list plus `e2e/multiplayer.spec.ts`): **55/55 passed** (14.2 min), `--grep-invert 'solo autopilot'`; the solo autopilot traversal wasn't rerun, as route and exit code didn't change.
+- In game: the Pardoner stands beside the plinth, and the Chart and Balm rest on the marble pedestals.

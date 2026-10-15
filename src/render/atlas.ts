@@ -27,6 +27,13 @@ export function spriteUrl(name: string): string {
   return url;
 }
 
+/**
+ * Decorations drawn as grey stone (audit batch 3): the lily urn shared the breakable amphorae's white
+ * porcelain and gold, so it read as breakable. White porcelain now always means "breaks".
+ */
+const STONE_SPRITES = new Set(['decor-lily-urn']);
+const STONE_FILTER = 'grayscale(0.85) sepia(0.25) brightness(0.92) contrast(1.05)';
+
 export const ATLAS_SIZE = 2048;
 const PAD = 4;
 
@@ -88,7 +95,9 @@ export async function buildAtlas(): Promise<Atlas> {
       shelf = 0;
     }
     if (y + e.ph + PAD > ATLAS_SIZE) throw new Error('Sprite atlas is full');
+    ctx.filter = STONE_SPRITES.has(e.name) ? STONE_FILTER : 'none';
     ctx.drawImage(e.img, x, y, e.pw, e.ph);
+    ctx.filter = 'none';
     frames[e.name] = {
       u0: x / ATLAS_SIZE,
       u1: (x + e.pw) / ATLAS_SIZE,

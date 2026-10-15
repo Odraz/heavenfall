@@ -128,7 +128,10 @@ test('a real PeerJS guest receives the host-authorized damaging launch', async (
 
 test('Dominion tells are visible and a native slam preserves its crowd without kill credit', async ({ page }) => {
   await encounter(page);
-  const telling = await state(page); expect(telling.dominion.casts[0].impactTick - telling.dominion.casts[0].startTick).toBe(45);
+  // Read the tell in the same step that finds it: a later state read can land after a 1.5 s tell ends.
+  const cast = await (await page.waitForFunction(() => window.__heavenfall.dominion.casts[0] ?? false)).jsonValue();
+  expect(cast && cast.impactTick - cast.startTick).toBe(45);
+  const telling = await state(page);
   await page.screenshot({ path: test.info().outputPath('dominion-tell.png') });
   await page.waitForFunction(() => window.__heavenfall.dominion.rendered.some((r) => !window.__heavenfall.dominion.actors.some((a) => a.slot === r.slot) && r.z - r.floor > 1), null, { timeout: 30_000 });
   expect((await state(page)).dominion.strikes).toBeGreaterThan(0);

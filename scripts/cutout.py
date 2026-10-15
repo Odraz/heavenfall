@@ -50,6 +50,8 @@ SPRITES = {
     'amphora-marked': 256,
     'sanctuary-lamp': 384,
     'blessing-chalice': 384,
+    # The Pardoner's stock stands on these (audit: the R03 stall art was never used).
+    'shop-pedestal': 384,
     'gold-halo': 128,
     'heal-mote': 128,
     'proj-censer': 192,

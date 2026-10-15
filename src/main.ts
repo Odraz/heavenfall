@@ -45,7 +45,8 @@ function saveAccepted(profile: ProfileSession['profile']): void {
 }
 const disposable = params.dev || params.benchArena >= 0 || params.bot;
 
-function profileMessage(msg: CtrlMessage, transport: Transport): boolean {
+/** `onRejected` lets a solo start leave Loading with the reason; a refused run would otherwise never start. */
+function profileMessage(msg: CtrlMessage, transport: Transport, onRejected?: (reason: string) => void): boolean {
   if (msg.type === 'admission') {
     const admission = msg.admission;
     try {
@@ -57,7 +58,8 @@ function profileMessage(msg: CtrlMessage, transport: Transport): boolean {
       transport.sendCtrl({ type: 'admissionReady', runId: admission.runId, admissionId: admission.admissionId });
     } catch (error) {
       transport.sendCtrl({ type: 'admissionRejected', runId: admission.runId, admissionId: admission.admissionId, reason: String(error) });
-      if (screenEl) { const p = document.createElement('p'); p.textContent = String(error); screenEl.appendChild(p); }
+      if (onRejected) onRejected(error instanceof Error ? error.message : String(error));
+      else if (screenEl) { const p = document.createElement('p'); p.textContent = String(error); screenEl.appendChild(p); }
     }
     return true;
   }
@@ -218,7 +220,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
     },
   });
   host.local.onCtrl = (msg) => {
-    if (profileMessage(msg, host.local)) return;
+    if (profileMessage(msg, host.local, (reason) => { end(); toTitle(reason); })) return;
     if (msg.type === 'go') { show('inGame', null); game.start(); }
     game.handleCtrl(msg);
   };

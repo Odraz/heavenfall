@@ -3,7 +3,7 @@ import { CLASSES, GENERAL_HINTS, type ClassId } from '../data/classes';
 import { ITEMS } from '../data/items';
 import type { InventoryState } from '../net/messages';
 import { ITEM_ART } from './itemArt';
-import { hpTier, xpProgress } from './hudModel';
+import { carriedHints, hpTier, newItemSlots, xpProgress } from './hudModel';
 import { ABILITIES, WEAPONS } from '../data/weapons';
 import { mouseGlyph } from '../ui/mouseGlyph';
 import { CHAT_MAX } from '../net/lobby';
@@ -144,6 +144,9 @@ export class Hud {
   private readonly abilities: Array<{ arc: SVGCircleElement; text: HTMLDivElement; box: HTMLDivElement; glint: HTMLDivElement; cd: number }>;
   /** The hints panel (M8 §2.2), toggled with H. */
   private readonly hints: HTMLDivElement;
+  /** The hint window's Carried lines (audit batch 3). */
+  private readonly carried: HTMLDivElement;
+  private lastInventory: InventoryState['inventory'] | null = null;
   /**
    * The bottom-left column (M9 §6.4), from the bottom up: the own frame, the party frames, the chat.
    * The party frames go in before `ownFrame`.
@@ -435,6 +438,10 @@ export class Hud {
       } else el('span', 'hint-icon', line);
       el('span', 'hint-text', line).textContent = h.text;
     }
+    // Carried items (audit batch 3): what slots 1 and 2 do, always current; replaces the pickup popup.
+    el('div', 'hint-section', this.hints).textContent = 'Carried';
+    this.carried = el('div', 'hint-carried', this.hints);
+    this.setCarried(null);
     {
       for (const text of GENERAL_HINTS.filter(text => multiplayer || text.startsWith('1 /') || text.startsWith('F:'))) {
         const line = el('div', 'hint hint-general', this.hints);
@@ -479,6 +486,13 @@ export class Hud {
       slot.box.title = stack ? ITEMS[stack.item].name : 'Empty'; slot.box.setAttribute('aria-label', `Item ${i + 1}: ${stack ? `${ITEMS[stack.item].name} ×${stack.count}` : 'empty'}`);
       if (stack) slot.icon.src = ITEM_ART[stack.item];
     });
+    for (const i of newItemSlots(this.lastInventory, state.inventory, state.itemsTried)) {
+      // Restart the three-beat pulse even if it ran for an earlier item.
+      const box = this.itemSlots[i].box;
+      box.classList.remove('pulse'); void box.offsetWidth; box.classList.add('pulse');
+    }
+    this.lastInventory = state.inventory.map((s) => s && { ...s }) as InventoryState['inventory'];
+    this.setCarried(state.inventory);
     const xp = xpProgress(state.xp);
     this.xpLevel.textContent = `Level ${xp.level}`;
     this.xpCount.textContent = xp.max ? 'Max' : `${xp.into} / ${xp.span}`;
@@ -490,6 +504,23 @@ export class Hud {
     for (const slot of this.itemSlots) {
       slot.box.classList.toggle('ready', seconds <= 0);
       slot.box.style.setProperty('--item-cooldown', `${Math.min(100, seconds * 100)}%`);
+    }
+  }
+
+  private setCarried(inventory: InventoryState['inventory'] | null): void {
+    const lines = inventory ? carriedHints(inventory) : [];
+    this.carried.replaceChildren();
+    for (const h of lines) {
+      const line = el('div', 'hint', this.carried);
+      const icon = el('img', 'hint-icon hint-round', line);
+      icon.src = ITEM_ART[h.item];
+      icon.alt = '';
+      el('span', 'hint-text', line).textContent = h.text;
+    }
+    if (!lines.length) {
+      const line = el('div', 'hint hint-general', this.carried);
+      el('span', 'hint-icon', line);
+      el('span', 'hint-text', line).textContent = 'Nothing carried. Buy items from the Pardoner or pick them up.';
     }
   }
 
@@ -784,8 +815,10 @@ export class Hud {
     this.fades.push({ el: e, start: now, duration, from });
   }
 
-  centerText(text: string, ms: number, now: number): void {
+  /** A large centered line, and an optional smaller second line under it (audit batch 3: the clear reward). */
+  centerText(text: string, ms: number, now: number, sub: string | null = null): void {
     this.center.textContent = text;
+    if (sub) el('div', 'center-sub', this.center).textContent = sub;
     this.center.hidden = false;
     this.centerUntil = now + ms;
   }
