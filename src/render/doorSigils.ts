@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import type { Floor } from '../gen/generate';
 import type { GameMap } from '../sim/map';
 import { drawMapIcon, roomIcon } from '../client/mapIcons';
-import { drawRewardIcon } from '../client/rewardIcon';
+import { drawRewardIcon, loadRewardArt } from '../client/rewardIcon';
 
 export function sigilPose(map: GameMap, room: number, leaf: number) {
   const owner = map.rooms[room], cells = owner.leaves[leaf].cells;
@@ -22,19 +22,23 @@ export class DoorSigils {
   readonly group = new THREE.Group();
   private readonly geometry = new THREE.BufferGeometry();
   private material: THREE.MeshBasicMaterial | null = null;
+  private disposed = false;
   constructor(map: GameMap, floor: Floor | null) {
     if (!floor) return;
     // One upload and one draw for all leaves: additional clients must fit the existing Loading budget.
     const side = Math.ceil(Math.sqrt(map.rooms.length)), tile = 128;
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = side * tile;
     const ctx = canvas.getContext('2d')!;
-    map.rooms.forEach((room, i) => {
+    const paint = (): void => map.rooms.forEach((room, i) => {
       const x = (i % side) * tile, y = Math.floor(i / side) * tile;
       drawMapIcon(ctx, roomIcon(room, i === floor.reliquary), x + 64, y + 64, 96);
       if (room.secondary && i !== floor.reliquary) drawMapIcon(ctx, room.secondary, x + 105, y + 105, 40);
-      if (room.kind === 'combat') drawRewardIcon(ctx, floor.rewards[i], x + 24, y + 104, 38);
+      if (room.kind === 'combat') drawRewardIcon(ctx, floor.rewards[i], x + 26, y + 102, 44);
     });
+    paint();
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+    // Reward art loads asynchronously: draw it once more, then upload the texture again.
+    void loadRewardArt().then(() => { if (this.disposed) return; paint(); texture.needsUpdate = true; });
     this.material = new THREE.MeshBasicMaterial({ map: texture, alphaTest: 0.1 });
     const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
     map.rooms.forEach((owner, i) => owner.leaves.forEach((leaf, j) => {
@@ -53,6 +57,7 @@ export class DoorSigils {
     this.group.add(new THREE.Mesh(this.geometry, this.material));
   }
   dispose(): void {
+    this.disposed = true;
     this.geometry.dispose();
     this.material?.map?.dispose(); this.material?.dispose();
   }

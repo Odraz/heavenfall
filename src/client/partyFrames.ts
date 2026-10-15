@@ -4,6 +4,7 @@
  */
 import { CLASSES, type ClassId } from '../data/classes';
 import { spriteUrl } from '../render/atlas';
+import { hpTier } from './hudModel';
 
 export interface PartyMember {
   id: number;
@@ -75,6 +76,7 @@ export class PartyFrames {
       f.total = m.hp + m.shield;
       const total = Math.max(maxHp, m.hp + m.shield);
       f.hp.style.width = `${(Math.max(0, m.hp) / total) * 100}%`;
+      f.hp.dataset.tier = hpTier(m.hp, maxHp);
       f.shield.style.left = f.hp.style.width;
       f.shield.style.width = `${(m.shield / total) * 100}%`;
       f.root.classList.toggle('dead', m.dead);

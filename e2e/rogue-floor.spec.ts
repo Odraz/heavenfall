@@ -69,6 +69,8 @@ test('the map shows Breach neighbours; holding M keeps movement and diverts mous
   const before = await state(page);
   await page.keyboard.down('KeyM');
   await expect(page.getByLabel('Full floor map')).toBeVisible();
+  // The minimap would only cover the full map's legend (audit batch 2).
+  await expect(page.getByLabel('Floor minimap')).toBeHidden();
   await page.mouse.move(660, 340);
   await page.mouse.down({ button: 'left' }); await page.mouse.down({ button: 'right' });
   await page.keyboard.down('KeyW');
@@ -81,6 +83,7 @@ test('the map shows Breach neighbours; holding M keeps movement and diverts mous
   expect(after.paused).toBe(false);
   await page.screenshot({ path: test.info().outputPath('r1.5-full-map.png') });
   await page.keyboard.up('KeyM'); await expect(page.getByLabel('Full floor map')).toBeHidden();
+  await expect(page.getByLabel('Floor minimap')).toBeVisible();
   await page.keyboard.down('KeyM'); await expect(page.getByLabel('Full floor map')).toBeVisible();
   await page.keyboard.press('Escape'); await expect(page.getByLabel('Full floor map')).toBeHidden();
   expect((await state(page)).paused).toBe(true);

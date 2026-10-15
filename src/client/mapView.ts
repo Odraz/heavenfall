@@ -6,7 +6,7 @@ import { PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN } from '../net/protocol';
 import { drawMapIcon, ICON_PATHS, roomIcon, type MapIcon } from './mapIcons';
 import type { ClientRooms } from './rooms';
 import { rewardLabel } from '../gen/rewards';
-import { drawRewardIcon } from './rewardIcon';
+import { drawRewardIcon, loadRewardArt } from './rewardIcon';
 
 export interface MapPlayer { id: number; name: string; classId: ClassId; x: number; y: number; yaw: number }
 const CLASS_COLORS: Record<ClassId, string> = { fallen: '#e05a42', heretic: '#f0c76a', binder: '#85b6e6', betrayer: '#b38bd4' };
@@ -41,6 +41,8 @@ export class MapView {
     this.roomsList.className = 'map-room-list'; this.roomsList.setAttribute('aria-label', 'Known rooms');
     parent.append(this.mini, this.full, this.roomsList);
     this.drawLegend();
+    // Reward art arrives asynchronously; the map redraws itself, the legend once.
+    void loadRewardArt().then(() => this.drawLegend());
     document.addEventListener('mousemove', this.mousemove);
   }
 
@@ -119,7 +121,7 @@ export class MapView {
       const room = this.model.map.rooms[i], size = full ? 40 : 16;
       drawMapIcon(ctx, roomIcon(room, i === floor.reliquary), x + w / 2, y + h / 2, size, st.phase === PHASE_CLEARED);
       if (room.secondary && i !== floor.reliquary) drawMapIcon(ctx, room.secondary, x + w - size / 4, y + h - size / 4, size / 2, st.phase === PHASE_CLEARED);
-      if (room.kind === 'combat') drawRewardIcon(ctx, floor.rewards[i], x + size / 4, y + h - size / 4, size / 2);
+      if (room.kind === 'combat') drawRewardIcon(ctx, floor.rewards[i], x + size * 0.35, y + h - size * 0.35, size * 0.6);
     });
     ctx.globalAlpha = 1;
     for (const p of players) {
@@ -141,17 +143,19 @@ export class MapView {
   }
 
   private drawLegend(): void {
-    const ctx = this.legend.getContext('2d')!; ctx.font = '14px sans-serif'; ctx.fillStyle = '#e8dcc0';
+    const ctx = this.legend.getContext('2d')!; ctx.clearRect(0, 0, this.legend.width, this.legend.height);
+    ctx.font = '14px sans-serif'; ctx.fillStyle = '#e8dcc0';
     ctx.fillText('Hold M · Floor map', 4, 18);
     (Object.keys(ICON_PATHS) as MapIcon[]).forEach((icon, i) => {
       drawMapIcon(ctx, icon, 16, 42 + i * 20, 16);
       ctx.fillText(icon[0].toUpperCase() + icon.slice(1), 34, 47 + i * 20);
     });
-    const rewards = [{ kind: 'gold' }, { kind: 'item', item: 'balm' }, { kind: 'rite' }, { kind: 'nothing' }] as const;
+    const rewards = [{ kind: 'gold' }, { kind: 'item', item: 'balm' }, { kind: 'rite' }] as const;
     rewards.forEach((reward, i) => {
-      drawRewardIcon(ctx, reward, 16, 294 + i * 22, 18);
-      ctx.fillStyle = '#e8dcc0'; ctx.fillText(['Halos', 'Consumable', 'Rite page', 'No clear reward'][i], 34, 299 + i * 22);
+      drawRewardIcon(ctx, reward, 16, 294 + i * 24, 20);
+      ctx.fillStyle = '#e8dcc0'; ctx.fillText(['Halos', 'Consumable', 'Rite page'][i], 34, 299 + i * 24);
     });
+    ctx.fillStyle = '#b9ac97'; ctx.fillText('No mark: no clear reward', 4, 299 + 3 * 24);
   }
   dispose(): void {
     this.parent.classList.remove('map-open');

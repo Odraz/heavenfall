@@ -3,7 +3,7 @@ import { CLASSES, GENERAL_HINTS, type ClassId } from '../data/classes';
 import { ITEMS } from '../data/items';
 import type { InventoryState } from '../net/messages';
 import { ITEM_ART } from './itemArt';
-import { levelForXp, xpForLevel } from '../profile/model';
+import { hpTier, xpProgress } from './hudModel';
 import { ABILITIES, WEAPONS } from '../data/weapons';
 import { mouseGlyph } from '../ui/mouseGlyph';
 import { CHAT_MAX } from '../net/lobby';
@@ -89,11 +89,15 @@ export class Hud {
   readonly root: HTMLDivElement;
   private readonly hpBar: HTMLDivElement;
   private readonly xpLine: HTMLDivElement;
+  private readonly xpLevel: HTMLSpanElement;
+  private readonly xpCount: HTMLSpanElement;
+  private readonly xpFill: HTMLDivElement;
   private readonly itemSlots: Array<{ box: HTMLDivElement; icon: HTMLImageElement; count: HTMLDivElement }>;
   private readonly hpFill: HTMLDivElement;
   private readonly shieldFill: HTMLDivElement;
   private readonly hpText: HTMLDivElement;
   private readonly wallet: HTMLDivElement;
+  private readonly walletCount: HTMLSpanElement;
   /**
    * The painted weapon (M11 §3): its box, placed by the manifest and moved by one transform, holding the
    * idle image, the alt image, the hammer, the cylinder blur, the green censer and the glow layers. The
@@ -316,8 +320,13 @@ export class Hud {
 
     // The bottom-left column (M9 §6.4): chat on top, then the party frames, then the own frame.
     this.leftColumn = el('div', 'hud-left', this.root);
+    // Halos (audit batch 2): the in-world halo sprite in a band flush with the left edge, mirroring
+    // "Enemies remaining" on the right.
     this.wallet = el('div', 'halo-wallet', this.root);
-    this.wallet.setAttribute('aria-label', 'Halo wallet');
+    const halo = el('img', 'halo-icon', this.wallet);
+    halo.src = spriteUrl('gold-halo');
+    halo.alt = '';
+    this.walletCount = el('span', 'halo-count', this.wallet);
     this.setWallet(0);
     const chat = el('div', 'chat', this.leftColumn);
     this.chatMessages = el('div', 'chat-messages', chat);
@@ -352,8 +361,16 @@ export class Hud {
     this.hpBar = el('div', 'hp-bar', hp);
     this.hpFill = el('div', 'hp-fill', this.hpBar);
     this.shieldFill = el('div', 'shield-fill', this.hpBar);
+    // Experience (audit batch 2): the level and count above a slim bar in the HP bar's own frame.
     this.xpLine = el('div', 'xp-line', this.root);
-    this.xpLine.setAttribute('role', 'progressbar'); this.xpLine.setAttribute('aria-label', 'Class experience');
+    this.xpLine.setAttribute('role', 'progressbar');
+    this.xpLine.setAttribute('aria-label', 'Class experience');
+    this.xpLine.setAttribute('aria-valuemin', '0');
+    this.xpLine.setAttribute('aria-valuemax', '100');
+    const xpLabel = el('div', 'xp-label', this.xpLine);
+    this.xpLevel = el('span', '', xpLabel);
+    this.xpCount = el('span', 'xp-count', xpLabel);
+    this.xpFill = el('div', 'xp-fill', el('div', 'xp-bar', this.xpLine));
     this.buff = el('div', 'buff-icon', hp);
     this.buff.hidden = true;
     const buffImg = el('img', '', this.buff);
@@ -367,9 +384,15 @@ export class Hud {
     this.buff.appendChild(buffSvg);
 
     const abil = el('div', 'abilities', this.root);
-    this.itemSlots = [1, 2].map(key => {
-      const box = el('div', 'ability item-slot ready', abil), icon = el('img', 'ability-icon', box), count = el('div', 'item-count', box);
-      icon.hidden = true; el('div', 'ability-key', box).textContent = String(key); return { box, icon, count };
+    // Consumables (audit batch 2): smaller round slots above Q and E, so they never read as abilities.
+    this.itemSlots = [1, 2].map((key) => {
+      const box = el('div', 'item-slot empty ready', abil);
+      const icon = el('img', 'item-icon', box);
+      icon.hidden = true;
+      icon.alt = '';
+      const count = el('div', 'item-count', box);
+      el('div', 'ability-key', box).textContent = String(key);
+      return { box, icon, count };
     });
     this.abilities = (['Q', 'E'] as const).map((key) => {
       const box = el('div', 'ability', abil);
@@ -452,15 +475,16 @@ export class Hud {
   setInventory(state: InventoryState): void {
     this.itemSlots.forEach((slot, i) => {
       const stack = state.inventory[i]; slot.icon.hidden = !stack; slot.count.textContent = stack ? String(stack.count) : '';
+      slot.box.classList.toggle('empty', !stack);
       slot.box.title = stack ? ITEMS[stack.item].name : 'Empty'; slot.box.setAttribute('aria-label', `Item ${i + 1}: ${stack ? `${ITEMS[stack.item].name} ×${stack.count}` : 'empty'}`);
       if (stack) slot.icon.src = ITEM_ART[stack.item];
     });
-    const level = levelForXp(state.xp), lo = xpForLevel(level), hi = level === 10 ? lo + 10000 : xpForLevel(level + 1);
-    const progress = level === 10 ? 100 : Math.min(100, 100 * (state.xp - lo) / (hi - lo));
-    this.xpLine.textContent = `Level ${level} · ${level === 10 ? 'MAX' : `${state.xp - lo} / ${hi - lo} XP`}`;
-    this.xpLine.setAttribute('aria-valuenow', String(Math.round(progress)));
-    this.xpLine.setAttribute('aria-valuemin', '0'); this.xpLine.setAttribute('aria-valuemax', '100');
-    this.xpLine.style.setProperty('--xp', `${progress}%`);
+    const xp = xpProgress(state.xp);
+    this.xpLevel.textContent = `Level ${xp.level}`;
+    this.xpCount.textContent = xp.max ? 'Max' : `${xp.into} / ${xp.span}`;
+    this.xpFill.style.width = `${xp.percent}%`;
+    this.xpLine.setAttribute('aria-valuenow', String(Math.round(xp.percent)));
+    this.xpLine.setAttribute('aria-valuetext', `Level ${xp.level}, ${xp.max ? 'maximum' : `${xp.into} of ${xp.span} experience`}`);
   }
   setItemCooldown(seconds: number): void {
     for (const slot of this.itemSlots) {
@@ -469,11 +493,15 @@ export class Hud {
     }
   }
 
-  setWallet(value: number): void { this.wallet.textContent = String(value); this.wallet.setAttribute('aria-label', `Halos: ${value}`); }
+  setWallet(value: number): void {
+    this.walletCount.textContent = String(value);
+    this.wallet.setAttribute('aria-label', `Halos: ${value}`);
+  }
 
   setHp(hp: number, shield: number, maxHp: number): void {
     const total = Math.max(maxHp, hp + shield);
     this.hpFill.style.width = `${(Math.max(0, hp) / total) * 100}%`;
+    this.hpFill.dataset.tier = hpTier(hp, maxHp);
     this.shieldFill.style.left = `${(Math.max(0, hp) / total) * 100}%`;
     this.shieldFill.style.width = `${(shield / total) * 100}%`;
     this.hpText.textContent = shield > 0 ? `HP ${Math.ceil(hp)} + ${Math.ceil(shield)}` : `HP ${Math.ceil(hp)} / ${maxHp}`;

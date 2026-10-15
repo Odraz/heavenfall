@@ -13,7 +13,7 @@ import logoUrl from '../../assets/ui/ui-logo.png';
 import { getDungeon } from '../data/dungeons';
 
 /** Each class's idle frame from the front, rendered from its 3D model (§11.2). */
-const PORTRAITS: Record<ClassId, string> = { fallen: fallenPortrait, heretic: hereticPortrait, binder: binderPortrait, betrayer: betrayerPortrait };
+export const PORTRAITS: Record<ClassId, string> = { fallen: fallenPortrait, heretic: hereticPortrait, binder: binderPortrait, betrayer: betrayerPortrait };
 
 const NAME_KEY = 'heavenfall.name';
 export const NAME_MAX = 16;

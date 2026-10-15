@@ -299,3 +299,39 @@ Commit `41d66a7` (October 14 play feedback) removed the `Practice (disposable)` 
 **Decided 2026-10-15: remove.** `src/main.ts` no longer has a practice parameter. The test now starts a normal run from an imported disposable profile and checks that the durable stake holds the imported stacks. r03-followup.md and r03-report.md no longer describe Practice.
 
 Not changed: the Carrier numbers (A4) wait for your decision; rooms.md now says where the code differs.
+
+## Batch 2 results
+
+2026-10-15, built from the approved mockups (`tmp/mockups/batch2.html`, not committed), with layout A for the item slots. Presentation only: no simulation, protocol or rules change.
+
+| Section | Change | Files |
+|---|---|---|
+| Halos | The in-world halo sprite and the count in Cinzel, on a band flush with the left edge (mirrors "Enemies remaining"). | `src/client/hud.ts`, `src/style.css` |
+| XP bar | `Level N` and `into / span` above a slim bar in the HP bar's painted frame, gold fill, on a dark band that fades at both ends. Boss and countdown lines moved below it. | `src/client/hud.ts`, `src/client/hudModel.ts`, `src/style.css` |
+| HP colors | Green above 50%, amber at 25–50%, red with a slow pulse below 25%, for your own bar and the party frames. Shield stays blue. | `src/client/hud.ts`, `src/client/partyFrames.ts`, `src/style.css` |
+| Item slots | Round 50 px slots centered above Q and E: gold/dark/gold rim, count badge, dim when empty, a dark clockwise sweep while cooling down. | `src/client/hud.ts`, `src/style.css` |
+| Carried items | Round slots with each item's art, count and rule; "Empty slot" with where to get one; the risk line; no relic line. Also shown in the multiplayer lobby. | `src/ui/profiles.ts`, `src/style.css` |
+| Profile | Fixed 520×500 panel: name, victories, runs, each class's portrait, level and XP bar, then Copy code / Import code, the reserved message line and Clear progress / Back. Import is its own view at the same size. | `src/ui/profiles.ts`, `src/ui/menus.ts`, `src/style.css` |
+| Map | Arched doorway for the entry room, drawn bow for ranged rooms (map, legend and door signs). Reward marks use the halo, the actual item and the Rite page art without a box, and no mark when there's no reward. The minimap and Enemies remaining hide while the full map is open. | `src/client/mapIcons.ts`, `src/client/rewardIcon.ts`, `src/client/mapView.ts`, `src/render/doorSigils.ts`, `src/style.css` |
+
+All new CSS uses the `:root` tokens (new: `--heal`, `--danger`, `--xp`, `--hud-band`) and the multi-line style. The one-line R03 rules for these elements were removed (C1, C3 for this scope).
+
+**New tests:**
+- `src/client/hudModel.test.ts`: HP tier thresholds and XP progress inside a level and at the cap.
+- In the browser checks:
+  - Carried items show both stacks as round slots with names, the risk line and no relic text.
+  - Full health is tier `ok`, the halo counter shows the halo sprite, and the XP bar reports its level.
+  - The Profile panel keeps its exact box across the Import view, an import error, a successful import and Clear.
+  - The class list shows `Level 1 · 1200 / 1500` after importing 1,200 Fallen XP.
+  - The minimap hides while the full map is open and returns after.
+
+**Checks:**
+
+- `npm run typecheck`: passed.
+- `npm test -- --pool=threads --exclude '**/*perf.test.ts'`: **1,124 passed in 99 files**.
+- Both timing checks run alone: **2/2** (hazard stress 4.9 ms/tick, unchanged 8 ms limit).
+- `npm run build`: passed.
+- `npx playwright test --config playwright.hardware.config.ts e2e/profiles.spec.ts e2e/menus.spec.ts e2e/rogue-floor.spec.ts e2e/rogue-pressure.spec.ts e2e/multiplayer.spec.ts --grep-invert 'solo autopilot'`: **16 passed, 3 failed**. All three failures were in the tests themselves: they clicked Back while the asynchronous import was still swapping views. The tests now wait for "Profile imported" first.
+- `npx playwright test --config playwright.hardware.config.ts e2e/profiles.spec.ts` rerun after that fix: **8/8 passed**.
+- I inspected the saved screenshots (in-game HUD, Profile, class selection) against the mockups.
+- No benchmark was run.

@@ -1,18 +1,42 @@
+/**
+ * Clear-reward marks for the map and the door signs (rogue game.md §5.2): the reward's own art, the
+ * halo sprite, the item's icon or the Rite page, without a box. No reward shows no mark; the old
+ * boxed glyphs read as letters at map size (audit batch 2).
+ */
 import type { ClearReward } from '../gen/rewards';
-const paths = {
-  gold: 'M4 9A8 4 0 1 0 20 9A8 4 0 1 0 4 9M4 9L4 15A8 4 0 0 0 20 15L20 9M8 10L8 16M16 10L16 16',
-  rite: 'M6 6L17 6L17 21L6 21ZM9 10L14 10M9 14L13 14M11 6Q8 3 12 1Q11 4 15 5',
-  item: 'M9 2L15 2L15 6L18 10L18 20Q12 23 6 20L6 10L9 6ZM6 13L18 13M9 2L9 5L15 5',
-  nothing: 'M5 12L19 12',
-};
-const cached = new Map<string, Path2D>();
-/** Shared reward plate vocabulary, independent of room-combat glyphs. */
+import { spriteUrl } from '../render/atlas';
+import { ITEM_ART, PAGE_ART } from './itemArt';
+
+const images = new Map<string, HTMLImageElement>();
+let loading: Promise<void> | null = null;
+
+function artUrl(reward: ClearReward): string | null {
+  return reward.kind === 'gold' ? spriteUrl('gold-halo') : reward.kind === 'item' ? ITEM_ART[reward.item] : reward.kind === 'rite' ? PAGE_ART : null;
+}
+
+/** Resolves once every reward image has loaded or failed; a missing image is simply not drawn. */
+export function loadRewardArt(): Promise<void> {
+  if (loading) return loading;
+  // Node tests have no Image; their canvases get no reward marks.
+  if (typeof Image === 'undefined') return (loading = Promise.resolve());
+  const urls = [spriteUrl('gold-halo'), PAGE_ART, ...Object.values(ITEM_ART)];
+  loading = Promise.all(urls.map((url) => new Promise<void>((resolve) => {
+    const img = new Image();
+    img.onload = img.onerror = () => resolve();
+    img.src = url;
+    images.set(url, img);
+  }))).then(() => undefined);
+  return loading;
+}
+
+/** Draws the reward's art centered on (x, y), `size` pixels square, with a soft shadow for light rooms. */
 export function drawRewardIcon(ctx: CanvasRenderingContext2D, reward: ClearReward, x: number, y: number, size: number): void {
-  ctx.save(); ctx.translate(x, y); ctx.fillStyle = '#211b25'; ctx.strokeStyle = '#e4c277'; ctx.lineWidth = 2;
-  ctx.fillRect(-size / 2, -size / 2, size, size); ctx.strokeRect(-size / 2, -size / 2, size, size);
-  const key = reward.kind;
-  let path = cached.get(key); if (!path) { path = new Path2D(paths[key]); cached.set(key, path); }
-  ctx.translate(-size * .42, -size * .42); ctx.scale(size * .84 / 24, size * .84 / 24);
-  ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = '#ffe0a0'; ctx.stroke(path);
+  const url = artUrl(reward);
+  const img = url ? images.get(url) : undefined;
+  if (!img?.complete || !img.naturalWidth) return;
+  ctx.save();
+  ctx.shadowColor = '#000';
+  ctx.shadowBlur = size / 6;
+  ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
   ctx.restore();
 }

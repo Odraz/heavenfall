@@ -5,8 +5,8 @@ import type { Page } from '@playwright/test';
 
 test('accepted progress remains exportable when storage fails and retry saves current memory', async ({ page, context }) => {
   const p = createProfile('Save retry', '9'.repeat(32), 1); p.inventory[0] = { item: 'feather', count: 2 };
-  await page.goto('/'); await openProfile(page); await page.getByLabel('Import code').fill(await exportCode(p, true));
-  await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.goto('/'); await openProfile(page); await openImport(page); await page.getByLabel('Import code').fill(await exportCode(p, true));
+  await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click(); await expect(page.getByText('Profile imported', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.getByRole('button', { name: 'Singleplayer', exact: true }).click(); await page.getByRole('button', { name: /The Fallen/ }).click();
   await page.getByRole('button', { name: 'Start', exact: true }).click();
   // Admission's first input establishes the counter baseline before a new key edge is sent.
@@ -33,7 +33,7 @@ test('accepted progress remains exportable when storage fails and retry saves cu
 test('profile import, lock exclusion, durable solo stake and abandoned recovery', async ({ page, context }) => {
   const p = createProfile('Disposable', 'd'.repeat(32), 1); p.inventory[0] = { item: 'balm', count: 3 };
   const code = await exportCode(p, true);
-  await page.goto('/'); await openProfile(page); await page.getByLabel('Import code').fill(code); await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.goto('/'); await openProfile(page); await openImport(page); await page.getByLabel('Import code').fill(code); await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click(); await expect(page.getByText('Profile imported', { exact: true })).toBeVisible();
   await expect(page.getByText('Profile imported', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   const other = await context.newPage(); await other.goto('/'); await other.getByRole('button', { name: 'Singleplayer', exact: true }).click();
@@ -55,7 +55,7 @@ test('profile import, lock exclusion, durable solo stake and abandoned recovery'
 
 test('a refused durable stake never places a player or spends the stored carry', async ({ page }) => {
   const p = createProfile('Quota fixture', 'e'.repeat(32), 1); p.inventory[0] = { item: 'seal', count: 2 };
-  await page.goto('/'); await openProfile(page); await page.getByLabel('Import code').fill(await exportCode(p, true)); await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.goto('/'); await openProfile(page); await openImport(page); await page.getByLabel('Import code').fill(await exportCode(p, true)); await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click(); await expect(page.getByText('Profile imported', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.evaluate(() => {
     const original = Storage.prototype.setItem;
@@ -86,8 +86,8 @@ test('a persistent guest reconnects to one retained admission and host exit rest
   });
   const prepare = async (page: Page, name: string, id: string): Promise<void> => {
     const p = createProfile(name, id.repeat(32), 1); p.inventory[0] = { item: 'feather', count: 2 };
-    await page.goto('/'); await openProfile(page); await page.getByLabel('Import code').fill(await exportCode(p, true));
-    await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.goto('/'); await openProfile(page); await openImport(page); await page.getByLabel('Import code').fill(await exportCode(p, true));
+    await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click(); await expect(page.getByText('Profile imported', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Back', exact: true }).click();
     await page.getByRole('button', { name: 'Multiplayer', exact: true }).click();
   };
   try {
@@ -132,10 +132,15 @@ test('a persistent guest reconnects to one retained admission and host exit rest
 test('both carried keys respect refused use and cooldown in a normal run from an imported disposable profile', async ({ page }) => {
   const profile = createProfile('Item keys', '3'.repeat(32), 1);
   profile.inventory = [{ item: 'balm', count: 2 }, { item: 'feather', count: 3 }];
-  await page.goto('/'); await openProfile(page); await page.getByLabel('Import code').fill(await exportCode(profile, true));
-  await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.goto('/'); await openProfile(page); await openImport(page); await page.getByLabel('Import code').fill(await exportCode(profile, true));
+  await page.getByRole('button', { name: 'Import', exact: true }).click(); await page.getByRole('button', { name: 'Import', exact: true }).click(); await expect(page.getByText('Profile imported', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.getByRole('button', { name: 'Singleplayer', exact: true }).click();
   await expect(page.locator('.class-level')).toHaveCount(4);
+  // Carried items use the in-game round slots, each item's rule and the stated risk; no relic line yet.
+  await expect(page.locator('.profile-loadout .loadout-name')).toHaveText(['Balm of the Rejected ×2', 'Pilgrim’s Feather ×3']);
+  await expect(page.locator('.profile-loadout .item-slot:not(.empty)')).toHaveCount(2);
+  await expect(page.getByText('Carried items are lost if you die before the Gatekeeper falls.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/relics/i)).toHaveCount(0);
   const cards = await page.locator('.class-cards').boundingBox(), loadout = await page.locator('.profile-loadout').boundingBox(), dungeon = await page.locator('.dungeon-picker').boundingBox();
   expect(loadout!.y).toBeGreaterThanOrEqual(cards!.y + cards!.height);
   expect(dungeon!.y).toBeGreaterThan(loadout!.y + loadout!.height);
@@ -152,6 +157,10 @@ test('both carried keys respect refused use and cooldown in a normal run from an
   expect(inventory!.y + inventory!.height).toBeLessThan(abilities!.y);
   const wallet = await page.locator('.halo-wallet').boundingBox(), xp = await page.getByRole('progressbar', { name: 'Class experience' }).boundingBox();
   expect(wallet!.y).toBeLessThan(60); expect(xp!.y).toBeLessThan(60); expect(wallet!.x + wallet!.width).toBeLessThan(xp!.x);
+  // Full health is green; the halo counter shows the in-world halo sprite.
+  await expect(page.locator('.hp-fill')).toHaveAttribute('data-tier', 'ok');
+  await expect(page.locator('.halo-wallet .halo-icon')).toHaveAttribute('src', /gold-halo/);
+  await expect(page.getByRole('progressbar', { name: 'Class experience' })).toHaveAttribute('aria-valuetext', /^Level 1, /);
   await page.keyboard.press('Digit1'); await page.keyboard.press('Digit2');
   await expect(page.getByLabel('Item 2: Pilgrim’s Feather ×2', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Item 1: Balm of the Rejected ×2', { exact: true })).toBeVisible();
@@ -167,6 +176,12 @@ test('both carried keys respect refused use and cooldown in a normal run from an
 
 async function panelBox(page: Page): Promise<number[]> {
   return page.locator('.panel:visible').first().evaluate(e => { const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round); });
+}
+
+/** The Import view replaces the Profile view at the same panel size. */
+async function openImport(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Import code', exact: true }).click();
+  await expect(page.getByLabel('Import code')).toBeVisible();
 }
 
 async function openProfile(page: Page): Promise<void> {
@@ -190,21 +205,27 @@ test('title has one editable name and profile Settings safely imports and clears
   await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible();
   const profile = await panelBox(page);
   const saved = await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'));
+  await expect(page.locator('.profile-class')).toHaveCount(4);
+  await openImport(page);
+  expect(await panelBox(page)).toEqual(profile);
   await page.getByLabel('Import code').fill('broken'); await page.getByRole('button', { name: 'Import', exact: true }).click();
-  await expect(page.locator('.message')).not.toBeEmpty();
+  await expect(page.locator('.profile-view:visible .message')).not.toBeEmpty();
   expect(await panelBox(page)).toEqual(profile);
   expect(await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'))).toBe(saved);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.getByRole('button', { name: 'Copy code', exact: true }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toMatch(/^MG1\./);
   const p = createProfile('Imported', '7'.repeat(32), 1); p.characters.fallen.xp = 1200;
-  await page.getByLabel('Import code').fill(await exportCode(p, true));
+  await openImport(page); await page.getByLabel('Import code').fill(await exportCode(p, true));
   await page.getByRole('button', { name: 'Import', exact: true }).click();
   expect(await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'))).toBe(saved);
   await page.getByRole('button', { name: 'Import', exact: true }).click();
   await expect(page.getByText('Profile imported', { exact: true })).toBeVisible();
+  await expect(page.getByText('Level 1 · 1200 / 1500', { exact: true })).toBeVisible();
+  expect(await panelBox(page)).toEqual(profile);
   await page.screenshot({ path: test.info().outputPath('r03-profile.png') });
-  await page.getByRole('button', { name: 'Clear', exact: true }).click();
+  await page.getByRole('button', { name: 'Clear progress', exact: true }).click();
   expect(await panelBox(page)).toEqual(profile);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('heavenfall.profile.1')!).characters.fallen.xp)).toBe(1200);
   await page.getByRole('button', { name: 'Confirm clear', exact: true }).click();
@@ -229,7 +250,7 @@ test('unreadable progress is preserved until confirmed recovery from title Setti
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   expect(await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'))).toBe(original);
   await openProfile(page);
-  await page.getByRole('button', { name: 'Clear', exact: true }).click();
+  await page.getByRole('button', { name: 'Clear progress', exact: true }).click();
   expect(await page.evaluate(() => localStorage.getItem('heavenfall.profile.1'))).toBe(original);
   await page.getByRole('button', { name: 'Confirm clear', exact: true }).click();
   await expect(page.getByText('Profile cleared', { exact: true })).toBeVisible();
