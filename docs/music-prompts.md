@@ -1,6 +1,6 @@
 # Music prompts
 
-Prompts for the 7 music tracks of milestone 8 ([m8.md](m8.md) §9.2). They're written for Suno; other generators take the *Style* text as their description.
+Prompts for the 7 original music tracks of milestone 8 ([m8.md](m8.md) §9.2), plus additional room combat tracks. They're written for Suno; other generators take the *Style* text as their description.
 
 ## The idea
 
@@ -15,6 +15,7 @@ All tracks share one sound, so they feel like one score:
 | Arena 1 | the first fight | 120 | guitars and drums enter |
 | Arena 2 | wind and height | 135 | double kick, tremolo guitars |
 | Arena 3 | a hymn under siege | 150 | full metal against Gregorian chant |
+| Arena 4 | war horns and racing woodwinds | 145 | low brass and heavy drums, restrained guitars |
 | Boss | the Gate itself, epic | 165 | everything: choir, organ, orchestra and metal |
 | Victory / Defeat | short stings | — | — |
 
@@ -26,6 +27,7 @@ Save each as MP3 in `assets/music/` with exactly this name:
 - [ ] `arena-1.mp3`
 - [ ] `arena-2.mp3`
 - [ ] `arena-3.mp3`
+- [x] `arena-4.mp3`
 - [ ] `boss.mp3`
 - [ ] `victory.mp3`
 - [ ] `defeat.mp3`
@@ -242,4 +244,42 @@ short somber orchestral sting, D minor, slow descending wordless choir, low pipe
 (Aaah... aaah...)
 [Choir descends, organ fades]
 [End]
+```
+
+## 8. Arena 4, Breath of Judgment — `arena-4.mp3`
+
+Epic, relentless room fighting, led by war horns and racing woodwinds. Keeps the existing score's D minor, cathedral atmosphere, organ and choir.
+
+**Style:**
+```
+epic wind-led orchestral metal, D minor, 145 BPM, commanding French horn melodies, fierce trumpet calls, roaring low trombones and tuba, rapid flute and clarinet ostinatos, bassoon doubling the driving bass rhythm, brass and woodwinds lead throughout, thunderous timpani and tight double kick drums, restrained palm-muted guitars underneath, dark pipe organ foundation, distant wordless angelic choir, brief harp flourishes and tubular bells, heroic yet sinister, cathedral battle atmosphere, relentless close-quarters FPS combat music, short recurring melodic hook, sustained momentum, loop-friendly arrangement, no lead vocals
+```
+
+**Exclude styles:** `pop, lead vocals, lyrics, ballad, jazz, swing, cheerful marching band, ambient breakdown, long intro, fade-out`
+
+**Lyrics** (vocals on, for the wordless choir):
+```
+[Intro]
+[Short low war horn call, timpani strike, immediate driving rhythm]
+
+[Verse]
+[Rapid woodwind ostinato, low brass pulses, tight drums]
+[French horns introduce a bold minor-key battle theme]
+
+[Chorus]
+[Trumpets and horns carry the theme, trombones answer]
+(Aaah... aaah...)
+[Organ and distant choir beneath the wind instruments]
+
+[Interlude]
+[Flutes and clarinets trade racing phrases over pounding drums]
+[Low brass and bassoons maintain the relentless pulse]
+
+[Verse]
+[Horn theme returns, sharper trumpet responses, heavier percussion]
+
+[Chorus]
+[Full brass leads, swirling woodwinds, bells accent the rhythm]
+(Aaah... ooh...)
+[Keep the driving pulse, return directly to the main battle motif]
 ```

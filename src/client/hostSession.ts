@@ -76,6 +76,11 @@ export class HostSession {
     this.post({ t: 'toggleGod', playerId: this.localPlayerId });
   }
 
+  /** Dev key I: fills the local player's item slots with the next pair of items. */
+  devItems(): void {
+    this.post({ t: 'devItems', playerId: this.localPlayerId });
+  }
+
   setPaused(paused: boolean): void {
     this.post({ t: 'pause', paused });
   }

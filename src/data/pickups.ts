@@ -23,7 +23,7 @@ import { ITEM_IDS, ITEMS } from './items';
 export { ITEM_IDS } from './items';
 export const ITEM_WEIGHTS = ITEM_IDS.map(id => ITEMS[id].weight);
 export const PICKUP_NAMES = ['Coin', 'Gold halo', 'Heal mote', 'Balm of the Rejected', 'Wax Seal of Sanctuary',
-  "Pilgrim's Feather", 'Mirror Ward', 'Bitter Water', 'Ash of Stillness', 'Chain Vial', 'Plume of Expulsion',
+  "Pilgrim's Feather", 'Mirror Ward', 'Bitter Water', 'Ash of Stillness', 'Chain Jar', 'Plume of Expulsion',
   'Key', 'Reliquary', 'Chart', 'Bell', 'Rite page'] as const;
 
 export function itemDrop(random: () => number): number {

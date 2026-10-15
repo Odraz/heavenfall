@@ -116,11 +116,12 @@ import { ClientRooms, roomMessage } from './rooms';
 import { PickupView } from './pickups';
 import { PropView } from './props';
 import { propDefs } from '../data/props';
-import { FEATHER_SPEED } from '../data/items';
+import { FEATHER_SPEED, ITEMS } from '../data/items';
 import { MapView, type MapPlayer } from './mapView';
 import { ShopView } from './shop';
 import type { InventoryState } from '../net/messages';
 import { ItemView } from './itemView';
+import { FeatherTrails } from './featherTrail';
 import type { VictoryState } from '../sim/victory';
 import { levelForXp } from '../profile/model';
 
@@ -344,7 +345,8 @@ export class Game {
   private readonly rooms: ClientRooms;
   private readonly mapView: MapView;
   private readonly shop: ShopView;
-  private readonly itemView = new ItemView();
+  private readonly itemView: ItemView;
+  private readonly featherTrails = new FeatherTrails();
   private readonly shopHint = document.createElement('div');
   private inventory: InventoryState | null = null;
   private nextRequestId = 1;
@@ -580,6 +582,7 @@ export class Game {
     this.rooms = new ClientRooms(this.map, o.runId);
     this.mapView = new MapView(this.hud.root, this.rooms, o.floor, this.localId);
     this.shop = new ShopView(this.map, o.floor); this.scene.scene.add(this.shop.group);
+    this.itemView = new ItemView(this.map);
     this.scene.scene.add(this.itemView.group);
     this.shopHint.className = 'shop-hint'; this.hud.root.append(this.shopHint);
     this.victoryHint.className = 'victory-hint'; this.hud.root.append(this.victoryHint);
@@ -664,6 +667,8 @@ export class Game {
     // Dev key J removes only the Blessed, leaving the casters in view (M12 follow-up screenshots).
     else if (code === 'KeyJ' && this.params.dev && this.o.host) this.o.host.killAll(true);
     else if (code === 'KeyG' && this.params.dev && this.o.host) this.o.host.toggleGod();
+    // Dev key I fills both item slots with the next pair, to try every item's effect.
+    else if (code === 'KeyI' && this.params.dev && this.o.host) this.o.host.devItems();
     else if (this.params.bot) return;
     else if ((code === 'Digit1' || code === 'Digit2') && !this.dead && !this.player.carried) {
       const slot = code === 'Digit1' ? 0 : 1; this.itemPresses[slot] = (this.itemPresses[slot] + 1) & 255;
@@ -985,8 +990,20 @@ export class Game {
       case 'victoryState': this.setVictory(e.state); break;
       case 'itemUsed':
         if (e.instance) this.itemView.state(e.instance);
-        if (e.item === 'balm') this.particles.healColumn(e.x, e.y, e.z);
-        if (e.item === 'seal') this.vfx.ring(now, e.x, e.y, e.z + 1, 0x7bbdff, 0, 1, 650);
+        // Self items show what the abilities that do the same show: Sacrament's heal, Martyr's Shroud's bubble.
+        if (e.item === 'balm') {
+          this.particles.healColumn(e.x, e.y, e.z);
+          if (e.playerId === this.localId) this.hud.vignette('green', HEAL_VIGNETTE, now, HEAL_FADE_MS);
+          else this.party?.flash(e.playerId, 'green');
+        }
+        if (e.item === 'seal') {
+          this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0x4aa3e8, 1.3, 1.6, 900, 0.4);
+          if (e.playerId !== this.localId) this.party?.flash(e.playerId, 'blue');
+        }
+        if (e.item === 'feather') {
+          const at = this.playerPose(e.playerId);
+          if (at) this.featherTrails.start(e.playerId, now + (ITEMS.feather.duration / 30) * 1000, at);
+        }
         break;
       case 'itemEffectActivated': this.itemView.state(e.effect); break;
       case 'itemEffectEnded': this.itemView.remove(e.instanceId); break;
@@ -2240,6 +2257,7 @@ export class Game {
     this.rewardShafts.update(now, this.snaps.newest, rewardIds, (x, y) => this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)], this.scene.camera.position);
     const itemTick = this.snaps.estimatedTick(simNow);
     this.itemView.update(itemTick);
+    for (const [x, y, z] of this.featherTrails.step(now, (id) => id === this.localId ? (this.dead ? undefined : this.player.body) : this.playerPose(id))) this.particles.trailFeather(x, y, z);
     this.player.speed = CLASSES[this.classId].speed + (!this.dead && itemTick < (this.inventory?.featherUntil ?? 0) ? FEATHER_SPEED : 0);
     this.hud.setItemCooldown(this.inventory ? Math.max(0, this.inventory.itemReadyTick - itemTick) / 30 : 0);
     this.props.update(this.scene.camera, this.snaps.estimatedTick(simNow));

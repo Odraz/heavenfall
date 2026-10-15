@@ -1,6 +1,6 @@
 /** The host simulation: pure TypeScript, no three.js or DOM (§2.2). */
 import { CLASSES, type ClassId } from '../data/classes';
-import { copyInventory, emptyInventory, FEATHER_SPEED, isItemId, PLUME_LIFT, PLUME_THROW, type Inventory, type ItemId } from '../data/items';
+import { copyInventory, emptyInventory, FEATHER_SPEED, isItemId, ITEM_IDS, ITEMS, PLUME_LIFT, PLUME_THROW, type Inventory, type ItemId } from '../data/items';
 import { Consumables } from './consumables';
 import { Rewards } from './rewards';
 import { VictoryExit } from './victory';
@@ -1142,6 +1142,17 @@ export class Simulation {
     if (this.progressionEnabled) return;
     const p = this.playerById(playerId);
     if (p) p.devGod = !p.devGod;
+  }
+
+  private devItemPair = 0;
+
+  /** Dev key I: fills both item slots with full stacks of the next pair in catalog order. Never with saved progression. */
+  devItems(playerId: number): void {
+    const p = this.playerById(playerId);
+    if (this.progressionEnabled || !p || p.bot) return;
+    const k = this.devItemPair++ % (ITEM_IDS.length / 2);
+    p.inventory = [0, 1].map((j) => { const item = ITEM_IDS[2 * k + j]; return { item, count: ITEMS[item].cap }; }) as Inventory;
+    this.publishInventory(p);
   }
 
   // ------------------------------------------------------------------ tick

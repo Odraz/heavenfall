@@ -7,6 +7,7 @@ import { distToCylinder } from './movement';
 import { overVoid } from './map';
 import { ENEMY_SLOTS, PLAYER_EYE, ROOM_NONE, STEP_UP, TICK_DT } from './constants';
 import { lineOfSight, raycastTerrain } from './los';
+import type { GameMap } from './map';
 import type { Simulation, SimPlayer } from './sim';
 
 /** The global cooldown between successful item uses, 1 s (§7.1). */
@@ -33,6 +34,37 @@ export interface ItemEffect {
 
 /** An item effect with the floor cells its area covers and the enemies it has already bound or thrown. */
 interface Area extends ItemEffect { cells: Set<number>; attempted: Set<number>; }
+
+/** The walkable floor height at (x, y) inside the room, or null. */
+export function itemFloor(map: GameMap, x: number, y: number, room: number): number | null {
+  const c = Math.floor(x);
+  const r = Math.floor(y);
+  const i = r * map.w + c;
+  if (c < 0 || r < 0 || c >= map.w || r >= map.h) return null;
+  if (map.solid[i] || map.roomOf[i] !== room || overVoid(map, x, y) || !Number.isFinite(map.floor[i])) return null;
+  return map.floor[i];
+}
+
+/**
+ * The floor cells a landed item area covers: a flood from the landing cell over connected floor of its
+ * room within the radius box, never up a terrace. The host's authority and the client's drawing share it.
+ */
+export function itemAreaCells(map: GameMap, x: number, y: number, room: number, radius: number): Set<number> {
+  const start = Math.floor(y) * map.w + Math.floor(x);
+  const cells = new Set([start]);
+  const queue = [start];
+  for (let q = 0; q < queue.length; q++) {
+    for (const n of [queue[q] - 1, queue[q] + 1, queue[q] - map.w, queue[q] + map.w]) {
+      const cx = n % map.w;
+      const cy = Math.floor(n / map.w);
+      if (cells.has(n) || itemFloor(map, cx + .5, cy + .5, room) === null) continue;
+      if (Math.abs(map.floor[n] - map.floor[queue[q]]) > STEP_UP || Math.hypot(cx + .5 - x, cy + .5 - y) > radius + .71) continue;
+      cells.add(n);
+      queue.push(n);
+    }
+  }
+  return cells;
+}
 
 function record(e: Area): ItemEffect {
   const { cells: _c, attempted: _a, ...effect } = e;
@@ -161,13 +193,7 @@ export class Consumables {
 
   /** The walkable floor height at (x, y) inside the room, or null. */
   private floor(x: number, y: number, room: number): number | null {
-    const map = this.sim.map;
-    const c = Math.floor(x);
-    const r = Math.floor(y);
-    const i = r * map.w + c;
-    if (c < 0 || r < 0 || c >= map.w || r >= map.h) return null;
-    if (map.solid[i] || map.roomOf[i] !== room || overVoid(map, x, y) || !Number.isFinite(map.floor[i])) return null;
-    return map.floor[i];
+    return itemFloor(this.sim.map, x, y, room);
   }
 
   /** Exact grid crossings along the immutable ray, clipped inside the owning room. */
@@ -207,20 +233,7 @@ export class Consumables {
     e.activatedTick = this.sim.tick;
     e.endTick = e.activatedTick + ITEMS[e.item].duration;
     // Flood only the small radius box. An inaccessible terrace never inherits a floor area.
-    const map = this.sim.map;
-    const start = Math.floor(e.y) * map.w + Math.floor(e.x);
-    const queue = [start];
-    e.cells.add(start);
-    for (let q = 0; q < queue.length; q++) {
-      for (const n of [queue[q] - 1, queue[q] + 1, queue[q] - map.w, queue[q] + map.w]) {
-        const x = n % map.w;
-        const y = Math.floor(n / map.w);
-        if (e.cells.has(n) || this.floor(x + .5, y + .5, e.room) === null) continue;
-        if (Math.abs(map.floor[n] - map.floor[queue[q]]) > STEP_UP || Math.hypot(x + .5 - e.x, y + .5 - e.y) > ITEMS[e.item].radius + .71) continue;
-        e.cells.add(n);
-        queue.push(n);
-      }
-    }
+    e.cells = itemAreaCells(this.sim.map, e.x, e.y, e.room, ITEMS[e.item].radius);
     this.sim.emit('all', { type: 'itemEffectActivated', effect: record(e) });
     this.affect(true);
   }

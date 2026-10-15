@@ -18,6 +18,10 @@ function input(p: SimPlayer, seq: number, one: number, two: number): InputMsg {
     qPresses: 0, ePresses: 0, item1Presses: one, item2Presses: two, allyTargetId: 255, lastTeleportId: p.teleportId };
 }
 const step = (sim: ReturnType<typeof fixture>, count: number) => { for (let i = 0; i < count; i++) sim.step(); };
+/** Advances item ticks only, until every thrown flight has landed (at most 1 s). */
+const land = (sim: ReturnType<typeof fixture>) => {
+  for (let i = 0; i < 30 && sim.items.effects.some((e) => e.activatedTick < 0); i++) { sim.tick++; sim.items.update(); }
+};
 
 describe('R03 consumable transactions', () => {
   it('never auto-activates contacts, including useful healing, active buffs and offensive drops during combat', () => {
@@ -119,7 +123,7 @@ describe('accepted flights and area geometry', () => {
   });
   it('does not affect flyers, other terraces or enemies behind walls', () => {
     const sim = fixture(1, ['#############', '#000000#0000#', '#000000#0000#', '#000000#0000#', '#000000#0000#', '#000000#0000#', '#000000#0000#', '#############']);
-    const p = sim.players[0]; put(sim, p, 5.5, 4.5); sim.items.use(p, 'chain');
+    const p = sim.players[0]; put(sim, p, 5.5, 4.5); p.pitch = -Math.PI / 2; sim.items.use(p, 'chain'); land(sim);
     const flyer = enemyAt(sim, CHERUB, 4.5, 4.5), wall = enemyAt(sim, BLESSED, 8.5, 4.5), high = enemyAt(sim, BLESSED, 4.5, 5.5, 3);
     sim.items.update(); expect([flyer, wall, high].map(s => sim.isRooted(s))).toEqual([false, false, false]);
     sim.eZ[flyer] = 0; sim.eGrounded[flyer] = 1; sim.items.update(); expect(sim.isRooted(flyer)).toBe(true);
@@ -152,11 +156,23 @@ describe('catalog area rules', () => {
     const sim = fixture(), p = sim.players[0]; p.pitch = -Math.PI / 2; sim.items.use(p, 'frost'); step(sim, 3);
     const s = enemyAt(sim, BLESSED, 6.5, 5.5); sim.items.update(); expect(sim.items.slowed[s]).toBe(1);
     sim.eX[s] = 20; sim.items.update(); expect(sim.items.slowed[s]).toBe(0);
-    p.itemReadyTick = 0; sim.items.use(p, 'chain'); sim.eX[s] = 6.5; sim.items.update(); const end = sim.eRootUntil[s];
+    p.itemReadyTick = 0; sim.items.use(p, 'chain'); sim.eX[s] = 6.5; land(sim); const end = sim.eRootUntil[s];
     expect(end).toBe(sim.tick + 75); // 2.5 s
     sim.tick = end + 1; sim.items.update(); expect(sim.isRooted(s)).toBe(false);
     sim.eIncarnation[s]++; sim.items.update(); expect(sim.isRooted(s)).toBe(true);
-    sim.eRootUntil[s] = sim.tick + 300; p.itemReadyTick = 0; sim.items.use(p, 'chain'); expect(sim.eRootUntil[s]).toBe(sim.tick + 300);
+    const held = sim.eRootUntil[s] = sim.tick + 300; p.itemReadyTick = 0; sim.items.use(p, 'chain'); land(sim); expect(sim.eRootUntil[s]).toBe(held);
+  });
+  it('Chain Jar is thrown: it flies to where you aim and binds there, not at your feet', () => {
+    const sim = fixture(), p = sim.players[0]; p.yaw = 0; p.pitch = -0.2;
+    expect(sim.items.use(p, 'chain')).toBe(true);
+    expect(sim.items.records()[0].activatedTick).toBe(-1);
+    land(sim); const e = sim.items.records()[0];
+    expect(e.activatedTick).toBeGreaterThan(0); expect(e.x - p.x).toBeGreaterThan(ITEMS.chain.radius + 1);
+    const near = enemyAt(sim, BLESSED, 6.5, 5.5), far = enemyAt(sim, BLESSED, e.x, e.y); sim.items.update();
+    expect(sim.isRooted(far)).toBe(true); expect(sim.isRooted(near)).toBe(false);
+  });
+  it('Mirror Ward is the only placed item', () => {
+    expect(Object.entries(ITEMS).filter(([, d]) => d.kind === 'placed').map(([id]) => id)).toEqual(['mirror']);
   });
   it('Plume skips bound/airborne/boss once, and throws an eligible body for 20 damage', () => {
     const sim = fixture(), p = sim.players[0]; p.pitch = -Math.PI / 2;

@@ -218,6 +218,12 @@ export class Particles {
     }
   }
 
+  /** One pale feather dropped behind a Pilgrim's Feather user at (x, y), between knee and chest height. */
+  trailFeather(x: number, y: number, z: number): void {
+    const a = Math.random() * Math.PI * 2;
+    this.spawn(P_FEATHER, x + Math.cos(a) * 0.15, y + Math.sin(a) * 0.15, z + 0.4 + Math.random() * 0.8, Math.cos(a) * 0.3, Math.sin(a) * 0.3, 0.4, 0.9, 0.2);
+  }
+
   /** A green-tinted ember drifting along Sacrament's beam at (vx, vy, vz) for `life` seconds (M9 §5.1). */
   beamEmber(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number): void {
     this.spawn(P_HEAL, x, y, z, vx, vy, vz, life, 0.16);

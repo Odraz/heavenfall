@@ -35,6 +35,7 @@ export type MainToWorker =
   | { t: 'pause'; paused: boolean }
   | { t: 'killAll'; blessedOnly?: boolean }
   | { t: 'toggleGod'; playerId: number }
+  | { t: 'devItems'; playerId: number }
   | { t: 'stop' };
 
 export type WorkerToMain =

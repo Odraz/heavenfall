@@ -15,6 +15,9 @@ Reads assets/art-src/<name>.png (or a JPEG with the same base name: .jpg, .jpeg,
   transparent and the color stays true over the bright world; resized to the listed width
   and written to assets/textures/<name>.png. Strips (beam, chain) repeat along their
   length: they are cropped to the rows that aren't black and their side seams smoothed.
+- ITEMS (flat green or magenta background): the consumable icons (rogue art-prompts B7), cut out like
+  SPRITES and centered on a transparent square of the listed size, written to assets/items/<name>.png.
+  The same image is the world pickup, the shop stock and the HUD slot icon.
 - UI (flat green background): cut out like SPRITES, written to assets/ui/<name>.png; the
   frames (panel, buttons, slot frame) without a margin, since CSS slices them at their edges.
 - BACKGROUNDS (full-frame paintings): resized to the listed width, written to
@@ -203,7 +206,12 @@ JPEG_QUALITY = 88
 # Sprites with some green of their own (the lilies' stems). Pixels with less than
 # OWN_GREEN of the background's greenness are kept as they are, not keyed or despilled.
 HAS_GREEN = {'decor-lily-urn'}
-MAGENTA_BACKGROUND = {'heal-mote'}  # Green healing art deliberately uses the opposite key color.
+# Green art deliberately uses the opposite key color.
+MAGENTA_BACKGROUND = {'heal-mote', 'item-balm', 'item-venom'}
+
+# Item icons: square size in pixels (B7).
+ITEMS = {f'item-{n}': 512 for n in ('balm', 'seal', 'feather', 'mirror', 'venom', 'frost', 'chain', 'plume')}
+ITEM_OUT = ROOT / 'assets' / 'items'
 OWN_GREEN = 0.15
 
 
@@ -221,10 +229,11 @@ def greenness(rgb: np.ndarray) -> np.ndarray:
     return rgb[..., 1] - np.maximum(rgb[..., 0], rgb[..., 2])
 
 
-def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN, rotations: bool = False) -> None:
+def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN, rotations: bool = False, square: bool = False) -> None:
     """
     Keys out the green, crops and resizes to `height`; with `rotations`, `height` is the longer side
-    instead, and the sprite is saved in its 4 rotations (ROTATED).
+    instead, and the sprite is saved in its 4 rotations (ROTATED); with `square`, the subject is
+    centered on a transparent `height` square (ITEMS).
     """
     rgb = np.asarray(Image.open(source(name)).convert('RGB')).astype(np.float32)
 
@@ -270,6 +279,13 @@ def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN, ro
         dx = max(w / 2 - x0, x1 - w / 2)
         y0, y1, x0, x1 = round(h / 2 - dy), round(h / 2 + dy), round(w / 2 - dx), round(w / 2 + dx)
     rgba = np.dstack([color, alpha * 255])[y0:y1, x0:x1].round().astype(np.uint8)
+    if square:
+        side = max(y1 - y0, x1 - x0)
+        padded = np.zeros((side, side, 4), np.uint8)
+        oy, ox = (side - (y1 - y0)) // 2, (side - (x1 - x0)) // 2
+        padded[oy:oy + y1 - y0, ox:ox + x1 - x0] = rgba
+        rgba = padded
+        y0, y1, x0, x1 = 0, side, 0, side
 
     # Resize premultiplied, so transparent pixels don't bleed their color into the edges.
     inner = height - 2 * margin
@@ -946,7 +962,7 @@ def gate() -> None:
 
 
 def main() -> None:
-    known = [*SPRITES, *ROTATED, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere', 'gate', 'weapons']
+    known = [*SPRITES, *ROTATED, *ICONS, *ITEMS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere', 'gate', 'weapons']
     for name in sys.argv[1:] or known:
         if name in SPRITES:
             cutout(name, SPRITES[name])
@@ -954,6 +970,8 @@ def main() -> None:
             cutout(name, ROTATED[name], rotations=True)
         elif name in ICONS:
             icon(name, ICONS[name])
+        elif name in ITEMS:
+            cutout(name, ITEMS[name], ITEM_OUT, 8, square=True)
         elif name in TEXTURES:
             texture(name, TEXTURES[name])
         elif name in EFFECTS:

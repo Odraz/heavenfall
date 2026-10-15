@@ -19,7 +19,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   mirror: { name: 'Mirror Ward', kind: 'placed', cap: 2, price: 180, weight: 8, duration: 240, radius: 5, rule: 'Return hostile projectiles inside a 5 m dome for 8 seconds.' },
   venom: { name: 'Bitter Water', kind: 'thrown', cap: 3, price: 160, weight: 14, duration: 180, radius: 5, rule: 'Poison a 5 m pool: 10 damage every half second.' },
   frost: { name: 'Ash of Stillness', kind: 'thrown', cap: 3, price: 140, weight: 14, duration: 300, radius: 6, rule: 'Halve enemy movement inside a 6 m circle for 10 seconds.' },
-  chain: { name: 'Chain Vial', kind: 'placed', cap: 2, price: 160, weight: 10, duration: 180, radius: 5, rule: 'Bind each enemy once for 2.5 seconds in a 5 m circle.' },
+  chain: { name: 'Chain Jar', kind: 'thrown', cap: 2, price: 160, weight: 10, duration: 180, radius: 5, rule: 'Bind each enemy once for 2.5 seconds in a 5 m circle.' },
   plume: { name: 'Plume of Expulsion', kind: 'thrown', cap: 2, price: 180, weight: 8, duration: 180, radius: 5, rule: 'Throw each unbound enemy once out of a 5 m circle for 20 damage.' },
 };
 export type ItemStack = { item: ItemId; count: number };

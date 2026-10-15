@@ -384,6 +384,9 @@ ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
     case 'toggleGod':
       sim?.toggleDevGod(m.playerId);
       break;
+    case 'devItems':
+      sim?.devItems(m.playerId);
+      break;
     case 'stop':
       stopLoop();
       clearInterval(heartbeatTimer);

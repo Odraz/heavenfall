@@ -10,6 +10,8 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 
 **Art receipt, 2026-10-12.** 27 user-provided JPEG/JFIF sources (4 model references, 23 game assets) converted to PNG at original resolution, with decoded pixels verified unchanged. Redundant original downloads were moved out of the source tree during the 2026-10-13 cleanup; normalized PNG sources are retained. Historical originals remain recoverable from Git and an ignored local archive at `tmp/asset-originals-2026-10-13/`. Generation tool, generation date and subscription plan remain unknown. No runtime art was exported or accepted; preparation notes and remaining sources are in [art-prompts.md](art-prompts.md#received-sources--2026-10-12).
 
+**Art receipt, 2026-10-15.** The B7 redo by use (seven JFIF sources: tubes `item-balm`, `item-seal`, `item-feather`; jars `item-venom`, `item-frost`, `item-chain`, `item-plume`) converted to PNG at 2048 × 2048 over the first set's sources, with decoded pixels verified unchanged. Originals and SHA-256 hashes are in the ignored local archive `tmp/asset-originals-2026-10-15/`; the first set stays in Git history. All eight item icons, Mirror Ward's kept source included, are now cut by `scripts/cutout.py` to 512 px squares in `assets/items/`.
+
 **Art receipt, 2026-10-14.** A2, B5 and B8 received (19 sources); with the 14 JFIF sources supplied on 2026-10-13 (`shop-pedestal`, `item-plume`, all twelve B9 icons), 33 sources were converted to PNG at original resolution, with decoded pixels verified unchanged. Originals and SHA-256 hashes are in the ignored local archive `tmp/asset-originals-2026-10-14/`. Generation tool, generation date and subscription plan remain unknown. Only B6 (3 boss parts) is still missing. No new runtime art was exported or accepted; preparation notes are in [art-prompts.md](art-prompts.md#received-sources--2026-10-14).
 
 **Historical R2.2 fallback, 2026-10-13.** All six B1 prop sources remain `received`; none is visually accepted. Inspected amphora/lamp sources have a solid green background requiring preparation. `src/client/props.ts` currently renders labeled coded ivory variants, a marked cross/glint, red-black lamp and gold chalice in one billboard atlas; accepted breaks drive shards, blast smoke/rings and heal feedback. The three S1 prop families now have named synthesized entries and accepted event mappings; their received MP3s still need runtime cutting in R2.3.
@@ -59,14 +61,14 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 | watcher-open | sprite | yes | R7 | requested | — | — | Gatekeeper's Watchers | — | — | — | B6; rims, tethers coded; fallback: coded eye glyph |
 | watcher-closed | sprite | yes | R7 | requested | — | — | Gatekeeper's Watchers | — | — | — | B6 |
 | judgment-seal | sprite | yes | R7 | requested | — | — | Judgment Seal on a held player | — | — | — | B6; fallback: coded lock glyph |
-| item-balm | icon | yes | R3 | received | `assets/art-src/item-balm.png` | — | Balm of the Rejected: pickup, pedestal, HUD slot | — | — | — | B7 pilot, magenta background; HUD icon composited by Claude; fallback: name in slot; original archived locally and in Git history |
-| item-seal | icon | yes | R3 | received | `assets/art-src/item-seal.png` | — | Wax Seal of Sanctuary | — | — | — | B7; original archived locally and in Git history |
-| item-feather | icon | yes | R3 | received | `assets/art-src/item-feather.png` | — | Pilgrim's Feather | — | — | — | B7; original archived locally and in Git history |
-| item-mirror | icon | yes | R3 | received | `assets/art-src/item-mirror.png` | — | Mirror Ward | — | — | — | B7; original archived locally and in Git history |
-| item-venom | icon | yes | R3 | received | `assets/art-src/item-venom.png` | — | Bitter Water | — | — | — | B7, magenta background; original archived locally and in Git history |
-| item-frost | icon | yes | R3 | received | `assets/art-src/item-frost.png` | — | Ash of Stillness | — | — | — | B7; original archived locally and in Git history |
-| item-chain | icon | yes | R3 | received | `assets/art-src/item-chain.png` | — | Chain Vial | — | — | — | B7; original archived locally and in Git history |
-| item-plume | icon | yes | R3 | received | `assets/art-src/item-plume.png` | — | Plume of Expulsion | — | — | — | B7; source preview integrated, cutout and visual acceptance pending |
+| item-balm | icon | yes | R3 | integrated | `assets/art-src/item-balm.png` | `assets/items/item-balm.png` | Balm of the Rejected: pickup, pedestal, HUD slot | — | — | — | B7 redo by use (test tube pilot, magenta background); 512 px cutout by `scripts/cutout.py`; seen in the HUD and thrown in game 2026-10-15; human acceptance pending |
+| item-seal | icon | yes | R3 | integrated | `assets/art-src/item-seal.png` | `assets/items/item-seal.png` | Wax Seal of Sanctuary | — | — | — | B7 redo by use (test tube); 512 px cutout by `scripts/cutout.py`; seen in the HUD and thrown in game 2026-10-15; human acceptance pending |
+| item-feather | icon | yes | R3 | integrated | `assets/art-src/item-feather.png` | `assets/items/item-feather.png` | Pilgrim's Feather | — | — | — | B7 redo by use (test tube); 512 px cutout by `scripts/cutout.py`; seen in the HUD and thrown in game 2026-10-15; human acceptance pending |
+| item-mirror | icon | yes | R3 | integrated | `assets/art-src/item-mirror.png` | `assets/items/item-mirror.png` | Mirror Ward | — | — | — | B7 redo by use (bowl, first set kept); 512 px cutout by `scripts/cutout.py`; seen in the HUD and thrown in game 2026-10-15; human acceptance pending |
+| item-venom | icon | yes | R3 | integrated | `assets/art-src/item-venom.png` | `assets/items/item-venom.png` | Bitter Water | — | — | — | B7 redo by use (jar pilot, magenta background); 512 px cutout by `scripts/cutout.py`; seen in the HUD and thrown in game 2026-10-15; human acceptance pending |
+| item-frost | icon | yes | R3 | integrated | `assets/art-src/item-frost.png` | `assets/items/item-frost.png` | Ash of Stillness | — | — | — | B7 redo by use (jar); 512 px cutout by `scripts/cutout.py`; seen in the HUD and thrown in game 2026-10-15; human acceptance pending |
+| item-chain | icon | yes | R3 | integrated | `assets/art-src/item-chain.png` | `assets/items/item-chain.png` | Chain Jar | — | — | — | B7 redo by use (jar); 512 px cutout by `scripts/cutout.py`; seen in the HUD and thrown in game 2026-10-15; human acceptance pending |
+| item-plume | icon | yes | R3 | integrated | `assets/art-src/item-plume.png` | `assets/items/item-plume.png` | Plume of Expulsion | — | — | — | B7 redo by use (jar); 512 px cutout by `scripts/cutout.py`; seen in the HUD and thrown in game 2026-10-15; human acceptance pending |
 | relic-usher | icon | yes | R6 | received | `assets/art-src/relic-usher.png` | — | Usher's Badge | — | — | — | B8 pilot; fallback: name on card; see art-prompts.md 2026-10-14 receipt; original archived locally |
 | relic-thurible | icon | yes | R6 | received | `assets/art-src/relic-thurible.png` | — | Broken Thurible | — | — | — | B8; see art-prompts.md 2026-10-14 receipt; original archived locally |
 | relic-link | icon | yes | R6 | received | `assets/art-src/relic-link.png` | — | Last Link | — | — | — | B8; twisted link, soft burst beyond outline; see art-prompts.md 2026-10-14 receipt; original archived locally |
@@ -188,7 +190,7 @@ All have a synthesized fallback (`required` = no), but a missing readable cue bl
 | item-mirror-return | sfx | no | R3 | requested | — | — | Mirror returns a projectile | — | — | — | S4, keep 1 |
 | item-water-land | sfx | no | R3 | requested | — | — | Bitter Water lands | — | — | — | S4, keep 1 |
 | item-ash-land | sfx | no | R3 | requested | — | — | Ash lands | — | — | — | S4, keep 1 |
-| item-chain-place | sfx | no | R3 | requested | — | — | Chain Vial placed | — | — | — | S4, keep 1 |
+| item-chain-place | sfx | no | R3 | requested | — | — | Chain Jar lands | — | — | — | S4, keep 1 |
 | item-plume-land | sfx | no | R3 | requested | — | — | Plume lands | — | — | — | S4, keep 1 |
 | levelUp | sfx | no | R3 | requested | — | — | level gained | — | — | — | S5, keep 1 |
 | riteOffer | sfx | no | R4 | requested | — | — | Rite page opened | — | — | — | S5, keep 1 |
@@ -295,7 +297,7 @@ Each replaces an existing synthesized cue in `src/audio/sfx.ts`; nothing breaks 
 | buttonHover | synth | yes | — | reuse-review | — | `src/audio/sfx.ts` | `buttonHover` | — | — | — | kept as is |
 | fieldEntered | synth | yes | — | reuse-review | — | `src/audio/sfx.ts` | `fieldEntered` | — | — | — | kept as is |
 | sacrament | synth | yes | — | reuse-review | — | `src/audio/sfx.ts` | `sacrament` (Heretic secondary) | — | — | — | kept as is |
-| music | music | yes | — | reuse-review | — | `assets/music/{arena-1,arena-2,arena-3,boss,calm,defeat,victory}.mp3` | music tracks | — | — | — | seven tracks stay; replacements via `docs/music-prompts.md` |
+| music | music | yes | — | reuse-review | — | `assets/music/{arena-1,arena-2,arena-3,arena-4,boss,calm,defeat,victory}.mp3` | music tracks | — | — | — | seven tracks stay; `arena-4` added 2026-10-15 (loop 11.906–125.925 s by `scripts/music-loops.mjs`), alternating with `arena-3` in 1×1 fights; replacements via `docs/music-prompts.md` |
 | voice-gatekeeper-* (4) | voice | no | R7 | requested | — | — | enter, call, phase2, victory lines | — | — | — | S10 optional; skip advised for the slice; subtitles always |
 | voice-advocate-* (3) | voice | no | R6 | requested | — | — | greet, bargain, decline lines | — | — | — | S10 optional; skip advised |
 | voice-pardoner-* (2) | voice | no | R3 | requested | — | — | greet, purchase lines | — | — | — | S10 optional; skip advised |

@@ -30,7 +30,7 @@ Save every image as PNG with exactly this name: Part A in `assets/art-src/refere
 - [x] B4 The Confessional, needed by R1 (shell) and R4 (Advocate), required: `confessional-grille.png`, `tex-confessional-wood.png`
 - [x] B5 Rewards and challenges, needed by R6, required: `shared-key.png`, `reliquary-chest.png`, `reliquary-chest-open.png`, `judgment-bell.png`, `sundial.png`
 - [ ] B6 Boss parts, needed by R7, required: `watcher-open.png`, `watcher-closed.png`, `judgment-seal.png`
-- [x] B7 Item icons, needed by R3, required: `item-balm.png` (pilot), `item-seal.png`, `item-feather.png`, `item-mirror.png`, `item-venom.png`, `item-frost.png`, `item-chain.png`, `item-plume.png`.
+- [x] B7 Item icons, **redo by shape (2026-10-15), received and integrated the same day**: tubes `item-balm.png` (pilot), `item-seal.png`, `item-feather.png`; jars `item-venom.png` (pilot), `item-frost.png`, `item-chain.png`, `item-plume.png`. `item-mirror.png` stays.
 - [x] B8 Relic icons, needed by R6, required: `relic-usher.png` (pilot), `relic-thurible.png`, `relic-link.png`, `relic-tile.png`, `relic-qseal.png`, `relic-eseal.png`, `relic-comb.png`, `relic-wheel.png`, `relic-unbroken.png`, `relic-mercy.png`, `relic-armageddon.png`, `relic-sentence3.png`
 - [x] B9 New ability icons, needed by R4 (Betrayer's three) and R5 (the other nine), required: `icon-judas-coin.png` (pilot), `icon-way-back.png`, `icon-silver-wire.png`, `icon-gatebreaker.png`, `icon-rain-of-fire.png`, `icon-cast-out.png`, `icon-bread-of-angels.png`, `icon-trial-by-fire.png`, `icon-cloud-of-witnesses.png`, `icon-well-of-giants.png`, `icon-ring-of-giants.png`, `icon-boundary-chain.png`.
 - [x] B10 Hazard and effect textures, needed by R2, required: `tex-refiner-channel.png`, `fx-flames.png`
@@ -598,74 +598,76 @@ A floating seal of judgment: a large round padlock of polished gold with a dark 
 
 The eight consumables ([items-relics.md](items-relics.md) §1). **One image per item serves three uses:** the pickup lying in the world, the shop pedestal, and the HUD inventory slot next to Q and E. Claude cuts it out for the world and composites it onto the HUD slot background for the icon, so it matches the ability icons beside it. Shown at about 48 px.
 
-Attach to each: `concept-1.webp`, `blessed-front.jpg`, and after the pilot `item-balm.png` (approved).
+**Revision 2026-10-15: the shape tells you how to use it.** The first set didn't show whether an item is drunk, thrown or placed. In the new set every item **used on yourself is a test tube**, every **thrown item is a jar**, and the one **placed item stays a bowl on feet**. Only the contents and one mark tell items of the same family apart. Mirror Ward keeps its approved image. Save each new image under the same file name; the old ones stay in Git history.
 
-**Pilot:** `item-balm.png`.
+| Family | Shape | Items |
+|---|---|---|
+| Use on yourself | a tall slender glass test tube with a round bottom, standing upright, cork stopper | Balm, Seal, Feather |
+| Throw | a squat round thick-glass jar as wide as it is tall, ivory wax cap, a twine loop on the neck | Bitter Water, Ash, Chain Jar, Plume |
+| Place | a silver bowl on three feet (unchanged) | Mirror Ward |
 
-| File | Item | What it does | Background |
-|---|---|---|---|
-| `item-balm.png` | Balm of the Rejected | heals you 40 HP | **magenta** |
-| `item-seal.png` | Wax Seal of Sanctuary | a 50 shield on you | green |
-| `item-feather.png` | Pilgrim's Feather | +2 m/s for 8 s | green |
-| `item-mirror.png` | Mirror Ward | placed: returns enemy projectiles | green |
-| `item-venom.png` | Bitter Water | thrown: a poison pool | **magenta** |
-| `item-frost.png` | Ash of Stillness | thrown: a slowing ash circle | green |
-| `item-chain.png` | Chain Vial | placed: binds who crosses it | green |
-| `item-plume.png` | Plume of Expulsion | thrown: launches who crosses it | green |
+Attach to each: `concept-1.webp`, `blessed-front.jpg`, and after its family's pilot that pilot (approved). Don't attach the old item images; they bring back the old shapes.
 
-#### Balm of the Rejected — `item-balm.png` · 1:1
+**Pilots:** `item-balm.png` for the tubes, `item-venom.png` for the jars. Both are green on purpose: if those two read as different objects at 48 px, the shapes work. Generate both pilots first and send them to Claude.
 
-```text
-A small round jar of glowing green balm, its ivory wax lid split open with a crack running across it, a frayed red cord tied around the jar's neck, bright green ointment visible inside the glass, painted as solid hard-edged bands of lighter green. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure magenta (#FF00FF) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
-```
+| File | Item | Family | What it does | Background |
+|---|---|---|---|---|
+| `item-balm.png` | Balm of the Rejected | tube (*pilot*) | heals you 40% of max HP | **magenta** |
+| `item-seal.png` | Wax Seal of Sanctuary | tube | a 100 shield on you | green |
+| `item-feather.png` | Pilgrim's Feather | tube | +2 m/s for 12 s | green |
+| `item-venom.png` | Bitter Water | jar (*pilot*) | thrown: a poison pool | **magenta** |
+| `item-frost.png` | Ash of Stillness | jar | thrown: a slowing ash circle | green |
+| `item-chain.png` | Chain Jar | jar | thrown: binds who crosses it | green |
+| `item-plume.png` | Plume of Expulsion | jar | thrown: throws out who crosses it | green |
+| `item-mirror.png` | Mirror Ward | bowl | placed: returns enemy projectiles | keep the approved image |
 
-#### Wax Seal of Sanctuary — `item-seal.png` · 1:1
-
-```text
-A thick round seal of bright sky-blue wax with a raised hexagon pressed into its center and a small cross inside the hexagon, the wax edge rippled where it was poured, a short ivory ribbon hanging below it. Distinctly blue, no green. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure green (#00FF00) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
-```
-
-#### Pilgrim's Feather — `item-feather.png` · 1:1
+#### Balm of the Rejected — `item-balm.png` · 1:1 · tube pilot
 
 ```text
-A single long ivory feather with a gold quill, slanting upward from lower left to upper right, its base tied with a short leather pilgrim's cord holding one small white scallop shell, three short speed streaks behind it painted inside the outline. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure green (#00FF00) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
+A tall slender glass test tube with a round bottom, standing upright, stoppered with a dark cork, filled almost to the top with glowing bright green balm painted as solid hard-edged bands of lighter green, a frayed red cord tied around the tube just below the cork. The tube is narrow and upright, clearly a tube to drink from, not a jar. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square from top to bottom, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure magenta (#FF00FF) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
 ```
 
-**Check:** one feather (the Plume has three); different from the existing `feather.png` particle by the cord and shell.
-
-#### Mirror Ward — `item-mirror.png` · 1:1
+#### Wax Seal of Sanctuary — `item-seal.png` · 1:1 · tube
 
 ```text
-A shallow round bowl of polished silver standing on three short feet, its inside a bright mirror surface, and above it one bold curved silver arrow that bends back on itself in a U-turn, showing that what comes in goes back out. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure green (#00FF00) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
+A tall slender glass test tube with a round bottom, standing upright, filled with bright sky-blue liquid, its cork covered by a thick round cap of sky-blue sealing wax with a raised hexagon and a small cross pressed into it, the wax running a little way down the glass. The same tube shape as the attached pilot. Distinctly blue, no green. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square from top to bottom, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure green (#00FF00) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
 ```
 
-#### Bitter Water — `item-venom.png` · 1:1
+#### Pilgrim's Feather — `item-feather.png` · 1:1 · tube
 
 ```text
-A narrow tall glass flask of bubbling bright green water, stoppered with a dark cork tied with twine, a few hard-edged bubbles rising inside, one drop running down the outside of the glass. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure magenta (#FF00FF) background: no floor, no shadow, no text, no letters, no skull, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
+A tall slender glass test tube with a round bottom, standing upright, stoppered with a dark cork, filled with pale shimmering gold liquid, one short ivory feather with a gold quill pushed into the cork and standing straight up from it. The same tube shape as the attached pilot. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square from top to bottom, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure green (#00FF00) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
 ```
 
-**Check:** a narrow flask, clearly different from the round balm jar (both are green).
-
-#### Ash of Stillness — `item-frost.png` · 1:1
+#### Bitter Water — `item-venom.png` · 1:1 · jar pilot
 
 ```text
-A shallow ivory bowl heaped with soft violet ash, three broad violet strokes of ash drifting down from above into it, a few pale frost-blue flecks in the ash. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure green (#00FF00) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
+A squat round jar of thick glass, as wide as it is tall, heavy and made to be thrown and broken, its mouth sealed with an ivory wax cap, a short twine loop tied around its neck, filled with bubbling bright green water, a few hard-edged bubbles rising inside, one drop running down the outside of the glass. Clearly a round jar to throw, not a tube or a bottle. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure magenta (#FF00FF) background: no floor, no shadow, no text, no letters, no skull, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
 ```
 
-#### Chain Vial — `item-chain.png` · 1:1
+#### Ash of Stillness — `item-frost.png` · 1:1 · jar
 
 ```text
-A small round-bottomed ivory glass vial with a gold stopper, and inside it, filling it, one coiled loop of red-hot iron chain glowing yellow-orange at its core and ember-red at its edges, the chain links clearly visible through the glass. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure green (#00FF00) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
+A squat round jar of thick glass, as wide as it is tall, its mouth sealed with an ivory wax cap, a short twine loop tied around its neck, filled with soft violet ash with a few pale frost-blue flecks in it, one thin wisp of violet ash curling out of a small crack in the wax cap and staying close above it. The same jar shape as the attached pilot. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure green (#00FF00) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
 ```
 
-#### Plume of Expulsion — `item-plume.png` · 1:1
+#### Chain Jar — `item-chain.png` · 1:1 · jar
 
 ```text
-A fan of exactly three long ivory quill feathers bound together at their base with a gold band, spreading upward and outward like a burst, their tips curling slightly outward. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure green (#00FF00) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
+A squat round jar of thick glass, as wide as it is tall, its mouth sealed with an ivory wax cap, a short twine loop tied around its neck, holding one coiled loop of red-hot iron chain that fills it, glowing yellow-orange at its core and ember-red at its edges, the chain links clearly visible through the glass. The same jar shape as the attached pilot. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure green (#00FF00) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
 ```
 
-**Check the set:** when all eight are in, Claude puts them side by side at 48 px; regenerate any that two players could confuse (balm/venom, feather/plume, seal/mirror).
+#### Plume of Expulsion — `item-plume.png` · 1:1 · jar
+
+```text
+A squat round jar of thick glass, as wide as it is tall, a short twine loop tied around its neck, packed with ivory quill feathers, the tips of three long feathers pushing up through a split in its ivory wax cap and curling outward like a burst. The same jar shape as the attached pilot. Game item icon in a hand-inked graphic-novel style matching the attached images: one object, centered, filling the middle 80% of the square, bold black ink outline (a thick outer contour, thinner inner lines), cel shading in 2–3 tones with painterly brush texture, high contrast, a simple shape readable at 48 pixels. Isolated on a flat pure green (#00FF00) background: no floor, no shadow, no text, no letters, no border or frame, no glow or haze outside the outline. Aspect ratio 1:1.
+```
+
+#### Mirror Ward — `item-mirror.png` · keep
+
+The approved bowl on three feet with the returning arrow stays. It is the only placed item, and a bowl standing on the floor already says "put me down".
+
+**Check the set:** Claude puts all eight side by side at 48 px. Each family must read from its outline alone: three upright tubes, four round jars, one bowl. Within a family, the contents' color and the one mark (red cord, blue wax, feather in the cork; green water, violet ash, glowing chain, feathers) must tell them apart. Regenerate any two that a player could confuse.
 
 ### B8 Relic icons
 

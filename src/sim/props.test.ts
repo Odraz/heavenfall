@@ -142,7 +142,7 @@ describe('prop effects and recovery', () => {
     expect(behindWall.hp).toBe(behindWall.maxHp); expect(outside.hp).toBe(outside.maxHp);
   });
   it('loot tables follow combat/noncombat thresholds and the eight item weights total 100', () => {
-    // The item roll reuses the stubbed value: 0.9 lands on Chain Vial, 0.95 on Plume of Expulsion.
+    // The item roll reuses the stubbed value: 0.9 lands on Chain Jar, 0.95 on Plume of Expulsion.
     for (const [combat, cases] of [[true, [[0.69, -1], [0.7, COIN], [0.8, HEAL_MOTE], [0.89, HEAL_MOTE], [0.9, ITEM_FIRST + 6]]],
       [false, [[0.79, -1], [0.8, COIN], [0.9, HEAL_MOTE], [0.94, HEAL_MOTE], [0.95, ITEM_FIRST + 7]]]] as const) {
       for (const [roll, kind] of cases) {

@@ -10,7 +10,6 @@ import { COIN, GOLD_HALO } from '../data/pickups';
 import { BLESSED, CARRIER, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import type { DominionRing } from './dominionView';
 import type { SpawnWarning } from '../data/spawns';
-import type { TrackId } from '../data/music';
 import type { GameEvent } from '../net/messages';
 import { PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import { ENEMY_SLOTS, TICK_MS } from '../sim/constants';
@@ -18,6 +17,7 @@ import { roomCleared, type GameMap } from '../sim/map';
 import { BOSS_CAST_VOLLEY, PROJ_ARROW, PROJ_GLOBE } from '../sim/sim';
 import type { SfxName } from '../audio/sfx';
 import type { MassKillPlay } from './massKill';
+import { roomTrack } from './roomTrack';
 
 const WEAPON_SFX: Record<ClassId, SfxName> = { fallen: 'shotgun', heretic: 'censerLaunch', binder: 'chaingun', betrayer: 'revolver' };
 /** Secondary attacks (M9 §5.2); others' Silver Bullets sound from their event instead. */
@@ -333,24 +333,12 @@ export class GameSounds {
    */
   private music(s: Snapshot): void {
     if (s.activePhase === PHASE_COMBAT) {
-      setMusic(this.track(s.activeRoom), 'calm');
+      setMusic(roomTrack(this.map, s.activeRoom), 'calm');
       return;
     }
     let next = s.activePhase === PHASE_COUNTDOWN ? s.activeRoom : -1;
     for (let i = 0; next < 0 && i < this.map.rooms.length; i++) if (!roomCleared(s.clearedMask, i)) next = i;
-    setMusic('calm', next >= 0 && next < this.map.rooms.length ? this.track(next) : null);
-  }
-
-  /** Generated rooms use shape; fixtures keep their authored arena order. */
-  private track(i: number): TrackId {
-    const room = this.map.rooms[i];
-    if (room?.boss) return 'boss';
-    if (room?.shape) {
-      if (room.kind !== 'combat') return 'calm';
-      return room.shape === '2x2' ? 'arena-1' : room.shape === '1x1' ? 'arena-3' : 'arena-2';
-    }
-    if (this.map.id === 'sandbox') return 'arena-1';
-    return (['arena-1', 'arena-2', 'arena-3'] as const)[Math.min(i, 2)];
+    setMusic('calm', next >= 0 && next < this.map.rooms.length ? roomTrack(this.map, next) : null);
   }
 
   private bossPos(s: Snapshot): SoundPos | null {
