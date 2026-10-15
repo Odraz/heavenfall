@@ -120,7 +120,7 @@ import { lineOfSight, raycastTerrain } from './los';
 import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
-import { COIN, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, PICKUP_CAP, itemDrop, type PickupRecord } from '../data/pickups';
+import { COIN, DROPPED_ITEM_LIFETIME, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, PICKUP_CAP, itemDrop, type PickupRecord } from '../data/pickups';
 import { PROP_HEIGHT, PROP_BLAST_PLAYER_DAMAGE, type PropDef } from '../data/props';
 import { Props, type Prop } from './props';
 import { HaloLedger, HALO_WEIGHT, haloBudget, moteCap } from './economy';
@@ -2331,7 +2331,7 @@ export class Simulation {
       }
       // Reward ordinary wave kills too; cleanup, leashed enemies and boss adds never roll items.
       const itemChance = isCommander(type) ? 0.5 : type === BLESSED ? 0.02 : 0.12;
-      if (this.random() < itemChance) this.pickups.drop(itemDrop(this.random), room, x, y, this.tick);
+      if (this.random() < itemChance) this.pickups.drop(itemDrop(this.random), room, x, y, this.tick, 0, DROPPED_ITEM_LIFETIME);
     }
     if ((type === CHORISTER || type === CHERUB) && this.random() < 0.35) this.dropMote(room, x, y);
   }
@@ -2441,7 +2441,7 @@ export class Simulation {
         const roll = this.random();
         if (roll >= (combat ? 0.75 : 0.85) && roll < (combat ? 0.85 : 0.95)) this.pickups.drop(COIN, p.room, p.x, p.y, this.tick);
         else if (roll >= (combat ? 0.85 : 0.95) && roll < (combat ? 0.95 : 1)) this.pickups.drop(HEAL_MOTE, p.room, p.x, p.y, this.tick);
-        else if (combat && roll >= 0.95) this.pickups.drop(itemDrop(this.random), p.room, p.x, p.y, this.tick);
+        else if (combat && roll >= 0.95) this.pickups.drop(itemDrop(this.random), p.room, p.x, p.y, this.tick, 0, DROPPED_ITEM_LIFETIME);
       }
     } else if (p.family === 'blessing' && origin === 'player') {
       for (const q of this.players) {

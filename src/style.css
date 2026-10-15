@@ -1630,7 +1630,7 @@ div.weapon-swing {
   padding: 2px 4px;
 }
 
-/* Settings keeps the panel's minimum size and grows to contain every control. */
+/* Settings replaces the panel's contents, at the panel's size; it must not shrink below them either. */
 .panel.settings-open {
   flex-shrink: 0;
 }
@@ -1653,8 +1653,15 @@ div.weapon-swing {
   color: var(--gold);
 }
 
-.settings-view .button {
+/* Profile and Back share the bottom row, so Settings fits the Title panel (M8 §9.3). */
+.settings-view .settings-buttons {
+  flex-direction: row;
   margin-top: auto;
+}
+
+.settings-buttons .button {
+  flex: 1 1 0;
+  padding: 4px 0;
 }
 
 .volume-row {
@@ -1807,7 +1814,14 @@ div.weapon-swing {
 .halo-wallet::before { content: ''; width: 28px; height: 12px; border: 3px solid #ffdc77; border-radius: 50%; transform: rotate(-18deg); box-shadow: 0 0 7px #ffce6477, inset 0 0 5px #ffce6444; }
 .class-level { color: #e4c277; font: bold 15px Georgia, serif; margin: 5px 0; }
 .profile-panel { display: flex; flex-direction: column; gap: 14px; width: min(560px, 90vw); }
-.profile-panel textarea { min-height: 90px; resize: vertical; }
+.profile-panel textarea { min-height: 90px; resize: none; }
+
+/* Confirmations and errors appear in a line that is always there, so the panel never grows or moves. */
+.profile-panel .message,
+.profile-panel .message:empty {
+  display: block;
+  min-height: 2lh;
+}
 .profile-loadout { margin: 18px 0; padding: 12px; border: 1px solid #75603e; background: #18141bcc; }
 .loadout-items { display: flex; flex-wrap: wrap; gap: 12px; }
 .loadout-item { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 200px; }

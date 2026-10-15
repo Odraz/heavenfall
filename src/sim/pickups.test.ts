@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COIN, HEAL_MOTE, ITEM_FIRST } from '../data/pickups';
+import { COIN, DROPPED_ITEM_LIFETIME, HEAL_MOTE, ITEM_FIRST } from '../data/pickups';
 import { makeSim as makeEmptySim, put, room } from './testutil/sims';
 import { dungeonOf } from './testutil/maps';
 import type { ClassId } from '../data/classes';
@@ -35,6 +35,29 @@ describe('R2 pickups', () => {
       sim.damageEnemy(leashed, 10000, -1);
       expect(sim.pickups.live.filter((p) => p.kind >= ITEM_FIRST)).toHaveLength(1);
     });
+
+  it('fades a random enemy item drop after its lifetime, like currency', () => {
+    const sim = makeSim(room(20, 20), ['fallen'], { noWaves: true });
+    put(sim, sim.players[0], 18, 18);
+    sim.random = () => 0;
+    const s = sim.placeEnemy(BLESSED, 5, 5, 0); sim.eWave[s] = 0;
+    sim.damageEnemy(s, 10000, -1);
+    const item = sim.pickups.live.find((p) => p.kind >= ITEM_FIRST)!;
+    expect(item.expiresTick).toBe(sim.tick + DROPPED_ITEM_LIFETIME);
+    sim.pickups.update(sim.tick + DROPPED_ITEM_LIFETIME - 1, [], () => false);
+    expect(sim.pickups.live).toContain(item);
+    sim.pickups.update(sim.tick + DROPPED_ITEM_LIFETIME, [], () => false);
+    expect(sim.pickups.live).not.toContain(item);
+  });
+
+  it('recovers coin capacity once uncollected item drops fade (audit A1)', () => {
+    const sim = makeSim(room(20, 20), ['fallen'], { noWaves: true }); const pool = new Pickups(sim.map);
+    for (let i = 0; i < 128; i++) pool.drop(ITEM_FIRST + i % 8, 0, 5 + i % 10, 5 + Math.floor(i / 10), 0, 0, DROPPED_ITEM_LIFETIME);
+    expect(pool.drop(COIN, 0, 15, 15, 10)).toBeNull(); expect(pool.forfeitedCoins).toBe(3);
+    pool.update(DROPPED_ITEM_LIFETIME, [], () => false);
+    expect(pool.live).toHaveLength(0);
+    expect(pool.drop(COIN, 0, 15, 15, DROPPED_ITEM_LIFETIME)).not.toBeNull();
+  });
 
   it('attracts collision-safely and bots credit all connected humans exactly once', () => {
     const sim = makeSim(room(20, 20), ['fallen', 'heretic', 'binder'], { noWaves: true });

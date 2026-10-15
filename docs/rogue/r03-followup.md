@@ -5,7 +5,7 @@ Status: **awaiting-human-play**. Implementation based on `07d3588` on `rogue`. V
 ## Playable changes
 
 - First launch opens the title with editable Player name, Singleplayer, Multiplayer and Settings. Profile lives inside title Settings and is absent from in-game Settings. One current profile, Copy code, Import code and Clear; no slot picker, upload/download, extra profile gate or results export button. Import and Clear require deliberate confirmation. Existing saves remain in place and retain locking, durable admission, backup and emergency export/retry behavior. Unreadable or newer saves can be copied as original data in Profile; confirmed recovery archives both original strings before replacement. Legacy extra saves are not deleted: slot 1 remains current if present, otherwise the latest valid legacy profile is used.
-- Character levels sit inside their class cards above HP. Carried items and the collection summary appear between class selection and dungeon selection. Practice remains available after choosing a class; its profile is disposable.
+- Character levels sit inside their class cards above HP. Carried items and the collection summary appear between class selection and dungeon selection. Practice mode was removed in this iteration (`41d66a7`); its leftover code path was deleted by [audit](r01-r03-audit.md) batch 1 (A7).
 - The halo icon/count sits at top left. A framed experience bar sits at top centre, separate from HP. Item keys 1/2 form the row above Q/E. Small-window HUD spacing and the eighth class-card row are verified for overlap. Results show one level when unchanged and before/after only when it changes; the title and exit button stay inside a 640×360 viewport.
 - Consumables always go into a matching non-full stack, then an empty slot. When full they stay on the floor. Contact never spends a charge, heals, refreshes or throws an effect. The player chooses when to use 1/2.
 - Item, Chart, Rite and Pardoner artwork uses transparent outputs; world pickup materials honor alpha. Door/map rewards use coin, bottle and burning-page symbols with a map legend rather than unexplained letters.
@@ -33,6 +33,11 @@ Protocol stays 11; rules version is 15, so differing gameplay builds cannot join
 
 The initial sandboxed browser run could not reach PeerJS and stalled at shutdown; it was stopped. Real networking, late join, retained admission, spent-item reconnect and host-exit recovery subsequently passed with network access. No benchmark requested or run. All profiles used for verification were isolated/disposable. Human combat feel and replayability remain the next playtest, not something asserted by automated checks. Existing music prompt/audio prompt edits and arena-4 music were left intact.
 
+## Later changes
+
+- **`83481d2`, 2026-10-14** (recorded afterwards by the [R01–R03 audit](r01-r03-audit.md), D2): a charging Carrier is interrupted by any damage; carry damage 10 every 0.5 s; the solo carry and earliest release are both 3 s; the rush tracks for 0.2 s before locking; a grabbed player's blocked actions no longer replay after release; Settings grew to fit its controls. Rules 15 → 17. The Carrier numbers differ from rooms.md §6.3 and await your decision (audit A4); the Settings growth was reverted by audit batch 1.
+- **Audit batch 1, 2026-10-15:** random item drops fade after 60 s; Settings and Profile panels keep their size; the level-up notice no longer mentions R04. Rules 17 → 18. Evidence is in the [audit report](r01-r03-audit.md#batch-1-results).
+
 ## Artwork provenance
 
 Built-in imagegen background extraction, one call per source. Original files remain in `assets/art-src`. Runtime outputs are `assets/items/item-{balm,seal,feather,mirror,venom,frost,chain,plume}.png`, `chart-scroll.png`, `rite-page.png`, and `npc-pardoner.png`.
@@ -43,6 +48,6 @@ Other sprite prompt: “Use case: background-extraction. Edit the supplied [name
 
 ## Play this iteration
 
-Run `npm run dev`. The normal title now leads directly to Singleplayer. To try the current carried loadout without spending saved progress, choose Singleplayer, a class and Practice (disposable). Normal runs collect consumables from drops and the shop. Keys 1/2 use the two carried stacks. Never use your normal progress as debug scratch data.
+Run `npm run dev`. The normal title now leads directly to Singleplayer. To try a carried loadout without risking saved progress, import a [fixture](fixtures/) in a separate browser profile (or after copying your own code), then start a normal run. Normal runs collect consumables from drops and the shop. Keys 1/2 use the two carried stacks. Never use your normal progress as debug scratch data.
 
 Commander fixtures: `/?dev=1&map=cantor&class=fallen&seed=7` and `/?dev=1&map=carrier&class=fallen&seed=7`. Enter the arena. Carrier grabs require invulnerability off. Dodge a rush sideways, then let one connect and escape with Falling Star; observe the small periodic damage. Against the Cantor, compare its open frontal ward with its exposed recovery and flank.

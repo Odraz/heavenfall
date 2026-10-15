@@ -1,5 +1,5 @@
 /** Bounded authoritative world drops (game.md §14.12); never pays directly on overflow. */
-import { COIN, GOLD_HALO, HEAL_MOTE, ORDINARY_PICKUP_CAP, PENDING_PICKUP_CAP, PICKUP_CAP, PICKUP_KIND_COUNT, STRUCTURAL_FIRST, type PickupRecord } from '../data/pickups';
+import { COIN, CURRENCY_LIFETIME, GOLD_HALO, HEAL_MOTE, ORDINARY_PICKUP_CAP, PENDING_PICKUP_CAP, PICKUP_CAP, PICKUP_KIND_COUNT, STRUCTURAL_FIRST, type PickupRecord } from '../data/pickups';
 import { TICK_DT } from './constants';
 import { lineOfSight } from './los';
 import type { GameMap } from './map';
@@ -25,7 +25,9 @@ export class Pickups {
   private los(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
     return lineOfSight(this.map, a.x, a.y, this.floor(a.x, a.y) + 0.1, b.x, b.y, this.floor(b.x, b.y) + 0.1);
   }
-  drop(kind: number, room: number, x: number, y: number, tick: number, value = kind === GOLD_HALO ? 6 : kind === COIN ? 3 : 0): PickupRecord | null {
+  /** `lifetime` is in ticks; -1 never fades. */
+  drop(kind: number, room: number, x: number, y: number, tick: number, value = kind === GOLD_HALO ? 6 : kind === COIN ? 3 : 0,
+    lifetime = kind <= HEAL_MOTE ? CURRENCY_LIFETIME : -1): PickupRecord | null {
     if (!Number.isInteger(kind) || kind < 0 || kind >= PICKUP_KIND_COUNT || !Number.isFinite(x) || !Number.isFinite(y) ||
       !Number.isInteger(room) || room < 0 || room >= 32 || !Number.isInteger(value) || value < 0 || value > 99) return null;
     const c = Math.floor(x), r = Math.floor(y);
@@ -36,7 +38,7 @@ export class Pickups {
     for (const list of [this.live, this.pending]) for (let i = list.length - 1; i >= 0; i--) {
       if (list[i].expiresTick >= 0 && tick >= list[i].expiresTick) list.splice(i, 1);
     }
-    const p: PickupRecord = { id: this.nextId++, kind, room, x, y, value, expiresTick: kind <= HEAL_MOTE ? tick + 600 : -1 };
+    const p: PickupRecord = { id: this.nextId++, kind, room, x, y, value, expiresTick: lifetime < 0 ? -1 : tick + lifetime };
     if (this.fits(p)) { this.live.push(p); this.changed(p); return p; }
     if (kind === COIN || kind === GOLD_HALO) {
       const coin = this.live.find((q) => (q.kind === COIN || q.kind === GOLD_HALO) && q.room === room && q.value + value <= 99 && Math.hypot(q.x - x, q.y - y) <= 3 && this.los(p, q));

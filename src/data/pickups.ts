@@ -2,6 +2,14 @@
 export const COIN = 0, GOLD_HALO = 1, HEAL_MOTE = 2;
 export const ITEM_FIRST = 3, ITEM_LAST = 10, STRUCTURAL_FIRST = 11, PICKUP_KIND_COUNT = 16;
 export const PICKUP_CAP = 160, ORDINARY_PICKUP_CAP = 128, PENDING_PICKUP_CAP = 32;
+/** Ticks before an uncollected coin, gold halo or heal mote fades (game.md §6.1). */
+export const CURRENCY_LIFETIME = 600;
+/**
+ * Ticks before a random item drop (enemy death or broken amphora) fades. Without a fade, items left by
+ * full inventories filled the 128-slot pool and later coins and motes were lost (audit A1). Earned
+ * clear rewards keep no fade.
+ */
+export const DROPPED_ITEM_LIFETIME = 1800;
 import { ITEM_IDS, ITEMS } from './items';
 export { ITEM_IDS } from './items';
 export const ITEM_WEIGHTS = ITEM_IDS.map(id => ITEMS[id].weight);
@@ -26,6 +34,6 @@ export interface PickupRecord {
   x: number;
   y: number;
   value: number;
-  /** -1 for items/structural sources that do not fade. */
+  /** -1 for clear rewards and structural sources that do not fade. */
   expiresTick: number;
 }

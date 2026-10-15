@@ -1479,13 +1479,16 @@ The 2026-10-13 playtest adds short stairs at the marble hedge ends in the Open T
 | id, role | `carrier` (type id 7), commander of the Cherubs |
 | HP (4 players) | **1 000** (solo 400) |
 | Body | **0.4 × 0.8 m** sim body, like a Cherub's (it sets no new headroom), drawn about 2.5 × a Cherub: a 2 m body under a 5 m wingspan |
-| Speed | **5 m/s** flying (Cherubs 7), hovering 4 m up like the Cherubs; **3.5 m/s** while carrying |
+| Speed | **5 m/s** flying (Cherubs 7), hovering 4 m up like the Cherubs; **6 m/s** while carrying |
 | TP | 60 |
 | States | all seven, as a Cherub. `bound`, `airborne`, `taunted`, `silenced` and Blasphemy's stun cancel a mark or swoop and release a carry. |
 
 **Between swoops** it shoots a Cherub's arrows (8 damage, 25 m range, 0.5 s wind-up, 1.3 s recovery), so it is never idle while the party stays together.
 
 **The carry (its attack).**
+
+> **Code differs, awaiting your decision ([audit](r01-r03-audit.md) A4).** Commit `83481d2` (2026-10-14) changed the implementation without updating this section: carry damage is **10** every 0.5 s (rule: 2); the solo carry limit is **3 s** (rule: 2.5 s) and the earliest release at the destination is also **3 s** (rule: 1 s); the rush keeps turning toward its target for its first **0.2 s**, then locks; and **any damage** during the rush cancels it (not listed below). Until you choose, the numbers below are the rule and the code is the build you play.
+
 1. **Acquire:** every 0.5 s while ready, select the nearest living targetable player in the same room within 20 m and line of sight, ties by player index. Another teammate being nearby never disqualifies the target. A clear swept flight path is required; no crowd is required to begin.
 2. **Rush, 1.0 s:** immediately fly toward the target's accepted position, locked at rush start. No stationary aim/mark or floor targeting lane. The movement and swoop sound announce the attack. A 1.5 m sidestep evades it; invulnerability and a vertical miss also refuse the grab.
 3. **Grab/drop choice:** on contact choose the densest nearby 4 × 4 m square containing at least three grounded Blessed (7 m radius solo, 10 m multiplayer; stable row-major ties). Select the nearest safe dry footprint with a collision-clear climb, flight and descent. With no suitable crowd, lift and release at the grab location instead of silently refusing to attack.

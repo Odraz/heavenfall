@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PROP_HEIGHT, propDefs, type PropDef } from '../data/props';
-import { COIN, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, itemDrop } from '../data/pickups';
+import { COIN, DROPPED_ITEM_LIFETIME, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, itemDrop } from '../data/pickups';
 import type { ClassId } from '../data/classes';
 import { PEARLY_POOL_R1, poolTemplate } from '../data/rooms/1';
 import { BLESSED, CHORISTER } from '../data/enemies';
@@ -147,6 +147,8 @@ describe('prop effects and recovery', () => {
       for (const [roll, kind] of cases) {
         const sim = make([prop(1, 'loot', 8.5)]); sim.map.rooms[0].kind = combat ? 'combat' : 'breach'; sim.random = () => roll;
         sim.props.break(1, 0); expect(sim.pickups.live.map((p) => p.kind)).toEqual(kind < 0 ? [] : [kind]);
+        // Random item drops fade like currency (audit A1).
+        if (kind >= ITEM_FIRST) expect(sim.pickups.live[0].expiresTick).toBe(sim.tick + DROPPED_ITEM_LIFETIME);
         sim.props.break(1, 0); expect(sim.events.filter((e) => e.event.type === 'propBroken')).toHaveLength(1);
       }
     }

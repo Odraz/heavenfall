@@ -964,7 +964,8 @@ export class Game {
 
   private setInventory(state: InventoryState): void {
     if (this.inventory && levelForXp(state.xp) > levelForXp(this.inventory.xp)) {
-      this.hud.centerText(`Level ${levelForXp(state.xp)} · Unspent points (talents arrive in R04)`, 3000, performance.now()); this.sounds.levelUp();
+      // No talent-point notice until there is a way to spend points (audit A5).
+      this.hud.centerText(`Level ${levelForXp(state.xp)}`, 3000, performance.now()); this.sounds.levelUp();
     }
     this.inventory = state; this.nextRequestId = Math.max(this.nextRequestId, state.nextRequestId);
     this.hud.setInventory(state); this.shop.update(state);

@@ -132,12 +132,12 @@ function toTitle(message = ''): void {
   );
 }
 
-function toSingleplayerSetup(name: string, practice = false): void {
+function toSingleplayerSetup(name: string): void {
   const view = singleplayerSetupScreen({
-      onStart: (classId, dungeonId) => void startSingleplayer(name, classId, dungeonId, null, practice),
+      onStart: (classId, dungeonId) => void startSingleplayer(name, classId, dungeonId, null),
       onBack: () => toTitle(),
     });
-  if (profileSession && !practice) profileLoadout(view, profileSession);
+  if (profileSession) profileLoadout(view, profileSession);
   show('singleplayerSetup', view);
 }
 
@@ -171,8 +171,7 @@ async function loadGameAssets(run: RunConfig, roster: RosterEntry[], localId: nu
  * A singleplayer game: from Singleplayer Setup's `Start`, or straight from the page load with `dev=1`
  * or `bench=1`. Loading builds the map and sprite atlas, then enters the game (§3).
  */
-async function startSingleplayer(name: string, classId: ClassId, dungeonId: string, seed: number | null, practice = false): Promise<void> {
-  if (practice && profileSession?.profile.run) { toTitle('Recover the normal attempt before starting a disposable run'); return; }
+async function startSingleplayer(name: string, classId: ClassId, dungeonId: string, seed: number | null): Promise<void> {
   if (!disposable && profileSession?.profile.run) {
     // No live solo host survives leaving/reloading its tab. Its unmatched stake is a loss.
     if (!profileSession.save(abandonAttempt(profileSession.profile), true)) { toTitle(profileSession.message); return; }
@@ -183,7 +182,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   show('loading', loading.el);
   await loading.ready;
   const run: RunConfig = {
-    ...newRunIdentity(seed ?? undefined), heaven: 1, floor: 1, edicts: 0, progressionEnabled: !practice && !disposable && !!profileSession && dungeonId === 'rogue',
+    ...newRunIdentity(seed ?? undefined), heaven: 1, floor: 1, edicts: 0, progressionEnabled: !disposable && !!profileSession && dungeonId === 'rogue',
     fixture: dungeonId === 'rogue' ? null : dungeonId,
   };
   // Solo autopilot drives the human slot; half-player bots are multiplayer admissions.
@@ -199,7 +198,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   const game = new Game({
     root,
     ...assets,
-    params: practice ? { ...params, dev: true } : params,
+    params,
     transport: host.local,
     host,
     localPlayerId: 0,

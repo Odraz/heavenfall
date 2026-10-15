@@ -31,7 +31,7 @@ export function profilesScreen(session: ProfileSession, onBack: () => void, onCh
     const parsed = await importCode(code.value);
     if (!replacement || replacement.code !== code.value || performance.now() > replacement.expires) {
       replacement = { code: code.value, expires: performance.now() + 10000 };
-      message.textContent = 'This replaces your current progress and carried items. Copy your code first to keep them. Press Import again within 10 seconds to replace.'; return;
+      message.textContent = 'Press Import again to replace your progress and carried items. Copy your code first to keep them.'; return;
     }
     if (!session.replace(importProfile(parsed, []).profile)) throw new Error('Cannot save imported profile');
     replacement = null; code.value = ''; onChanged(); refresh(); copy.textContent = 'Copy code'; message.textContent = 'Profile imported';

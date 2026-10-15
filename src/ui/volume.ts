@@ -111,8 +111,8 @@ function setRecorded(on: boolean): void {
 
 /**
  * A `Settings` button in `buttons` that turns `panel` into the Settings view: its title, the sliders
- * and `Back`. The panel keeps its minimum size but can grow to fit Settings. The returned function
- * goes back to the panel's own contents.
+ * and `Back`, at the panel's size (M8 §9.3): the panel never grows or moves when Settings opens. The
+ * returned function goes back to the panel's own contents.
  */
 export function settingsButton(panel: HTMLElement, buttons: HTMLElement, onProfile?: () => void): () => void {
   const open = document.createElement('button');
@@ -131,15 +131,23 @@ export function settingsButton(panel: HTMLElement, buttons: HTMLElement, onProfi
   const sliders = volumeSliders(view);
   shakeToggle(sliders);
   const syncRecorded = recordedToggle(sliders);
+  // One bottom row, so adding Profile doesn't make the view taller than the panel it replaces.
+  const actions = document.createElement('div');
+  actions.className = 'buttons settings-buttons';
+  view.appendChild(actions);
   if (onProfile) {
-    const profile = document.createElement('button'); profile.type = 'button'; profile.className = 'button';
-    profile.textContent = 'Profile'; profile.addEventListener('click', onProfile); view.appendChild(profile);
+    const profile = document.createElement('button');
+    profile.type = 'button';
+    profile.className = 'button';
+    profile.textContent = 'Profile';
+    profile.addEventListener('click', onProfile);
+    actions.appendChild(profile);
   }
   const back = document.createElement('button');
   back.type = 'button';
   back.className = 'button secondary';
   back.textContent = 'Back';
-  view.appendChild(back);
+  actions.appendChild(back);
   panel.appendChild(view);
 
   // The panel's own contents that were showing when Settings opened.
