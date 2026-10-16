@@ -71,13 +71,13 @@ Choose the **take by ear**, not the provider name. Suno supplies the current com
 | Downloads | Native download or the existing usesuno batch route below | Native History download; WAV or MP3 |
 | Provider recorded on each take | `Suno Sounds` | `ElevenLabs` |
 
-**Reading the catalog:** every **Generate** row below is explicitly an **ElevenLabs** settings row. Those controls are not Suno settings. The duration **inside the prompt** is the intended audible event and applies to both providers. Use a labeled **Suno alternative** where supplied; otherwise start with the shared prompt and adapt its physical source as needed. Shared prompts fit within 450 characters; preserved Suno alternatives fit the project's observed 500-character Sounds limit. Always follow the actual input counter if the product changes.
+**Reading the catalog:** each sound has **Variant A — detailed** (the original prompt) and **Variant B — simple** (a short source/action description). **Start with Variant B in either provider and paste it as-is**; do not append the house sentence, timings or exclusions. If a take misses the intended sound, add one detail or try Variant A. Existing Suno and everyday-object alternatives also have A/B versions. Every **Generate** row is an **ElevenLabs** settings row, not Suno settings; keep those controls separate from the prompt. Timings in Variant A describe the audible event. Original shared prompts fit within 450 characters; preserved Suno alternatives fit the project's observed 500-character Sounds limit. Always follow the actual input counter if the product changes.
 
 ## How to use (Suno Sounds)
 
 1. Open **Create → Sounds** (the position of Sounds varies with the current Create layout). Sounds requires Pro or Premier according to the [release note](https://suno.com/release-notes/make-loops-and-samples-from-scratch-with-sounds). The project's earlier Suno takes were generated on Pro; record the plan actually used for each new generation.
-2. Choose **One Shot** for S1–S7/S9, or **Loop** for S8. Leave key and BPM unset for nonmusical SFX when the UI allows it. Describe the source, action and desired audible length in the prompt; do not copy ElevenLabs duration/influence controls into Suno. For S8, add an approximate loop length if useful, while keeping the steady-texture description. [Suno's Sounds guide](https://help.suno.com/en/articles/10625537) explains these controls and duration prompting.
-3. Paste the shared prompt or the labeled Suno alternative. Our earlier sessions often got clearer results from real objects: thick tow-chain links on steel, porcelain cracking on marble, or a bronze lid and hot coals. This is project experience, not a universal ban on fantasy words, whooshes or choir. If the first take is wrong, change one acoustic detail and compare again.
+2. Choose **One Shot** for S1–S7/S9, or **Loop** for S8. Leave key and BPM unset for nonmusical SFX when the UI allows it. Start with Variant B's short source/action description; add the desired audible length only if needed; do not copy ElevenLabs duration/influence controls into Suno. For S8, add an approximate loop length if useful, while keeping the steady-texture description. [Suno's Sounds guide](https://help.suno.com/en/articles/10625537) explains these controls and duration prompting.
+3. Paste Variant B from the shared prompt or the labeled Suno alternative. Use Variant A if more detail helps. Our earlier sessions often got clearer results from real objects: thick tow-chain links on steel, porcelain cracking on marble, or a bronze lid and hot coals. This is project experience, not a universal ban on fantasy words, whooshes or choir. If the first take is wrong, change one acoustic detail and compare again.
 4. Click **Create twice** for a frequent family needing three keepers: each Create makes two samples. Listen to all four; for a one-keeper family, one Create may be enough. In the previous Claude/Suno browser workflow, human checks required the user to click Create. If one appears again, the user completes it; the agent can still organize the prompts and downloads.
 5. In your **Library/Workspace**, use **… → Download** and choose the available audio format. Prefer native WAV; otherwise retain the original MP3. Suno also documents selecting several entries and using **Download All** to obtain a ZIP ([download guide](https://help.suno.com/en/articles/2409921)). Check the account's allowance: Suno currently lists **20 monthly Pro download credits**, **60 Premier**, with Studio workflows exempt; these are download credits, separate from generation credits ([download policy](https://help.suno.com/en/articles/13876865)).
 6. **Existing usesuno.com route:** for your own samples already accessible through public links, open [Batch](https://usesuno.com/tools/batch/), paste up to 20 individual links (one per line), click **Load songs**, select the intended takes, choose **MP3** or **Original**, then **Download selected**. Export the selected metadata as JSON too. Its WAV option converts locally; treat that as a converted master, not a native lossless source. The service supports public links; publishing a private take is a separate choice, not a download step. Keep its returned filenames mapped to prompt IDs. Handle any browser save or human-check dialogs when they arise.
@@ -88,7 +88,7 @@ Choose the **take by ear**, not the provider name. Suno supplies the current com
 
 1. Open **Sound Effects** in ElevenLabs. Use **History** to find your generations. This is the Sound Effects tool, not Music or Text to Speech. Claude prepares prompts and settings; you generate and approve by ear, and Claude imports and finishes the downloads. Browser assistance can handle visible controls when available; there is no provider-specific rule requiring manual generation.
 2. Set the **duration control**, **Looping**, and **prompt influence** from the sound's **Generate** row below. The time written inside a prompt describes the audible event; the duration control sets the whole generated clip, including room for its decay. A 0.08 s gun click can be inside a 0.5 s clip: Claude trims the silence afterward. If the website's minimum is longer, use its minimum and keep the same event description. Do not leave every sound at the screenshot's 2.1 s setting.
-3. Paste the shared/ElevenLabs prompt, rather than a longer labeled Suno alternative. These prompts stay within the documented **450-character** limit. The supplied settings are our starting choices, not ElevenLabs defaults or guaranteed results. Start at **30% influence** for variation; use **60–75%** when the material or event is wrong. Higher influence trades variation for closer adherence; compare by ear before adopting it for a family.
+3. Paste Variant B from the shared/ElevenLabs prompt as-is. Use Variant A if more detail helps. These prompts stay within the documented **450-character** limit. The supplied settings are our starting choices, not ElevenLabs defaults or guaranteed results. Start at **30% influence** for variation; use **60–75%** when the material or event is wrong. Higher influence trades variation for closer adherence; compare by ear before adopting it for a family.
 4. Where the **wand/enhancement toggle** is available, its tooltip says it automatically improves short or unclear prompts. Turn it **Off** for authored prompts so the submitted text stays repeatable. If you use enhancement, inspect and record the final submitted text. The control was observed in our 2026-10-12 session; availability may vary.
 5. Click the generate arrow **once** for four variations. Listen to all four and star useful ones. Keep the required number of distinct good takes; regenerate only if the batch lacks enough keepers. For frequent families, three keepers should sound like the same source performed three times.
 6. In History, use each chosen variation's **download icon → WAV (48 kHz)**. If WAV conversion stalls, use the native **MP3 (44.1 kHz)** download and preserve that original format; this fallback was needed in our trial. Download useful alternatives too. ElevenLabs downloads are native; usesuno.com is only relevant to the Suno route above. Generation consumes credits; downloading an existing result does not consume another generation. Check the displayed cost before generating, especially for loops. Use the native download for an existing ElevenLabs result rather than generating another copy.
@@ -200,12 +200,12 @@ Record **each take's** actual provider, submitted prompt, generation date, plan,
 ## Keeping every sound in the same direction
 
 1. **One material palette.** The damned use blackened iron, bronze, thick chains, brimstone, embers, cold silver and leather: close, heavy, gritty, warm low end. Heaven uses ivory porcelain, polished gold, white marble, glass, feathers and bells: bright, orderly and glassy, never wet or gory. Avoid sci-fi lasers, electronic UI beeps, cartoon sounds and recognizable modern firearm recordings; fantasy weapon cues can still have a powder crack.
-2. **Describe the actual game event and how it sounds.** ElevenLabs can use fantasy context together with physical acoustic detail: a crowd of angels bursting into feathers is a valid starting point. Specify chain-link jangle, feather flutter, porcelain crunch, scale, attack and decay. Use the Suno foley alternatives when its direct fantasy description fails; try the direct event description in ElevenLabs. These are provider-specific starting points, not a guarantee that either one sounds better. Foley analogies remain useful fallbacks when a specific take is wrong. For layered actions, say whether layers happen together or in order. If a complex prompt fails, generate its layers separately and combine during finishing.
-3. **One house sentence** at the end of one-shots:
+2. **Start with a simple source and action.** Variant B keeps the prompt short, such as "Shotgun blast". The following detailed guidance is for Variant A or for refining a failed take: ElevenLabs can use fantasy context together with physical acoustic detail: a crowd of angels bursting into feathers is a valid starting point. Specify chain-link jangle, feather flutter, porcelain crunch, scale, attack and decay. Use the Suno foley alternatives when its direct fantasy description fails; try the direct event description in ElevenLabs. These are provider-specific starting points, not a guarantee that either one sounds better. Foley analogies remain useful fallbacks when a specific take is wrong. For layered actions, say whether layers happen together or in order. If a complex prompt fails, generate its layers separately and combine during finishing.
+3. **Variant A only: one house sentence** at the end of one-shots. Do not append it to Variant B:
 
    > Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
 
-   And for loops:
+   For Variant A loops:
 
    > Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, speech or reverb.
 
@@ -228,14 +228,30 @@ Fires **twelve times a second** for whole rooms: the most-heard sound in the gam
 
 **ElevenLabs prompt**
 
+**Variant A — detailed**
+
 ```text
 One single mechanical shot from a chain-fed blackened-iron fantasy rotary gun: a compact low iron click, dry powder snap and tiny body thump, about 0.08 seconds, then silence. No burst or sustained firing, no shrill whine. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
 ```
 
+**Variant B — simple**
+
+```text
+Single rotary gun shot
+```
+
 **Suno alternative (previous Suno prompt)**
+
+**Variant A — detailed**
 
 ```text
 One very short shot of a chain-fed rotary gun of blackened iron, about 0.08 seconds: a crisp low metallic click, a small dry powder snap and a tight iron body thump, almost no tail. It will repeat twelve times per second, so it is compact and never shrill. Dry isolated sound effect for a dark-fantasy game: one event, instant start, short tail, then silence. No music, beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Single rotary gun shot
 ```
 
 **Generate a single shot first.** The exported clip can be longer than the audible event; the existing cutter keeps at most 75 ms. If a take contains a burst, use it only if its first shot is isolated and starts cleanly. Reject continuous firing with no separable attack.
@@ -248,8 +264,16 @@ One very short shot of a chain-fed rotary gun of blackened iron, about 0.08 seco
 
 Every 0.9 s.
 
+**Variant A — detailed**
+
 ```text
 One heavy blast of a blackened-iron brimstone shotgun, about 0.3 seconds: a deep punch, a gritty mechanical crack and a brief falling tail of smoldering powder. Strong but short, not a long explosion. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Shotgun blast
 ```
 
 **Reject if:** a pump-action rack is included (the game doesn't animate one); it booms for more than half a second.
@@ -260,8 +284,16 @@ One heavy blast of a blackened-iron brimstone shotgun, about 0.3 seconds: a deep
 
 The shotgun's secondary: one heavy round. Must be distinct from the shotgun.
 
+**Variant A — detailed**
+
 ```text
 One dense brimstone slug fired from a heavy iron shotgun, about 0.4 seconds: lower and more concentrated than a scatter blast, a hard iron strike, a short bass pressure hit and a coarse ember crack. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Heavy shotgun slug blast
 ```
 
 **Reject if:** you can't tell it from the shotgun takes when played one after the other.
@@ -270,16 +302,32 @@ One dense brimstone slug fired from a heavy iron shotgun, about 0.4 seconds: low
 
 **Generate:** **ElevenLabs settings** · Duration **0.5 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
-The shot, not the impact. Every 0.85 s. **It must not sound like a gun:** the Heretic is the only class without one. The prompt describes what physically happens (a heavy bronze censer flung out of a tube on its chain) and avoids gun words. Try A first; if takes still sound like a shotgun, use B, which describes an everyday object instead.
+The shot, not the impact. Every 0.85 s. **It must not sound like a gun:** the Heretic is the only class without one. The prompt describes what physically happens (a heavy bronze censer flung out of a tube on its chain) and avoids gun words. Start with Variant B below. If it still sounds like a shotgun, try the everyday-object alternative.
 
-**A**
+**Censer description**
+**Variant A — detailed**
+
 ```text
 A heavy bronze incense censer flung hard out of a short bronze tube, about 0.25 seconds: a hollow metallic clunk like a heavy lid slammed onto a bronze pot, a quick rattle of its chain and a whoosh of air with crackling hot coals. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
 ```
 
-**B**
+**Variant B — simple**
+
+```text
+Bronze censer thrown with a rattling chain
+```
+
+**Everyday-object alternative**
+**Variant A — detailed**
+
 ```text
 A heavy brass lid slammed shut on a bronze pot and a metal chain whipped through the air right after, about 0.25 seconds: one hollow brassy clunk, a short chain rattle and a soft whoosh. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Brass pot lid slam and chain rattle
 ```
 
 **Reject if:** you hear a bang or a crack (a gun); there is no hollow metal clunk.
@@ -288,16 +336,32 @@ A heavy brass lid slammed shut on a bronze pot and a metal chain whipped through
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
-The impact. It must be metal and coals, never a blast. Try A first, B if it still comes out as a gunshot.
+The impact. It must be metal and coals, never a blast. Start with Variant B below; try the everyday-object alternative if it still comes out as a gunshot.
 
-**A**
+**Censer description**
+**Variant A — detailed**
+
 ```text
 A bronze church censer thrown down hard onto a stone floor, about 0.5 seconds: a ringing clang of bronze, its lid bursting open, hot coals scattering and skittering across the stone with a soft sizzle. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
 ```
 
-**B**
+**Variant B — simple**
+
+```text
+Bronze censer crashing onto stone
+```
+
+**Everyday-object alternative**
+**Variant A — detailed**
+
 ```text
 A small brass bell dropped onto a stone floor with a handful of hot charcoal spilling out around it, about 0.5 seconds: one bright metallic clang, a dry scatter of coals and a quiet sizzle. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Brass bell dropped with scattering coals
 ```
 
 **Reject if:** it booms or cracks like a shot; it sounds like glass (glass is Heaven's; the censer is Hell's bronze).
@@ -310,14 +374,30 @@ Every 0.3 s.
 
 **ElevenLabs prompt**
 
+**Variant A — detailed**
+
 ```text
 One shot from an ornate silver fantasy revolver, about 0.25 seconds: a precise dry powder crack, tight metallic body and brief cold silver ring. Smaller and sharper than the shotgun, no huge bass boom, cocking or cylinder spin. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
 ```
 
+**Variant B — simple**
+
+```text
+Revolver shot
+```
+
 **Suno alternative (previous Suno prompt)**
+
+**Variant A — detailed**
 
 ```text
 A single shot from a .38 revolver, close-miked at a shooting range, about 0.3 seconds: one sharp loud gunshot crack with a punchy body and a short bright metallic tail. Dry isolated sound effect for a dark-fantasy game: one event, instant start, short tail, then silence. No music, beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Single .38 revolver shot
 ```
 
 **Reject if:** the silver ring lasts longer than the crack; a hammer cock or cylinder spin is included.
@@ -330,14 +410,30 @@ The big line shot that tears through ten enemies; every 1.5 s.
 
 **ElevenLabs prompt**
 
+**Variant A — detailed**
+
 ```text
 One powerful silver bullet fired from a heavy fantasy revolver, about 0.4 seconds: a concentrated low crack with a bright silver edge and short metallic shimmer as it tears away. One shot only, no ricochet or follow-up impacts. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
 ```
 
+**Variant B — simple**
+
+```text
+Heavy revolver blast
+```
+
 **Suno alternative (previous Suno prompt)**
+
+**Variant A — detailed**
 
 ```text
 A single shot from a heavy .44 Magnum revolver, close-miked at a shooting range, about 0.5 seconds: a deep powerful gunshot crack with a strong low boom, then a brief bright metallic ring of the steel frame. Dry isolated sound effect for a dark-fantasy game: one event, instant start, short tail, then silence. No music, beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Single .44 Magnum shot
 ```
 
 **Reject if:** ricochets or several impacts follow (the game plays the hits).
@@ -350,14 +446,30 @@ A heavy chain swung in an arc; every 0.8 s.
 
 **ElevenLabs prompt**
 
+**Variant A — detailed**
+
 ```text
 One heavy iron chain flail swung fast in a wide arc, about 0.4 seconds: unmistakable thick chain links scraping and jangling through the air, ending in a solid low iron clank. The chain rattle is the main sound, close and weighty, with a brief decay. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
 ```
 
+**Variant B — simple**
+
+```text
+Heavy chain swinging and clanking
+```
+
 **Suno alternative (previous Suno prompt)**
+
+**Variant A — detailed**
 
 ```text
 A heavy steel tow chain swung hard and slammed down onto a metal workbench, about 0.4 seconds: a loud jangling rattle of thick links and one sharp clank of chain on steel. Dry isolated sound effect for a dark-fantasy game: one event, instant start, short tail, then silence. No music, beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Heavy chain slammed onto steel
 ```
 
 ### daggerCut — the Betrayer's dagger during Shadowstep · keep 3
@@ -366,8 +478,16 @@ A heavy steel tow chain swung hard and slammed down onto a metal workbench, abou
 
 Plays once per dash while the dagger cuts through 10–15 enemies.
 
+**Variant A — detailed**
+
 ```text
 One fast slash of a short silver dagger through the air and through light cloth, about 0.15 seconds: a quick dry silver scrape and a soft cloth slice. No wet flesh, no gore. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Dagger slicing cloth
 ```
 
 ### hitTick — your shot hit · keep 3
@@ -376,8 +496,16 @@ One fast slash of a short silver dagger through the air and through light cloth,
 
 The confirmation you hear on almost every hit. Very quiet in the mix; must not tire.
 
+**Variant A — detailed**
+
 ```text
 One tiny dry hit confirmation, about 0.05 seconds: a hard soft-edged tick of metal on porcelain, readable but not piercing, no pitch or musical note. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Tiny metal tap on porcelain
 ```
 
 **Reject if:** it has a tone you could hum; it's longer than a blink.
@@ -386,8 +514,16 @@ One tiny dry hit confirmation, about 0.05 seconds: a hard soft-edged tick of met
 
 **Generate:** **ElevenLabs settings** · Duration **0.5 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 One short warm kill confirmation, about 0.1 seconds: a soft click with a small low thump under it, a little fuller than a hit tick, no musical note and no fanfare. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Soft click with a low thump
 ```
 
 ### burstPop — an angel bursts into feathers · keep 3
@@ -396,8 +532,16 @@ One short warm kill confirmation, about 0.1 seconds: a soft click with a small l
 
 The burst death: a body blasted apart by sudden big damage (no blood: porcelain and light).
 
+**Variant A — detailed**
+
 ```text
 One angel body bursting apart into feathers and gold light, about 0.2 seconds: a dry snap of breaking porcelain, a light rush of feathers and cloth and a small bright crack of gold. No wet sound, no scream. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Porcelain bursting with a feather flutter
 ```
 
 ### blessedDeath — a Blessed collapses · keep 3
@@ -408,14 +552,30 @@ The ordinary death, nine in ten kills. The mixer limits how many play at once.
 
 **ElevenLabs prompt**
 
+**Variant A — detailed**
+
 ```text
 One angelic porcelain soldier collapsing into feathers and gold sparks, about 0.25 seconds: a crisp small porcelain crack, soft feather flutter and a few bright gold ticks. Restrained but clear in a busy fight. No gasp, pain or scream. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
 ```
 
+**Variant B — simple**
+
+```text
+Small porcelain figure crumbling
+```
+
 **Suno alternative (previous Suno prompt)**
+
+**Variant A — detailed**
 
 ```text
 A thin porcelain Christmas ornament crushed in a fist, about 0.3 seconds: a crisp dry crackle of breaking porcelain and a light bright scatter of tiny metal beads onto a plate. Small and clear. Dry isolated sound effect for a dark-fantasy game: one event, instant start, short tail, then silence. No music, beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Porcelain ornament crushed
 ```
 
 **Reject if:** a voice or sigh is in it (it plays hundreds of times a room).
@@ -428,14 +588,30 @@ One sound for a whole crowd dying in the same moment (a Silver Bullet line, Fall
 
 **ElevenLabs prompt**
 
+**Variant A — detailed**
+
 ```text
 A whole crowd of angels bursting into feathers and gold sparks at the same moment, about 0.5 seconds: one broad papery rush of many feathers, a crunchy cluster of small porcelain and gold cracks and a brief low punch under it. One single crowd event, not a sequence. No screams, no voices. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
 ```
 
+**Variant B — simple**
+
+```text
+Massive porcelain smash with rushing feathers
+```
+
 **Suno alternative (previous Suno prompt)**
+
+**Variant A — detailed**
 
 ```text
 A heavy cinematic impact hit like those in movie trailers, about 0.6 seconds: a deep punchy sub-bass boom with a crunchy layer of shattering stone and ceramic debris, then a quick clean decay. Dry isolated sound effect for a dark-fantasy game: one event, instant start, short tail, then silence. No music, beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Heavy impact with shattering stone
 ```
 
 Ask for an immediate crowd burst, without a trailer riser. The existing cutter anchors `massKill` near the peak; listen to the cut to ensure it retains the feather attack. Adjust its cut only after approving a new take.
@@ -446,8 +622,16 @@ Ask for an immediate crowd burst, without a trailer riser. The existing cutter a
 
 The vases players asked to smash (loot props).
 
+**Variant A — detailed**
+
 ```text
 One ivory porcelain vase shattering on a marble floor, about 0.4 seconds: a clear porcelain crack, small dry shards falling and a short restrained tinkle. Not glass, not a bottle. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Porcelain vase smashing
 ```
 
 ### blastLampCrack — the sanctuary lamp about to explode · keep 3
@@ -456,16 +640,32 @@ One ivory porcelain vase shattering on a marble floor, about 0.4 seconds: a clea
 
 Plays the moment a lamp is hit; it explodes 0.2 s later.
 
+**Variant A — detailed**
+
 ```text
 A red glass lamp cracking sharply under heat just before it bursts, about 0.1 seconds: one brittle glass fracture with a single iron tick. No explosion. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Glass lamp cracking
 ```
 
 ### blastLampBurst — the sanctuary lamp explodes · keep 3
 
 **Generate:** **ElevenLabs settings** · Duration **0.7 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A red glass sanctuary lamp of burning oil exploding once, about 0.4 seconds: a deep compact whoomp of flame, a scatter of dry glass fragments and a short rattle of an iron band. Distinct from any gunshot. Not a cinematic explosion. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Oil lamp bursting into flame
 ```
 
 **Reject if:** it sounds like a gunshot or a grenade (it must read as "the lamp", not "someone fired").
@@ -478,16 +678,32 @@ A red glass sanctuary lamp of burning oil exploding once, about 0.4 seconds: a d
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 Two heavy iron-bound oak church doors swung shut together, about 0.5 seconds: a low wooden scrape, one heavy iron latch dropping into place and a solid thud. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Heavy wooden doors slamming shut
 ```
 
 ### arenaCleared — the room is cleared · keep 1 · R1
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 Heavy iron door latches release together, followed by one warm clear gold bell strike, about 0.6 seconds. A small satisfying room-clear reward, no tune or fanfare. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Door unlocking and a soft bell chime
 ```
 
 The bell keeps this reward distinct from the weapon and crowd-death cues.
@@ -498,8 +714,16 @@ The bell keeps this reward distinct from the weapon and crowd-death cues.
 
 Each step is positional and heard through the crowd at 25 m: you hear where it is.
 
+**Variant A — detailed**
+
 ```text
 One enormous armored angel planting a marble-and-gold foot on stone, about 0.3 seconds: a deep weighty floor thud and a brief clean gold armor clank. One step, heavy enough to locate through a crowd, no drum rhythm. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+One giant armored footstep
 ```
 
 **Reject if:** it's a sequence of steps; it's a drum. Generate the giant scale directly first. Pitch adjustment is a finishing fallback if the approved take still lacks weight.
@@ -510,8 +734,16 @@ One enormous armored angel planting a marble-and-gold foot on stone, about 0.3 s
 
 The 1.5 s warning before the slam; players must hear it through a crowd. The game stretches it to the exact remaining wind-up.
 
+**Variant A — detailed**
+
 ```text
 A large bronze gong played with a soft mallet roll, swelling steadily louder for about 1.5 seconds and stopped dead at its loudest, before any strike. One swell. Dry isolated dark-fantasy warning. One continuous swell, no final impact or room echo. No melody, beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Rising gong swell, ending abruptly
 ```
 
 **Reject if:** it has a melody or a hit at the end (the slam is its own sound).
@@ -520,8 +752,16 @@ A large bronze gong played with a soft mallet roll, swelling steadily louder for
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 An enormous angel slamming a heavy gold-and-marble mace into the stone floor, about 0.6 seconds: a deep compact impact, cracking marble and a short low metal ring. Weighty and immediate, no riser or bell strike. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Giant mace smashing stone
 ```
 
 ### refinerIgnite — the fire channels flare up at the seal · keep 1 · R2
@@ -530,8 +770,16 @@ An enormous angel slamming a heavy gold-and-marble mace into the stone floor, ab
 
 When a hazard room seals, its coals flare to full flame over 1 s with a roar ([rooms.md](rooms.md) §7). The steady burning is the `refinerFire` loop (S8).
 
+**Variant A — detailed**
+
 ```text
 A large gas furnace burner lighting up, about 1 second: a click, a low thump of the gas catching and a short steady roar of flame that settles down. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Furnace igniting
 ```
 
 ### chaliceHeal — the blessing chalice heals · keep 1 · R2
@@ -540,8 +788,16 @@ A large gas furnace burner lighting up, about 1 second: a click, a low thump of 
 
 Brighter than Communion's heal so players learn the chalice.
 
+**Variant A — detailed**
+
 ```text
 A crystal wine glass struck lightly with a silver spoon, about 0.5 seconds: one clear bright ringing tone with a soft pour of water into a metal cup under it. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Crystal glass ringing with a water splash
 ```
 
 ---
@@ -554,8 +810,16 @@ A crystal wine glass struck lightly with a silver spoon, about 0.5 seconds: one 
 
 Heard every few seconds in a fight (coins drop in the crowd). Short and pleasant.
 
+**Variant A — detailed**
+
 ```text
 One gold coin dropped onto a small pile of gold coins, about 0.2 seconds: a short warm metallic chink. Not a bell, not a jingle. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Gold coin clink
 ```
 
 ### motePickup — a heal mote collected · keep 2 · R2
@@ -564,8 +828,16 @@ One gold coin dropped onto a small pile of gold coins, about 0.2 seconds: a shor
 
 Also plays for each mote Bread of Angels harvests.
 
+**Variant A — detailed**
+
 ```text
 One glass marble dropped into an empty glass bowl, about 0.2 seconds: a clean short glassy clink, gentle and clear, not piercing. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Glass marble clink
 ```
 
 **Reject if:** you'd confuse it with `goldPickup` (one is metal, one is glass).
@@ -574,24 +846,48 @@ One glass marble dropped into an empty glass bowl, about 0.2 seconds: a clean sh
 
 **Generate:** **ElevenLabs settings** · Duration **0.5 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 One purchase at a merchant's stall, about 0.25 seconds: two quick soft chinks of gold coins and one firm tap on a wooden counter. No cash register. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Coins placed on a wooden counter
 ```
 
 ### interactionReject — "not enough halos", "inventory full" · keep 1 · R3
 
 **Generate:** **ElevenLabs settings** · Duration **0.5 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 Two quick soft knocks of a knuckle on a wooden table, about 0.15 seconds, quiet and dull. No buzzer, no alarm. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Two soft wooden knocks
 ```
 
 ### chartReveal — the whole map revealed · keep 1 · R3
 
 **Generate:** **ElevenLabs settings** · Duration **0.7 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A rolled parchment map unrolled flat on a wooden table, about 0.4 seconds: a crisp rustle of paper and one light tap of a brass weight set on its corner. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Parchment map unrolling
 ```
 
 ---
@@ -604,24 +900,48 @@ Each item plays its sound once when used (or when a thrown item lands). Storing 
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A small ceramic jar with a wax seal cracked open, about 0.3 seconds: a dry snap of breaking wax and a tiny clink of the ceramic lid. No drinking or gulping. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Sealed ceramic jar opening
 ```
 
 ### item-seal — Wax Seal of Sanctuary (a shield on you)
 
 **Generate:** **ElevenLabs settings** · Duration **0.7 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A wax seal broken off a folded letter, then a large glass bowl tapped once so it hums briefly, about 0.4 seconds: a dry crack of wax and a short clean glassy hum. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Wax seal cracking and glass ringing
 ```
 
 ### item-feather — Pilgrim's Feather (run faster)
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A large bird's wing flapping once close to the microphone, about 0.3 seconds: one quick strong beat of feathers. No bird call. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+One strong wing flap
 ```
 
 ### item-throw — any thrown item leaves the hand
@@ -630,16 +950,32 @@ A large bird's wing flapping once close to the microphone, about 0.3 seconds: on
 
 New: the throw and the landing are separate events in the game, so throws need their own short sound (Bitter Water, Ash of Stillness, Plume of Expulsion).
 
+**Variant A — detailed**
+
 ```text
 A small leather pouch thrown hard overhand past the microphone, about 0.2 seconds: a quick swish of a sleeve and the pouch passing by. No impact. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Thrown pouch whoosh
 ```
 
 ### item-mirror-place — Mirror Ward placed
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A shallow silver bowl set down on a marble table, about 0.3 seconds: a short metallic tap and a light ring of the bowl. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Silver bowl placed on stone
 ```
 
 ### item-mirror-return — a projectile sent back by the ward
@@ -648,40 +984,80 @@ A shallow silver bowl set down on a marble table, about 0.3 seconds: a short met
 
 Can happen several times a second in a ranged room; keep it tiny.
 
+**Variant A — detailed**
+
 ```text
 A small steel ball bearing bouncing off a metal plate, about 0.15 seconds: one precise bright ping. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Metal ricochet ping
 ```
 
 ### item-water-land — Bitter Water lands (a poison pool)
 
 **Generate:** **ElevenLabs settings** · Duration **0.7 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A narrow glass flask smashing on marble and spilling water, about 0.45 seconds: a crisp glass break, a small splash and a short fizz. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Glass bottle smashing with a splash
 ```
 
 ### item-ash-land — Ash of Stillness lands (a slowing circle)
 
 **Generate:** **ElevenLabs settings** · Duration **0.7 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A bag of flour dumped onto a stone floor, about 0.4 seconds: a soft dry granular thump and a fine sandy hiss settling. No glass. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Powder landing on stone
 ```
 
 ### item-chain-place — Chain Vial placed (a binding circle)
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A small glass vial set down on stone, then a short steel chain dropped beside it in a coil, about 0.35 seconds: a small glass tap and a sharp rattle of chain links. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Small chain dropped beside a glass vial
 ```
 
 ### item-plume-land — Plume of Expulsion lands (a launching circle)
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A magical plume striking marble and releasing one compact gust, about 0.3 seconds: a soft impact under a brisk feather flutter and a short upward rush of air. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Short gust with fluttering feathers
 ```
 
 ---
@@ -692,8 +1068,16 @@ A magical plume striking marble and releasing one compact gust, about 0.3 second
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A short warm rising chord on a church pipe organ, about 0.6 seconds, ending cleanly. Not a fanfare, not a jingle. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Short rising church organ chord
 ```
 
 The house sentence's "no music" is left out on purpose: a chord is wanted here. **Reject if** it turns into a tune.
@@ -702,48 +1086,96 @@ The house sentence's "no music" is left out on purpose: a chord is wanted here. 
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A thick parchment page turned over and one ember popping in a fireplace, about 0.3 seconds: a crisp page turn and a small crackle. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Parchment page turning with an ember pop
 ```
 
 ### riteTaken — a Rite chosen · keep 1 · R4
 
 **Generate:** **ElevenLabs settings** · Duration **0.7 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 Hot sealing wax stamped onto parchment with a firm thump, about 0.45 seconds, with one low church organ note under it. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No melody, beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Wax stamp thump with a low organ note
 ```
 
 ### keyPickup — the key taken · keep 1 · R6
 
 **Generate:** **ElevenLabs settings** · Duration **0.5 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A large iron key picked up from a stone table, about 0.25 seconds: a compact metallic clink. No lock. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Iron key clink
 ```
 
 ### chestOpen — the Reliquary opened · keep 1 · R6
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 An old wooden chest unlocked with a key and its heavy lid opened, about 0.6 seconds: a key turning in an iron lock, a click and a short low creak of hinges. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Wooden chest unlocking and creaking open
 ```
 
 ### relicClaim — a relic chosen · keep 1 · R6
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A small wooden box lid clicked shut, then one soft strike of a small brass bell fading out, about 0.5 seconds. One strike, not a tune. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Box closing with a soft bell chime
 ```
 
 ### bargainAccept — the Advocate's bargain signed · keep 1 · R6
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A contract signed and sealed, about 0.5 seconds: a dry scratch of a quill on parchment, a firm stamp of hot wax and a heavy leather book closed with a thump. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Quill scratching and a wax stamp thump
 ```
 
 ### judgmentBell — the Bell of Judgment rung · keep 1 · R6
@@ -752,8 +1184,16 @@ A contract signed and sealed, about 0.5 seconds: a dry scratch of a quill on par
 
 Heard across the whole floor. The bell's own ringing is wanted here, so this prompt allows a long natural decay.
 
+**Variant A — detailed**
+
 ```text
 One deep heavy bronze bell struck once, a strong single onset and its natural resonance fading over about four seconds. One strike only. Dry isolated sound effect for a dark-fantasy game, no room echo: only the bell's own ringing. No music, beat, voice or other sounds.
+```
+
+**Variant B — simple**
+
+```text
+Single deep bronze bell toll
 ```
 
 ### teleportStart — Pilgrim's Return begins · keep 1 · R6
@@ -762,16 +1202,32 @@ One deep heavy bronze bell struck once, a strong single onset and its natural re
 
 The 1.5 s channel before a teleport; others hear it too.
 
+**Variant A — detailed**
+
 ```text
 A wet finger circling the rim of a crystal glass, its ringing tone slowly growing louder for about 1.5 seconds, then stopping. Dry isolated dark-fantasy warning. One continuous swell, no final impact or room echo. No melody, beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Crystal glass tone swelling then stopping
 ```
 
 ### teleportArrive — Pilgrim's Return arrives · keep 1 · R6
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A heavy wool cloak flapped once and a boot stepping onto a stone floor, about 0.35 seconds. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Cloak flap and a footstep on stone
 ```
 
 ### streakTier — a kill-streak tier reached · keep 1 · R6
@@ -780,8 +1236,16 @@ A heavy wool cloak flapped once and a boot stepping onto a stone floor, about 0.
 
 Sacrilege, Desecration, Massacre, Apocalypse, Armageddon ([m12-followup-2.md](../m12-followup-2.md) §3). The game raises the pitch per tier, so one take is enough.
 
+**Variant A — detailed**
+
 ```text
 One hard hit on a large orchestral bass drum together with one bright strike of a small brass handbell, about 0.5 seconds, ending cleanly. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No melody, beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Single bass drum hit and bell strike
 ```
 
 ### The state cues
@@ -792,32 +1256,64 @@ The seven enemy states ([game.md](game.md) §4.11) are what talents, items and r
 
 **Generate:** **ElevenLabs settings** · Duration **0.5 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A steel padlock snapped shut on a chain, about 0.15 seconds: a hard metallic snap and click. No rattle. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Padlock snapping shut
 ```
 
 #### state-launch — an enemy is flung into the air · keep 1 · R4
 
 **Generate:** **ElevenLabs settings** · Duration **0.5 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 One angel abruptly flung upward, about 0.15 seconds: a compact rising rush of air and feather flutter, no landing impact. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Quick upward whoosh with feathers
 ```
 
 #### state-land — a flung enemy lands · keep 2 · R4
 
 **Generate:** **ElevenLabs settings** · Duration **0.5 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A sack of grain dropped onto a stone floor, about 0.2 seconds: a compact dull thud. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Heavy sack landing on stone
 ```
 
 #### state-fire — a patch of floor catches fire · keep 1 · R4
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A match struck and a small pool of lamp oil catching fire, about 0.3 seconds: a scratch and a soft thump of flame. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Oil catching fire
 ```
 
 #### fireOut — a fire area goes out · keep 1 · R4
@@ -826,8 +1322,16 @@ A match struck and a small pool of lamp oil catching fire, about 0.3 seconds: a 
 
 New: shared by Rain of Fire, Trial by Fire and every fire area's end (their catalogs ask for "a hiss as it goes out").
 
+**Variant A — detailed**
+
 ```text
 A small fire smothered with a damp cloth, about 0.4 seconds: a short soft hiss of steam as the embers go quiet. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Fire extinguishing with a hiss
 ```
 
 ### The relic cues
@@ -840,32 +1344,64 @@ Relics and combos share five cues ([asset-coverage.md](asset-coverage.md)): R6, 
 
 New: these relics' catalog rows ask for "a small authored rune stamp".
 
+**Variant A — detailed**
+
 ```text
 A heavy stone seal pressed into a wet clay tablet, about 0.3 seconds: a soft heavy press and a low settling scrape of stone. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Stone seal pressing into clay
 ```
 
 #### relic-ember — an ember flies to an enemy (Broken Thurible, Abandoned Mercy)
 
 **Generate:** **ElevenLabs settings** · Duration **0.5 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A glowing coal popping out of a fireplace and bouncing on stone, about 0.2 seconds: one sharp crackling pop and a tiny tick. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Ember popping
 ```
 
 #### relic-wheel — a gold wheel starts rolling (Wheel of Review, Harrow of the Host)
 
 **Generate:** **ElevenLabs settings** · Duration **0.7 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A small metal cart wheel set rolling across a stone floor, about 0.4 seconds: a bright clack and a short rattling roll. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Metal wheel rolling on stone
 ```
 
 #### relic-stamp — a counterseal stamps (Counterseal, Appeal in the Marble)
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A heavy iron seal slammed down onto a marble desk, about 0.3 seconds: a firm formal thump and a brittle snap. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Heavy stamp hitting marble
 ```
 
 #### relic-chorus — a ring of choral light bursts (Choral Fragment, Broken Chorus)
@@ -874,8 +1410,16 @@ A heavy iron seal slammed down onto a marble desk, about 0.3 seconds: a firm for
 
 New: the catalog asks for "one bounded bright burst".
 
+**Variant A — detailed**
+
 ```text
 One ring of choral light bursting outward, about 0.4 seconds: a bright crystalline shimmer, brief porcelain crack and tiny wordless choir chord together. One bounded burst, no melody or sung syllables. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No beat, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Short crystalline burst with a wordless choir chord
 ```
 
 ---
@@ -890,24 +1434,48 @@ The twelve abilities that talents unlock ([game.md](game.md) §9.4). Each is use
 
 **Generate:** **ElevenLabs settings** · Duration **0.7 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A silver coin flicked high by a thumb and spinning in the air, about 0.4 seconds: a sharp thumb flick and the coin's thin ringing spin. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Coin flicked and spinning
 ```
 
 #### judasCoinSplit — a shot splits on the coin into three
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 Three small steel ball bearings striking a metal plate almost at once, about 0.3 seconds: a bright quick triple ping. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Three quick metal pings
 ```
 
 #### wayBackMarker — The Way Back: shadow left behind
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A heavy velvet curtain pulled sharply aside, about 0.3 seconds: one soft dark swish of thick fabric. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Heavy curtain swish
 ```
 
 #### wayBackReturn — The Way Back: dash back to the shadow
@@ -916,8 +1484,16 @@ A heavy velvet curtain pulled sharply aside, about 0.3 seconds: one soft dark sw
 
 The dagger cuts along the way play `daggerCut`.
 
+**Variant A — detailed**
+
 ```text
 A sheet of thick cloth whipped fast through the air, ending with a knife drawn from a steel sheath, about 0.35 seconds. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Fast cloth whoosh and a knife unsheathing
 ```
 
 #### silverWirePlace — Silver Wire strung
@@ -926,8 +1502,16 @@ A sheet of thick cloth whipped fast through the air, ending with a knife drawn f
 
 Each enemy it binds plays `state-bind`.
 
+**Variant A — detailed**
+
 ```text
 Two tent stakes hammered into the ground, then a steel wire pulled taut between them, about 0.3 seconds: two firm taps and one taut metallic twang. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Two hammer taps and a wire twang
 ```
 
 ### The Fallen (R5)
@@ -936,16 +1520,32 @@ Two tent stakes hammered into the ground, then a steel wire pulled taut between 
 
 **Generate:** **ElevenLabs settings** · Duration **0.7 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A heavy man in plate armor breaking into a sprint, about 0.45 seconds: a loud clank and creak of armor plates and the first heavy boot stomps on stone. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Armored warrior starting to run
 ```
 
 #### gatebreakerWall — Gatebreaker: stopped by a wall
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A heavy armored man running full speed into a thick wooden door, about 0.5 seconds: one deep boom of metal against wood and a short crunch. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Armor crashing into a wooden door
 ```
 
 #### rainOfFireStart — Rain of Fire called down
@@ -954,8 +1554,16 @@ A heavy armored man running full speed into a thick wooden door, about 0.5 secon
 
 The 6 s of burning is the `rainOfFire` loop; its end is `fireOut`.
 
+**Variant A — detailed**
+
 ```text
 A shovel of glowing coals thrown across a stone floor, about 0.5 seconds: a low thump and a spreading patter of coals landing and crackling. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Hot coals scattered onto stone
 ```
 
 #### castOut — Cast Out: the wing blast
@@ -964,8 +1572,16 @@ A shovel of glowing coals thrown across a stone floor, about 0.5 seconds: a low 
 
 The bodies landing afterwards play `state-land`.
 
+**Variant A — detailed**
+
 ```text
 A fallen angel snapping enormous wings once to cast a crowd outward, about 0.45 seconds: a deep forceful gust with thick feather flutter, one broad wing beat, no landing impacts. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+One powerful wing beat
 ```
 
 ### The Heretic Saint (R5)
@@ -976,16 +1592,32 @@ A fallen angel snapping enormous wings once to cast a crowd outward, about 0.45 
 
 Bread of Angels has no start one-shot: its loop starts at once.
 
+**Variant A — detailed**
+
 ```text
 A small iron furnace door swung open, about 0.4 seconds: a dry scrape of metal and the low roar of the fire inside. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Furnace door opening with a fire roar
 ```
 
 #### cloudOfWitnessesStart — Cloud of Witnesses gathers
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A brass censer swung on its chain and a thick puff of smoke released, about 0.6 seconds: a small chain rattle and a soft hiss of steam escaping. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Censer chain rattle and a soft hiss
 ```
 
 ### The Binder (R5)
@@ -994,16 +1626,32 @@ A brass censer swung on its chain and a thick puff of smoke released, about 0.6 
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A heavy iron manhole cover dragged open on stone, about 0.5 seconds: a deep grinding scrape and a hollow low resonance. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Heavy iron cover scraping open
 ```
 
 #### ringOfGiants — Ring of the Giants
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 Several heavy steel chains dropped onto a concrete floor all around the microphone at once, about 0.5 seconds: a loud chain rattle and one heavy padlock clamp. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Heavy chains dropping and a padlock clamping
 ```
 
 #### boundaryChain — The Boundary Chain laid
@@ -1012,8 +1660,16 @@ Several heavy steel chains dropped onto a concrete floor all around the micropho
 
 Each bind plays `state-bind` (at most 4 a second, by the catalog).
 
+**Variant A — detailed**
+
 ```text
 A heavy steel chain dragged across a concrete floor and a steel stake hammered in once, about 0.45 seconds: a chain rattle and one firm metal knock. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Chain dragging and a metal stake hammered
 ```
 
 ---
@@ -1026,32 +1682,64 @@ Each move has its own wind-up sound ([game.md](game.md) §11.2), and wind-ups mu
 
 **Generate:** **ElevenLabs settings** · Duration **3 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A church pipe organ holding one low dissonant chord that swells steadily louder and brighter for three seconds, ending at its loudest. No trumpet, no blast at the end. Dry isolated dark-fantasy warning. One continuous swell, no final impact or room echo. No melody, beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Low dissonant organ chord swelling for three seconds
 ```
 
 ### judgmentBlast — Judgment strikes
 
 **Generate:** **ElevenLabs settings** · Duration **1.1 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 One very close thunderclap, about 0.8 seconds: an immense sharp crack and a short rolling rumble. No rain. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Single loud thunderclap
 ```
 
 ### volleyWindup — the Orb Volley gathers
 
 **Generate:** **ElevenLabs settings** · Duration **0.5 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 Several crystal glasses rubbed at the rim at once, their tones rising together for about 0.4 seconds. Dry isolated dark-fantasy warning. One continuous swell, no final impact or room echo. No melody, beat, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Rising crystal glass tones
 ```
 
 ### volleyFired — the Orb Volley released
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A slingshot releasing a handful of glass marbles at once, about 0.3 seconds: one rubber snap and a quick glassy rattle. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Slingshot releasing glass marbles
 ```
 
 ### tollTell — the Toll prepares
@@ -1060,16 +1748,32 @@ A slingshot releasing a handful of glass marbles at once, about 0.3 seconds: one
 
 Must be clearly different from Judgment's charge and from the hanging bell.
 
+**Variant A — detailed**
+
 ```text
 A heavy iron crowbar dragged across a stone floor and lifted, about 0.55 seconds: a low resonant scrape of metal on stone. Not a bell. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Iron bar scraping stone
 ```
 
 ### tollImpact — the Toll strikes and a ring rolls out
 
 **Generate:** **ElevenLabs settings** · Duration **0.7 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A heavy iron bar slammed flat onto a stone floor, about 0.45 seconds: a heavy metallic slam and a short rumble. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Heavy iron bar slamming onto stone
 ```
 
 ### tollPersonalWhoosh — the ring is about to reach you: jump
@@ -1078,32 +1782,64 @@ A heavy iron bar slammed flat onto a stone floor, about 0.45 seconds: a heavy me
 
 Played only to the player the ring is about to reach.
 
+**Variant A — detailed**
+
 ```text
 A long stick swung fast right past the microphone, about 0.2 seconds: a quick swish rising in pitch. No impact. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Fast stick swish
 ```
 
 ### callTell — Called to the Gate: a player is targeted
 
 **Generate:** **ElevenLabs settings** · Duration **0.7 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 One strike of a small brass handbell, then a chain pulled taut through an iron ring, about 0.45 seconds. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Small bell strike and a chain pulled tight
 ```
 
 ### sealBreak — the Seal breaks and frees the player
 
 **Generate:** **ElevenLabs settings** · Duration **0.6 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A steel padlock cut with bolt cutters, about 0.35 seconds: a hard metallic snap and the chain falling loose. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Padlock snapping and chain falling
 ```
 
 ### callReleased — a held player set down safely
 
 **Generate:** **ElevenLabs settings** · Duration **0.5 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A heavy chain loosened and dropped slack onto a wooden floor, about 0.25 seconds: a short rattle and a soft thud. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Chain dropping onto wood
 ```
 
 ### watcherOpen — the Watchers open
@@ -1112,32 +1848,64 @@ A heavy chain loosened and dropped slack onto a wooden floor, about 0.25 seconds
 
 Up to seven eyes open at once; one sound for all of them.
 
+**Variant A — detailed**
+
 ```text
 Several wooden window shutters swung open at once, about 0.4 seconds: a dry creak and a cluster of small brass latch clicks. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Wooden shutters opening
 ```
 
 ### watcherBreak — a Watcher shot apart
 
 **Generate:** **ElevenLabs settings** · Duration **0.7 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A porcelain doll's head dropped onto a marble floor, about 0.4 seconds: a crack of porcelain and a scatter of small metal parts. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Porcelain doll head smashing
 ```
 
 ### hostDescend — the Host arrives (adds descend; also the Bell's wave)
 
 **Generate:** **ElevenLabs settings** · Duration **0.8 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A host of armored angels descending together onto marble, about 0.6 seconds: one broad flutter of many feathered wings and a restrained cluster of gold armor ticks as they settle. One arrival, not a sequence or bird flock. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Many wings flapping with light armor clinks
 ```
 
 ### bossTransition — 50%: he lifts the first trumpet, silent
 
 **Generate:** **ElevenLabs settings** · Duration **1.2 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A huge stone statue grinding as it turns on its base, about 1 second: a heavy grinding of stone and a deep creak. No trumpet, no horn. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Huge stone statue grinding as it turns
 ```
 
 **Reject if:** anything in it could be heard as a brass note.
@@ -1146,8 +1914,16 @@ A huge stone statue grinding as it turns on its base, about 1 second: a heavy gr
 
 **Generate:** **ElevenLabs settings** · Duration **1.4 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A colossal marble-and-gold angel falling and breaking apart, about 1.2 seconds: a deep stone crash, cracking marble and a brief scatter of gold and feathers, ending with one soft bell strike. Dry isolated dark-fantasy SFX. One event, immediate attack, short decay then silence. No music, speech, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Giant marble statue crashing apart
 ```
 
 ---
@@ -1160,8 +1936,16 @@ A colossal marble-and-gold angel falling and breaking apart, about 1.2 seconds: 
 
 **Generate:** **ElevenLabs settings** · Duration **6 s** · Looping **On** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A coal forge burning steadily: a low even crackle of embers and a contained hiss of flame, calm, not a roaring wildfire. Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, speech or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Steady coal forge crackle loop
 ```
 
 ### incense — a censer cloud (R2)
@@ -1170,8 +1954,16 @@ A coal forge burning steadily: a low even crackle of embers and a contained hiss
 
 The Heretic's clouds: up to six at once, so very quiet and sparse.
 
+**Variant A — detailed**
+
 ```text
 A censer of smoldering incense: a soft dry hiss of embers, faint smoky air and very sparse small crackles. No bells. Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, speech or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Soft smoldering ember hiss loop
 ```
 
 ### lowHealth — low health heartbeat (R3)
@@ -1180,8 +1972,16 @@ A censer of smoldering incense: a soft dry hiss of embers, faint smoky air and v
 
 Replaces the synthesized `heartbeat`.
 
+**Variant A — detailed**
+
 ```text
 A slow quiet heartbeat heard from inside the body, close and subdued, steady rhythm, no breathing. Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, melody, voice or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Slow quiet heartbeat loop
 ```
 
 ### reviveHum — reviving a soul (R3)
@@ -1190,8 +1990,16 @@ A slow quiet heartbeat heard from inside the body, close and subdued, steady rhy
 
 Plays while a teammate revives you or you revive one; the success is `revive`.
 
+**Variant A — detailed**
+
 ```text
 A wet finger circling the rim of a crystal glass: a soft steady pure ringing tone, gentle and even. Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, speech or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Soft crystal glass hum loop
 ```
 
 ### confessionalAmbience — the Confessional's air (R4)
@@ -1200,56 +2008,112 @@ A wet finger circling the rim of a crystal glass: a soft steady pure ringing ton
 
 The only room ambience: the quiet before the boss.
 
+**Variant A — detailed**
+
 ```text
 A dark wooden chapel at night: an almost silent hush, a very distant slow crackle of a candle and the faint creak of old wood. No whispers. Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, speech or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Quiet wooden chapel ambience loop
 ```
 
 ### gatebreakerMove — Gatebreaker charging (R5)
 
 **Generate:** **ElevenLabs settings** · Duration **4 s** · Looping **On** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A suit of plate armor carried at a run: a steady rattle and creak of metal plates. No footsteps. Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, speech or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Running plate armor rattle loop
 ```
 
 ### rainOfFire — Rain of Fire burning, 6 s (R5)
 
 **Generate:** **ElevenLabs settings** · Duration **6 s** · Looping **On** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 Sparks and burning embers showering onto a stone floor from a collapsing bonfire: a fine steady patter and crackle. No explosions, no thunder. Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, speech or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Falling embers crackling loop
 ```
 
 ### trialByFire — Trial by Fire, 4 s (R5)
 
 **Generate:** **ElevenLabs settings** · Duration **4 s** · Looping **On** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A bonfire burning close: a steady crackle of burning wood and a low roar of flame. No footsteps. Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, speech or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Steady bonfire crackle loop
 ```
 
 ### breadOfAngels — Bread of Angels, 6 s (R5)
 
 **Generate:** **ElevenLabs settings** · Duration **6 s** · Looping **On** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A large bronze singing bowl rubbed continuously with a wooden stick: a low eerie steady hum. Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, speech or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Low bronze singing bowl hum loop
 ```
 
 ### cloudOfWitnesses — Cloud of Witnesses (R5)
 
 **Generate:** **ElevenLabs settings** · Duration **8 s** · Looping **On** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A spectral cloud of witnesses suspended in incense: a soft steady smoky hiss and distant layered wordless murmurs, restrained and indistinct. No breathing gasps or intelligible words. Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, beat or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Soft ghostly wordless murmuring loop
 ```
 
 ### wellOfGiants — The Well of the Giants pulling, 5 s (R5)
 
 **Generate:** **ElevenLabs settings** · Duration **5 s** · Looping **On** · Influence **30%** · Enhancement **Off if available**.
 
+**Variant A — detailed**
+
 ```text
 A large drain swallowing water steadily while a heavy chain turns slowly on an iron winch: a low steady gurgle and a slow chain creak. No lock or impact. Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, speech or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Deep draining water and creaking chain loop
 ```
 
 ### silverWire — Silver Wire strung (R4)
@@ -1258,44 +2122,52 @@ A large drain swallowing water steadily while a heavy chain turns slowly on an i
 
 Very quiet; it can last a while.
 
+**Variant A — detailed**
+
 ```text
 A steel cable under tension humming in the wind: a faint steady metallic hum with an occasional soft creak. Seamless dry dark-fantasy loop, steady texture, no intro, outro or large accents. No music, speech or reverb.
+```
+
+**Variant B — simple**
+
+```text
+Faint taut wire hum loop
 ```
 
 ---
 
 ## S9 Recommended: re-record the existing synthesized cues
 
-These events already have synthesized sounds in `src/audio/sfx.ts`, so nothing breaks without them, but they are part of what playtest 5 called annoying. Do them in R8 if time allows, in this order: the enemy attacks first (they repeat most), then the base abilities, then the rest. Same routine; keep 1 each unless stated. For ElevenLabs S9 rows: **Looping Off, influence 30%, enhancement Off if available**, using the duration column. For Suno, choose **One Shot** and use the event length already written in the prompt. Both providers use the same finishing and listening criteria.
+These events already have synthesized sounds in `src/audio/sfx.ts`, so nothing breaks without them, but they are part of what playtest 5 called annoying. Do them in R8 if time allows, in this order: the enemy attacks first (they repeat most), then the base abilities, then the rest. Same routine; keep 1 each unless stated. For ElevenLabs S9 rows: **Looping Off, influence 30%, enhancement Off if available**, using the duration column. For Suno, choose **One Shot** and start with Variant B as-is; Variant A retains the original event length. Both providers use the same finishing and listening criteria.
 
-| ID | Keep | ElevenLabs duration (s) | Prompt (append the one-shot house sentence; full prompt ≤450 characters) |
-|---|---|---|---|
-| `meleeHit` | 3 | 0.5 | A wooden staff striking padded leather armor, about 0.15 seconds: a compact thud with a short blunt metal clink. No wet sound. |
-| `orbFired` | 3 | 0.5 | A glass marble shot from a slingshot, about 0.2 seconds: a tight rubber snap and a quick glassy tick. |
-| `arrowFired` | 3 | 0.5 | A small bow releasing an arrow, about 0.2 seconds: a short crisp twang of the bowstring and a quick swish. |
-| `choristerWindup` | 1 | 0.8 | A violin bow drawn across the edge of a brass cymbal, rising, about 0.5 seconds: a focused eerie ringing tone. |
-| `cherubWindup` | 1 | 0.6 | A small bow drawn back, about 0.3 seconds: a quick taut creak of wood and string and a short flutter of a small bird's wings. No bird call. |
-| `globeShatter` | 1 | 0.6 | A thin glass Christmas bauble dropped and popping on a stone floor, about 0.35 seconds: a crisp hollow glass pop and a tinkle of shards. |
-| `blasphemy` | 1 | 0.7 | A heavy iron anvil struck once hard with a hammer, about 0.45 seconds: a low booming metallic clang and a short rattle. |
-| `fallingStarLeap` | 1 | 0.5 | A heavy cloak swirled hard as a heavy man jumps, about 0.25 seconds: a fast flap of fabric and a creak of leather. |
-| `fallingStarLand` | 1 | 0.8 | A heavy concrete block dropped onto a stone floor from a height, about 0.5 seconds: a deep heavy thump and a short crunch of stone. |
-| `communion` | 1 | 0.7 | Several small brass handbells rung softly together once, about 0.45 seconds: a warm gentle chord fading. |
-| `shroud` | 1 | 0.7 | A large glass bowl lowered onto a table and gently tapped, about 0.4 seconds: a quiet steady glassy hum. |
-| `shroudBurst` | 1 | 0.7 | A thick glass pane shattering outward, about 0.45 seconds: a hollow crack and falling glass. |
-| `chains` | 1 | 0.8 | Several heavy steel chains thrown down onto a concrete floor and pulled tight, about 0.5 seconds: a loud chain rattle and one firm clank. |
-| `discord` | 1 | 0.8 | A large blacksmith's bellows squeezed hard once next to the microphone, about 0.5 seconds: a strong blast of air with a wooden creak. |
-| `fieldOfBlood` | 1 | 0.7 | A handful of silver coins thrown down onto stone, about 0.4 seconds: a scatter of coins and one low dull thud of a leather bag landing. |
-| `shadowstep` | 1 | 0.5 | A heavy cloak swirled quickly, about 0.25 seconds: a brief rush of fabric and the soft ring of a knife being drawn. |
-| `healed` | 1 | 0.5 | A small glass wind chime touched lightly once, about 0.2 seconds: a soft bright tinkle. |
-| `shieldUp` | 1 | 0.5 | A wine glass flicked with a fingernail, about 0.25 seconds: a short clear ring. |
-| `shieldBroken` | 1 | 0.6 | A drinking glass dropped and breaking on a stone floor, about 0.35 seconds: a sharp crack and a brief tinkle. |
-| `interrupted` | 1 | 0.5 | A taut rope snapping, about 0.2 seconds: one sharp dry crack. |
-| `revive` | 1 | 0.7 | One warm strike of a tubular chime, about 0.4 seconds, fading. |
-| `hurt` | 1 | 0.5 | A fist punching a leather coat worn over chain mail, about 0.12 seconds: a dry thud with a small metal jingle. |
-| `death` | 1 | 0.7 | A man in plate armor collapsing onto a stone floor, about 0.45 seconds: a heavy clatter of metal plates and a dull thud. |
-| `abilityReady` | 1 | 0.5 | A small metal latch clicked open, about 0.1 seconds: a soft clear click. |
-| `countdownTick` | 1 | 0.5 | One tick of a large mechanical clock, about 0.1 seconds. |
-| `buttonClick` | 1 | 0.5 | A small wooden button pressed on a desk, about 0.1 seconds: a soft clean click. |
+| ID | Keep | ElevenLabs duration (s) | Variant A — detailed (append the one-shot house sentence; full prompt ≤450 characters) | Variant B — simple (paste as-is) |
+|---|---|---|---|---|
+| `meleeHit` | 3 | 0.5 | A wooden staff striking padded leather armor, about 0.15 seconds: a compact thud with a short blunt metal clink. No wet sound. | Wooden staff hitting leather armor |
+| `orbFired` | 3 | 0.5 | A glass marble shot from a slingshot, about 0.2 seconds: a tight rubber snap and a quick glassy tick. | Slingshot firing a glass marble |
+| `arrowFired` | 3 | 0.5 | A small bow releasing an arrow, about 0.2 seconds: a short crisp twang of the bowstring and a quick swish. | Bow firing an arrow |
+| `choristerWindup` | 1 | 0.8 | A violin bow drawn across the edge of a brass cymbal, rising, about 0.5 seconds: a focused eerie ringing tone. | Bowed cymbal tone rising |
+| `cherubWindup` | 1 | 0.6 | A small bow drawn back, about 0.3 seconds: a quick taut creak of wood and string and a short flutter of a small bird's wings. No bird call. | Small bowstring drawing taut |
+| `globeShatter` | 1 | 0.6 | A thin glass Christmas bauble dropped and popping on a stone floor, about 0.35 seconds: a crisp hollow glass pop and a tinkle of shards. | Glass bauble shattering |
+| `blasphemy` | 1 | 0.7 | A heavy iron anvil struck once hard with a hammer, about 0.45 seconds: a low booming metallic clang and a short rattle. | Heavy hammer striking an anvil |
+| `fallingStarLeap` | 1 | 0.5 | A heavy cloak swirled hard as a heavy man jumps, about 0.25 seconds: a fast flap of fabric and a creak of leather. | Heavy cloak flapping |
+| `fallingStarLand` | 1 | 0.8 | A heavy concrete block dropped onto a stone floor from a height, about 0.5 seconds: a deep heavy thump and a short crunch of stone. | Heavy stone block landing |
+| `communion` | 1 | 0.7 | Several small brass handbells rung softly together once, about 0.45 seconds: a warm gentle chord fading. | Small brass bells chiming together |
+| `shroud` | 1 | 0.7 | A large glass bowl lowered onto a table and gently tapped, about 0.4 seconds: a quiet steady glassy hum. | Glass bowl humming briefly |
+| `shroudBurst` | 1 | 0.7 | A thick glass pane shattering outward, about 0.45 seconds: a hollow crack and falling glass. | Thick glass shattering |
+| `chains` | 1 | 0.8 | Several heavy steel chains thrown down onto a concrete floor and pulled tight, about 0.5 seconds: a loud chain rattle and one firm clank. | Heavy chains dropping and pulling tight |
+| `discord` | 1 | 0.8 | A large blacksmith's bellows squeezed hard once next to the microphone, about 0.5 seconds: a strong blast of air with a wooden creak. | Bellows blasting air |
+| `fieldOfBlood` | 1 | 0.7 | A handful of silver coins thrown down onto stone, about 0.4 seconds: a scatter of coins and one low dull thud of a leather bag landing. | Silver coins scattering on stone |
+| `shadowstep` | 1 | 0.5 | A heavy cloak swirled quickly, about 0.25 seconds: a brief rush of fabric and the soft ring of a knife being drawn. | Cloak swish and knife unsheathing |
+| `healed` | 1 | 0.5 | A small glass wind chime touched lightly once, about 0.2 seconds: a soft bright tinkle. | Gentle glass wind chime |
+| `shieldUp` | 1 | 0.5 | A wine glass flicked with a fingernail, about 0.25 seconds: a short clear ring. | Wine glass ringing |
+| `shieldBroken` | 1 | 0.6 | A drinking glass dropped and breaking on a stone floor, about 0.35 seconds: a sharp crack and a brief tinkle. | Drinking glass breaking |
+| `interrupted` | 1 | 0.5 | A taut rope snapping, about 0.2 seconds: one sharp dry crack. | Rope snapping |
+| `revive` | 1 | 0.7 | One warm strike of a tubular chime, about 0.4 seconds, fading. | Single warm chime |
+| `hurt` | 1 | 0.5 | A fist punching a leather coat worn over chain mail, about 0.12 seconds: a dry thud with a small metal jingle. | Punch hitting leather armor |
+| `death` | 1 | 0.7 | A man in plate armor collapsing onto a stone floor, about 0.45 seconds: a heavy clatter of metal plates and a dull thud. | Armored body falling onto stone |
+| `abilityReady` | 1 | 0.5 | A small metal latch clicked open, about 0.1 seconds: a soft clear click. | Small metal latch click |
+| `countdownTick` | 1 | 0.5 | One tick of a large mechanical clock, about 0.1 seconds. | Single clock tick |
+| `buttonClick` | 1 | 0.5 | A small wooden button pressed on a desk, about 0.1 seconds: a soft clean click. | Soft wooden button click |
 
 The existing `victory`, `defeat`, `buttonHover`, `fieldEntered` and `sacrament` cues stay as they are.
 
@@ -1309,19 +2181,19 @@ Choose one suitable voice from the library (or Voice Design) for each speaker. S
 
 Download natively, preserve the actual export format, and import by the table's full ID with `--kind voice` (for example `voice-gatekeeper-enter`; do not prefix it twice). Expand `voice-announcer-<tier>` into five IDs: `voice-announcer-sacrilege`, `voice-announcer-desecration`, `voice-announcer-massacre`, `voice-announcer-apocalypse`, `voice-announcer-armageddon`. Subtitles and play rules are integration work at the owning milestone.
 
-| ID | Speaker and direction | Line | Plays |
-|---|---|---|---|
-| `voice-gatekeeper-enter` | Gatekeeper: resonant, measured, cold certainty, a bureaucrat of Heaven, no villain laughter | "Your appeal is denied." | once at the start of the fight ([bosses.md](bosses.md) §1) |
-| `voice-gatekeeper-call` | Gatekeeper | "You have been called." | when Called to the Gate starts |
-| `voice-gatekeeper-phase2` | Gatekeeper | "Let the witnesses see." | at 50%, as he lifts the trumpet |
-| `voice-gatekeeper-victory` | Gatekeeper, fading | "The first trumpet is silent. Six to go." | at victory ([bosses.md](bosses.md) §1) |
-| `voice-advocate-greet` | the Advocate: quiet, weary legal counsel through a grille, restrained warmth | "Your appeal is not yet heard." | first time a player opens the Advocate |
-| `voice-advocate-bargain` | the Advocate | "A part of you, held until victory." | when the bargain card is shown |
-| `voice-advocate-decline` | the Advocate | "Then keep what remains." | when the bargain is declined |
-| `voice-pardoner-greet` | the Pardoner: polite, precise, a little too smooth | "Provision for the road ahead." | first visit to the stall |
-| `voice-pardoner-purchase` | the Pardoner | "A prudent offering." | now and then on a purchase |
-| `voice-announcer-<tier>` | one announcer: restrained, resonant, the same voice for all five | "Sacrilege." / "Desecration." / "Massacre." / "Apocalypse." / "Armageddon." | streak tiers |
+| ID | Variant A — detailed voice direction | Variant B — simple voice direction | Line | Plays |
+|---|---|---|---|---|
+| `voice-gatekeeper-enter` | Gatekeeper: resonant, measured, cold certainty, a bureaucrat of Heaven, no villain laughter | Gatekeeper: deep, calm, cold | "Your appeal is denied." | once at the start of the fight ([bosses.md](bosses.md) §1) |
+| `voice-gatekeeper-call` | Gatekeeper | Gatekeeper: deep, calm, cold | "You have been called." | when Called to the Gate starts |
+| `voice-gatekeeper-phase2` | Gatekeeper | Gatekeeper: deep, calm, cold | "Let the witnesses see." | at 50%, as he lifts the trumpet |
+| `voice-gatekeeper-victory` | Gatekeeper, fading | Gatekeeper: deep, fading | "The first trumpet is silent. Six to go." | at victory ([bosses.md](bosses.md) §1) |
+| `voice-advocate-greet` | the Advocate: quiet, weary legal counsel through a grille, restrained warmth | Advocate: quiet, tired, kind | "Your appeal is not yet heard." | first time a player opens the Advocate |
+| `voice-advocate-bargain` | the Advocate | Advocate: quiet, tired, kind | "A part of you, held until victory." | when the bargain card is shown |
+| `voice-advocate-decline` | the Advocate | Advocate: quiet, tired, kind | "Then keep what remains." | when the bargain is declined |
+| `voice-pardoner-greet` | the Pardoner: polite, precise, a little too smooth | Pardoner: polite, smooth | "Provision for the road ahead." | first visit to the stall |
+| `voice-pardoner-purchase` | the Pardoner | Pardoner: polite, smooth | "A prudent offering." | now and then on a purchase |
+| `voice-announcer-<tier>` | one announcer: restrained, resonant, the same voice for all five | Announcer: deep, restrained | "Sacrilege." / "Desecration." / "Massacre." / "Apocalypse." / "Armageddon." | streak tiers |
 
-Keep the speaker direction as a saved voice brief, not as text to be spoken.
+Use Variant B for a short voice brief or Variant A for the original direction. Keep either as a saved voice brief, not as text to be spoken; the spoken lines are the same for both variants.
 
 The Gatekeeper's victory line replaces the earlier draft's *"Stand before Judgment."*, which would have spoken over the Judgment warning; the boss catalog already defines the start and victory lines.
