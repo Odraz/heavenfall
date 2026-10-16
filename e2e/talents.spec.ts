@@ -15,6 +15,12 @@ test('a build learned in the Lobby is saved and enters the run', async ({ page }
   await expect(page.getByText('Profile imported', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.getByRole('button', { name: 'Singleplayer', exact: true }).click();
+  // The Talents button has its own row under Q and E; every card keeps the same height.
+  const betrayer = page.locator('.class-card[data-class-id="betrayer"]');
+  const powers = await betrayer.locator('.class-abilities').boundingBox(), talents = await betrayer.locator('.class-talents').boundingBox();
+  expect(talents!.y).toBeGreaterThanOrEqual(powers!.y + powers!.height);
+  const heights = await page.locator('.class-card').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+  expect(new Set(heights).size).toBe(1);
   await page.getByRole('button', { name: 'Talents · 2 to learn', exact: true }).click();
   const panel = page.locator('.talent-panel');
   await expect(panel.locator('.talent-points')).toHaveText('0 / 2 points');
@@ -33,6 +39,26 @@ test('a build learned in the Lobby is saved and enters the run', async ({ page }
   await page.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 3);
   await expect(page.locator('.hint-talents')).toContainText('The Nail');
   await expect(page.locator('.hint-talents')).toContainText('Glancing Silver');
+  // T opens the build to read anywhere: nothing to apply or click, and singleplayer waits until T closes it.
+  await page.keyboard.press('KeyT');
+  const view = page.locator('.talent-panel');
+  await expect(view.locator('.talent-title')).toHaveText('Talents');
+  await expect(view.locator('.talent-points')).toHaveText('2 / 2 points');
+  await expect(view.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0);
+  await expect(view.locator('.talent-reset')).toHaveCount(3);
+  await expect(view.locator('.talent-reset').first()).toBeHidden();
+  await view.getByRole('button', { name: 'The Nail', exact: true }).click();
+  await expect(view.getByRole('button', { name: 'The Nail', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await view.getByRole('button', { name: 'Recoil', exact: true }).hover();
+  await expect(page.locator('.tooltip')).toContainText('Recoil');
+  const held = await page.evaluate(() => window.__heavenfall.lastSnapshotTick);
+  await page.waitForTimeout(600);
+  expect(await page.evaluate(() => window.__heavenfall.lastSnapshotTick)).toBe(held);
+  await page.keyboard.press('KeyT');
+  await expect(view).toHaveCount(0);
+  await expect(page.locator('.pause-overlay')).toBeHidden();
+  await page.waitForFunction((t) => window.__heavenfall.lastSnapshotTick > t + 5, held);
+  await expect(page.locator('.hints')).toContainText('T: read your talents');
 });
 
 test('a dev quick build, the free Talents view and a Rite offer', async ({ page }) => {

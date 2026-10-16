@@ -1,5 +1,6 @@
 /** The in-game HUD and screen feedback (§10), plain DOM over the canvas. */
 import { CLASSES, GENERAL_HINTS, type ClassId } from '../data/classes';
+import { hasCatalog } from '../data/talents';
 import { ITEMS } from '../data/items';
 import type { InventoryState } from '../net/messages';
 import { ITEM_ART } from './itemArt';
@@ -453,7 +454,7 @@ export class Hud {
     this.carried = el('div', 'hint-carried', this.hints);
     this.setCarried(null);
     {
-      for (const text of GENERAL_HINTS.filter(text => multiplayer || text.startsWith('1 /') || text.startsWith('F:') || text.startsWith('Esc:'))) {
+      for (const text of GENERAL_HINTS.filter(text => (text.startsWith('T:') ? hasCatalog(classId) : multiplayer || text.startsWith('1 /') || text.startsWith('F:') || text.startsWith('Esc:')))) {
         const line = el('div', 'hint hint-general', this.hints);
         el('span', 'hint-icon', line);
         el('span', 'hint-text', line).textContent = text;

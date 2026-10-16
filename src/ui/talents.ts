@@ -34,6 +34,8 @@ export interface TalentPanelOptions {
   /** The character's level, or null for a development run's free points. */
   level: number | null;
   title: string;
+  /** Look only (T in a run, §9.4): nodes and abilities keep their tooltips, nothing can change. */
+  readOnly?: boolean;
   onApply: (build: LearnedBuild) => void;
   onClose: () => void;
 }
@@ -62,6 +64,7 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
 
   const check = (b: LearnedBuild): string | null => runBuildError(o.classId, { ...b, rites }, o.level);
   const toggle = (n: TalentNode): void => {
+    if (o.readOnly) return;
     if (rites.includes(n.id)) { message.textContent = `${n.name} is a Rite this run`; return; }
     if (draft.talents.includes(n.id)) {
       const next = removeLearned(o.classId, { ...draft, rites }, n.id);
@@ -92,7 +95,7 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
           const learned = draft.talents.includes(n.id), rite = rites.includes(n.id);
           const open = !learned && !rite && check({ ...draft, talents: [...draft.talents, n.id] }) === null;
           const state = rite ? 'rite' : learned ? 'learned' : open ? 'open' : 'locked';
-          const b = button(n.name, row, () => toggle(n), `talent-node ${state}${kit.dormant.includes(n.id) ? ' dormant' : ''}${kit.suppressed.has(n.id) ? ' suppressed' : ''}`);
+          const b = button(n.name, row, () => toggle(n), `talent-node ${o.readOnly ? 'view ' : ''}${state}${kit.dormant.includes(n.id) ? ' dormant' : ''}${kit.suppressed.has(n.id) ? ' suppressed' : ''}`);
           b.dataset.node = n.id;
           b.setAttribute('aria-pressed', String(learned || rite));
           const notes = [rite ? 'Held as a Rite this run.' : '', kit.dormant.includes(n.id) ? 'Dormant: its ability is not assigned.' : '',
@@ -100,11 +103,13 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
           attachTooltip(b, n.name, `${nodeDetail(n)}${notes ? ` ${notes}` : ''}`);
         }
       }
-      button(`Reset ${info?.name ?? t}`, col, () => {
+      const reset = button(`Reset ${info?.name ?? t}`, col, () => {
         let b: RunBuild = { ...draft, rites };
         for (const id of draft.talents) if (talentNode(id)?.tree === t && b.talents.includes(id)) b = removeLearned(o.classId, b, id);
         draft = { talents: [...b.talents], q: b.q, e: b.e }; message.textContent = ''; draw();
       }, 'small secondary talent-reset');
+      // Hidden, not removed, so the trees keep the editor's size.
+      if (o.readOnly) { reset.disabled = true; reset.classList.add('talent-unused'); }
     }
     slots.replaceChildren();
     for (const slot of ['Q', 'E'] as const) {
@@ -112,23 +117,27 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
       el('div', 'talent-slot-key', row, slot);
       for (const id of slotChoices(o.classId, slot, [...draft.talents, ...rites])) {
         const def = abilityDef(o.classId, slot, id), current = (slot === 'Q' ? draft.q : draft.e) === id;
-        const b = button('', row, () => { draft = slot === 'Q' ? { ...draft, q: id } : { ...draft, e: id }; message.textContent = ''; draw(); }, 'talent-ability');
+        const b = button('', row, () => { if (o.readOnly) return; draft = slot === 'Q' ? { ...draft, q: id } : { ...draft, e: id }; message.textContent = ''; draw(); }, 'talent-ability');
         b.setAttribute('aria-pressed', String(current));
+        if (o.readOnly) b.classList.add('view');
         const icon = el('img', '', b); icon.src = spriteUrl(def.icon); icon.alt = '';
         el('span', '', b, def.name);
         attachTooltip(b, def.name, def.description);
       }
     }
+    if (!apply) return;
     apply.disabled = JSON.stringify(draft) === JSON.stringify(accepted) || check(draft) !== null;
   };
 
-  button('Reset all', footer, () => {
+  let apply: HTMLButtonElement | null = null;
+  if (o.readOnly) message.textContent = 'Learn and assign in the Lobby or with the Advocate in the Confessional.';
+  else button('Reset all', footer, () => {
     draft = { talents: [], q: slotChoices(o.classId, 'Q', rites).includes(draft.q) ? draft.q : slotChoices(o.classId, 'Q', [])[0], e: slotChoices(o.classId, 'E', rites).includes(draft.e) ? draft.e : slotChoices(o.classId, 'E', [])[0] };
     const error = check(draft);
     message.textContent = error ?? ''; draw();
   }, 'small secondary');
-  button('Close', footer, o.onClose, 'small secondary');
-  const apply = button('Apply', footer, () => {
+  button(o.readOnly ? 'Close (T)' : 'Close', footer, o.onClose, 'small secondary');
+  if (!o.readOnly) apply = button('Apply', footer, () => {
     const error = check(draft);
     if (error) { message.textContent = error; return; }
     message.textContent = 'Sending…';
@@ -137,7 +146,7 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
   draw();
   return {
     el: root,
-    setMessage: (text) => { message.textContent = text; },
+    setMessage: (text) => { if (!o.readOnly) message.textContent = text; },
     setBuild: (build, held) => { accepted = { talents: [...build.talents], q: build.q, e: build.e }; rites = [...held]; draft = { ...accepted, talents: [...accepted.talents] }; draw(); },
   };
 }

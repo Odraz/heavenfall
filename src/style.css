@@ -1528,6 +1528,11 @@ div.weapon-swing {
   grid-row: span 8;
 }
 
+/* A Talents button takes a ninth row; every card reserves it, so the rows still line up. */
+.class-cards:has(.class-talents) .class-card:has(.class-level) {
+  grid-row: span 9;
+}
+
 .class-card:hover,
 .dungeon-option:hover {
   border-color: #6b5047;
@@ -2675,4 +2680,14 @@ div.weapon-swing {
 
 .hidden-mark[hidden] {
   display: none;
+}
+
+/* The look-only Talents view (T in a run): tooltips on hover, nothing to click. */
+.talent-node.view,
+.talent-ability.view {
+  cursor: help;
+}
+
+.talent-unused {
+  visibility: hidden;
 }

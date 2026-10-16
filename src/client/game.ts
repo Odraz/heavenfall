@@ -694,11 +694,13 @@ export class Game {
     else if (code === 'KeyG' && this.params.dev && this.o.host) this.o.host.toggleGod();
     // Dev key I fills both item slots with the next pair, to try every item's effect.
     else if (code === 'KeyI' && this.params.dev && this.o.host) this.o.host.devItems();
-    // Dev keys B (next quick build), R (a Rite offer now) and T (the Talents view anywhere, free points).
+    // Dev keys B (next quick build), R (a Rite offer now) and T (the Talents view anywhere, free points, while alive).
     else if (code === 'KeyB' && this.params.dev && this.o.host) this.o.host.devBuild();
     else if (code === 'KeyR' && this.params.dev && this.o.host) this.o.host.devRite();
     else if (code === 'KeyT' && this.params.dev && !this.dead) this.openTalents();
     else if (this.params.bot) return;
+    // T: the own talents and Q/E to read, anywhere in the run, dead or alive (§9.4); it changes nothing.
+    else if (code === 'KeyT') this.openTalents(true);
     else if ((code === 'Digit1' || code === 'Digit2') && !this.dead && !this.player.carried) {
       const slot = code === 'Digit1' ? 0 : 1; this.itemPresses[slot] = (this.itemPresses[slot] + 1) & 255;
     }
@@ -1006,7 +1008,8 @@ export class Game {
 
   private readonly overlayKey = (e: KeyboardEvent): void => {
     // Esc closes the choice only: the same press must not reach the game and open Pause.
-    if (e.code === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); this.closeOverlay(); }
+    // T closes the Talents view it opens.
+    if (e.code === 'Escape' || (e.code === 'KeyT' && !e.repeat && this.overlayView?.kind === 'talents')) { e.preventDefault(); e.stopImmediatePropagation(); this.closeOverlay(); }
   };
 
   /** A pending Rite's cards (§9.10): Take, Pass, or Esc to keep it for later. */
@@ -1023,8 +1026,11 @@ export class Game {
     view.show(offer, this.talents.offers.length);
   }
 
-  /** The Advocate's Talents view (§9.6); in a development run without saved progression, anywhere with free points. */
-  private openTalents(): void {
+  /**
+   * The Advocate's Talents view (§9.6); in a development run without saved progression, anywhere with
+   * free points. `readOnly` is T's look at the own build anywhere: the same trees, nothing to apply.
+   */
+  private openTalents(readOnly = false): void {
     if (this.over || !hasCatalog(this.classId)) return;
     const k = this.talents.own();
     const dev = !this.progressionEnabled;
@@ -1033,7 +1039,8 @@ export class Game {
       build: { talents: k?.learned ?? [], q: this.talents.ability(this.localId, 'Q'), e: this.talents.ability(this.localId, 'E') },
       rites: k?.rites ?? [],
       level: dev ? null : levelForXp(this.inventory?.xp ?? 0),
-      title: dev ? 'Talents · development' : 'The Advocate',
+      title: readOnly ? 'Talents' : dev ? 'Talents · development' : 'The Advocate',
+      readOnly,
       onApply: (b) => this.o.transport.sendCtrl({ type: 'advocate', runId: this.o.runId, requestId: this.nextRequestId++, talents: [...b.talents], q: b.q, e: b.e }),
       onClose: () => this.closeOverlay(),
     });
