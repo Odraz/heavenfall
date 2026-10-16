@@ -3,7 +3,7 @@ import type { ClassId } from '../data/classes';
 import { BLESSED, ENEMIES, WATCHMAN } from '../data/enemies';
 import type { Focus } from '../data/dungeons/types';
 import { WATCHMAN_AIM_TICKS, WATCHMAN_FIRED_TICKS, WATCHMAN_RELOAD_TICKS, validWatchmanAims } from '../data/watchman';
-import { PHASE_CLEARED, PHASE_COMBAT } from '../net/protocol';
+import { PHASE_CLEARED, PHASE_COMBAT, decodeSnapshot } from '../net/protocol';
 import { PLAYER_HEIGHT } from './constants';
 import { HALO_WEIGHT } from './economy';
 import { itemDropChance, moteDropChance } from './rewards';
@@ -210,5 +210,20 @@ describe('the Watchman shot (rooms.md §6.4)', () => {
     expect(moteDropChance(WATCHMAN)).toBe(0.35);
     expect(itemDropChance(WATCHMAN)).toBe(0.12);
     expect([moteDropChance(BLESSED), itemDropChance(BLESSED)]).toEqual([0, 0.02]);
+  });
+});
+
+describe('Watchman records in snapshots', () => {
+  it('encodes the aim and the fired record for 0.5 s, even while a pull skips its update', () => {
+    const { sim, slot } = shot();
+    aim(sim, slot);
+    const decoded = () => decodeSnapshot(sim.encodeFor(0)[0])!;
+    expect(decoded().watchmanAims).toEqual([expect.objectContaining({ slot, phase: 'aim' })]);
+    steps(sim, WATCHMAN_AIM_TICKS);
+    expect(decoded().watchmanAims![0]).toMatchObject({ phase: 'fired', shot: 1 });
+    sim.pull(slot, 12.5, 10.5, 0);
+    for (let i = 0; i < 20; i++) { sim.step(); expect(() => sim.encodeFor(0)).not.toThrow(); }
+    expect(decoded().watchmanAims).toEqual([]);
+    expect(sim.floorSync('0'.repeat(32)).watchmanAims).toEqual([]);
   });
 });

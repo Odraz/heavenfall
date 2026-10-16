@@ -48,3 +48,8 @@ export function validWatchmanAims(aims: readonly WatchmanAim[], tick: number): b
       [a.x, a.y].every((n) => Number.isFinite(n) && n >= 0 && n <= 1023) && Number.isFinite(a.z) && a.z >= 0 && a.z <= 1023;
   });
 }
+
+/** Whether any wave of these rooms has Watchmen: the client loads their atlas only then. */
+export function hasWatchmen(rooms: ReadonlyArray<{ waves: ReadonlyArray<{ watchmen?: number }> }>): boolean {
+  return rooms.some((r) => r.waves.some((w) => (w.watchmen ?? 0) > 0));
+}

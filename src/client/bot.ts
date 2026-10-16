@@ -1,9 +1,10 @@
 import type { CommanderCast } from '../data/commanders';
+import type { WatchmanAim } from '../data/watchman';
 import { beamSegment } from '../sim/commanders';
 /** The bot (`?bot=1`): replaces the local player's input in game (§2.5). */
 import type { ClassId } from '../data/classes';
 import { ENEMIES } from '../data/enemies';
-import { FIRE_LEFT, FIRE_RIGHT, SCOURGE_HALF_ARC, SECONDARIES } from '../data/weapons';
+import { FIRE_LEFT, FIRE_RIGHT, SCOURGE_HALF_ARC, SECONDARIES, WEAPONS } from '../data/weapons';
 import { aimDir, rayCylinder } from '../sim/combat';
 import { PHASE_COMBAT, PHASE_COUNTDOWN } from '../net/protocol';
 import { PLAYER_EYE, PLAYER_HEIGHT, PLAYER_RADIUS } from '../sim/constants';
@@ -33,6 +34,8 @@ export interface BotView {
   /** Already filtered by accepted cast deadline, room and incarnation. */
   dominionRings?: readonly DominionRing[];
   commanderCasts?: readonly CommanderCast[];
+  /** Live Watchman aim records (rogue rooms.md §6.4). */
+  watchmanAims?: readonly WatchmanAim[];
   /** The snapshot's active room (255: none), its phase and the cleared rooms (rogue game.md §14.3). */
   activeRoom: number;
   activePhase: number;
@@ -400,10 +403,14 @@ export class Bot {
   }
 
   private findVisible(v: BotView, ex: number, ey: number, ez: number): BotEnemy | undefined {
+    const range = WEAPONS[v.classId].range;
     const list = v.enemies
       .map((e) => {
         const def = ENEMIES[e.type];
-        return { e, d: (v.commanderCasts?.some((c) => c.slot === e.slot && c.phase === 'carry') ? -10000 : 0) + distToCylinder(ex, ey, ez, e.x, e.y, e.z, def.radius, def.height) };
+        const d = distToCylinder(ex, ey, ez, e.x, e.y, e.z, def.radius, def.height);
+        // A carrier holding a teammate first; then a Watchman aiming at this bot, within its weapon's range.
+        const aiming = d <= range && v.watchmanAims?.some((a) => a.slot === e.slot && a.phase === 'aim' && a.targetId === v.entryIndex);
+        return { e, d: (v.commanderCasts?.some((c) => c.slot === e.slot && c.phase === 'carry') ? -10000 : aiming ? -5000 : 0) + d };
       })
       .sort((a, b) => a.d - b.d);
     for (const { e } of list) {

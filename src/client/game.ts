@@ -1,13 +1,16 @@
 import { CARRIER_SWOOP } from '../data/commanders';
 import { CommanderProjection } from './commanders';
 import { CommanderView } from './commanderView';
+import { WatchmanProjection } from './watchmen';
+import { ROD_BELL_FORWARD, WatchmanView } from './watchmanView';
+import { WATCHMAN_MUZZLE_Z, type WatchmanAim } from '../data/watchman';
 import { RewardShafts, rewardPickupIds, rewardSpot } from './rewardShaft';
 import { rewardLabel } from '../gen/rewards';
 /** The in-game client: input or bot, local movement, snapshots, interpolation, rendering and feedback. */
 import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
-import { CANTOR, CARRIER, isCommander, CHORISTER, DOMINION, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_FALLING, ST_WINDUP } from '../data/enemies';
+import { CANTOR, CARRIER, isCommander, CHORISTER, DOMINION, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_FALLING, ST_WINDUP, WATCHMAN } from '../data/enemies';
 import { DOMINION_RADIUS } from '../data/dominion';
 import { DominionProjection } from './dominion';
 import { DominionView } from './dominionView';
@@ -431,6 +434,8 @@ export class Game {
   private readonly pickups: PickupView;
   private readonly props: PropView;
   private readonly commanders: CommanderProjection;
+  private readonly watchmen: WatchmanProjection;
+  private readonly watchmanView: WatchmanView;
   private readonly commanderView: CommanderView;
   private readonly rewardShafts: RewardShafts;
   private readonly dominion: DominionProjection;
@@ -551,8 +556,11 @@ export class Game {
     this.scene.scene.add(this.props.billboards.mesh);
     this.dominion = new DominionProjection(o.runId);
     this.commanders = new CommanderProjection(o.runId);
+    this.watchmen = new WatchmanProjection(o.runId);
     this.commanderView = new CommanderView(o.textures.fx.beam, o.textures.fx.glow);
     this.scene.scene.add(this.commanderView.group);
+    this.watchmanView = new WatchmanView(o.textures.fx.beam, true, o.params.dev);
+    this.scene.scene.add(this.watchmanView.group);
     this.rewardShafts = new RewardShafts(o.textures.fx.beam);
     this.scene.scene.add(this.rewardShafts.group);
     this.spawnWarnings = new SpawnProjection(o.runId, this.map);
@@ -1110,6 +1118,7 @@ export class Game {
       if (inventory) this.setInventory(inventory);
       this.dominion.sync(msg);
       this.commanders.sync(msg);
+      this.watchmen.sync(msg);
       this.spawnWarnings.sync(msg);
       this.pickups.model.sync(msg);
       if (this.props.model.sync(msg)) {
@@ -1403,6 +1412,39 @@ export class Game {
     return [q.x + Math.cos(q.yaw) * OTHERS_MUZZLE, q.y + Math.sin(q.yaw) * OTHERS_MUZZLE, q.z + PLAYER_HEIGHT / 2];
   }
 
+  /**
+   * The Watchmen (rogue rooms.md §6.4): threads toward each target's drawn body center while aiming,
+   * the rising note, and per accepted shot one muzzle flash, tracer, crack and, on cover, a spark.
+   */
+  private drawWatchmen(now: number, ents: InterpolatedEnemies, enemyZ: Float32Array, tick: number): void {
+    const aims = this.watchmen.live(this.snaps.newest, tick);
+    const center = (id: number): [number, number, number] | undefined => {
+      const q = id === this.localId && this.dead ? undefined : this.playerPose(id);
+      return q ? [q.x, q.y, q.z + PLAYER_HEIGHT / 2] : undefined;
+    };
+    this.watchmanView.update(ents, enemyZ, aims, this.map, tick, this.scene.camera.position, center);
+    const at = (a: WatchmanAim) => {
+      for (let i = 0; i < ents.count; i++) if (ents.slot[i] === a.slot && ents.incarnation[i] === a.incarnation) return { x: ents.x[i], y: ents.y[i], z: enemyZ[i] };
+      return undefined;
+    };
+    const voiced: Array<{ aim: WatchmanAim; at: { x: number; y: number } }> = [];
+    for (const a of aims) { const p = at(a); if (p) voiced.push({ aim: a, at: p }); }
+    this.sounds.watchmen(this.paused ? [] : voiced, tick);
+    for (const a of this.watchmen.takeShots(aims)) {
+      const p = at(a);
+      if (!p) continue;
+      const dx = a.x - p.x, dy = a.y - p.y, h = Math.hypot(dx, dy) || 1;
+      const bell = Math.min(ROD_BELL_FORWARD, h * 0.5);
+      const muzzle: [number, number, number] = [p.x + dx / h * bell, p.y + dy / h * bell, p.z + WATCHMAN_MUZZLE_Z];
+      this.vfx.sphere(now, muzzle[0], muzzle[1], muzzle[2], 0xffe7a0, 0.08, 0.35, 90, 0.8);
+      this.vfx.beam(now, [muzzle, [a.x, a.y, a.z]], 0xfff1c0, 0.07, 140);
+      this.sounds.watchmanShot(p);
+      // The host's end point is the target's body center on a hit; anywhere else it struck cover.
+      const t = center(a.targetId);
+      if (!t || Math.hypot(t[0] - a.x, t[1] - a.y, t[2] - a.z) > 0.75) this.particles.shotSpark(a.x, a.y, a.z, -dx, -dy);
+    }
+  }
+
   /** The Silver Bullet's tracer (M9 §5.1): ember, with a silver-white core drawn over it. */
   private silverTracer(now: number, from: readonly [number, number, number], to: readonly [number, number, number], ember = SILVER_EMBER): void {
     const pts: Array<[number, number, number]> = [[from[0], from[1], from[2]], [to[0], to[1], to[2]]];
@@ -1560,6 +1602,10 @@ export class Game {
     this.dominion.snapshot(s);
     this.commanders.sync(s);
     debugState.commanders = [...this.commanders.active.values()].map((c) => ({ ...c }));
+    this.watchmen.sync(s);
+    debugState.watchmen = [...this.watchmen.active.values()].map((a) => ({ ...a }));
+    debugState.watchmanBodies = [];
+    for (let i = 0; i < s.enemyCount; i++) if (s.enemyType[i] === WATCHMAN) debugState.watchmanBodies.push({ slot: s.enemySlot[i], incarnation: s.enemyIncarnation[i], x: s.enemyX[i], y: s.enemyY[i], z: s.enemyZ[i] });
     debugState.dominion.actors = [];
     for (let i = 0; i < s.enemyCount; i++) if (s.enemyType[i] === DOMINION) debugState.dominion.actors.push({ slot: s.enemySlot[i], incarnation: s.enemyIncarnation[i], x: s.enemyX[i], y: s.enemyY[i], z: s.enemyZ[i] });
     // Every leaf follows from the header's activeRoom, activePhase and clearedMask (rogue game.md §3.4).
@@ -2274,6 +2320,7 @@ export class Game {
         dead: this.dead,
         enemies: be,
         commanderCasts: this.commanders.live(s, this.snaps.estimatedTick(simNow)),
+        watchmanAims: this.watchmen.live(s, this.snaps.estimatedTick(simNow)),
         dominionRings: s ? this.dominion.rings(s, this.snaps.estimatedTick(simNow)) : [],
         activeRoom: s?.activeRoom ?? 255,
         activePhase: s?.activePhase ?? 0,
@@ -2465,6 +2512,7 @@ export class Game {
     const family = this.commanders.live(this.snaps.newest, dominionTick);
     this.commanderView.update(family, this.map, dominionTick, this.scene.camera.position);
     this.sounds.commanders(this.paused ? [] : family, dominionTick);
+    this.drawWatchmen(now, ents, enemyZ, dominionTick);
     debugState.spawnWarnings = this.spawnWarnings.live(dominionTick);
     this.spawnView.update(debugState.spawnWarnings, dominionTick);
     this.sounds.arrivals(this.paused ? [] : debugState.spawnWarnings, dominionTick);
@@ -2908,6 +2956,7 @@ export class Game {
     this.props.dispose();
     this.dominionView.dispose();
     this.commanderView.dispose();
+    this.watchmanView.dispose();
     this.rewardShafts.dispose();
     this.spawnView.dispose();
     this.hazards.dispose();

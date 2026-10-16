@@ -195,6 +195,15 @@ export class Particles {
     this.qHalf[i] = half ? 1 : 0;
   }
 
+  /** A Watchman's shot sparking on cover (rogue rooms.md §6.4): 10 gold sparks thrown back toward the shooter, 0.35 s. */
+  shotSpark(x: number, y: number, z: number, backX: number, backY: number): void {
+    for (let i = 0; i < 10; i++) {
+      const a = Math.atan2(backY, backX) + (Math.random() - 0.5) * 2.2;
+      const s = 2 + Math.random() * 3;
+      this.spawn(P_SPARK, x, y, z, Math.cos(a) * s, Math.sin(a) * s, 0.5 + Math.random() * 2.5, 0.35, 0.16);
+    }
+  }
+
   /** An ember burst of 2 m radius, lasting 0.4 s: the Shroud burst (M9 §5.1; it was the censer explosion before M9 §2.8). */
   emberBurst(x: number, y: number, z: number): void {
     for (let i = 0; i < 24; i++) {

@@ -7,6 +7,7 @@ import {
   WATCHMAN_MUZZLE_Z,
   WATCHMAN_RANGE,
   WATCHMAN_REACH,
+  WATCHMAN_RECORD_CAP,
   WATCHMAN_RELOAD_TICKS,
   type WatchmanAim,
 } from '../data/watchman';
@@ -22,8 +23,15 @@ export class Watchmen {
 
   constructor(private readonly sim: Simulation) {}
 
+  /** Detached records valid at this tick: a fired record expires 0.5 s after its shot even if its Watchman skipped a tick. */
   checkpoint(): WatchmanAim[] {
-    return [...this.records.values()].map((a) => ({ ...a }));
+    const tick = this.sim.tick, out: WatchmanAim[] = [];
+    for (const [slot, a] of this.records) {
+      if (a.phase === 'fired' && tick - a.fireTick >= WATCHMAN_FIRED_TICKS) { this.records.delete(slot); continue; }
+      if (a.phase === 'aim' && a.fireTick <= tick) continue;
+      if (out.length < WATCHMAN_RECORD_CAP) out.push({ ...a });
+    }
+    return out;
   }
 
   spawn(slot: number): void {

@@ -876,7 +876,7 @@ export class Simulation {
       progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)),
       kits: this.players.map((p) => this.talents.kitState(p)), talentAreas: this.talents.checkpoint(), itemEffects: this.items.records(), victory: this.victory ? { ...this.victory.state } : null,
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
-      pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), commanderCasts: this.commanders.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
+      pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), commanderCasts: this.commanders.checkpoint(), watchmanAims: this.watchmen.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
   }
 
   private discoverNeighbours(ai: number): void {
@@ -4240,6 +4240,7 @@ export class Simulation {
     const e = this.ent;
     e.dominionCasts = this.dominions.checkpoint();
     e.commanderCasts = this.commanders.checkpoint();
+    e.watchmanAims = this.watchmen.checkpoint();
     const tick = this.tick;
     e.enemyCount = this.activeCount;
     for (let k = 0; k < this.activeCount; k++) {

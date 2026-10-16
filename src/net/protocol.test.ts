@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { DUNGEONS } from '../data/dungeons/index';
 
 const sandbox = DUNGEONS.sandbox;
-import { BLESSED, CANTOR, CARRIER, DOMINION } from '../data/enemies';
+import { BLESSED, CANTOR, CARRIER, DOMINION, WATCHMAN } from '../data/enemies';
+import type { WatchmanAim } from '../data/watchman';
+import { WATCHMAN_BYTES } from './watchmanCodec';
 import type { CommanderCast } from '../data/commanders';
 import { COMMANDER_BYTES } from './commanderCodec';
 import { FIRE_LEFT, FIRE_RIGHT, FIRE_RIGHT_LAST } from '../data/weapons';
@@ -189,7 +191,7 @@ describe('snapshot protocol', () => {
     expect(parts.length).toBe(1);
     expect(parts[0].byteLength).toBe(HEADER_BYTES + 4 * PLAYER_BYTES + 100 * ENEMY_BYTES + 20 * 9);
     const s = decodeSnapshot(parts[0])!;
-    expect(HEADER_BYTES).toBe(69);
+    expect(HEADER_BYTES).toBe(71);
     const v = new DataView(parts[0]);
     expect([v.getUint8(0), v.getUint8(1), v.getUint8(2), v.getUint8(3)]).toEqual([PROTOCOL_VERSION, 0, 1, 4]);
     expect(Array.from(new Uint8Array(parts[0], 4, 16))).toEqual(Array.from(new Uint8Array(encodeInput({
@@ -450,7 +452,7 @@ describe('R2 Dominion snapshot control metadata', () => {
   it('reserves three 44-byte records in part zero at maximum capacity, even when their enemies are in part one', () => {
     const e = casting(), packets = encodeSnapshot(header, players(4), e);
     expect(packets).toHaveLength(2); expect(packets.every((p) => p.byteLength <= 16000)).toBe(true);
-    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (69 + 4 * 40) + 1500 * 14 + 400 * 9 + 160 * 9 + 3 * 44);
+    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (71 + 4 * 40) + 1500 * 14 + 400 * 9 + 160 * 9 + 3 * 44);
     const zero = decodeSnapshot(packets[0])!, one = decodeSnapshot(packets[1])!;
     expect(zero.dominionCasts).toEqual(e.dominionCasts); expect(one.dominionCasts).toEqual([]);
     expect(one.totalDominionCasts).toBe(3); expect(zero.enemySlot.includes(e.dominionCasts![0].slot)).toBe(false);
@@ -525,5 +527,42 @@ describe('family commander snapshot metadata', () => {
     expect(a.newestCompleteTick).toBe(-1);
     const p = players(1); p[0].carrySlot = 1;
     expect(decodeSnapshot(encodeSnapshot(header, p, entities(1, 0))[0])).toBeNull();
+  });
+});
+
+describe('Watchman aim records (rogue rooms.md §6.4)', () => {
+  function watchEntities(n = 2) {
+    const e = entities(1500, 400, 160);
+    e.watchmanAims = Array.from({ length: n }, (_, k): WatchmanAim => {
+      const i = 1400 + k; e.enemyTypeState[i] = WATCHMAN | (2 << 4);
+      return k % 2 === 0
+        ? { slot: e.enemySlot[i], incarnation: e.enemyIncarnation[i], targetId: k % 4, phase: 'aim', fireTick: header.tick + 12, shot: 7, x: 0, y: 0, z: 0 }
+        : { slot: e.enemySlot[i], incarnation: e.enemyIncarnation[i], targetId: k % 4, phase: 'fired', fireTick: header.tick - 3, shot: 255, x: 20.25, y: 10.5, z: 1.5 };
+    });
+    return e;
+  }
+  it('round-trips 19-byte records with the enemies in a later part', () => {
+    const e = watchEntities(8), packets = encodeSnapshot(header, players(4), e), assembler = new SnapshotAssembler(); assembler.reset(header.runId);
+    expect(WATCHMAN_BYTES).toBe(19);
+    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(packets.length * (HEADER_BYTES + 4 * PLAYER_BYTES) + 1500 * ENEMY_BYTES + 400 * 9 + 160 * PICKUP_BYTES + 8 * WATCHMAN_BYTES);
+    expect(assembler.add(decodeSnapshot(packets[1])!)).toBeNull();
+    expect(assembler.add(decodeSnapshot(packets[0])!)?.watchmanAims).toEqual(e.watchmanAims);
+  });
+  it('rejects a ninth record, a bad phase, an expired aim and a stale incarnation', () => {
+    expect(() => encodeSnapshot(header, players(4), watchEntities(9))).toThrow('invalid Watchman aims');
+    const late = watchEntities(); late.watchmanAims = [late.watchmanAims![0], { ...late.watchmanAims![1], fireTick: header.tick - 15 }];
+    expect(() => encodeSnapshot(header, players(4), late)).toThrow('invalid Watchman aims');
+    const packets = encodeSnapshot(header, players(4), watchEntities()), offset = HEADER_BYTES + 4 * PLAYER_BYTES;
+    for (const [at, value] of [[69, 9], [70, 1], [offset + 7, 2]]) {
+      const bad = packets[0].slice(0); new DataView(bad).setUint8(at, value); expect(decodeSnapshot(bad)).toBeNull();
+    }
+    const stale = watchEntities(); stale.enemyIncarnation[1400]++;
+    const a = new SnapshotAssembler(); a.reset(header.runId);
+    for (const p of encodeSnapshot(header, players(4), stale)) a.add(decodeSnapshot(p)!);
+    expect(a.newestCompleteTick).toBe(-1);
+    const notWatchman = watchEntities(); notWatchman.enemyTypeState[1401] = BLESSED;
+    const b = new SnapshotAssembler(); b.reset(header.runId);
+    for (const p of encodeSnapshot(header, players(4), notWatchman)) b.add(decodeSnapshot(p)!);
+    expect(b.newestCompleteTick).toBe(-1);
   });
 });

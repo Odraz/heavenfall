@@ -1,9 +1,11 @@
 import { COMMANDER_RECORD_CAP, validCommanderCasts, type CommanderCast } from '../data/commanders';
 import { COMMANDER_BYTES, writeCommander, readCommander } from './commanderCodec';
+import { WATCHMAN_RECORD_CAP, validWatchmanAims, type WatchmanAim } from '../data/watchman';
+import { WATCHMAN_BYTES, writeWatchman, readWatchman } from './watchmanCodec';
 /** Binary input and snapshot encoding, little-endian (§9.3, §9.4). */
 import { PROTOCOL_VERSION } from './version';
 import { PICKUP_CAP, PICKUP_KIND_COUNT } from '../data/pickups';
-import { CANTOR, CARRIER, DOMINION, ENEMIES, ST_WINDUP } from '../data/enemies';
+import { CANTOR, CARRIER, DOMINION, ENEMIES, ST_WINDUP, WATCHMAN } from '../data/enemies';
 import { DOMINION_CAST_CAP, DOMINION_TELL_TICKS, DOMINION_LEAP_MIN_RANGE, DOMINION_LEAP_MAX_RANGE, type DominionCast } from '../data/dominion';
 import { ENEMY_SLOTS, MAX_LIVING_ENEMIES, PROJECTILE_SLOTS } from '../sim/constants';
 
@@ -101,8 +103,8 @@ export function decodeInput(buf: ArrayBuffer, expectedRunId: string): InputMsg |
 
 // ---------------------------------------------------------------- snapshots
 
-/** Run-scoped header, repeated in every part (rogue r01.md, R1.6). */
-export const HEADER_BYTES = 69;
+/** Run-scoped header, repeated in every part (rogue r01.md, R1.6); bytes 69–70 count the Watchman aims (protocol 13). */
+export const HEADER_BYTES = 71;
 export const DOMINION_CAST_BYTES = 44;
 /** The MVP's 28 bytes plus `revive` and `shots` (M8 §10), `shots2` and `beam` (M9 §10). */
 export const PLAYER_BYTES = 40;
@@ -180,6 +182,7 @@ export interface SnapshotPlayer {
 export interface SnapshotEntities {
   dominionCasts?: readonly DominionCast[];
   commanderCasts?: readonly CommanderCast[];
+  watchmanAims?: readonly WatchmanAim[];
   enemyCount: number;
   enemySlot: Uint16Array;
   enemyX: Float32Array;
@@ -226,6 +229,8 @@ export function encodeSnapshot(
   if (!validCommanderCasts(family, h.tick)) throw new Error('invalid commander casts');
   const casts = e.dominionCasts ?? [];
   if (casts.length > DOMINION_CAST_CAP || !validCasts(casts, h.tick)) throw new Error('invalid Dominion casts');
+  const aims = e.watchmanAims ?? [];
+  if (!validWatchmanAims(aims, h.tick)) throw new Error('invalid Watchman aims');
   const fixed = HEADER_BYTES + players.length * PLAYER_BYTES;
   if (players.length > 4 || e.enemyCount > MAX_LIVING_ENEMIES || e.projectileCount > 400 || e.pickupCount > PICKUP_CAP ||
     maxBytes > MAX_SNAPSHOT_BYTES || maxBytes < fixed) throw new Error('snapshot size out of range');
@@ -234,7 +239,7 @@ export function encodeSnapshot(
   let pi = 0;
   do {
     let cap = maxBytes - fixed;
-    if (ranges.length === 0) cap -= e.pickupCount * PICKUP_BYTES + casts.length * DOMINION_CAST_BYTES + family.length * COMMANDER_BYTES;
+    if (ranges.length === 0) cap -= e.pickupCount * PICKUP_BYTES + casts.length * DOMINION_CAST_BYTES + family.length * COMMANDER_BYTES + aims.length * WATCHMAN_BYTES;
     if (cap < 0) throw new Error('snapshot part too small');
     const ne = Math.max(0, Math.min(e.enemyCount - ei, Math.floor(cap / ENEMY_BYTES)));
     cap -= ne * ENEMY_BYTES;
@@ -250,7 +255,8 @@ export function encodeSnapshot(
     const nk = partIndex === 0 ? e.pickupCount : 0;
     const nc = partIndex === 0 ? casts.length : 0;
     const nf = partIndex === 0 ? family.length : 0;
-    const buf = new ArrayBuffer(fixed + ne * ENEMY_BYTES + np * PROJECTILE_BYTES + nk * PICKUP_BYTES + nc * DOMINION_CAST_BYTES + nf * COMMANDER_BYTES);
+    const nw = partIndex === 0 ? aims.length : 0;
+    const buf = new ArrayBuffer(fixed + ne * ENEMY_BYTES + np * PROJECTILE_BYTES + nk * PICKUP_BYTES + nc * DOMINION_CAST_BYTES + nf * COMMANDER_BYTES + nw * WATCHMAN_BYTES);
     const v = new DataView(buf);
     v.setUint8(0, PROTOCOL_VERSION);
     v.setUint8(1, partIndex);
@@ -280,6 +286,7 @@ export function encodeSnapshot(
     v.setUint8(65, casts.length);
     v.setUint8(66, nc);
     v.setUint8(67, family.length); v.setUint8(68, nf);
+    v.setUint8(69, aims.length); v.setUint8(70, nw);
     let o = HEADER_BYTES;
     for (const p of players) {
       v.setUint8(o, p.id);
@@ -310,6 +317,7 @@ export function encodeSnapshot(
       o += DOMINION_CAST_BYTES;
     }
     for (let i = 0; i < nf; i++) { writeCommander(v, o, family[i]); o += COMMANDER_BYTES; }
+    for (let i = 0; i < nw; i++) { writeWatchman(v, o, aims[i]); o += WATCHMAN_BYTES; }
     for (let i = e0; i < e0 + ne; i++) {
       v.setUint16(o, e.enemySlot[i], true);
       v.setUint16(o + 2, pos16(e.enemyX[i]), true);
@@ -345,6 +353,8 @@ export interface Snapshot extends SnapshotHeader {
   commanderCasts?: CommanderCast[];
   totalCommanderCasts?: number;
   totalDominionCasts?: number;
+  watchmanAims?: WatchmanAim[];
+  totalWatchmanAims?: number;
   partIndex: number;
   partCount: number;
   totalEnemyCount: number;
@@ -390,13 +400,15 @@ export function decodeSnapshot(buf: ArrayBuffer, expectedRunId?: string): Snapsh
   const totalDominionCasts = v.getUint8(65), nc = v.getUint8(66);
   const totalCommanderCasts = v.getUint8(67), nf = v.getUint8(68);
   if (totalCommanderCasts > COMMANDER_RECORD_CAP || nf !== (partIndex === 0 ? totalCommanderCasts : 0)) return null;
+  const totalWatchmanAims = v.getUint8(69), nw = v.getUint8(70);
+  if (totalWatchmanAims > WATCHMAN_RECORD_CAP || nw !== (partIndex === 0 ? totalWatchmanAims : 0)) return null;
   if (playerCount > 4 || partCount === 0 || partCount > 4 || partIndex >= partCount ||
     totalEnemyCount > MAX_LIVING_ENEMIES || totalProjectileCount > 400 || totalPickupCount > PICKUP_CAP ||
     enemyStart + ne > totalEnemyCount || projectileStart + np > totalProjectileCount ||
     pickupCount !== (partIndex === 0 ? totalPickupCount : 0) || totalDominionCasts > DOMINION_CAST_CAP || nc !== (partIndex === 0 ? totalDominionCasts : 0) ||
     (partIndex === 0 && (enemyStart !== 0 || projectileStart !== 0))) return null;
   if (partCount === 1 && (ne !== totalEnemyCount || np !== totalProjectileCount)) return null;
-  if (buf.byteLength !== HEADER_BYTES + playerCount * PLAYER_BYTES + ne * ENEMY_BYTES + np * PROJECTILE_BYTES + pickupCount * PICKUP_BYTES + nc * DOMINION_CAST_BYTES + nf * COMMANDER_BYTES) return null;
+  if (buf.byteLength !== HEADER_BYTES + playerCount * PLAYER_BYTES + ne * ENEMY_BYTES + np * PROJECTILE_BYTES + pickupCount * PICKUP_BYTES + nc * DOMINION_CAST_BYTES + nf * COMMANDER_BYTES + nw * WATCHMAN_BYTES) return null;
   const ids = new Set<number>();
   for (let i = 0; i < playerCount; i++) {
     const o = HEADER_BYTES + i * PLAYER_BYTES;
@@ -407,7 +419,7 @@ export function decodeSnapshot(buf: ArrayBuffer, expectedRunId?: string): Snapsh
   }
   const s: Snapshot = {
     runId,
-    totalDominionCasts, dominionCasts: [], totalCommanderCasts, commanderCasts: [],
+    totalDominionCasts, dominionCasts: [], totalCommanderCasts, commanderCasts: [], totalWatchmanAims, watchmanAims: [],
     stateRevision: v.getUint32(24, true),
     tick: v.getUint32(20, true),
     partIndex, partCount, totalEnemyCount, totalProjectileCount, totalPickupCount, pickupCount, enemyStart, projectileStart,
@@ -476,6 +488,8 @@ export function decodeSnapshot(buf: ArrayBuffer, expectedRunId?: string): Snapsh
   if (!validCasts(s.dominionCasts!, s.tick)) return null;
   for (let i = 0; i < nf; i++) { const c = readCommander(v, o); if (!c) return null; s.commanderCasts!.push(c); o += COMMANDER_BYTES; }
   if (!validCommanderCasts(s.commanderCasts!, s.tick) || s.players.some((p) => p.carrySlot! < -1 || p.carrySlot! >= ENEMY_SLOTS)) return null;
+  for (let i = 0; i < nw; i++) { const a = readWatchman(v, o); if (!a) return null; s.watchmanAims!.push(a); o += WATCHMAN_BYTES; }
+  if (!validWatchmanAims(s.watchmanAims!, s.tick)) return null;
   for (let i = 0; i < ne; i++) {
     s.enemySlot[i] = v.getUint16(o, true);
     s.enemyX[i] = v.getUint16(o + 2, true) / POS_SCALE;
@@ -616,7 +630,7 @@ export class SnapshotAssembler {
     if (duplicate) {
       for (const key of Object.keys(part) as Array<keyof Snapshot>) {
         if (key === 'players') continue;
-        if (key === 'dominionCasts' || key === 'commanderCasts') {
+        if (key === 'dominionCasts' || key === 'commanderCasts' || key === 'watchmanAims') {
           if (JSON.stringify(duplicate[key]) !== JSON.stringify(part[key])) return this.invalidate(part.tick, now);
           continue;
         }
@@ -658,7 +672,7 @@ export class SnapshotAssembler {
 
 const SHARED_HEADER = ['runId', 'tick', 'stateRevision', 'activeRoom', 'activePhase', 'countdown', 'hold',
   'clearedMask', 'enemiesRemaining', 'bossHp', 'bossMaxHp', 'bossCast', 'bossCastProgress',
-  'totalEnemyCount', 'totalProjectileCount', 'totalPickupCount', 'totalDominionCasts', 'totalCommanderCasts'] as const;
+  'totalEnemyCount', 'totalProjectileCount', 'totalPickupCount', 'totalDominionCasts', 'totalCommanderCasts', 'totalWatchmanAims'] as const;
 
 /** Bounded authoritative records; active only before their accepted impact deadline. */
 export function validCasts(casts: readonly DominionCast[], tick: number): boolean {
@@ -673,6 +687,11 @@ export function validCasts(casts: readonly DominionCast[], tick: number): boolea
         Math.hypot(c.leap.x - c.leap.fromX, c.leap.y - c.leap.fromY) >= DOMINION_LEAP_MIN_RANGE - 0.001 && Math.hypot(c.leap.x - c.leap.fromX, c.leap.y - c.leap.fromY) <= DOMINION_LEAP_MAX_RANGE + 0.001));
 }
 function castsMatchEnemies(s: Snapshot): boolean {
+  // A Watchman record attaches only to the live incarnation of a Watchman slot.
+  if ((s.watchmanAims ?? []).length !== (s.totalWatchmanAims ?? 0) || !(s.watchmanAims ?? []).every((a) => {
+    const i = s.enemySlot.indexOf(a.slot);
+    return i >= 0 && s.enemyType[i] === WATCHMAN && s.enemyIncarnation[i] === a.incarnation;
+  })) return false;
   if ((s.commanderCasts ?? []).length !== (s.totalCommanderCasts ?? 0) || !(s.commanderCasts ?? []).every((c) => {
     const i = s.enemySlot.indexOf(c.slot);
     return i >= 0 && s.enemyType[i] === (c.kind === 'beam' ? CANTOR : CARRIER) && s.enemyIncarnation[i] === c.incarnation;

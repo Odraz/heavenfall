@@ -1,4 +1,5 @@
 import type { CommanderCast } from '../data/commanders';
+import type { WatchmanAim } from '../data/watchman';
 /** `ctrl` messages and game events (§9.2). */
 import type { ClassId } from '../data/classes';
 import type { PickupRecord } from '../data/pickups';
@@ -52,6 +53,7 @@ export interface FloorSync {
   propRecharges?: Array<{ id: number; readyTick: number }>;
   dominionCasts?: DominionCast[];
   commanderCasts?: CommanderCast[];
+  watchmanAims?: WatchmanAim[];
   spawnWarnings?: SpawnWarning[];
   kits?: KitState[];
   talentAreas?: TalentArea[];

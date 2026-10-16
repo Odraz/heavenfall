@@ -1,4 +1,5 @@
 import type { CommanderCast } from '../data/commanders';
+import { WATCHMAN_AIM_TICKS, type WatchmanAim } from '../data/watchman';
 /**
  * The game's sound effects and music (M8 §9.1, §9.2), driven by what the client already knows: its
  * own input, snapshot changes and events.
@@ -61,6 +62,26 @@ export class GameSounds {
       const handle = sfx('dominionTell', c, 1, 0, PRIO_ABILITY, 1, { elapsed: (tick - c.startTick) / 30, duration: (c.impactTick - c.startTick) / 30 });
       if (handle) this.tells.set(c.castId, handle);
     }
+  }
+
+  private readonly aimVoices = new Map<number, { key: string; handle?: VoiceHandle }>();
+  /**
+   * The Watchman's rising note (rogue rooms.md §6.4) over each aim, at the Watchman; a rejoin resumes
+   * the remaining note. An aim that ends without its record (canceled) stops the note.
+   */
+  watchmen(aims: ReadonlyArray<{ aim: WatchmanAim; at: SoundPos }>, tick: number): void {
+    const key = (a: WatchmanAim) => `${a.incarnation}:${a.fireTick}`;
+    for (const [slot, v] of this.aimVoices) if (!aims.some(({ aim }) => aim.slot === slot && aim.phase === 'aim' && key(aim) === v.key)) { v.handle?.stop(); this.aimVoices.delete(slot); }
+    for (const { aim, at } of aims) {
+      if (aim.phase !== 'aim' || this.aimVoices.get(aim.slot)?.key === key(aim)) continue;
+      const handle = sfx('watchmanAim', at, 1, 0, PRIO_ABILITY, 1, { elapsed: Math.max(0, tick - (aim.fireTick - WATCHMAN_AIM_TICKS)) / 30, duration: WATCHMAN_AIM_TICKS / 30 });
+      this.aimVoices.set(aim.slot, { key: key(aim), handle });
+    }
+  }
+
+  /** One accepted Watchman shot, played once per `shot` counter change. */
+  watchmanShot(at: SoundPos): void {
+    sfx('watchmanShot', at, 1, 0, PRIO_ABILITY);
   }
 
   private readonly familyVoices = new Map<number, { key: string; handle?: VoiceHandle }>();
@@ -373,6 +394,7 @@ export class GameSounds {
 
   dispose(): void {
     for (const v of this.familyVoices.values()) v.handle?.stop(); this.familyVoices.clear();
+    for (const v of this.aimVoices.values()) v.handle?.stop(); this.aimVoices.clear();
     this.fireAmbient?.stop(); this.fireAmbient = undefined;
     for (const handle of this.tells.values()) handle.stop(); this.tells.clear(); this.steps.clear();
     for (const handle of this.arrivalTells.values()) handle.stop(); this.arrivalTells.clear();
