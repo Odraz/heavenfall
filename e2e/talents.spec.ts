@@ -37,8 +37,15 @@ test('a build learned in the Lobby is saved and enters the run', async ({ page }
   await page.locator('.class-card[data-class-id="betrayer"]').click({ position: { x: 20, y: 20 } });
   await page.getByRole('button', { name: 'Start', exact: true }).click();
   await page.waitForFunction(() => window.__heavenfall.lastSnapshotTick > 3);
-  await expect(page.locator('.hint-talents')).toContainText('The Nail');
-  await expect(page.locator('.hint-talents')).toContainText('Glancing Silver');
+  // The hint window (H) keeps abilities and carried items only; talents are read in the T view.
+  await page.keyboard.press('KeyH');
+  const hints = page.locator('.hints');
+  await expect(hints).toBeVisible();
+  await expect(hints.locator('.hint-section')).toHaveText(['Carried']);
+  await expect(hints).toContainText('Nothing carried. Buy items from the Pardoner or pick them up.');
+  for (const gone of ['Glancing Silver', 'The Nail', '1 / 2:', 'F: buy', 'Esc:', 'T: read']) await expect(hints).not.toContainText(gone);
+  await page.keyboard.press('KeyH');
+  await expect(hints).toBeHidden();
   // T opens the build to read anywhere: nothing to apply or click, and singleplayer waits until T closes it.
   await page.keyboard.press('KeyT');
   const view = page.locator('.talent-panel');
@@ -47,6 +54,7 @@ test('a build learned in the Lobby is saved and enters the run', async ({ page }
   await expect(view.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0);
   await expect(view.locator('.talent-reset')).toHaveCount(3);
   await expect(view.locator('.talent-reset').first()).toBeHidden();
+  await expect(view.getByRole('button', { name: 'Glancing Silver', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await view.getByRole('button', { name: 'The Nail', exact: true }).click();
   await expect(view.getByRole('button', { name: 'The Nail', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await view.getByRole('button', { name: 'Recoil', exact: true }).hover();
@@ -58,7 +66,6 @@ test('a build learned in the Lobby is saved and enters the run', async ({ page }
   await expect(view).toHaveCount(0);
   await expect(page.locator('.pause-overlay')).toBeHidden();
   await page.waitForFunction((t) => window.__heavenfall.lastSnapshotTick > t + 5, held);
-  await expect(page.locator('.hints')).toContainText('T: read your talents');
 });
 
 test('a dev quick build, the free Talents view and a Rite offer', async ({ page }) => {
@@ -76,5 +83,9 @@ test('a dev quick build, the free Talents view and a Rite offer', async ({ page 
   const first = rite.locator('.rite-card').first();
   const name = await first.locator('.rite-name').textContent();
   await first.getByRole('button', { name: 'Take', exact: true }).click();
-  await expect(page.locator('.hint-talents')).toContainText(`${name}: Rite`);
+  await expect(rite).toBeHidden();
+  // The taken Rite shows in the T view, held and not editable.
+  await page.keyboard.press('KeyT');
+  await expect(page.locator('.talent-panel').getByRole('button', { name: name!, exact: true })).toHaveClass(/\brite\b/);
+  await page.keyboard.press('Escape');
 });

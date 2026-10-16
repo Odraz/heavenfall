@@ -1,6 +1,5 @@
 /** The in-game HUD and screen feedback (§10), plain DOM over the canvas. */
 import { CLASSES, GENERAL_HINTS, type ClassId } from '../data/classes';
-import { hasCatalog } from '../data/talents';
 import { ITEMS } from '../data/items';
 import type { InventoryState } from '../net/messages';
 import { ITEM_ART } from './itemArt';
@@ -145,7 +144,6 @@ export class Hud {
   private readonly abilities: Array<{ arc: SVGCircleElement; text: HTMLDivElement; box: HTMLDivElement; glint: HTMLDivElement; icon: HTMLImageElement; cd: number }>;
   /** The Q/E hint lines' icon and text, rewritten from the effective kit (rogue game.md §1.4). */
   private readonly abilityHints = new Map<'Q' | 'E', { icon: HTMLImageElement; text: HTMLSpanElement }>();
-  private readonly talentHints: HTMLDivElement;
   private readonly hiddenMark: HTMLDivElement;
   /** The hints panel (M8 §2.2), toggled with H. */
   private readonly hints: HTMLDivElement;
@@ -447,14 +445,13 @@ export class Hud {
       } else el('span', 'hint-icon', line);
       el('span', 'hint-text', line).textContent = h.text;
     }
-    // Active talents, one line each; dormant and suppressed ones are named as such (§1.4).
-    this.talentHints = el('div', 'hint-talents', this.hints);
     // Carried items (audit batch 3): what slots 1 and 2 do, always current; replaces the pickup popup.
+    // Talents are read in the T view, not here.
     el('div', 'hint-section', this.hints).textContent = 'Carried';
     this.carried = el('div', 'hint-carried', this.hints);
     this.setCarried(null);
-    {
-      for (const text of GENERAL_HINTS.filter(text => (text.startsWith('T:') ? hasCatalog(classId) : multiplayer || text.startsWith('1 /') || text.startsWith('F:') || text.startsWith('Esc:')))) {
+    if (multiplayer) {
+      for (const text of GENERAL_HINTS) {
         const line = el('div', 'hint hint-general', this.hints);
         el('span', 'hint-icon', line);
         el('span', 'hint-text', line).textContent = text;
@@ -610,10 +607,10 @@ export class Hud {
 
   /** Displayed cooldowns in seconds and their full lengths. */
   /**
-   * The assigned abilities and active talents (rogue game.md §1.4, §9.4): slot icons and the Q/E hint
-   * lines follow every accepted change, so no hint teaches a surrendered effect.
+   * The assigned abilities (rogue game.md §1.4, §9.4): slot icons and the Q/E hint lines follow every
+   * accepted change, so no hint teaches a surrendered effect.
    */
-  setKit(slots: Record<'Q' | 'E', { name: string; icon: string; hint: string | null }>, talents: ReadonlyArray<{ name: string; rule: string; note: string }>): void {
+  setKit(slots: Record<'Q' | 'E', { name: string; icon: string; hint: string | null }>): void {
     (['Q', 'E'] as const).forEach((key, i) => {
       const s = slots[key];
       this.abilities[i].icon.src = spriteUrl(s.icon);
@@ -621,14 +618,6 @@ export class Hud {
       const line = this.abilityHints.get(key);
       if (line) { line.icon.src = spriteUrl(s.icon); if (s.hint) line.text.textContent = s.hint; }
     });
-    this.talentHints.replaceChildren();
-    if (!talents.length) return;
-    el('div', 'hint-section', this.talentHints).textContent = 'Talents';
-    for (const t of talents) {
-      const line = el('div', 'hint hint-general', this.talentHints);
-      el('span', 'hint-icon', line);
-      el('span', 'hint-text', line).textContent = `${t.name}: ${t.note || t.rule}`;
-    }
   }
 
   /** One of Them: the own eye mark while ordinary casters ignore you. */

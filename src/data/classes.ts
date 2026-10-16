@@ -19,7 +19,7 @@ export interface ClassDef {
 }
 
 /** The hints panel's general lines, after the class's, in multiplayer only (M8 §2.4). */
-export const GENERAL_HINTS: readonly string[] = ["Shoot a fallen teammate's soul to revive them.", '1 / 2: use carried items. Both share a one-second cooldown.', 'F: buy the pedestal you look at, or speak to the Advocate; with nothing there, reopen a waiting Rite. Hold M: inspect known rooms and rewards.', 'Esc: close a choice without spending it; Pass refuses that Rite for this run.', 'T: read your talents and abilities; nothing changes there. Singleplayer waits meanwhile.', 'Enter: chat.'];
+export const GENERAL_HINTS: readonly string[] = ["Shoot a fallen teammate's soul to revive them.", 'Enter: chat.'];
 
 export const CLASS_IDS: readonly ClassId[] = ['fallen', 'heretic', 'binder', 'betrayer'];
 

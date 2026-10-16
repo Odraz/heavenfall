@@ -2659,12 +2659,6 @@ div.weapon-swing {
   margin-top: 6px;
 }
 
-.hint-talents {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .hidden-mark {
   position: absolute;
   left: 50%;

@@ -126,7 +126,7 @@ import type { VictoryState } from '../sim/victory';
 import { levelForXp } from '../profile/model';
 import { TalentClient } from './talentClient';
 import { riteOverlay, talentPanel, type RiteOverlay, type TalentPanel } from '../ui/talents';
-import { ALT_ABILITIES, hasCatalog, talentNode } from '../data/talents';
+import { ALT_ABILITIES, hasCatalog } from '../data/talents';
 import { ADVOCATE_REACH } from '../sim/sim';
 import type { RiteOffer } from '../net/messages';
 import { advocateSprite } from './advocate';
@@ -950,20 +950,13 @@ export class Game {
     }
   }
 
-  /** The HUD slots and hints from the own effective kit (rogue game.md §1.4). */
+  /** The HUD slots and Q/E hints from the own effective kit (rogue game.md §1.4). */
   private applyOwnKit(): void {
-    const k = this.talents.own();
     const slot = (key: 'Q' | 'E') => {
       const def = this.talents.ownDef(this.classId, key), id = this.talents.ability(this.localId, key);
       return { name: def.name, icon: def.icon, hint: ALT_ABILITIES[id]?.hint ?? CLASSES[this.classId].hints.find((h) => h.key === key)?.text ?? null };
     };
-    const lines = k ? [...k.learned, ...k.rites].map((id) => {
-      const n = talentNode(id)!;
-      const suppressed = k.suppressed.find(([learned]) => learned === id);
-      const note = suppressed ? `suppressed this run by ${talentNode(suppressed[1])?.name}` : k.dormant.includes(id) ? 'dormant: its ability is not assigned' : k.rites.includes(id) ? `Rite · ${n.rule}` : '';
-      return { name: n.name, rule: n.rule, note };
-    }) : [];
-    this.hud.setKit({ Q: slot('Q'), E: slot('E') }, lines);
+    this.hud.setKit({ Q: slot('Q'), E: slot('E') });
   }
 
   /** Within the Advocate's reach in the Confessional (rogue game.md §9.6). */
