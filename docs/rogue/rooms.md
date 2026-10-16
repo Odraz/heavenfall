@@ -4,7 +4,9 @@
 
 **2026-10-13 current follow-up:** generated commanders ramp 0/1/2/3/... by wave before party scaling, replacing prior baseline-plus-authored elite counts while preserving minions and the two-alive cap. First waves have none. Dominion leap/melee and nonlethal enemy throws are specified in §6. Candles/chalices remain 1.1/1 m; candle player damage is 40, chalices remain healing. Evidence is in [the follow-up report](r02-playtest-report.md). **Accepted, not implemented:** two more commanders, the Lectern Cantor and the Stray-Carrier, lead Chorister and Cherub waves (§6.1–§6.3).
 
-**Status:** complete authored pool; operational contracts revised 2026-10-11. Geometry measurements remain historical design data, not rerun tests. Contains: the notation (§2.1), 20 combat and 4 special templates with grids (§3–§4), the fallback floor (§5), the Dominion and the other commanders (§6), Refiner's Fire (§7), the props (§8), the checks (§9) and the playtest-in-head notes (§10).
+**2026-10-16 R04 follow-up (accepted, not implemented):** the Watchman, an armed Blessed whose instant shot must be answered with cover or a push, replaces a few Blessed in every wave from the second on (§6.4, [brief](r04-watchman.md)).
+
+**Status:** complete authored pool; operational contracts revised 2026-10-11. Geometry measurements remain historical design data, not rerun tests. Contains: the notation (§2.1), 20 combat and 4 special templates with grids (§3–§4), the fallback floor (§5), the Dominion and the other commanders (§6), the Watchman (§6.4), Refiner's Fire (§7), the props (§8), the checks (§9) and the playtest-in-head notes (§10).
 
 ---
 
@@ -22,7 +24,7 @@
 - A **1 m ledge redirects walking enemies toward its stair; it does not grant melee immunity**. The inherited Blessed strike reaches 1.2 m horizontally while feet differ by less than 1.5 m, so a Blessed below an edge can still hit a player standing at that edge. Hop farther inward or keep moving; the Dominion's longer 6 m ring can reach still farther onto a low dais. These are temporary route choices, never protected firing perches.
 
 **Fights (game.md §4.4–§4.6, §4.11)**
-- **Budgets** (TP at 4 players): 1×1 400, 2×1 700, **2×2 2 000** × band factor (band 1 0.85, 2 1.0, 3 1.15; a 2×2 is never band 1). TP: Blessed 1, Cherub 4, Chorister 6, each commander (elite) 60.
+- **Budgets** (TP at 4 players): 1×1 400, 2×1 700, **2×2 2 000** × band factor (band 1 0.85, 2 1.0, 3 1.15; a 2×2 is never band 1). TP: Blessed 1, Watchman 3, Cherub 4, Chorister 6, each commander (elite) 60.
 - **Waves:** 1×1 3, 2×1 4, 2×2 5. Default shares 0.25/0.35/0.40; 0.15/0.25/0.28/0.32; **2×2 0.07/0.08/0.10/0.15/0.60**. Wave 1 fodder only; the focus from wave 2.
 - **The crest** (every 2×2's last wave): share ≥ 0.60, **Blessed only**, arrives in 6 s at up to 20 enemies per spawn point per second. At four players the base-kit encounter targets **≥ 1 000 alive** (1 200 Blessed at band 2). Design every 2×2 for that crowd: open floor, the crowd visible from a `high` spot, room to kite.
 - **Target clear times:** 1×1 60–90 s, 2×1 90–120 s, 2×2 120–180 s, at any party size.
@@ -41,7 +43,7 @@
   - 1×1 bands: at least 5 include band 1, 6 include band 2, 5 include band 3 (a floor has at most 4–5 1×1 rooms per band).
 - **4 special templates:** the Breach, the Pardoner's stall, the Confessional, the Gate (boss, with [bosses.md](bosses.md)).
 - **1 fallback floor** (§5).
-- **Enemies:** Blessed, Choristers, Cherubs and three commanders: **the Dominion**, **the Lectern Cantor** and **the Stray-Carrier** (§6.1). No other new ordinary combat enemy is included in the slice.
+- **Enemies:** Blessed, Choristers, Cherubs, **the Watchman** (§6.4: an armed Blessed, converted from Blessed counts) and three commanders: **the Dominion**, **the Lectern Cantor** and **the Stray-Carrier** (§6.1). No other new ordinary combat enemy is included in the slice.
 - **1 hazard. 3 prop families + the marked reliquary + the bell.**
 
 The existing Pearly Gates arenas (Courtyard of Clouds, the Cloudbridge, Cloister of Hymns, the Gate; MVP §8.3) are good first templates: re-cut them to the slot sizes.
@@ -1518,9 +1520,63 @@ The 2026-10-13 playtest adds short stairs at the marble hedge ends in the Open T
 
 **Silhouette and sound.** A Cherub grown huge: the same polished gold armor and expressionless gold mask, but with **closed eyes**, as if asleep; very long arms that hang to its knees; enormous white wings; and a long white burial shroud hanging from its shoulders and trailing two meters below it like a tail, which it wraps around the carried player. It holds a Cherub's gold bow in its left hand between swoops. It is the only Cherub-family shape with a trailing white tail, readable against the sky. **Sound:** a soft hummed lullaby while it hunts (positional, audible at 25 m), a rising shriek for the 1 s mark, a rushing whoosh for the swoop, heavy slow wing beats with flapping cloth while carrying, and a sigh when it lets go.
 
-### 6.4 The roster
+### 6.4 The Watchman
 
-The authored pool uses Blessed, Choristers, Cherubs and three commanders: the Dominion, the Lectern Cantor and the Stray-Carrier. Templates still author minions only; commanders are added by the wave stamping of game.md §4.6 and §6.1. No other new ordinary combat enemy is included.
+**Accepted design, 2026-10-16 (R04 follow-up, [brief](r04-watchman.md)); not implemented.** Tomas asked for a minion that shoots instantly. Against a crowd of Blessed alone, standing and shooting or walking slowly backward is usually enough: the Blessed are slower than every class, and the Choristers' globes and the Cherubs' arrows can be sidestepped in the open. The Watchman is an armed Blessed that punishes standing in the open. The party must break its line of sight or push through the crowd to kill it. It is not a commander.
+
+**Rule:** *"It aims a gold thread at the nearest of you, then fires. Break its line of sight or kill it."*
+
+**Lore:** *"A soul set on the walls of Heaven to watch for the damned. It carries a long gun with a trumpet's mouth."* (The watchman of Ezekiel 33, who blows the trumpet when he sees the sword coming.)
+
+| Field | Value |
+|---|---|
+| id, role | `watchman` (type id 8), an ordinary ranged minion of the Blessed family |
+| HP | **60**, as a Chorister: it survives the area hits that clear the Blessed around it, but not a direct attack. Not party-scaled. |
+| Body | **0.35 × 1.8 m** sim body: the Blessed's radius, so it moves and wades in the crowd like one. Drawn 1.15 × (about 2.1 m). The Clarion carried upright on its shoulder puts the trumpet bell about 2.5 m up, above the crowd. |
+| Speed | **3.5 m/s**, slightly slower than the Blessed (4), so it walks at the back of its crowd. |
+| TP / XP | **3**. It takes the TP of 3 Blessed (below), so a room's budget and XP are unchanged. |
+| States | All seven. `bound`: rooted and double damage; it still aims and fires. A launch (`airborne`), Blasphemy's stun and `silenced` cancel an aim. `taunted`: it targets the Fallen. It avoids Refiner's Fire. |
+| Drops | As a Chorister or Cherub: halo weight **3** (game.md §6.1), a heal mote **35%** within the encounter cap (§6.2), an item **12%** (§6.3). |
+
+**The shot.**
+1. **Approach:** with no target, it paths toward the nearest player, as a Chorister does. At every line-of-sight check (twice a second) it picks as its target the **nearest** living targetable player in its room whose body center it can see from its muzzle (feet + 1.5 m) within **20 m**; ties go to the lowest player index. A taunted Watchman targets the Fallen. Once it has a target it stops and aims. If, between aims, the target moves beyond 20 m or out of sight, it walks again.
+2. **Aim, 1.0 s:** it raises the Clarion toward the target. A thin gold thread runs from the trumpet bell to the target's body center and follows the target fully. Over the aim it brightens and thickens from 0.02 m to 0.05 m. A single rising trumpet note plays at the Watchman's position. The target stays fixed for this aim. The thread deals no damage.
+3. **Fire:** at the end of the aim the host traces one segment from the muzzle to the target's accepted body center, up to **30 m**. Walls, pillars, closed leaves and terrain block it (the shared LOS rule); bodies and props don't. If the line is clear, the target takes **12** damage as an ordinary hostile hit: shields absorb it, invulnerability ignores it, Fallen mitigation applies. If it is blocked, the shot sparks on the blocker and hits nobody. Nothing else on the line is hit. The shot is instant and is **not a projectile**, so Mirror Ward, Shattered Hymn and shot-down blasts don't affect it.
+4. **Reload, 1.5 s:** it lowers the Clarion and cannot aim. Then it picks a target again (step 1). One shot every 2.5 s is **4.8 damage per second** per Watchman.
+
+**Cancellation and target loss:** a launch, stun, silence, death or cleanup cancels an aim with no shot, and the Watchman enters its 1.5 s reload. If its target dies, disconnects, leaves the room or becomes untargetable during the aim, the aim is canceled the same way. Breaking line of sight does **not** cancel an aim: the thread stops at the cover and the shot sparks there. One of Them ([classes-betrayer.md](classes-betrayer.md)) hides the Betrayer from Watchmen just as from Choristers and Cherubs: they don't pick a hidden Betrayer, and an aim at one is canceled.
+
+**Where they come from.** Templates don't author Watchmen; wave stamping converts Blessed into them (game.md §4.6):
+- In every ordinary combat wave from the **second** on, `W = floor(B ÷ 30)` Watchmen replace `3 × W` Blessed, where `B` is the wave's Blessed count at 4 players. In a template whose focus or secondary is **ranged**, `W = floor(B ÷ 12)`. Their TP and XP come out of the Blessed's exact share, so the wave's total is unchanged.
+- **None** in the first wave, in a wave whose mix includes Cherubs (two sources of long-range fire, game.md §4.5), in the crest, in a trickle or in the boss encounter. A Bell wave converts its last-wave mix by the same rule. Edict-added and Bell elites are unaffected.
+- `W` scales with the party like every type (`scaleCount`). Examples at band 2 and 4 players: the Cloudbridge's last wave (224 Blessed) becomes 203 Blessed and 7 Watchmen. The Choir Loft's last wave (112 Blessed, 8 Choristers) becomes 85 Blessed, 9 Watchmen and 8 Choristers.
+- They arrive as a **squad**, like Choristers (starting 5 s into the wave, one every 0.5 s), on unrestricted spawn points. They have no spawn tag or affinity, so they come with the crowd rather than from the choir lofts.
+- **Alive cap per room:** `ceil(4 × mult(P))`, or `ceil(6 × mult(P))` in a ranged template: 4 / 6 at four players, 2 / 3 solo. Queued Watchmen wait for a free place and belong to their wave until placed, like queued commanders. The cap bounds the worst case: four Watchmen all firing at one player in the open deal about 19 damage per second.
+
+**The party's job.** Read the threads and decide: step behind cover, or push through the crowd and kill the Watchman behind it. The first shot is the warning; only a player who stays in the open takes the second. Because it targets the nearest player, whoever leads the push draws the fire, ideally the Fallen.
+
+**Counters per class.**
+- **Fallen:** leads with 400 HP and draws the fire; Blasphemy's stun cancels the aims around it and turns them on the Fallen.
+- **Binder:** Discord silences the aims in its cone; Chains of Tartarus pulls a Watchman out of the crowd.
+- **Betrayer:** the revolver picks a Watchman out over the crowd's heads; One of Them hides the Betrayer inside the crowd.
+- **Heretic:** Martyr's Shroud absorbs shots aimed at a teammate; a censer thrown over the crowd reaches the Watchmen at its back.
+
+**Rules around it.**
+- **Bots:** a bot that a Watchman is aiming at shoots that Watchman before other targets within its range. Bots don't seek cover.
+- **Authority:** the host alone selects targets, times the aim and traces the shot. Clients draw the thread toward their own view of the target and never report hits.
+- **Network:** a bounded per-Watchman record while it aims and for 0.5 s after it fires: `(enemySlot u16, incarnation u32, target u8, phase u8, fireTick u32, shot u8, end x/y/z u16)`, 19 B, at most 8 per snapshot (the alive cap is 6). `shot` is a wrapping counter: a client plays the muzzle flash, tracer and sound once per change, toward the encoded end point (the target or the blocker). Rejoin draws the remaining aim from `fireTick`, never a fresh second. A record cannot attach to a new incarnation of the slot.
+- **Lag:** the shot is traced against the host's accepted position. A player who reaches cover on their own screen just before the shot can still be hit; the 1 s aim keeps this rare. Judge it in co-op play.
+- **Cost:** one terrain ray per shot, at most 6 shots per 2.5 s per room. The line-of-sight checks reuse the Choristers' 0.5 s cadence. Cheap at 1 500 enemies.
+
+**Why these numbers.** 12 damage every 2.5 s matches a Chorister's globe (12 every 2.5 s) and is close to a Cherub's arrow (8 every 1.8 s), but it can't be sidestepped. The cover in ranged rooms (≥ 4 `cover`) and the pillars and terraces of the other rooms become the answer. A 1.0 s aim gives a player who sees the thread time for a step or two into cover. Ten shots kill an unshielded Betrayer (120 HP). 60 HP survives a stray area hit but dies to two revolver shots. One Watchman per 30 Blessed keeps it a priority target among the crowd rather than a second choir; one per 12 makes the ranged rooms about cover. Human feel acceptance remains open.
+
+**Silhouette and sound.** A Blessed in the same ivory robes, white armor and gold halo, but with a **gold helmet** with a narrow brim and a short sky-blue plume, and **the Clarion**: a long gun with an ivory stock and a long barrel banded with gold rings, like the Gatekeeper's trumpet, ending in a flared gold trumpet bell. Walking, it carries the Clarion upright on its shoulder, so the bell shows above the crowd. It is the only enemy with a gun. When it aims, it levels the gun and the bell glints. **Sound:** the aim is a single rising brass note (positional, audible through the crowd at 25 m); the shot is a short sharp crack with a brass bark. Deaths reuse the Blessed's.
+
+**Implementation additions:** one enemy type (id 8 of 16) on the existing caster path, with an instant shot instead of a projectile; the wave conversion; the aim record; the thread and tracer drawn in code; one atlas (idle, walk, aim, fire, reload, pain, death; 8 directions); 2 sounds. No new engine technology.
+
+### 6.5 The roster
+
+The authored pool uses Blessed, Choristers, Cherubs, the Watchman (§6.4) and three commanders: the Dominion, the Lectern Cantor and the Stray-Carrier. Templates still author minions only; commanders and Watchmen are added by the wave stamping of game.md §4.6 and §6.1. No other new ordinary combat enemy is included.
 
 ## 7. The hazard
 

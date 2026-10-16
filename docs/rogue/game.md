@@ -6,6 +6,8 @@ The rules of the whole game after the rebuild described in [brief.md](brief.md):
 
 **R02 commander families (2026-10-13, implemented in R03, human feel acceptance open):** the Lectern Cantor leads Chorister waves and the Stray-Carrier leads Cherub waves, beside the Dominion for the rest (§4.6, [rooms.md §6.1–§6.3](rooms.md#61-the-commander-families)).
 
+**R04 follow-up: the Watchman (2026-10-16, accepted, not implemented):** an armed Blessed with an instant, line-of-sight shot after a visible 1 s aim. Wave stamping converts Blessed into Watchmen from the second wave on (§4.4, §4.6, [rooms.md §6.4](rooms.md#64-the-watchman), [brief](r04-watchman.md)).
+
 **R02 playtest movement override (2026-10-13):** ordinary movement directly backward relative to aim runs at 80% of class speed; backward diagonals interpolate toward full sideways speed. Forward/sideways speed is unchanged. The penalty multiplies wading and applies during ordinary jumps, but not Shadowstep, Falling Star or forced launches. The host speed allowance uses the same directional factor. Dominion flying slams lead recent ordinary motion by up to 1 s before locking a safe destination; see [rooms.md §6](rooms.md#6-the-new-elite) and [the follow-up evidence](r02-playtest-report.md).
 
 All numbers are **initial values** unless stated otherwise. Where this document deviates from the brief, it says so and why (summary in §16.1). **Revision 7 (2026-10-11)** repairs timed harvest, directional/area event identity, relic refusal, class and encounter interactions, effective-kit synchronization, developer-run isolation and implementation dependencies. [Revision-7 integration](../../research_notes/Isaac%20style%20roguelite/reviews/r7-integration.md) records the independent review and adversarial follow-up rounds. Revision 6's compatible composition and bounded provenance remain the foundation. The [slice acceptance checklist](slice-acceptance.md) separates specified behavior from implementation/playtest evidence. Historical prototype measurements below are evidence from revision 2, not measurements of this revision.
@@ -289,7 +291,7 @@ Replaces M8 §5's arena countdown. `H` below = living connected humans.
 
 ### 4.4 Threat budget
 
-- **TP per enemy:** Blessed 1, Cherub 4, Chorister 6, each Pearly Gates commander 60 (the Dominion, the Lectern Cantor and the Stray-Carrier, rooms.md §6); no other new enemy in this slice.
+- **TP per enemy:** Blessed 1, Watchman 3 (rooms.md §6.4), Cherub 4, Chorister 6, each Pearly Gates commander 60 (the Dominion, the Lectern Cantor and the Stray-Carrier, rooms.md §6); no other new enemy in this slice.
 - **Room budget** (TP at 4 players) = `base(shape) × band factor × heaven factor`:
 
   | Shape | base | Waves | Target clear time (any party size) |
@@ -315,6 +317,7 @@ A combat template has one **focus** and at most one **secondary** focus. Blessed
 | **hazard** | any | Blessed ≥ 70% | Hazard cells 10–25% of the walkable floor, with `lure` obstacles at their edges. |
 | **ground** | any | ground heavies ≥ 20% | Reserved for heavens with a ground heavy; not in the Pearly Gates. |
 
+- **Watchmen** (rooms.md §6.4) are converted from Blessed at stamping and count **with the Blessed** for composition shares, focus checks and the palette rule below; they are fodder with a gun, not a focus type.
 - **Secondary focus:** adds that focus's enemies at half its share range (e.g. ranged secondary: Choristers 7–15%), or for hazard: hazard cells 5–15%.
 - **Allowed pairs** (primary + secondary, either way round): horde + flyers, horde + hazard, horde + elite (2×2 only), ranged + hazard, flyers + hazard. **Not allowed:** ranged + flyers (two sources of long-range fire is too much to read), elite + hazard in heavens 1–2. A room never has more than 2 non-fodder enemy types (Level Design Book's palette rule).
 - **2×2 rooms** have a horde or hazard focus (the shapes column), and every 2×2 ends in the crest.
@@ -327,6 +330,7 @@ A combat template has one **focus** and at most one **secondary** focus. Blessed
 - **Default shares** (templates may override, except the crest's): 3 waves 0.25 / 0.35 / 0.40; 4 waves 0.15 / 0.25 / 0.28 / 0.32; **2×2: 0.07 / 0.08 / 0.10 / 0.15 / 0.60**. Wave 1 is fodder only (the party reads the room); the focus type enters from wave 2; the last wave is the room's peak.
 - **The crest** (every 2×2's last wave): share **≥ 0.60**, **Blessed only** (flyers, Choristers and elites come in waves 2–4), arrives over **6 s** instead of 10 s, and its spawn points place up to **20 enemies per second each** instead of `SPAWN_RATE` 10 (a new constant). 2×2 templates need **at least 24 spawn points** (§4.7 rule 4), so even with half of them within 15 m of the party, 12 × 20 = 240 per second carries the crest's 200 per second.
 - **The peak, 4 players, band 2:** the crest starts by the director's normal rule, when at most 30% of wave 4 (300 TP) is alive. Its 1 200 Blessed arriving over 6 s would leave 1 020 alive if the party killed 30 per second and no carry-over remained. This is a **modelled crest target**, not a guaranteed observed population: stronger builds, fewer safe spawn points and cap delays change the peak. Acceptance requires a controlled four-human base-kit reference encounter to reach **at least 1 000 alive** while remaining responsive; actual play may kill faster and should be rewarded for it. Do not suppress kills, make enemies invulnerable or add surprise refill enemies to force the number. Band-3 crest budget is 1 380 Blessed; all queued placement is bounded by the 1 500 global cap. Solo band-2 crest is 480 Blessed. These values need measuring in the implemented build (the benchmark runs when the human asks, after playing).
+- **Watchmen (R04 follow-up):** after the counts above, every ordinary wave from the second on converts `W = floor(B ÷ 30)` of its `B` Blessed (at 4 players) into Watchmen at 3 Blessed each, `floor(B ÷ 12)` in a template with a ranged focus or secondary. None in the first wave, a wave with Cherubs, the crest, trickles or the boss encounter; a Bell wave converts its last-wave mix the same way. Their exact TP comes out of the Blessed's exact share for XP. They scale with `scaleCount`, arrive as a squad and have their own alive cap (rooms.md §6.4).
 - The director, its phases and thresholds are unchanged (M12 §2.3); it now runs per sealed room instead of per arena (`new Director(waves, cap, solo)`).
 
 ### 4.7 Room template format
@@ -531,19 +535,19 @@ Backtracking was a quarter of the run's time (r1-fun finding 5). The rule: **fro
   | 2×1 / 1×2 | 108 | 126 | 144 |
   | 2×2 | — | 180 | 198 |
 
-- **Drop rule** (host, at seal, from the scaled spawn list): reserve `min(eliteCount, floor(H/24))` gold-halo entitlements for elites in wave then spawn-index order. At most one quarter of the budget belongs to elites, so their new per-wave presence cannot drain the crowd's rewards. Other elites drop no coin. The remainder `R = H − 6 × reservedCount` is spread over the non-elite enemies by weight (**Blessed 1, Chorister 3, Cherub 3**): each reward-eligible death (including world kills, §14.11) adds `R × w ÷ W` to a fixed-point/rational room accumulator (`W` = total non-elite weight) and drops a 1-halo coin each time it crosses an integer. Track paid amount and cap at `R` so floating-point drift cannot overpay or lose the final coin. Uncredited cleanup forfeits that enemy's coin entitlement; a bell's wave drops none. The halo budget never grows for Edict-added elites.
+- **Drop rule** (host, at seal, from the scaled spawn list): reserve `min(eliteCount, floor(H/24))` gold-halo entitlements for elites in wave then spawn-index order. At most one quarter of the budget belongs to elites, so their new per-wave presence cannot drain the crowd's rewards. Other elites drop no coin. The remainder `R = H − 6 × reservedCount` is spread over the non-elite enemies by weight (**Blessed 1, Chorister 3, Cherub 3, Watchman 3**): each reward-eligible death (including world kills, §14.11) adds `R × w ÷ W` to a fixed-point/rational room accumulator (`W` = total non-elite weight) and drops a 1-halo coin each time it crosses an integer. Track paid amount and cap at `R` so floating-point drift cannot overpay or lose the final coin. Uncredited cleanup forfeits that enemy's coin entitlement; a bell's wave drops none. The halo budget never grows for Edict-added elites.
 - **Why Blessed still drop:** diving into the crowd must pay (pillar 2). October 13 pressure feedback quadruples room budgets and reduces the ranged weight from ten to three: Blessed kills now distribute substantially more visible rewards, while a ranged kill still pays more. Party sizes retain equal total room income. [Audit](r01-r03-audit.md) batch 4 raised the budgets by half again (about 735 halos on an average floor, from 491) because the crowd still paid too rarely, most visibly at four players; prices stayed. R03 must re-evaluate shop prices against this new income; older 105–125-halo examples are historical and no longer current tuning.
 - **Why a budget instead of a per-kill chance:** with "everybody's pockets" and enemies scaling ×0.4 → ×1.0 with party size, per-kill drops would give each player of a 4-party 2.5 times the solo income. A fixed per-room budget, credited to everyone, gives **every player the same income per room at any party size**, so prices can be fixed.
 
 ### 6.2 Heal motes
 
 - A green mote heals **8% of max HP** to the player who collects it (individual, not shared). It flies to the nearest living player **below full HP** within 2 m; players at full HP don't attract it, so it waits for a teammate. Fades after 20 s.
-- **Drops:** each elite 2; each Chorister and Cherub 35%; loot props 10%; per combat encounter at most **4 / 6 / 8** motes (1×1 / 2×1 / 2×2) from ordinary kills. A Bell is a separate encounter with the room-size cap, consumed once; reconnect/relocate never resets it. Boss ranged adds may roll the same 35% chance but have a **single 8-mote cap for the entire fight**, not per summon/cycle/phase. Boss adds never drop items or feed talent/relic-generated mote harvest; body and parts drop nothing. Talent-generated motes have independent explicit per-cast caps (§14.11).
+- **Drops:** each elite 2; each Chorister, Cherub and Watchman 35%; loot props 10%; per combat encounter at most **4 / 6 / 8** motes (1×1 / 2×1 / 2×2) from ordinary kills. A Bell is a separate encounter with the room-size cap, consumed once; reconnect/relocate never resets it. Boss ranged adds may roll the same 35% chance but have a **single 8-mote cap for the entire fight**, not per summon/cycle/phase. Boss adds never drop items or feed talent/relic-generated mote harvest; body and parts drop nothing. Talent-generated motes have independent explicit per-cast caps (§14.11).
 - It's small next to Communion (120 HP to everyone nearby), so the Heretic stays the healer (the report's conclusion).
 
 ### 6.3 Items from kills
 
-- Each ordinary wave Blessed kill has a **2%** chance, Chorister/Cherub **12%**, and each commander (Dominion, Lectern Cantor, Stray-Carrier) **50%** to drop one item pickup (§7.3), drawn by the items' drop weights. Only accepted damage deaths roll; cleanup, leashed enemies, boss bodies/parts/adds and non-wave enemies do not. These October 13 playtest rates increase reward frequency; the existing pickup/pending caps remain authoritative, and currency budgets and mote caps are unchanged.
+- Each ordinary wave Blessed kill has a **2%** chance, Chorister/Cherub/Watchman **12%**, and each commander (Dominion, Lectern Cantor, Stray-Carrier) **50%** to drop one item pickup (§7.3), drawn by the items' drop weights. Only accepted damage deaths roll; cleanup, leashed enemies, boss bodies/parts/adds and non-wave enemies do not. These October 13 playtest rates increase reward frequency; the existing pickup/pending caps remain authoritative, and currency budgets and mote caps are unchanged.
 
 ### 6.4 The clear reward and its preview
 
@@ -1094,7 +1098,7 @@ The whole-map Dijkstra (audit §3.2) is the trap of an open floor. Fields are co
 
 ### 14.6 Limits
 
-- **Enemy types:** 16 (4-bit type in the snapshot). The Pearly Gates uses eight types: Blessed, Chorister, Cherub, the Dominion (4), Gatekeeper body (3), generic boss part (5: eyes and Seal), the Lectern Cantor (6) and the Stray-Carrier (7). No other new enemy is included.
+- **Enemy types:** 16 (4-bit type in the snapshot). The Pearly Gates uses nine types: Blessed, Chorister, Cherub, the Dominion (4), Gatekeeper body (3), generic boss part (5: eyes and Seal), the Lectern Cantor (6), the Stray-Carrier (7) and the Watchman (8). No other new enemy is included.
 - **Global caps:** 1 500 living enemies including boss parts and 400 projectiles, with hostile reservation and owned area caps of §14.12. Crest population is a reference target, not an upper bound calculated from an assumed kill rate (§4.6).
 - One room in countdown or combat at a time (§4.2), so one director and one horde.
 - Per-enemy streak-assist ticks (§10): 4 × u32 per slot.
@@ -1193,7 +1197,7 @@ These contracts apply to every content table. Numbers attached to an individual 
 |---|---|---|
 | Combat room templates | **20**: 1×1 ×12, 2×1 ×5, 2×2 ×3 (each 2×2 horde- or hazard-focused, ends in a crest, ≥ 24 spawn points); at least 5 horde, 4 ranged, 3 flyers, 3 elite, 3 hazard (a template counts for its focus and secondary); at least 4 with a secondary; 1×1 band coverage: ≥ 5 include band 1, ≥ 6 band 2, ≥ 5 band 3 (a floor has at most 4–5 1×1 rooms per band, so no fallback past the band filter) | rooms.md |
 | Special room templates | 4: Breach, Pardoner's stall, Confessional, the Gate (boss, gate wall inset to 50 cells); plus 1 fallback floor (A.1's layout) | rooms.md |
-| Enemy types | the existing Blessed, Chorister and Cherub + **3 commanders** (Dominion, Lectern Cantor, Stray-Carrier) + Gatekeeper body and generic boss part; no other new enemy | rooms.md |
+| Enemy types | the existing Blessed, Chorister and Cherub + **the Watchman** + **3 commanders** (Dominion, Lectern Cantor, Stray-Carrier) + Gatekeeper body and generic boss part; no other new enemy | rooms.md |
 | Hazard types | 1 | rooms.md |
 | Prop types | 3 families + the marked reliquary; the bell (one model, §4.12) | rooms.md |
 | Enemy states | 7, with the looks of §4.11 (2 new: the `slowed` tint if not shown today, the `airborne` flag bit) | game.md, rooms.md |

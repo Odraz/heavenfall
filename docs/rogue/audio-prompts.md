@@ -21,6 +21,7 @@ Save each file as `<id>-01.wav`, `-02`, `-03` in `assets/audio-src/sfx/` (loops 
 
 **S2 Rooms, the Dominion and the fire** (R1–R2)
 - [ ] `doorsSeal` (1) · [ ] `arenaCleared` (1) · [ ] `dominionStep` (2) · [ ] `dominionTell` (1) · [ ] `dominionSlam` (2) · [ ] `refinerIgnite` (1) · [ ] `chaliceHeal` (1)
+- [ ] `watchmanAim` (1) · [ ] `watchmanShot` (3) (the [R04 follow-up](r04-watchman.md), added 2026-10-16)
 
 **S3 Pickups and the shop** (R2–R3)
 - [ ] `goldPickup` (3, frequent) · [ ] `motePickup` (2) · [ ] `purchase` (1) · [ ] `interactionReject` (1) · [ ] `chartReveal` (1)
@@ -53,7 +54,7 @@ Save each file as `<id>-01.wav`, `-02`, `-03` in `assets/audio-src/sfx/` (loops 
 
 **S10 Optional: voices** (any time, nothing depends on them)
 
-**Totals:** 51 required keepers (S1); 123 more keepers with synthesized fallbacks (91 for the 84 new events in S2–S8, 32 for the 26 recommended re-recordings in S9); 14 optional voice lines.
+**Totals:** 51 required keepers (S1); 127 more keepers with synthesized fallbacks (95 for the 86 new events in S2–S8, including the Watchman's two, 32 for the 26 recommended re-recordings in S9); 14 optional voice lines.
 
 ---
 
@@ -763,6 +764,46 @@ An enormous angel slamming a heavy gold-and-marble mace into the stone floor, ab
 ```text
 Giant mace smashing stone
 ```
+
+### watchmanAim — the Watchman aims · keep 1 · R04 follow-up
+
+**Generate:** **ElevenLabs settings** · Duration **1.0 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
+
+The 1.0 s warning before an instant shot ([rooms.md](rooms.md) §6.4); positional, heard through the crowd at 25 m, so you can tell which way to take cover. The game stretches it to the exact remaining aim.
+
+**Variant A — detailed**
+
+```text
+A single brass bugle note held for about one second, starting soft and rising steadily in loudness and slightly in pitch, stopped dead at its loudest. One note, no melody. Dry isolated SFX. One continuous swell, no final hit or room echo. No music, voice, ambience or reverb.
+```
+
+**Variant B — simple**
+
+```text
+One rising bugle note, cut off
+```
+
+**Reject if:** it plays a melody or a fanfare; it ends with a hit (the shot is its own sound).
+
+### watchmanShot — the Watchman fires · keep 3 · R04 follow-up
+
+**Generate:** **ElevenLabs settings** · Duration **0.5 s** · Looping **Off** · Influence **30%** · Enhancement **Off if available**.
+
+Repeats often (up to six Watchmen, one shot every 2.5 s each), so it needs three takes. It must not sound like any player weapon, least of all the Betrayer's revolver.
+
+**Variant A — detailed**
+
+```text
+One long black-powder musket fired outdoors, about 0.4 seconds: a sharp dry crack with a short bright brass ring after it, like a shot through a bugle's bell. One shot. Dry isolated SFX. Immediate attack, short decay then silence. No music, voice, ambience, reverb or echo.
+```
+
+**Variant B — simple**
+
+```text
+Single musket shot with a brass ring
+```
+
+**Reject if:** it sounds like a pistol or a modern rifle; it has more than one shot; the ring rings longer than the crack.
 
 ### refinerIgnite — the fire channels flare up at the seal · keep 1 · R2
 

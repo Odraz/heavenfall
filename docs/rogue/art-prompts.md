@@ -4,7 +4,7 @@ Every new image the Pearly Gates roguelite needs, each with a ready-to-paste pro
 
 There are two kinds of images, as before:
 
-- **Part A, model references (13 images).** For the three commanders (the Dominion, the Lectern Cantor and the Stray-Carrier) and the Gatekeeper's trumpet. Claude builds them as 3D models and renders them into sprites; these images are never shown in the game. They follow the [Meshy guide](../meshy-guide.md) format (flat colors, grey background, A-pose), which also works for Claude's own Blender modeling.
+- **Part A, model references (16 images).** For the three commanders (the Dominion, the Lectern Cantor and the Stray-Carrier), the Watchman and the Gatekeeper's trumpet. Claude builds them as 3D models and renders them into sprites; these images are never shown in the game. They follow the [Meshy guide](../meshy-guide.md) format (flat colors, grey background, A-pose), which also works for Claude's own Blender modeling.
 - **Part B, game assets.** Used in the game directly after Claude cuts out the background, crops and resizes them.
 
 Map icons, door sigils, reward plates, state markers, rings, lanes, timers, text and numbers are **drawn in code**, not generated. Do not make images for them.
@@ -22,6 +22,7 @@ Save every image as PNG with exactly this name: Part A in `assets/art-src/refere
 - [x] A2 The Gatekeeper's trumpet, needed by R7, required: `gatekeeper-trumpet.png`, `gatekeeper-trumpet-raised.png`
 - [x] A3 The Lectern Cantor, needed by the R2 commander follow-up, required: `cantor-design.png` (do this first), `cantor-turnaround.png`, `cantor-hymnal.png`
 - [x] A4 The Stray-Carrier, needed by the R2 commander follow-up (after the Cantor), required: `carrier-design.png` (do this first), `carrier-turnaround.png`, `carrier-wings.png`, `carrier-shroud.png`
+- [ ] A5 The Watchman, needed by the [R04 follow-up](r04-watchman.md) stage 4, required: `watchman-design.png` (pilot, do this first), `watchman-clarion.png`, `watchman-aim.png`
 
 **Part B: game assets** (`assets/art-src/`)
 - [x] B1 Breakable props, needed by R2, required: `amphora-tall.png` (pilot, do it first), `amphora-squat.png`, `amphora-lily.png`, `amphora-marked.png`, `sanctuary-lamp.png`, `blessing-chalice.png`
@@ -36,7 +37,7 @@ Save every image as PNG with exactly this name: Part A in `assets/art-src/refere
 - [x] B10 Hazard and effect textures, needed by R2, required: `tex-refiner-channel.png`, `fx-flames.png`
 - [ ] B11 Optional: 6 combo emblems `combo-<id>.png` (R6) and 72 talent icons `talent-<class>-<tree>-<node>.png` (R4–R5). Without them the cards show the class glyph and the talent's name.
 
-**Totals:** 13 model references + 57 required game assets + 78 optional icons. Earlier drafts also listed `fx-embers`, `fx-incense-wisp` and `silent-trumpet`; the first two are covered by the existing `ember.png` and `fx-smoke.png`, and the trumpet is now the A2 model reference.
+**Totals:** 16 model references + 57 required game assets + 78 optional icons (A5's three added 2026-10-16). Earlier drafts also listed `fx-embers`, `fx-incense-wisp` and `silent-trumpet`; the first two are covered by the existing `ember.png` and `fx-smoke.png`, and the trumpet is now the A2 model reference.
 
 **Current receipt status — 2026-10-14:** 67/70 required sources received (all 13 model references and 54 game assets). Only B6, the boss parts (`watcher-open.png`, `watcher-closed.png`, `judgment-seal.png`), is still missing, along with the optional B11 icons. The dated receipts below record each batch.
 
@@ -145,6 +146,7 @@ New objects share Heaven's palette with everything already in the arenas, so eac
 | **Dominion** | white and gold armor, dark bronze face | twice a Blessed's height, a mace head above the crowd | 3.4 m | the elite |
 | **Lectern Cantor** | white silk and gold robes, a **dark bronze** book in front | a head taller than the Choristers, a crown of candles, a huge book held like a shield | 3.2 m | commander of the Choristers; bronze side = shielded front |
 | **Stray-Carrier** | gold armor and mask, white wings, a **long white shroud** | 2.5 × a Cherub, a white tail of cloth hanging 2 m below it | 2 m body, 5 m wings, flies 4 m up | commander of the Cherubs |
+| **Watchman** | a Blessed's ivory and white, a **gold helmet** with a sky-blue plume | a Blessed with a long gun upright on its shoulder, a **trumpet bell above the crowd** | 2.1 m (bell about 2.5 m) | the only enemy with a gun; its aim is a gold thread |
 | **Heal mote** | **green** | a small almond-shaped drop | 0.3 m | heals the collector |
 | **Halo** | gold | a thick ring | 0.4 m | money |
 | **Hazard** (Refiner's Fire) | red-orange flame in a sunk channel with a gold rim | a line on the floor | floor | "hurts enemies more than you" |
@@ -333,6 +335,44 @@ Cloth model sheet for 3D modeling: the long burial shroud worn by the character 
 **Check before saving:** no body; the same two clasps as the design; long and narrow, hanging straight; no stains, no writing, no face shapes in the folds.
 
 **After the four images,** Claude builds the model and renders its 8 directions and the frames the game needs: fly, shoot, shriek (the mark), swoop, carrying (long arms down, the shroud wrapped forward around where the player hangs; the game draws the carried player), pain, death. The lane, the marker over the stray and the drop ring are drawn by the game; the animation never decides when the grab happens.
+
+### A5 The Watchman
+
+The R04 follow-up's armed Blessed ([rooms.md](rooms.md) §6.4, [brief](r04-watchman.md)): *"It aims a gold thread at the nearest of you, then fires. Break its line of sight or kill it."* A Blessed soul set on Heaven's walls to watch for the damned: the same ivory robes, white armor, blank white eyes and gold halo as the Blessed, plus a **gold helmet** with a narrow brim and a short sky-blue plume, and **the Clarion**, a long gun with an ivory stock and a long barrel banded with gold rings like the Gatekeeper's trumpet, ending in a flared gold trumpet bell. It is barely taller than a Blessed (about 2.1 m drawn), but when it walks the Clarion stands upright on its shoulder, so the bell shows above the crowd (about 2.5 m). It is the only enemy with a gun.
+
+Three images, in this order. The design (the pilot) sets the look; the other two copy it. Claude builds the body from the existing Blessed model and adds the helmet, plume and Clarion, so no turnaround is needed. The Clarion is a separate reference because Claude models it as its own prop.
+
+#### The Watchman's design — `watchman-design.png` · 2:3 · pilot
+
+Attach: `blessed-front.jpg`, `gatekeeper-trumpet.png`
+
+```text
+The Watchman, a soldier of Heaven set on its walls to watch for the damned: a figure copied from the character in the first attached image, the same build and height, the same pale stern face with blank white eyes and a short white beard, the same gold halo ring behind the head, the same ivory robes with pastel sky-blue borders, white plate armor and gold trim, but with no sword. On its head a polished gold helmet with a narrow flat brim and a short upright sky-blue plume, the face fully visible under it. In its right hand it carries a long gun upright against its right shoulder, the barrel pointing straight up, the stock resting in its hand at hip height: the gun has a carved ivory stock with gold fittings and a long slender barrel of white ivory banded with polished gold rings like the trumpet in the second attached image, ending in a flared gold trumpet bell that stands above the helmet. The left hand is empty and relaxed. A calm, watchful, orderly sentry, not monstrous: no horns, no spikes, no skulls, no blood, no smoke, no flame. Art style: stylized 3D game art with a hand-inked graphic-novel finish, matching the attached reference images: bold black ink outlines (a thick outer contour, thinner inner lines), cel shading in 2–3 tones softened with painterly brush texture, light ink hatching in the deepest shadows, warm golden key light from the upper left, crisp clean edges. Palette: white, ivory and polished gold with pastel sky-blue accents. Full body, front view facing the viewer, centered, the whole figure and the whole gun inside the frame, the feet on the bottom edge. Isolated on a flat pure green (#00FF00) background: no floor, no cast shadow, no scenery, no text, no glow or haze outside the outline. Aspect ratio 2:3.
+```
+
+**Check before saving:** clearly a Blessed (same face, robes, halo) with a helmet and a gun, not a new kind of angel; no sword; the trumpet bell is the highest point, above the helmet; the gun is held upright, not aimed; no wings; no smoke or muzzle flash. Generate again until you like the look: everything after this copies it.
+
+#### The Clarion — `watchman-clarion.png` · 21:9
+
+Attach: `watchman-design.png`, `gatekeeper-trumpet.png`. Start a new chat.
+
+```text
+Weapon model sheet for 3D modeling: the long gun carried by the character in the first attached image, alone, in exact side profile, horizontal, the trumpet bell pointing right, the whole gun inside the frame with a margin around it. Copy the attached design: a carved ivory stock with gold fittings and a gold trigger guard, a long slender barrel of white ivory banded with polished gold rings like the trumpet in the second attached image, ending in a flared gold trumpet bell about three times the barrel's width. A simple gold sight bead on top near the bell. Orderly, immaculate Heaven workmanship, no flintlock mechanism, no engraved eyes, no banner. Orthographic with no perspective. Colors as a flat color reference for texturing: every surface in its own true color, evenly lit, with no cast shadows, no shading, no highlights, no reflections, no glow; thin dark lines only where two parts meet. Plain flat medium grey (#808080) background, no hands, no text, no letters, no smoke, no labels. Aspect ratio 21:9.
+```
+
+**Check before saving:** the same gun as in the design (ivory and gold rings, trumpet bell); straight and horizontal; no hands; no smoke or flash; no shine painted on the gold.
+
+#### The aim — `watchman-aim.png` · 1:1
+
+Attach: `watchman-design.png`, `watchman-clarion.png`. Start a new chat.
+
+```text
+The character in the first attached image, copied exactly (same face, helmet, plume, halo, robes, armor and colors), in a new pose, seen in three-quarter view from its left front: it aims the gun from the second attached image at something far to the viewer's left, the stock against its right shoulder, its cheek beside the stock, its left hand under the barrel, the barrel level and the trumpet bell pointing straight ahead, the feet planted apart in a steady stance. It has not fired: no smoke, no flash, no beam. Art style: stylized 3D game art with a hand-inked graphic-novel finish, matching the attached reference images: bold black ink outlines (a thick outer contour, thinner inner lines), cel shading in 2–3 tones softened with painterly brush texture, light ink hatching in the deepest shadows, warm golden key light from the upper left, crisp clean edges. Palette: white, ivory and polished gold with pastel sky-blue accents. Full body, centered, the whole figure and the whole gun inside the frame, the feet on the bottom edge. Isolated on a flat pure green (#00FF00) background: no floor, no cast shadow, no scenery, no text, no glow or haze outside the outline. Aspect ratio 1:1.
+```
+
+**Check before saving:** the same character and gun; the barrel level, not raised; both hands on the gun; no smoke, flash or beam; the bell inside the frame.
+
+**After the three images,** Claude builds the model from the Blessed's and renders its 8 directions and the frames the game needs: idle and walk (the Clarion upright on the shoulder), aim (leveled), fire (a short recoil), reload (lowered), pain, death. The gold thread, the muzzle flash, the tracer and the spark on cover are drawn by the game; the animation never decides when the shot fires.
 
 ---
 
