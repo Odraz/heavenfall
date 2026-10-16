@@ -75,3 +75,15 @@ Inspected in the in-app browser: the HUD shows the assigned Judas Coin, Silver W
 5. **Esc and F:** close a Rite with Esc, then press F with nothing in front of you to reopen it; Pass closes it for good.
 
 Tell me what you expected from a Rite, what changed in your next fight, and which benefit you gave up.
+
+## Playtest follow-up (2026-10-16)
+
+From your first play of this checkpoint:
+
+- **Re-allocating at the Advocate** works with a Rite held. The editor no longer refuses every click once a reset leaves a Rite without its gate; Apply waits and names it (`Your Rite The Informer needs 1 lower A talent`). The rule itself is unchanged: the learned part must keep a held Rite's gate.
+- **Q/E anywhere outside combat:** **T** in a run now lets you reassign Q and E and Apply, alive and with no room sealed. Talents stay read only there; learning and respec are still the Lobby and the Advocate. In combat or dead, T only reads.
+- **The Advocate on the wall:** the grille hangs flat on the Confessional's north wall beside the passage, instead of a billboard in the middle of the room.
+- **Columns through the Gate:** arcade pier strips no longer stand across the Gate on floors where it faces north, south or east.
+- **Talent icons:** the 18 Betrayer icons show on the talent nodes and the Rite cards; the three ability nodes show their ability icons.
+
+Rules 22 (the Confessional point and the Q/E rule); pinned floor hashes `5f6dc51e` / `029559b5`.

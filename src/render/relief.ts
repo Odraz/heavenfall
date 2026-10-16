@@ -231,8 +231,9 @@ export function computeRelief(map: GameMap, skip: (c: number, r: number) => bool
   }
 
   // Pier strips on the arcades (M10 §5.3): at every joint between two bays and at both ends of each
-  // run of bays, PIER_STRIP wide, from the floor beside it up to the cornice.
-  const bays = [...hz.bays].sort((p, q) => p.ox - q.ox || p.oy - q.oy || (p.oy !== 0 ? p.cells[0][1] - q.cells[0][1] : p.cells[0][0] - q.cells[0][0]) || (p.oy !== 0 ? p.cells[0][0] - q.cells[0][0] : p.cells[0][1] - q.cells[0][1]));
+  // run of bays, PIER_STRIP wide, from the floor beside it up to the cornice. Bays behind the Gate are
+  // replaced by it, as in computeArches: their piers would stand across its leaves and railing.
+  const bays = hz.bays.filter((b) => !b.cells.some(([c, r]) => skip(c, r))).sort((p, q) => p.ox - q.ox || p.oy - q.oy || (p.oy !== 0 ? p.cells[0][1] - q.cells[0][1] : p.cells[0][0] - q.cells[0][0]) || (p.oy !== 0 ? p.cells[0][0] - q.cells[0][0] : p.cells[0][1] - q.cells[0][1]));
   const joints = new Map<string, { bay: (typeof bays)[number]; j: number }>();
   for (const bay of bays) {
     const [c, r] = bay.cells[0];

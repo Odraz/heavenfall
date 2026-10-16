@@ -20,6 +20,9 @@ const BILLBOARD_SPRITES = new Set([
   ...PROP_SPRITES, 'gold-halo', 'heal-mote',
 ]);
 
+/** Whether a sprite exists (optional art such as talent icons). */
+export const hasSprite = (name: string): boolean => sources.has(name);
+
 /** A sprite's image URL, for HUD images. */
 export function spriteUrl(name: string): string {
   const url = sources.get(name);

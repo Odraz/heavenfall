@@ -2337,7 +2337,8 @@ export class Simulation {
 
   /**
    * A whole learned allocation and Q/E assignment (§9.5, §9.6, §9.8): at the Advocate in a valley or a
-   * countdown, alive; refused whole if illegal. Development runs without saved progression may edit
+   * countdown, alive; refused whole if illegal. Reassigning Q/E alone (the same learned talents) works
+   * anywhere outside combat, from the T view. Development runs without saved progression may edit
    * anywhere with free points, so talents can be tried without leveling.
    */
   advocate(playerId: number, requestId: number, talents: unknown, q: unknown, e: unknown): void {
@@ -2347,7 +2348,8 @@ export class Simulation {
       if (!Array.isArray(talents) || talents.length > 32 || talents.some((t) => typeof t !== 'string') || typeof q !== 'string' || typeof e !== 'string') return { accepted: false, reason: 'Malformed loadout' };
       const free = !this.progressionEnabled;
       if (!p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
-      if (!free && !this.advocateInReach(p)) return { accepted: false, reason: 'Speak to the Advocate in the Confessional' };
+      const slotsOnly = talents.length === p.build.talents.length && p.build.talents.every((t) => talents.includes(t));
+      if (!free && !slotsOnly && !this.advocateInReach(p)) return { accepted: false, reason: 'Speak to the Advocate in the Confessional' };
       if (this.activePhase === PHASE_COMBAT) return { accepted: false, reason: 'Not while the doors are sealed' };
       const error = this.talents.edit(p, talents as string[], q, e, free);
       if (error) return { accepted: false, reason: error };

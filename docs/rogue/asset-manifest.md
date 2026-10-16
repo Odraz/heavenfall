@@ -104,7 +104,7 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 | talent-fallen-* (18) | icon | no | R5 | requested | — | — | Fallen talent cards | — | — | — | B11 optional; IDs in art-prompts.md; default: tree glyph + name |
 | talent-heretic-* (18) | icon | no | R5 | requested | — | — | Heretic Saint talent cards | — | — | — | B11 optional |
 | talent-binder-* (18) | icon | no | R5 | requested | — | — | Binder talent cards | — | — | — | B11 optional |
-| talent-betrayer-* (18) | icon | no | R4 | requested | — | — | Betrayer talent cards | — | — | — | B11 optional |
+| talent-betrayer-* (18) | icon | no | R4 | integrated | `assets/art-src/talent-betrayer-*.jfif` | `assets/sprites/talent-betrayer-*.png` | Talents view nodes and Rite cards | — | — | — | B11; 2026-10-16: 128 px, a-1a pilot frame cropped (10% margin); awaiting your in-game approval |
 
 ## Art: reused
 

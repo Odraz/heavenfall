@@ -7,9 +7,9 @@
 import { button, el } from './menus';
 import { attachTooltip } from './tooltip';
 import type { ClassId } from '../data/classes';
-import { TALENT_NODES, TREES, talentNode, type TreeId, type TalentNode } from '../data/talents';
+import { ALT_ABILITIES, TALENT_NODES, TREES, talentNode, type TreeId, type TalentNode } from '../data/talents';
 import { abilityDef, pointsFor, removeLearned, resolveKit, runBuildError, slotChoices, type LearnedBuild, type RunBuild } from '../sim/build';
-import { spriteUrl } from '../render/atlas';
+import { hasSprite, spriteUrl } from '../render/atlas';
 import type { RiteCard, RiteOffer } from '../net/messages';
 
 const TREE_IDS: readonly TreeId[] = ['a', 'b', 'c'];
@@ -26,6 +26,23 @@ export function nodeDetail(n: TalentNode): string {
   return parts.join(' ');
 }
 
+/**
+ * A node's icon sprite: an ability node shows its ability's icon (B9), the others their talent icon
+ * (B11, `talent-<class>-<tree>-<node>`) once it exists; null shows the name alone.
+ */
+export function talentIcon(n: TalentNode): string | null {
+  if (n.teaches) return ALT_ABILITIES[n.teaches.ability]?.icon ?? null;
+  const name = `talent-${n.id.replace(/\./g, '-')}`;
+  return hasSprite(name) ? name : null;
+}
+
+function iconImage(n: TalentNode, parent: HTMLElement): void {
+  const icon = talentIcon(n);
+  if (!icon) return;
+  const img = el('img', 'talent-icon', parent);
+  img.src = spriteUrl(icon); img.alt = '';
+}
+
 export interface TalentPanelOptions {
   classId: ClassId;
   build: LearnedBuild;
@@ -34,8 +51,10 @@ export interface TalentPanelOptions {
   /** The character's level, or null for a development run's free points. */
   level: number | null;
   title: string;
-  /** Look only (T in a run, §9.4): nodes and abilities keep their tooltips, nothing can change. */
+  /** Look only (T in a run during combat or dead, §9.4): nodes and abilities keep their tooltips, nothing can change. */
   readOnly?: boolean;
+  /** T in a run out of combat: the talents are read only, Q and E can be reassigned and applied anywhere. */
+  slotsOnly?: boolean;
   onApply: (build: LearnedBuild) => void;
   onClose: () => void;
 }
@@ -62,9 +81,12 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
   let draft: LearnedBuild = { ...accepted, talents: [...accepted.talents] };
   const nodes = TALENT_NODES[o.classId];
 
+  const fixedTalents = o.readOnly || o.slotsOnly;
+  // A step of the draft may leave a Rite without its gate (a tree reset) and learn it back; Apply needs the whole check.
   const check = (b: LearnedBuild): string | null => runBuildError(o.classId, { ...b, rites }, o.level);
+  const stepCheck = (b: LearnedBuild): string | null => runBuildError(o.classId, { ...b, rites }, o.level, true);
   const toggle = (n: TalentNode): void => {
-    if (o.readOnly) return;
+    if (fixedTalents) return;
     if (rites.includes(n.id)) { message.textContent = `${n.name} is a Rite this run`; return; }
     if (draft.talents.includes(n.id)) {
       const next = removeLearned(o.classId, { ...draft, rites }, n.id);
@@ -72,7 +94,7 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
       message.textContent = '';
     } else {
       const next = { ...draft, talents: [...draft.talents, n.id] };
-      const error = check(next);
+      const error = stepCheck(next);
       if (error) { message.textContent = error; return; }
       draft = next; message.textContent = '';
     }
@@ -93,9 +115,11 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
         const row = el('div', 'talent-tier', col);
         for (const n of nodes.filter((x) => x.tree === t && x.tier === tier)) {
           const learned = draft.talents.includes(n.id), rite = rites.includes(n.id);
-          const open = !learned && !rite && check({ ...draft, talents: [...draft.talents, n.id] }) === null;
+          const open = !learned && !rite && stepCheck({ ...draft, talents: [...draft.talents, n.id] }) === null;
           const state = rite ? 'rite' : learned ? 'learned' : open ? 'open' : 'locked';
-          const b = button(n.name, row, () => toggle(n), `talent-node ${o.readOnly ? 'view ' : ''}${state}${kit.dormant.includes(n.id) ? ' dormant' : ''}${kit.suppressed.has(n.id) ? ' suppressed' : ''}`);
+          const b = button('', row, () => toggle(n), `talent-node ${fixedTalents ? 'view ' : ''}${state}${kit.dormant.includes(n.id) ? ' dormant' : ''}${kit.suppressed.has(n.id) ? ' suppressed' : ''}`);
+          iconImage(n, b);
+          el('span', 'talent-node-name', b, n.name);
           b.dataset.node = n.id;
           b.setAttribute('aria-pressed', String(learned || rite));
           const notes = [rite ? 'Held as a Rite this run.' : '', kit.dormant.includes(n.id) ? 'Dormant: its ability is not assigned.' : '',
@@ -109,7 +133,7 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
         draft = { talents: [...b.talents], q: b.q, e: b.e }; message.textContent = ''; draw();
       }, 'small secondary talent-reset');
       // Hidden, not removed, so the trees keep the editor's size.
-      if (o.readOnly) { reset.disabled = true; reset.classList.add('talent-unused'); }
+      if (fixedTalents) { reset.disabled = true; reset.classList.add('talent-unused'); }
     }
     slots.replaceChildren();
     for (const slot of ['Q', 'E'] as const) {
@@ -117,7 +141,7 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
       el('div', 'talent-slot-key', row, slot);
       for (const id of slotChoices(o.classId, slot, [...draft.talents, ...rites])) {
         const def = abilityDef(o.classId, slot, id), current = (slot === 'Q' ? draft.q : draft.e) === id;
-        const b = button('', row, () => { if (o.readOnly) return; draft = slot === 'Q' ? { ...draft, q: id } : { ...draft, e: id }; message.textContent = ''; draw(); }, 'talent-ability');
+        const b = button('', row, () => { if (o.readOnly) return; draft = slot === 'Q' ? { ...draft, q: id } : { ...draft, e: id }; message.textContent = hint; draw(); }, 'talent-ability');
         b.setAttribute('aria-pressed', String(current));
         if (o.readOnly) b.classList.add('view');
         const icon = el('img', '', b); icon.src = spriteUrl(def.icon); icon.alt = '';
@@ -126,17 +150,21 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
       }
     }
     if (!apply) return;
-    apply.disabled = JSON.stringify(draft) === JSON.stringify(accepted) || check(draft) !== null;
+    const dirty = JSON.stringify(draft) !== JSON.stringify(accepted), error = check(draft);
+    apply.disabled = !dirty || error !== null;
+    // Why Apply waits (a Rite's gate), unless a refusal is already showing.
+    if (dirty && error && !message.textContent) message.textContent = error;
   };
 
   let apply: HTMLButtonElement | null = null;
-  if (o.readOnly) message.textContent = 'Learn and assign in the Lobby or with the Advocate in the Confessional.';
-  else button('Reset all', footer, () => {
+  const hint = o.readOnly ? 'Learn and assign in the Lobby or with the Advocate in the Confessional.'
+    : o.slotsOnly ? 'Assign Q and E here outside combat. Learn talents in the Lobby or with the Advocate.' : '';
+  message.textContent = hint;
+  if (!fixedTalents) button('Reset all', footer, () => {
     draft = { talents: [], q: slotChoices(o.classId, 'Q', rites).includes(draft.q) ? draft.q : slotChoices(o.classId, 'Q', [])[0], e: slotChoices(o.classId, 'E', rites).includes(draft.e) ? draft.e : slotChoices(o.classId, 'E', [])[0] };
-    const error = check(draft);
-    message.textContent = error ?? ''; draw();
+    message.textContent = stepCheck(draft) ?? ''; draw();
   }, 'small secondary');
-  button(o.readOnly ? 'Close (T)' : 'Close', footer, o.onClose, 'small secondary');
+  button(fixedTalents ? 'Close (T)' : 'Close', footer, o.onClose, 'small secondary');
   if (!o.readOnly) apply = button('Apply', footer, () => {
     const error = check(draft);
     if (error) { message.textContent = error; return; }
@@ -199,8 +227,11 @@ export function riteOverlay(o: RiteOverlayOptions): RiteOverlay {
       for (const card of offer.cards) {
         const n = talentNode(card.id)!;
         const c = el('div', `rite-card${card.ok ? '' : ' disabled'}`, cards);
-        el('div', 'rite-tree', c, `${TREES[o.classId]?.[n.tree].name ?? n.tree} · tier ${n.tier}`);
-        el('div', 'rite-name', c, n.name);
+        const head = el('div', 'rite-head', c);
+        iconImage(n, head);
+        const title = el('div', '', head);
+        el('div', 'rite-tree', title, `${TREES[o.classId]?.[n.tree].name ?? n.tree} · tier ${n.tier}`);
+        el('div', 'rite-name', title, n.name);
         el('div', 'rite-rule', c, n.rule);
         const notes = el('div', 'rite-notes', c);
         for (const line of cardNotes(o.classId, card)) el('div', '', notes, line);

@@ -65,6 +65,7 @@ function resolvedKey(n: TalentNode, q: string, e: string): string | null {
 
 /** Distinct strictly lower-tier nodes the tier needs in its tree (§9.3). */
 export const TIER_GATE = [0, 0, 1, 3, 5] as const;
+const lowerTalents = (n: TalentNode): string => `${TIER_GATE[n.tier]} lower ${n.tree.toUpperCase()} talent${TIER_GATE[n.tier] === 1 ? '' : 's'}`;
 
 function gateMet(n: TalentNode, owned: Iterable<string>): boolean {
   let lower = 0;
@@ -116,7 +117,7 @@ export function learnedError(classId: ClassId, build: LearnedBuild, level: numbe
     nodes.push(n);
   }
   if (level !== null && ids.length > Math.min(level - 1, HEAVEN_POINT_CAP)) return 'Not enough talent points';
-  for (const n of nodes) if (!gateMet(n, ids)) return `${n.name} needs ${TIER_GATE[n.tier]} lower ${n.tree.toUpperCase()} talents`;
+  for (const n of nodes) if (!gateMet(n, ids)) return `${n.name} needs ${lowerTalents(n)}`;
   if (nodes.filter((n) => n.kind === 'capstone').length > 1) return 'Only one capstone';
   for (const n of nodes) for (const x of n.excludes ?? []) if (ids.includes(x)) return `${n.name} excludes ${talentNode(x)?.name}`;
   for (let i = 0; i < nodes.length; i++) {
@@ -140,11 +141,26 @@ function assignmentError(classId: ClassId, q: string, e: string, owned: Iterable
 }
 
 /**
+ * The held Rites' own tier gates over the combined ownership (§9.5): a respec that would leave a Rite
+ * without its gate is refused, naming the Rite. Rites can't be reset, so the learned part must cover it.
+ */
+export function riteGateError(classId: ClassId, build: RunBuild): string | null {
+  const owned = [...build.talents, ...build.rites];
+  for (const id of build.rites) {
+    const n = talentNode(id);
+    if (n?.classId === classId && !gateMet(n, owned)) return `Your Rite ${n.name} needs ${lowerTalents(n)}`;
+  }
+  return null;
+}
+
+/**
  * A whole run loadout (§9.5, §9.8): the learned part passes on its own, then the Rites keep their gates
  * and exclusions over the combined ownership, two Rites never share a channel, one capstone overall and
  * the effective kit keeps at most two kill discharges. Used for Confessional edits under held Rites.
+ * `draft` leaves out the Rites' gates: an editor's intermediate step may break one (a tree reset) and
+ * learn the gate back before applying; the host always checks the whole loadout.
  */
-export function runBuildError(classId: ClassId, build: RunBuild, level: number | null): string | null {
+export function runBuildError(classId: ClassId, build: RunBuild, level: number | null, draft = false): string | null {
   const rites = build.rites;
   if (rites.length > MAX_RITES) return 'Too many Rites';
   if (rites.some((id) => build.talents.includes(id))) return 'That talent is held as a Rite this run';
@@ -154,9 +170,12 @@ export function runBuildError(classId: ClassId, build: RunBuild, level: number |
   for (const id of rites) {
     const n = talentNode(id);
     if (!n || n.classId !== classId) return 'Unknown Rite';
-    if (!gateMet(n, owned)) return 'A Rite needs this node';
     for (const x of n.excludes ?? []) if (owned.includes(x)) return 'A Rite excludes this node';
     for (const x of build.talents) if (talentNode(x)?.excludes?.includes(id)) return 'A Rite excludes this node';
+  }
+  if (!draft) {
+    const gate = riteGateError(classId, build);
+    if (gate) return gate;
   }
   if (owned.filter((id) => talentNode(id)?.kind === 'capstone').length > 1) return 'Only one capstone';
   const riteNodes = rites.map((id) => talentNode(id)!);
@@ -233,7 +252,7 @@ export function checkRite(classId: ClassId, build: RunBuild, ctx: SourceContext,
   if (build.rites.length >= MAX_RITES) return fail('Four Rites already');
   const owned = [...build.talents, ...build.rites];
   if (owned.includes(id)) return fail('Already yours');
-  if (!gateMet(n, owned)) return fail(`Needs ${TIER_GATE[n.tier]} lower ${n.tree.toUpperCase()} talents`);
+  if (!gateMet(n, owned)) return fail(`Needs ${lowerTalents(n)}`);
   if (n.kind === 'capstone' && owned.some((o) => talentNode(o)?.kind === 'capstone')) return fail('You hold a capstone');
   for (const o of owned) if (talentNode(o)?.excludes?.includes(id) || n.excludes?.includes(o)) return fail(`Excluded by ${talentNode(o)?.name}`);
   if (n.kind === 'augment' && !resolvedKey(n, build.q, build.e)) return fail('Its ability is not assigned');

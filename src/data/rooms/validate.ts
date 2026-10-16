@@ -96,6 +96,12 @@ export function validateTemplate(t: RoomTemplate): string[] {
     if (!t.points?.boss || !t.gate) err('the boss has its point and gate');
   }
   for (const [x, y] of xs) if (t.heights[y][x] === '#') err(`spawn point (${x}, ${y}) on a wall`);
+  // The Advocate's grille hangs on the one wall beside its point (rogue game.md §9.6).
+  if (t.kind === 'confessional') {
+    const a = t.points?.advocate;
+    const walls = a ? [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => t.heights[a[1] + dy]?.[a[0] + dx] === '#').length : 0;
+    if (!a || t.heights[a[1]][a[0]] === '#' || walls !== 1) err('the Advocate stands on floor against exactly one wall');
+  }
 
   // 5–6. Hazards and the reward square (strip exclusions are per orientation, rule 2).
   const inHazard = (x: number, y: number) => t.hazards.some((z) => x >= z.rect.x0 && x <= z.rect.x1 && y >= z.rect.y0 && y <= z.rect.y1);

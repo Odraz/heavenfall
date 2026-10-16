@@ -151,7 +151,17 @@ describe('respec', () => {
   it('refuses a respec that breaks a held Rite\'s gate', () => {
     const run = { ...b(ids('a.1a')), rites: ids('a.2b') };
     expect(runBuildError('betrayer', run, 10)).toBeNull();
-    expect(runBuildError('betrayer', { ...run, talents: [] }, 10)).toBe('A Rite needs this node');
+    expect(runBuildError('betrayer', { ...run, talents: [] }, 10)).toBe('Your Rite The Informer needs 1 lower A talent');
+  });
+  it('lets an editor step break a Rite\'s gate and learn it back before applying', () => {
+    // Three learned and one Rite: resetting tree A leaves The Informer without its gate for a moment.
+    const run = { ...b(ids('a.1a b.1a c.1a')), rites: ids('a.2b') };
+    const reset = { ...run, talents: ids('b.1a c.1a') };
+    expect(runBuildError('betrayer', reset, 4)).toBe('Your Rite The Informer needs 1 lower A talent');
+    expect(runBuildError('betrayer', reset, 4, true)).toBeNull();
+    // The step check still refuses everything else: points, learned gates, exclusions.
+    expect(runBuildError('betrayer', { ...reset, talents: ids('b.1a c.1a b.1b c.1b') }, 4, true)).toBe('Not enough talent points');
+    expect(runBuildError('betrayer', { ...reset, talents: ids('b.1a c.1a a.1b') }, 4)).toBeNull();
   });
   it('allows learning the augment a Rite already suppresses', () => {
     expect(runBuildError('betrayer', { ...b(ids('c.1a')), rites: ids('b.1b') }, 10)).toBeNull();

@@ -416,6 +416,30 @@ describe('the Advocate (§9.5, §9.6)', () => {
     expect(events(sim, 'interactionResult').at(-1)).toMatchObject({ accepted: false, reason: 'Speak to the Advocate in the Confessional' });
   });
 
+  it('a progression run reassigns Q and E anywhere outside combat, without the Advocate', () => {
+    const sim = makeSim(room(30, 8), ['betrayer'], { progressionEnabled: true });
+    const p = sim.players[0];
+    p.xpBase = 1e6;
+    kit(sim, p, ['a.1a', 'a.1b', 'a.2b', 'a.3a']);
+    sim.advocate(0, 1, [id('a.3a'), id('a.1a'), id('a.1b'), id('a.2b')], 'judasCoin', 'shadowstep');
+    expect(events(sim, 'interactionResult').at(-1)).toMatchObject({ requestId: 1, accepted: true });
+    expect(p.kit.q).toBe('judasCoin');
+    // Changing a talent still needs the Advocate.
+    sim.advocate(0, 2, [id('a.1a'), id('a.1b'), id('a.2b')], 'field', 'shadowstep');
+    expect(events(sim, 'interactionResult').at(-1)).toMatchObject({ requestId: 2, accepted: false, reason: 'Speak to the Advocate in the Confessional' });
+    expect(p.build.talents).toHaveLength(4);
+  });
+
+  it('refuses a Q/E reassignment while the doors are sealed', () => {
+    const sim = arenaSim([{ blessed: 40, choristers: 0, cherubs: 0 }], { players: 1, god: true });
+    const p = sim.players[0];
+    kit(sim, p, ['a.1a', 'a.1b', 'a.2b', 'a.3a']);
+    sealAt(sim);
+    sim.advocate(0, 1, p.build.talents, 'judasCoin', 'shadowstep');
+    expect(events(sim, 'interactionResult').at(-1)).toMatchObject({ requestId: 1, accepted: false, reason: 'Not while the doors are sealed' });
+    expect(p.kit.q).toBe('field');
+  });
+
   it('a dev quick build cycles through the reproducible plans', () => {
     const sim = makeSim(room(30, 8), ['betrayer']);
     const p = sim.players[0];

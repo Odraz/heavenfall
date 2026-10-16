@@ -396,6 +396,8 @@ export class Game {
   private seq = 0;
   private lastTeleportId = 0;
   private dead = false;
+  /** A room is sealed (the host refuses loadout changes then, rogue game.md §9.6). */
+  private sealed = false;
   private qPresses = 0;
   private ePresses = 0;
   private itemPresses = [0, 0];
@@ -699,8 +701,9 @@ export class Game {
     else if (code === 'KeyR' && this.params.dev && this.o.host) this.o.host.devRite();
     else if (code === 'KeyT' && this.params.dev && !this.dead) this.openTalents();
     else if (this.params.bot) return;
-    // T: the own talents and Q/E to read, anywhere in the run, dead or alive (§9.4); it changes nothing.
-    else if (code === 'KeyT') this.openTalents(true);
+    // T: the own talents to read anywhere in the run, dead or alive (§9.4); out of combat and alive,
+    // Q and E can be reassigned there too.
+    else if (code === 'KeyT') this.openTalents(this.dead || this.sealed ? 'view' : 'slots');
     else if ((code === 'Digit1' || code === 'Digit2') && !this.dead && !this.player.carried) {
       const slot = code === 'Digit1' ? 0 : 1; this.itemPresses[slot] = (this.itemPresses[slot] + 1) & 255;
     }
@@ -1021,9 +1024,10 @@ export class Game {
 
   /**
    * The Advocate's Talents view (§9.6); in a development run without saved progression, anywhere with
-   * free points. `readOnly` is T's look at the own build anywhere: the same trees, nothing to apply.
+   * free points. T's view anywhere: `slots` reassigns Q and E out of combat, `view` only reads the
+   * build (in combat or dead). The same trees in every mode.
    */
-  private openTalents(readOnly = false): void {
+  private openTalents(mode: 'edit' | 'slots' | 'view' = 'edit'): void {
     if (this.over || !hasCatalog(this.classId)) return;
     const k = this.talents.own();
     const dev = !this.progressionEnabled;
@@ -1032,8 +1036,9 @@ export class Game {
       build: { talents: k?.learned ?? [], q: this.talents.ability(this.localId, 'Q'), e: this.talents.ability(this.localId, 'E') },
       rites: k?.rites ?? [],
       level: dev ? null : levelForXp(this.inventory?.xp ?? 0),
-      title: readOnly ? 'Talents' : dev ? 'Talents · development' : 'The Advocate',
-      readOnly,
+      title: mode !== 'edit' ? 'Talents' : dev ? 'Talents · development' : 'The Advocate',
+      readOnly: mode === 'view',
+      slotsOnly: mode === 'slots',
       onApply: (b) => this.o.transport.sendCtrl({ type: 'advocate', runId: this.o.runId, requestId: this.nextRequestId++, talents: [...b.talents], q: b.q, e: b.e }),
       onClose: () => this.closeOverlay(),
     });
@@ -1705,6 +1710,7 @@ export class Game {
     debugState.pickups = Array.from(s.pickupId, (id, i) => ({ id, kind: s.pickupKind[i], x: s.pickupX[i], y: s.pickupY[i] }));
     debugState.activeRoom = s.activeRoom;
     debugState.activePhase = s.activePhase === PHASE_COMBAT ? 'combat' : s.activePhase === PHASE_COUNTDOWN ? 'countdown' : 'idle';
+    this.sealed = s.activePhase === PHASE_COMBAT;
     debugState.clearedMask = s.clearedMask;
     debugState.countdown = s.activePhase === PHASE_COUNTDOWN ? s.countdown / 10 : 0;
     this.hud.setCountdown(s.activePhase === PHASE_COUNTDOWN ? s.countdown / 10 : null,

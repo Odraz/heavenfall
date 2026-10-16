@@ -6,9 +6,10 @@ import { expect, state, test } from './fixtures';
 import { shootProp } from './prop-fixtures';
 
 // These are the published Gate B selections, deliberately independent of future repins. R03's XP
-// metadata (fb67379) moved the floor hash from de6939ce; the room selections are unchanged (audit A8).
+// metadata (fb67379) moved the floor hash from de6939ce, and the Advocate's wall point (rules 22) from
+// 74928d57; the room selections are unchanged (audit A8).
 const seed = 317434499;
-const hash = '74928d57';
+const hash = '029559b5';
 const selections = [
   { label: 'small', room: 7, templateId: 'pg-c-1x1-flyers-03', name: 'The Ziggurat', band: 3 },
   { label: 'horde', room: 3, templateId: 'pg-c-2x2-horde-flyers-01', name: 'Courtyard of Clouds', band: 2 },

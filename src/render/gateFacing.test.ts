@@ -8,6 +8,7 @@ import { GeometryBuilder } from './terrain';
 import { PEARLY_POOL_R1 } from '../data/rooms/1';
 import { generateFloor } from '../gen';
 import { computeArches } from './arches';
+import { computeRelief } from './relief';
 
 // Planes on the map boundary, including E/S just beyond the final cell. Expected coordinates are
 // authored independently of the Gate transform; a wrong facing or one-cell sampling offset fails.
@@ -44,6 +45,22 @@ describe('the generated Gate facing (rogue R1.3)', () => {
       seen.add(map.gate!.facing);
     }
     expect([...seen].sort()).toEqual(['E', 'N', 'S', 'W']);
+  });
+  it('stands no arcade pier strip across the Gate in any facing', () => {
+    const seen = new Set<GateDef['facing']>();
+    for (let seed = 1; seed <= 64 && seen.size < 4; seed++) {
+      const { map } = generateFloor(seed, 1, 1, PEARLY_POOL_R1);
+      const g = map.gate!;
+      const vertical = g.facing === 'W' || g.facing === 'E';
+      // Pier strips on the Gate's plane, centered inside its span.
+      const across = (strips: ReturnType<typeof computeRelief>['strips']) => strips.filter((s) => s.pier && s.plane === g.plane
+        && (vertical ? s.nx !== 0 : s.ny !== 0) && (s.a0 + s.a1) / 2 > g.u0 && (s.a0 + s.a1) / 2 < g.u1);
+      // Only floors whose gate wall is an open edge would have them.
+      if (across(computeRelief(map, () => false).strips).length === 0) continue;
+      expect(across(computeRelief(map).strips)).toEqual([]);
+      seen.add(g.facing);
+    }
+    expect(seen.size).toBeGreaterThanOrEqual(3);
   });
   for (const c of cases) {
     it(`${c.facing}: samples the interior cell, rotates leaves/plinth/light and hits the leaves and posts`, () => {

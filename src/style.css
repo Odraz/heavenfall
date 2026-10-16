@@ -2504,6 +2504,10 @@ div.weapon-swing {
 }
 
 .talent-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 54px;
   padding: 4px 6px;
   font: 600 13px/1.15 var(--display-font);
@@ -2539,6 +2543,35 @@ div.weapon-swing {
 
 .talent-node.locked {
   cursor: not-allowed;
+}
+
+/* Talent icons (B11): a fixed square beside the name, so the node keeps its size with or without one. */
+.talent-icon {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--rim-deep);
+}
+
+.talent-node-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.talent-node.locked .talent-icon {
+  filter: grayscale(0.8) brightness(0.6);
+}
+
+.rite-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rite-head .talent-icon {
+  width: 64px;
+  height: 64px;
+  border-color: var(--rim-gold);
 }
 
 .talent-reset {
