@@ -22,7 +22,7 @@ Save every image as PNG with exactly this name: Part A in `assets/art-src/refere
 - [x] A2 The Gatekeeper's trumpet, needed by R7, required: `gatekeeper-trumpet.png`, `gatekeeper-trumpet-raised.png`
 - [x] A3 The Lectern Cantor, needed by the R2 commander follow-up, required: `cantor-design.png` (do this first), `cantor-turnaround.png`, `cantor-hymnal.png`
 - [x] A4 The Stray-Carrier, needed by the R2 commander follow-up (after the Cantor), required: `carrier-design.png` (do this first), `carrier-turnaround.png`, `carrier-wings.png`, `carrier-shroud.png`
-- [ ] A5 The Watchman, needed by the [R04 follow-up](r04-watchman.md) stage 4, required: `watchman-design.png` (pilot, do this first), `watchman-clarion.png`, `watchman-aim.png`
+- [x] A5 The Watchman, needed by the [R04 follow-up](r04-watchman.md) stage 4, required: `watchman-design.png` (pilot, do this first), `watchman-clarion.png`, `watchman-aim.png`
 
 **Part B: game assets** (`assets/art-src/`)
 - [x] B1 Breakable props, needed by R2, required: `amphora-tall.png` (pilot, do it first), `amphora-squat.png`, `amphora-lily.png`, `amphora-marked.png`, `sanctuary-lamp.png`, `blessing-chalice.png`
@@ -39,7 +39,7 @@ Save every image as PNG with exactly this name: Part A in `assets/art-src/refere
 
 **Totals:** 16 model references + 57 required game assets + 78 optional icons (A5's three added 2026-10-16). Earlier drafts also listed `fx-embers`, `fx-incense-wisp` and `silent-trumpet`; the first two are covered by the existing `ember.png` and `fx-smoke.png`, and the trumpet is now the A2 model reference.
 
-**Current receipt status — 2026-10-14:** 67/70 required sources received (all 13 model references and 54 game assets). Only B6, the boss parts (`watcher-open.png`, `watcher-closed.png`, `judgment-seal.png`), is still missing, along with the optional B11 icons. The dated receipts below record each batch.
+**Current receipt status — 2026-10-16:** 70/73 required sources received (all 16 model references, including A5, and 54 game assets). Only B6, the boss parts (`watcher-open.png`, `watcher-closed.png`, `judgment-seal.png`), is still missing, along with the optional B11 icons. The dated receipts below record each batch.
 
 ### Received sources — 2026-10-12
 
@@ -71,6 +71,16 @@ The original downloads are preserved byte for byte under `tmp/asset-originals-20
 - **Cantor's back:** plain white with one gold band down the spine, as asked: the front and back read differently.
 - **Carrier's proportions:** the shroud reaches just below the feet and pools to the sides, rather than trailing two body lengths; the arms are only slightly long in the design and normal in the turnaround. Both still read; the model can lengthen the shroud.
 - **Carrier's wings:** `carrier-wings.png` shows the pair from behind plus one more wing, half-spread rather than fully spread, and the third view is not a true side profile. Usable for feather texture and outline; the spread pose is set in Blender.
+
+### Received sources — A5 the Watchman, 2026-10-16
+
+**A5 received: 3 model references** (`watchman-design.png`, `watchman-clarion.png`, `watchman-aim.png`). The JFIF downloads were converted to PNG at their original resolution (1696 × 2528, 1022 × 430 and 2048 × 2048), with decoded pixels verified unchanged. The originals are preserved byte for byte, with SHA-256 hashes in `receipt.json`, under `tmp/asset-originals-2026-10-16/`. Generation tool, generation date and subscription plan are unconfirmed. This receipt does not approve the pilot or replace the in-game check.
+
+**Checked against the prompts:**
+
+- **Design (pilot):** matches. It is clearly a Blessed (the same face, beard, blank eyes, halo, robes and armor) with a gold brimmed helmet, a sky-blue plume and no sword; the Clarion is held upright in the right hand with the stock at the hip; the left hand is empty; no wings, smoke or flash. The trumpet bell stands well above the helmet, but the plume reaches about the same height, so the bell is not clearly the single highest point. The model can lengthen the barrel slightly or shorten the plume.
+- **Clarion:** matches the design (ivory stock and barrel, gold rings, engraved gold bell about four times the barrel's width, a sight bead near the bell), straight, horizontal, no hands, flat colors. It has a flintlock lock plate and hammer, which the prompt excluded, but the design has the same lock, so the two agree; keep it, since it helps the gun read as a gun. At 1022 × 430 it is small, though enough for proportions and colors. Regenerate at a higher resolution only if Claude needs more detail when modeling.
+- **Aim:** matches. The same character and gun, barrel level, stock at the right shoulder, the left hand under the barrel, a wide stance, no smoke, flash or beam. It aims to the viewer's right rather than the left, and the view is closer to front than three-quarter. Neither matters, because the sprite directions are rendered from the model.
 
 ### Received sources — 2026-10-14
 
