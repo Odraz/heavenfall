@@ -628,7 +628,12 @@ export class Game {
     o.transport.onSnapshot = (buf) => this.snaps.addPart(buf, performance.now());
 
     this.bot = this.params.bot ? new Bot(this.map) : null;
-    if (this.params.dev) window.__heavenfallTeleport = (x, y) => this.player.teleport(x, y, this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)]);
+    // The published pose follows at once; otherwise it shows the old place until the next frame draws.
+    if (this.params.dev) window.__heavenfallTeleport = (x, y) => {
+      const z = this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)];
+      this.player.teleport(x, y, z);
+      Object.assign(debugState.self, { x, y, z });
+    };
     this.bench = this.params.benchArena >= 0 && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString(), () => this.scene.renderStats()) : null;
 
     debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0, primaryShots: 0, secondaryShots: 0 }));

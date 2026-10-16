@@ -30,7 +30,8 @@ test('native backward movement is twenty percent slower than forward movement', 
   await page.locator('.game-canvas').click({ position: { x: 300, y: 160 } });
   await page.waitForFunction(() => document.pointerLockElement !== null);
   const speed = async (key: string) => {
-    await page.evaluate(() => window.__heavenfallTeleport!(14.5, 2.5));
+    // The pose must show the teleport at once, or the walk below would be measured from the old place.
+    expect(await page.evaluate(() => { window.__heavenfallTeleport!(14.5, 2.5); return window.__heavenfall.self; })).toMatchObject({ x: 14.5, y: 2.5 });
     await page.keyboard.down(key);
     await page.waitForFunction(() => Math.abs(window.__heavenfall.self.x - 14.5) > 0.3);
     const measured = await page.evaluate(() => new Promise<number>((resolve) => {
