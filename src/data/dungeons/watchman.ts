@@ -13,6 +13,6 @@ export const watchmanLab: DungeonDef = {
   id: 'watchman', name: 'The Watchman encounter', heights: hg.map((r) => r.join('')), markers: markers.map((r) => r.join('')), decor: ROOM_DECOR,
   rooms: [{ id: choirLoft.id, name: choirLoft.name, kind: 'combat', rect: { x0: 1, y0: 6, x1: 32, y1: 37 },
     leaves: [{ socket: 0, to: -1, cells: doors }], entry: [{ socket: 0, cells: entry }], boss: false, shape: '1x1', band: 2, focus: 'ranged', templateId: choirLoft.id,
-    // More Watchmen than the ranged cap (6, solo 3), so a kill lets the next queued one in.
+    // More Watchmen than the ranged cap (7, solo 3), so a kill lets the next queued one in.
     waves: [{ blessed: 30, choristers: 0, cherubs: 0 }, { blessed: 40, choristers: 0, cherubs: 0, watchmen: 10 }, { blessed: 60, choristers: 0, cherubs: 0, watchmen: 12 }] }],
 };

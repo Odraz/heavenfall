@@ -21,9 +21,9 @@ const TP = { blessed: 1, chorister: 6, cherub: 4 } as const;
 const ELITE_TP = 60;
 /** A Watchman takes the place of this many Blessed (rooms.md §6.4). */
 export const WATCHMAN_TP = 3;
-/** One Watchman per this many Blessed at 4 players; in a template with a ranged focus or secondary, per 12. */
-const WATCHMAN_PER = 30;
-const WATCHMAN_PER_RANGED = 12;
+/** One Watchman per this many Blessed at 4 players; in a template with a ranged focus or secondary, per 10 (2026-10-16 playtest: was 30 / 12). */
+const WATCHMAN_PER = 24;
+const WATCHMAN_PER_RANGED = 10;
 
 /** A wave's counts at 4 players (rogue game.md §4.6): `round(rest × mix ÷ TP)`, at least 1 where the mix is nonzero. */
 export function waveCounts(w: TemplateWave, budget: number): WaveDef {
@@ -36,8 +36,8 @@ export function waveCounts(w: TemplateWave, budget: number): WaveDef {
 }
 
 /**
- * Converts Blessed into Watchmen (rooms.md §6.4) after the rounded counts: `floor(B ÷ 30)`, or
- * `floor(B ÷ 12)` when `ranged`, each taking 3 Blessed and their exact XP. None in the first wave, in a
+ * Converts Blessed into Watchmen (rooms.md §6.4) after the rounded counts: `floor(B ÷ 24)`, or
+ * `floor(B ÷ 10)` when `ranged`, each taking 3 Blessed and their exact XP. None in the first wave, in a
  * wave with Cherubs or in the crest; the caller leaves trickles, the boss and Bell elites out. Pure.
  */
 export function convertWatchmen(w: WaveDef, index: number, ranged: boolean, crest: boolean): WaveDef {

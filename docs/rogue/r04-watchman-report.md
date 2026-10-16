@@ -2,20 +2,22 @@
 
 Status: **awaiting-human-play**, 2026-10-16, on `rogue` from `61b9dc5`. Implemented under Tomas's "Implement R04 follow-up: the Watchman" request, from the [brief](r04-watchman.md) and [rooms.md §6.4](rooms.md#64-the-watchman). All four stages are done: stages 1–3 make the rules, the network record and the look; stage 4 replaces the placeholder with a modeled atlas. It does not advance R05 or claim Gate C. Fun and fairness of the shot are your call after playing.
 
+**Later change (2026-10-16, after your first look):** slightly more Watchmen with more HP: 1 per 24 Blessed (1 per 10 in ranged rooms; was 30 / 12), alive cap 5 / 7 at four players (was 4 / 6; solo stays 2 / 3), 80 HP (was 60). Rules 23 → 24. The numbers below describe the current values.
+
 **Versions:** protocol 12 → **13**, rules 22 → **23**. No save schema change. Builds with different versions cannot join each other.
 
 ## What you can play
 
-- From the second wave of a generated room, a few Blessed are Watchmen: a Blessed with a gold brimmed helmet, a short blue plume and the Clarion, a long ivory gun with a gold trumpet bell above its head. About 1 per 30 Blessed, 1 per 12 in ranged rooms; none in the first wave, in Cherub waves, in the crest or at the boss.
+- From the second wave of a generated room, a few Blessed are Watchmen: a Blessed with a gold brimmed helmet, a short blue plume and the Clarion, a long ivory gun with a gold trumpet bell above its head. About 1 per 24 Blessed, 1 per 10 in ranged rooms; none in the first wave, in Cherub waves, in the crest or at the boss.
 - A Watchman walks with the crowd until it can see you within 20 m, stops, levels the Clarion and shows a thin gold thread to you for 1 s with a rising brass note. Then it fires: 12 damage if nothing solid is between you, otherwise a spark on the cover. It reloads for 1.5 s.
-- A stun, Discord's silence, a launch, Chains' pull or its death cancels the aim with no shot. One of Them hides the Betrayer from it. 60 HP: two revolver shots.
-- At most 4 Watchmen alive per room (6 in ranged rooms) at four players, 2 (3) solo; the rest wait and keep their wave open.
+- A stun, Discord's silence, a launch, Chains' pull or its death cancels the aim with no shot. One of Them hides the Betrayer from it. 80 HP.
+- At most 5 Watchmen alive per room (7 in ranged rooms) at four players, 2 (3) solo; the rest wait and keep their wave open.
 
 ## Play it
 
 1. Fixture: `npm run dev`, then `/?dev=1&map=watchman&class=fallen&seed=7` (Choir Loft geometry with its four nave pillars). Enter the room and clear wave 1 (dev key K kills everything). In wave 2, stand in the open and watch a thread, then step behind a pillar during the next aim: the shot sparks on the pillar. Dev key J removes only the Blessed. Push in and kill a Watchman; a queued one replaces it (solo, wave 2 has 4 and the cap is 3).
 2. Generated run: `/?dev=1&map=rogue&class=betrayer&seed=317434499&build=marksman`; play a pure-Blessed room and a ranged room normally.
-3. What to judge (from the brief): do you now move to cover or push instead of backing away? Can you always see who is shooting you? Is 12 every 2.5 s with up to 4 (6) at once too much or too little? Do the Watchmen read as a different enemy among the Blessed?
+3. What to judge (from the brief): do you now move to cover or push instead of backing away? Can you always see who is shooting you? Is 12 every 2.5 s with up to 5 (7) at once too much or too little? Do the Watchmen read as a different enemy among the Blessed?
 
 Use a disposable profile for dev runs.
 

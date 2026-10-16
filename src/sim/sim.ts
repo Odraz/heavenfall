@@ -1852,11 +1852,11 @@ export class Simulation {
     this.placeSquad(ai, 'watch');
   }
 
-  /** A room's Watchman alive cap (rooms.md §6.4): `ceil(4 × mult(P))`, or `ceil(6 × mult(P))` in a ranged template. */
+  /** A room's Watchman alive cap (rooms.md §6.4): `ceil(5 × mult(P))`, or `ceil(7 × mult(P))` in a ranged template. */
   watchmanCap(ai: number): number {
     const room = this.map.rooms[ai];
     const ranged = room.focus === 'ranged' || room.secondary === 'ranged';
-    return Math.ceil((ranged ? 6 : 4) * partyMultiplier(this.rooms[ai].partySize) - 1e-9);
+    return Math.ceil((ranged ? 7 : 5) * partyMultiplier(this.rooms[ai].partySize) - 1e-9);
   }
 
   /** Whether any of wave `n` waits in the room's queue, squad or Watchman queue. */

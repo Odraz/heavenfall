@@ -23,9 +23,9 @@ const living = (sim: Simulation) => Array.from(sim.active.subarray(0, sim.active
 
 describe('Watchman composition (rooms.md §6.4)', () => {
   it('has the specified body and stats', () => {
-    expect(ENEMIES[WATCHMAN]).toEqual({ hp: 60, radius: 0.35, height: 1.8, speed: 3.5, flying: false, draw: 1.15 });
+    expect(ENEMIES[WATCHMAN]).toEqual({ hp: 80, radius: 0.35, height: 1.8, speed: 3.5, flying: false, draw: 1.15 });
   });
-  for (const [party, focus, cap] of [[1, 'horde', 2], [1, 'ranged', 3], [4, 'horde', 4], [4, 'ranged', 6]] as const) {
+  for (const [party, focus, cap] of [[1, 'horde', 2], [1, 'ranged', 3], [4, 'horde', 5], [4, 'ranged', 7]] as const) {
     it(`caps living Watchmen at ${cap} for ${party} player(s) in a ${focus} room and keeps the wave open while they wait`, () => {
       const sim = watchArena(party, focus);
       const total = Math.ceil(10 * (party === 1 ? 0.4 : 1) - 1e-9);
@@ -157,7 +157,7 @@ describe('the Watchman shot (rooms.md §6.4)', () => {
   it('cancels the aim with no shot when it dies, or its target dies or leaves the room', () => {
     const a = shot();
     aim(a.sim, a.slot);
-    a.sim.damageEnemy(a.slot, 60, a.p.index);
+    a.sim.damageEnemy(a.slot, 80, a.p.index);
     expect(a.sim.eAlive[a.slot]).toBe(0);
     expect(a.sim.watchmen.records.size).toBe(0);
     const b = shot(['betrayer', 'heretic'], [[28.5, 4.5], [30.5, 15.5]]);

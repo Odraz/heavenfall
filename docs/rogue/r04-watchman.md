@@ -10,9 +10,9 @@ With only Blessed in play, and especially in pure-Blessed rooms, standing and sh
 
 ## Playable outcome
 
-- Watchmen appear in generated rooms from the second wave on, about 1 per 30 Blessed (1 per 12 in ranged rooms), never with Cherubs, in the crest, in trickles or at the boss.
+- Watchmen appear in generated rooms from the second wave on, about 1 per 24 Blessed (1 per 10 in ranged rooms; 30 / 12 before the first playtest), never with Cherubs, in the crest, in trickles or at the boss.
 - Each one walks to within 20 m with line of sight of the nearest player, aims for 1.0 s with a visible thread and a rising note, fires 12 damage if the line is clear, and reloads for 1.5 s.
-- Cover, Discord, Blasphemy's stun, a launch and One of Them all answer it; killing it (60 HP) ends it.
+- Cover, Discord, Blasphemy's stun, a launch and One of Them all answer it; killing it (80 HP; 60 before the first playtest) ends it.
 - A dev fixture `/?dev=1&map=watchman` shows them in a room with pillars.
 
 ## Affected code (inspected at `33abfa9`)

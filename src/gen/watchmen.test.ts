@@ -15,32 +15,32 @@ const tp = (w: WaveDef) => w.blessed + 6 * w.choristers + 4 * w.cherubs + WATCHM
 const xpSum = (w: WaveDef) => w.xp!.reduce<number>((a, b) => a + (b ?? 0), 0);
 
 describe('Watchman conversion (rooms.md §6.4)', () => {
-  it("turns the Cloudbridge's last wave of 224 Blessed into 203 Blessed and 7 Watchmen", () => {
+  it("turns the Cloudbridge's last wave of 224 Blessed into 197 Blessed and 9 Watchmen", () => {
     const before = stamped('pg-c-2x1-horde-01', 3);
     expect(before.blessed).toBe(224);
     const after = convertWatchmen(before, 3, false, false);
-    expect([after.blessed, after.watchmen]).toEqual([203, 7]);
+    expect([after.blessed, after.watchmen]).toEqual([197, 9]);
     expect(tp(after)).toBe(tp(before));
     expect(xpSum(after)).toBeCloseTo(xpSum(before), 9);
-    expect(after.xp![4]).toBe(21);
+    expect(after.xp![4]).toBe(27);
   });
-  it("turns the Choir Loft's last wave (112 Blessed, 8 Choristers) into 85 Blessed, 9 Watchmen and 8 Choristers", () => {
+  it("turns the Choir Loft's last wave (112 Blessed, 8 Choristers) into 79 Blessed, 11 Watchmen and 8 Choristers", () => {
     const before = stamped('pg-c-1x1-ranged-01', 2);
     expect([before.blessed, before.choristers]).toEqual([112, 8]);
     const after = convertWatchmen(before, 2, true, false);
-    expect([after.blessed, after.watchmen, after.choristers]).toEqual([85, 9, 8]);
+    expect([after.blessed, after.watchmen, after.choristers]).toEqual([79, 11, 8]);
     expect(tp(after)).toBe(tp(before));
     expect(xpSum(after)).toBeCloseTo(xpSum(before), 9);
   });
-  it('gives none below 30 Blessed (12 when ranged), in the first wave, with Cherubs or in the crest', () => {
-    const w: WaveDef = { blessed: 29, choristers: 0, cherubs: 0, xp: [29, 0, 0, 60] };
+  it('gives none below 24 Blessed (10 when ranged), in the first wave, with Cherubs or in the crest', () => {
+    const w: WaveDef = { blessed: 23, choristers: 0, cherubs: 0, xp: [29, 0, 0, 60] };
     expect(convertWatchmen(w, 1, false, false)).toBe(w);
-    expect(convertWatchmen({ ...w, blessed: 11 }, 1, true, false).watchmen).toBeUndefined();
-    expect(convertWatchmen({ ...w, blessed: 12 }, 1, true, false).watchmen).toBe(1);
+    expect(convertWatchmen({ ...w, blessed: 9 }, 1, true, false).watchmen).toBeUndefined();
+    expect(convertWatchmen({ ...w, blessed: 10 }, 1, true, false).watchmen).toBe(1);
     expect(convertWatchmen({ ...w, blessed: 300 }, 0, false, false).watchmen).toBeUndefined();
     expect(convertWatchmen({ ...w, blessed: 300, cherubs: 5 }, 2, false, false).watchmen).toBeUndefined();
     expect(convertWatchmen({ ...w, blessed: 1200 }, 4, false, true).watchmen).toBeUndefined();
-    expect(convertWatchmen({ ...w, blessed: 30 }, 1, false, false).watchmen).toBe(1);
+    expect(convertWatchmen({ ...w, blessed: 24 }, 1, false, false).watchmen).toBe(1);
   });
   it('keeps every generated wave total and XP, never converts the first wave, Cherub waves or the crest', () => {
     const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
@@ -54,7 +54,7 @@ describe('Watchman conversion (rooms.md §6.4)', () => {
         expect(tp(w)).toBe(tp(raw));
         expect(xpSum(w)).toBeCloseTo(t.waves[index].share * budget - (t.waves[index].elites ?? 0) * 60 + index * 60, 8);
         const crest = room.shape === '2x2' && index === room.waves.length - 1;
-        const expected = index === 0 || crest || raw.cherubs > 0 ? 0 : Math.floor(raw.blessed / (ranged ? 12 : 30));
+        const expected = index === 0 || crest || raw.cherubs > 0 ? 0 : Math.floor(raw.blessed / (ranged ? 10 : 24));
         expect(w.watchmen ?? 0).toBe(expected);
         converted += w.watchmen ?? 0;
       });
