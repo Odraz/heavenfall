@@ -7,7 +7,7 @@ Revision 10, 2026-10-13. **Which game feature or event uses which file.** For im
 | Feature | Files (prompt section) or treatment | Milestone | Fallback until delivered |
 |---|---|---|---|
 | Dominion | `dominion-design`, `-turnaround`, `-wings`, `-mace` (A1) → model → directional atlas | R2 | Integrated `scripts/blender/dominion.py` and 140 frames in `assets/sprites/dominion`; five angles mirror to eight, idle/walk/cast/pain/death. |
-| Watchman | `watchman-design`, `-clarion`, `-aim` (A5) → the Blessed model with helmet, plume and Clarion → directional atlas; thread, muzzle flash, tracer and spark coded | R04 follow-up ([brief](r04-watchman.md)) | Blessed atlas with a coded gold rod, labeled in dev builds |
+| Watchman | `watchman-design`, `-clarion`, `-aim` (A5) → the Blessed model with helmet, plume and Clarion → directional atlas; thread, muzzle flash, tracer and spark coded | R04 follow-up ([brief](r04-watchman.md)) | Integrated `scripts/blender/watchman.py` and 240 frames in `assets/sprites/watchman` (8 directions; idle, walk, cast = aim + fire, reload, pain, death). |
 | Loot props | `amphora-tall`, `-squat`, `-lily` (B1); variant = canonical loot-socket index mod 3 (rooms.md §8); shared porcelain shards | R2 | Original cutouts integrated in the world atlas. |
 | Marked amphora | `amphora-marked` (B1) + coded glint | R2 (look), R6 (Chart) | Original cutout integrated. |
 | Blast prop | `sanctuary-lamp` (B1); fireball ring = `fx-ring` tinted, smoke = `fx-smoke` | R2 | Original cutout, extinguished/depleted tint and active glow; 15-second recharge. |

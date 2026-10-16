@@ -6,7 +6,7 @@ The rules of the whole game after the rebuild described in [brief.md](brief.md):
 
 **R02 commander families (2026-10-13, implemented in R03, human feel acceptance open):** the Lectern Cantor leads Chorister waves and the Stray-Carrier leads Cherub waves, beside the Dominion for the rest (§4.6, [rooms.md §6.1–§6.3](rooms.md#61-the-commander-families)).
 
-**R04 follow-up: the Watchman (2026-10-16, accepted, not implemented):** an armed Blessed with an instant, line-of-sight shot after a visible 1 s aim. Wave stamping converts Blessed into Watchmen from the second wave on (§4.4, §4.6, [rooms.md §6.4](rooms.md#64-the-watchman), [brief](r04-watchman.md)).
+**R04 follow-up: the Watchman (2026-10-16, implemented, awaiting-human-play, [report](r04-watchman-report.md)):** an armed Blessed with an instant, line-of-sight shot after a visible 1 s aim. Wave stamping converts Blessed into Watchmen from the second wave on (§4.4, §4.6, [rooms.md §6.4](rooms.md#64-the-watchman), [brief](r04-watchman.md)).
 
 **R02 playtest movement override (2026-10-13):** ordinary movement directly backward relative to aim runs at 80% of class speed; backward diagonals interpolate toward full sideways speed. Forward/sideways speed is unchanged. The penalty multiplies wading and applies during ordinary jumps, but not Shadowstep, Falling Star or forced launches. The host speed allowance uses the same directional factor. Dominion flying slams lead recent ordinary motion by up to 1 s before locking a safe destination; see [rooms.md §6](rooms.md#6-the-new-elite) and [the follow-up evidence](r02-playtest-report.md).
 

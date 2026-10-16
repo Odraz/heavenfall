@@ -6,17 +6,17 @@
  * the 8th tick in range, then every 1 s: M12 §3.2), and casts from when the wind-up began and when the shot fired. Cherubs flap their
  * wings on a clock instead of walking; the Gatekeeper's casts follow the boss cast in the snapshot.
  */
-import { CANTOR, CARRIER, BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_FALLING, ST_MOVING, ST_WINDUP } from '../data/enemies';
+import { CANTOR, CARRIER, BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_FALLING, ST_MOVING, ST_WINDUP, WATCHMAN } from '../data/enemies';
 import { BOSS_CAST_JUDGMENT, BOSS_CAST_VOLLEY } from '../sim/sim';
 import { ENEMY_SLOTS } from '../sim/constants';
 import { CANTOR_TELL } from '../data/commanders';
 
-export type EnemyAnimName = 'sing' | 'close' | 'mark' | 'swoop' | 'carry' | 'idle' | 'walk' | 'fly' | 'attack' | 'cast' | 'volley' | 'judgment' | 'pain' | 'death';
+export type EnemyAnimName = 'sing' | 'close' | 'mark' | 'swoop' | 'carry' | 'idle' | 'walk' | 'fly' | 'attack' | 'cast' | 'reload' | 'volley' | 'judgment' | 'pain' | 'death';
 
 /** Meters walked per walk cycle (two steps), so the feet keep pace with the ground: the Blessed's. */
 export const WALK_CYCLE_M = 1.6;
 /** Walk cycle lengths by enemy type (§11.1). */
-const WALK_CYCLES: Record<number, number> = { [BLESSED]: WALK_CYCLE_M, [CHORISTER]: 2.0, [DOMINION]: 2.4 };
+const WALK_CYCLES: Record<number, number> = { [BLESSED]: WALK_CYCLE_M, [WATCHMAN]: WALK_CYCLE_M, [CHORISTER]: 2.0, [DOMINION]: 2.4 };
 /**
  * Casts (§11.1): the wind-up frames play over the wind-up and hold the last one; the release
  * frames play from the tick the shot fires.
@@ -26,6 +26,9 @@ export interface CastTiming {
   windupMs: number;
   releaseFrames: number;
   releaseMs: number;
+  /** A `reload` animation playing after the release, over this long (the Watchman). */
+  reloadFrames?: number;
+  reloadMs?: number;
 }
 export const CAST_TIMINGS: Partial<Record<number, CastTiming>> = {
   [CANTOR]: { windupFrames: 8, windupMs: CANTOR_TELL / 30 * 1000, releaseFrames: 0, releaseMs: 0 },
@@ -33,6 +36,8 @@ export const CAST_TIMINGS: Partial<Record<number, CastTiming>> = {
   [DOMINION]: { windupFrames: 6, windupMs: 1500, releaseFrames: 2, releaseMs: 1000 },
   [CHORISTER]: { windupFrames: 6, windupMs: 1000, releaseFrames: 2, releaseMs: 250 },
   [CHERUB]: { windupFrames: 4, windupMs: 500, releaseFrames: 2, releaseMs: 200 },
+  // The Watchman (rogue rooms.md §6.4): levels the Clarion over the 1 s aim, fires, lowers it inside the 1.5 s reload.
+  [WATCHMAN]: { windupFrames: 4, windupMs: 1000, releaseFrames: 2, releaseMs: 200, reloadFrames: 4, reloadMs: 800 },
 };
 /** The Cherub's wingbeat: 6 frames every 0.5 s. */
 export const FLY_FRAMES = 6;
@@ -190,6 +195,9 @@ export class EnemyAnimator {
       const sinceFired = now - this.firedAt[slot];
       if (sinceFired >= 0 && sinceFired < cast.releaseMs) {
         return { anim: 'cast', frame: cast.windupFrames + Math.min(cast.releaseFrames - 1, Math.floor((sinceFired / cast.releaseMs) * cast.releaseFrames)) };
+      }
+      if (cast.reloadFrames && cast.reloadMs && state !== ST_WINDUP && sinceFired >= cast.releaseMs && sinceFired < cast.releaseMs + cast.reloadMs) {
+        return { anim: 'reload', frame: Math.min(cast.reloadFrames - 1, Math.floor(((sinceFired - cast.releaseMs) / cast.reloadMs) * cast.reloadFrames)) };
       }
       if (state === ST_WINDUP) {
         const t = Math.max(0, now - this.stateSince[slot]);

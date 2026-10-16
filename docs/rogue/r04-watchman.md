@@ -1,6 +1,6 @@
 # R04 follow-up: the Watchman
 
-**Status: prepared, 2026-10-16.** Design accepted by Tomas in conversation the same day. Not implemented. Implement it on `rogue` after the R04 code (`33abfa9` and later), as an R04 follow-up like [r03-followup.md](r03-followup.md). It does not advance R05 or claim Gate C. The mechanics live in [rooms.md §6.4](rooms.md#64-the-watchman) and [game.md](game.md) §4.4–§4.6 and §6.1–§6.3; this brief only orders the work.
+**Status: implemented, awaiting-human-play, 2026-10-16** ([report](r04-watchman-report.md)). Design accepted by Tomas in conversation the same day. Implement it on `rogue` after the R04 code (`33abfa9` and later), as an R04 follow-up like [r03-followup.md](r03-followup.md). It does not advance R05 or claim Gate C. The mechanics live in [rooms.md §6.4](rooms.md#64-the-watchman) and [game.md](game.md) §4.4–§4.6 and §6.1–§6.3; this brief only orders the work.
 
 ## Why
 

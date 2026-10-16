@@ -8,6 +8,7 @@ import { RunEvents } from './net/runEvents';
 import { parseParams } from './params';
 import { loadRunMap } from './sim/runMap';
 import { loadEnemyAnims, loadPlayerAnims } from './render/animAtlas';
+import { hasWatchmen } from './data/watchman';
 import { buildAtlas } from './render/atlas';
 import { loadGameTextures } from './render/textures';
 import { Game, type RosterEntry } from './client/game';
@@ -165,7 +166,7 @@ async function loadGameAssets(run: RunConfig, roster: RosterEntry[], localId: nu
   progress('Drawing the sprites…');
   const localClass = roster.find((r) => r.id === localId)?.classId;
   const others = multiplayer ? CLASS_IDS.filter((c) => c !== localClass) : roster.filter((r) => r.id !== localId).map((r) => r.classId);
-  const [atlas, textures, enemyAnims, players] = await Promise.all([buildAtlas(), loadGameTextures(map.gate !== null), loadEnemyAnims(map.rooms.some((r) => r.waves.some((w) => (w.dominions ?? 0) > 0)), map.rooms.some((r) => r.waves.some((w) => w.commander === 'cantor')), map.rooms.some((r) => r.waves.some((w) => w.commander === 'carrier'))), loadPlayerAnims(others)]);
+  const [atlas, textures, enemyAnims, players] = await Promise.all([buildAtlas(), loadGameTextures(map.gate !== null), loadEnemyAnims(map.rooms.some((r) => r.waves.some((w) => (w.dominions ?? 0) > 0)), map.rooms.some((r) => r.waves.some((w) => w.commander === 'cantor')), map.rooms.some((r) => r.waves.some((w) => w.commander === 'carrier')), hasWatchmen(map.rooms)), loadPlayerAnims(others)]);
   return { map, floor, runId: run.runId, atlas, textures, enemyAnims, players };
 }
 

@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BLESSED, WATCHMAN } from '../data/enemies';
-import type { WatchmanAim } from '../data/watchman';
+import manifest from '../../assets/sprites/watchman/atlas.json';
+import { BLESSED, ST_ATTACKING, ST_IDLE, ST_WINDUP, WATCHMAN } from '../data/enemies';
+import { hasWatchmen, type WatchmanAim } from '../data/watchman';
 import { dominionLab } from '../data/dungeons/dominion';
+import { DUNGEONS } from '../data/dungeons';
+import { PEARLY_POOL } from '../data/rooms/1';
+import { generateFloor } from '../gen';
+import { PINNED } from '../gen/pinned';
+import { WATCHMAN_ANIM_NAMES } from '../render/animAtlas';
+import { CAST_TIMINGS, DEATH_FRAMES, EnemyAnimator, PAIN_FRAMES, WALK_FRAMES } from './enemyAnim';
 import type { FloorSync } from '../net/messages';
 import type { Snapshot } from '../net/protocol';
 import { loadMap } from '../sim/map';
@@ -88,5 +95,38 @@ describe('Watchman bots', () => {
     // Aimed at someone else: the nearest enemy again.
     const other = new Bot(map).update(0, { ...v, enemies: [v.enemies[0], { ...v.enemies[1], y: 14.5 }], watchmanAims: [{ ...aim, targetId: 1 }] });
     expect(other.yaw).toBeCloseTo(0, 1);
+  });
+});
+
+describe('Watchman atlas (r04-watchman.md stage 4)', () => {
+  it('is loaded only for maps whose waves have Watchmen', () => {
+    expect(hasWatchmen(DUNGEONS.watchman.rooms)).toBe(true);
+    expect(hasWatchmen(DUNGEONS.dominion.rooms)).toBe(false);
+    expect(hasWatchmen(DUNGEONS.crest.rooms)).toBe(false);
+    expect(hasWatchmen(generateFloor(PINNED.seed, 1, 1, PEARLY_POOL).def.rooms)).toBe(true);
+  });
+  it('has every animation in 8 directions with the frame counts the animator plays', () => {
+    const anims = (manifest as { anims: Record<string, number[][][]> }).anims;
+    const cast = CAST_TIMINGS[WATCHMAN]!;
+    expect(Object.keys(anims)).toEqual([...WATCHMAN_ANIM_NAMES]);
+    const counts = { idle: 1, walk: WALK_FRAMES, cast: cast.windupFrames + cast.releaseFrames, reload: cast.reloadFrames, pain: PAIN_FRAMES, death: DEATH_FRAMES };
+    for (const [name, n] of Object.entries(counts)) {
+      expect(anims[name]).toHaveLength(8);
+      for (const dir of anims[name]) expect(dir).toHaveLength(n!);
+    }
+  });
+  it('aims through the cast frames, fires, then lowers the Clarion in the reload frames', () => {
+    const a = new EnemyAnimator();
+    a.begin(); a.update(3, 10, 10, ST_IDLE, 0, 0.016, 20, 10, WATCHMAN);
+    a.begin(); a.update(3, 10, 10, ST_WINDUP, 16, 0.016, 20, 10, WATCHMAN);
+    expect(a.pick(3, 16)).toEqual({ anim: 'cast', frame: 0 });
+    a.begin(); a.update(3, 10, 10, ST_WINDUP, 900, 0.016, 20, 10, WATCHMAN);
+    expect(a.pick(3, 900)).toEqual({ anim: 'cast', frame: 3 });
+    a.begin(); a.update(3, 10, 10, ST_ATTACKING, 1016, 0.016, 20, 10, WATCHMAN);
+    expect(a.pick(3, 1016)).toEqual({ anim: 'cast', frame: 4 });
+    a.begin(); a.update(3, 10, 10, ST_IDLE, 1300, 0.016, 20, 10, WATCHMAN);
+    expect(a.pick(3, 1300).anim).toBe('reload');
+    a.begin(); a.update(3, 10, 10, ST_IDLE, 2100, 0.016, 20, 10, WATCHMAN);
+    expect(a.pick(3, 2100)).toEqual({ anim: 'idle', frame: 0 });
   });
 });

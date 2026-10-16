@@ -4,7 +4,7 @@
 
 **2026-10-13 current follow-up:** generated commanders ramp 0/1/2/3/... by wave before party scaling, replacing prior baseline-plus-authored elite counts while preserving minions and the two-alive cap. First waves have none. Dominion leap/melee and nonlethal enemy throws are specified in §6. Candles/chalices remain 1.1/1 m; candle player damage is 40, chalices remain healing. Evidence is in [the follow-up report](r02-playtest-report.md). **Accepted, not implemented:** two more commanders, the Lectern Cantor and the Stray-Carrier, lead Chorister and Cherub waves (§6.1–§6.3).
 
-**2026-10-16 R04 follow-up (accepted, not implemented):** the Watchman, an armed Blessed whose instant shot must be answered with cover or a push, replaces a few Blessed in every wave from the second on (§6.4, [brief](r04-watchman.md)).
+**2026-10-16 R04 follow-up (implemented, awaiting-human-play, [report](r04-watchman-report.md)):** the Watchman, an armed Blessed whose instant shot must be answered with cover or a push, replaces a few Blessed in every wave from the second on (§6.4, [brief](r04-watchman.md)).
 
 **Status:** complete authored pool; operational contracts revised 2026-10-11. Geometry measurements remain historical design data, not rerun tests. Contains: the notation (§2.1), 20 combat and 4 special templates with grids (§3–§4), the fallback floor (§5), the Dominion and the other commanders (§6), the Watchman (§6.4), Refiner's Fire (§7), the props (§8), the checks (§9) and the playtest-in-head notes (§10).
 
@@ -1522,7 +1522,7 @@ The 2026-10-13 playtest adds short stairs at the marble hedge ends in the Open T
 
 ### 6.4 The Watchman
 
-**Accepted design, 2026-10-16 (R04 follow-up, [brief](r04-watchman.md)); not implemented.** Tomas asked for a minion that shoots instantly. Against a crowd of Blessed alone, standing and shooting or walking slowly backward is usually enough: the Blessed are slower than every class, and the Choristers' globes and the Cherubs' arrows can be sidestepped in the open. The Watchman is an armed Blessed that punishes standing in the open. The party must break its line of sight or push through the crowd to kill it. It is not a commander.
+**Accepted design, 2026-10-16 (R04 follow-up, [brief](r04-watchman.md)); implemented on `rogue`, human feel acceptance open ([report](r04-watchman-report.md)).** Tomas asked for a minion that shoots instantly. Against a crowd of Blessed alone, standing and shooting or walking slowly backward is usually enough: the Blessed are slower than every class, and the Choristers' globes and the Cherubs' arrows can be sidestepped in the open. The Watchman is an armed Blessed that punishes standing in the open. The party must break its line of sight or push through the crowd to kill it. It is not a commander.
 
 **Rule:** *"It aims a gold thread at the nearest of you, then fires. Break its line of sight or kill it."*
 

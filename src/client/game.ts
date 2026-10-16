@@ -2,7 +2,7 @@ import { CARRIER_SWOOP } from '../data/commanders';
 import { CommanderProjection } from './commanders';
 import { CommanderView } from './commanderView';
 import { WatchmanProjection } from './watchmen';
-import { ROD_BELL_FORWARD, WatchmanView } from './watchmanView';
+import { BELL_FORWARD, ROD_BELL_FORWARD, WatchmanView } from './watchmanView';
 import { WATCHMAN_MUZZLE_Z, type WatchmanAim } from '../data/watchman';
 import { RewardShafts, rewardPickupIds, rewardSpot } from './rewardShaft';
 import { rewardLabel } from '../gen/rewards';
@@ -559,7 +559,7 @@ export class Game {
     this.watchmen = new WatchmanProjection(o.runId);
     this.commanderView = new CommanderView(o.textures.fx.beam, o.textures.fx.glow);
     this.scene.scene.add(this.commanderView.group);
-    this.watchmanView = new WatchmanView(o.textures.fx.beam, true, o.params.dev);
+    this.watchmanView = new WatchmanView(o.textures.fx.beam, !o.enemyAnims[WATCHMAN], o.params.dev);
     this.scene.scene.add(this.watchmanView.group);
     this.rewardShafts = new RewardShafts(o.textures.fx.beam);
     this.scene.scene.add(this.rewardShafts.group);
@@ -1434,7 +1434,7 @@ export class Game {
       const p = at(a);
       if (!p) continue;
       const dx = a.x - p.x, dy = a.y - p.y, h = Math.hypot(dx, dy) || 1;
-      const bell = Math.min(ROD_BELL_FORWARD, h * 0.5);
+      const bell = Math.min(this.o.enemyAnims[WATCHMAN] ? BELL_FORWARD : ROD_BELL_FORWARD, h * 0.5);
       const muzzle: [number, number, number] = [p.x + dx / h * bell, p.y + dy / h * bell, p.z + WATCHMAN_MUZZLE_Z];
       this.vfx.sphere(now, muzzle[0], muzzle[1], muzzle[2], 0xffe7a0, 0.08, 0.35, 90, 0.8);
       this.vfx.beam(now, [muzzle, [a.x, a.y, a.z]], 0xfff1c0, 0.07, 140);
