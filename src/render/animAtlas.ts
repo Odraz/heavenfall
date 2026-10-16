@@ -24,7 +24,7 @@ import binderManifest from '../../assets/sprites/binder/atlas.json';
 import betrayerUrl from '../../assets/sprites/betrayer/atlas.png';
 import betrayerManifest from '../../assets/sprites/betrayer/atlas.json';
 import type { ClassId } from '../data/classes';
-import { CANTOR, CARRIER, BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER } from '../data/enemies';
+import { CANTOR, CARRIER, BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER, WATCHMAN } from '../data/enemies';
 import dominionUrl from '../../assets/sprites/dominion/atlas.png';
 import dominionManifest from '../../assets/sprites/dominion/atlas.json';
 import type { SpriteFrame } from './atlas';
@@ -114,7 +114,8 @@ export async function loadEnemyAnims(includeDominion = true, includeCantor = inc
     includeCarrier ? loadAnimSet(carrierUrl, carrierManifest as Manifest, Object.keys(carrierManifest.anims)) : Promise.resolve(undefined),
     includeDominion ? loadAnimSet(dominionUrl, dominionManifest as Manifest, CHORISTER_ANIM_NAMES) : Promise.resolve(undefined),
   ]);
-  return { [BLESSED]: blessed, [CHORISTER]: chorister, [CHERUB]: cherub, [GATEKEEPER]: gatekeeper, ...(dominion ? { [DOMINION]: dominion } : {}), ...(cantor ? { [CANTOR]: cantor } : {}), ...(carrier ? { [CARRIER]: carrier } : {}) };
+  // The Watchman draws with the Blessed atlas until its own exists (r04-watchman.md stage 4).
+  return { [BLESSED]: blessed, [WATCHMAN]: blessed, [CHORISTER]: chorister, [CHERUB]: cherub, [GATEKEEPER]: gatekeeper, ...(dominion ? { [DOMINION]: dominion } : {}), ...(cantor ? { [CANTOR]: cantor } : {}), ...(carrier ? { [CARRIER]: carrier } : {}) };
 }
 
 const PLAYER_ATLASES: Record<ClassId, { url: string; manifest: Manifest }> = {

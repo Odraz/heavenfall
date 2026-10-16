@@ -14,13 +14,14 @@ export function bossMultiplier(partySize: number, solo = partySize === 1): numbe
   return solo ? 0.3 : partyMultiplier(partySize);
 }
 
-/** A wave's enemies for the party size, each type and its squad (M12 follow-up §4.2) scaled. */
+/** A wave's enemies for the party size, each type (Watchmen included) and its squad (M12 follow-up §4.2) scaled. */
 export function waveSize(w: WaveDef, partySize: number): number {
   return (
     scaleCount(w.blessed, partySize) +
     scaleCount(w.choristers, partySize) +
     scaleCount(w.cherubs, partySize) +
     scaleCount(w.dominions ?? 0, partySize) +
+    scaleCount(w.watchmen ?? 0, partySize) +
     (w.squad ? scaleCount(w.squad.count, partySize) : 0)
   );
 }

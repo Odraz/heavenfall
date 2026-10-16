@@ -5,6 +5,7 @@ import { dominionLab } from './dominion';
 import { refinerLab } from './refiner';
 import { arrivalLab } from './arrival';
 import { crestLab } from './crest';
+import { watchmanLab } from './watchman';
 import type { DungeonDef } from './types';
 
 /** The fixed dungeons (development fixtures), adapted to room records. */
@@ -15,6 +16,7 @@ export const DUNGEONS: Record<string, DungeonDef> = {
   refiner: refinerLab,
   arrival: arrivalLab,
   crest: crestLab,
+  watchman: watchmanLab,
   sandbox: adaptFixture(sandbox),
   'pearly-gates': adaptFixture(pearlyGates),
 };

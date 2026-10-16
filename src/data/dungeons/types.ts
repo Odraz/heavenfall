@@ -1,11 +1,13 @@
 import type { DecorId } from '../decor';
 
 export interface WaveDef {
-  /** Exact pre-rounding XP allocation: Blessed, Chorister, Cherub, commander. */
-  xp?: [number, number, number, number];
+  /** Exact pre-rounding XP allocation: Blessed, Chorister, Cherub, commander and, when converted, Watchman. */
+  xp?: [number, number, number, number, number?];
   blessed: number;
   choristers: number;
   cherubs: number;
+  /** Watchmen converted from Blessed at stamping (rooms.md §6.4), at four players; absent: none. */
+  watchmen?: number;
   /** Authored count at four players; absent in historical fixtures. */
   dominions?: number;
   /** Generated waves replace their first commander; fixed fixtures opt in explicitly. */

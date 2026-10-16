@@ -5,7 +5,8 @@ const HALOS: Record<RoomShape, readonly number[]> = {
   // Audit batch 4: ×1.5 the R02 budgets, so the crowd visibly pays and the shop is affordable.
   '1x1': [0, 72, 90, 108], '2x1': [0, 108, 126, 144], '1x2': [0, 108, 126, 144], '2x2': [0, 0, 180, 198],
 };
-export const HALO_WEIGHT = [1, 3, 3] as const;
+/** Halo weight by enemy type: Blessed 1, Chorister 3, Cherub 3, Watchman (8) 3; others 0 (game.md §6.1). */
+export const HALO_WEIGHT: Readonly<Record<number, number>> = { 0: 1, 1: 3, 2: 3, 8: 3 };
 export function haloBudget(shape: RoomShape, band: number): number { return HALOS[shape][band] ?? 0; }
 export function moteCap(shape?: RoomShape): number { return shape === '1x1' ? 4 : shape === '2x2' || !shape ? 8 : 6; }
 

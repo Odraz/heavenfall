@@ -23,6 +23,7 @@ import {
   CHORISTER,
   DOMINION, CANTOR, CARRIER, isCommander,
   ENEMIES,
+  WATCHMAN,
   GATEKEEPER,
   ST_ATTACKING,
   ST_FALLING,
@@ -350,6 +351,10 @@ interface RoomState {
   paceRate: number;
   /** The latest wave's squad still to place (M12 follow-up §4.2), or null. */
   squad: Squad | null;
+  /** The latest wave's Watchmen still to place (rooms.md §6.4), as a squad on the room's spawn points, or null. */
+  watch: Squad | null;
+  /** Living Watchmen of this room, against its alive cap. */
+  watchAlive: number;
 }
 
 /** A wave's squad being placed: `left` more of `type` on `at`, the next on tick `next` or later. */
@@ -811,6 +816,8 @@ export class Simulation {
       pace: 0,
       paceRate: 0,
       squad: null,
+      watch: null,
+      watchAlive: 0,
     }));
     // Dev `arena=N`: the rooms before it are cleared, their doors open.
     const startRoom = this.benchRoom >= 0 ? 0 : Math.max(0, Math.min(opts.startRoom ?? 0, this.rooms.length - 1));
@@ -1260,7 +1267,7 @@ export class Simulation {
     }
     this.items.clearAll(); for (const s of [...this.projectiles]) this.removeProjectile(s);
     this.clouds.length = 0; this.fieldUntil = 0;
-    for (let i = 0; i < this.rooms.length; i++) { this.rooms[i].queue.length = 0; this.rooms[i].squad = null; this.items.clearCombat(i); }
+    for (let i = 0; i < this.rooms.length; i++) { this.rooms[i].queue.length = 0; this.rooms[i].squad = this.rooms[i].watch = null; this.items.clearCombat(i); }
     this.rooms[this.floor.boss].phase = PHASE_CLEARED; this.activeRoom = ROOM_NONE;
     this.updateLeaves(); this.roomState(this.floor.boss);
     this.emit('all', { type: 'victoryState', state: { ...this.victory.state } });
@@ -1638,9 +1645,10 @@ export class Simulation {
     const w = this.map.rooms[ai].waves[n];
     const counts = [scaleCount(w.blessed, st.partySize), scaleCount(w.choristers, st.partySize), scaleCount(w.cherubs, st.partySize), scaleCount(w.dominions ?? 0, st.partySize)];
     const squad = w.squad ? scaleCount(w.squad.count, st.partySize) : 0;
+    const watchmen = scaleCount(w.watchmen ?? 0, st.partySize);
     st.wave = n;
     const queued = counts.reduce((sum, n) => sum + n, 0);
-    st.waveTotals[n] = queued + squad;
+    st.waveTotals[n] = queued + squad + watchmen;
     st.waveAlive[n] = 0;
     st.waveFullySpawned[n] = st.waveTotals[n] === 0;
     st.pace = 0;
@@ -1648,6 +1656,8 @@ export class Simulation {
     if (this.isCrest(ai, n)) this.emit('all', { type: 'crest', room: ai, wave: n, total: queued });
     if (queued > 0) st.queue.push({ counts, spawned: [0, 0, 0, 0], wave: n });
     st.squad = squad > 0 ? { type: w.squad!.type === 'cherubs' ? CHERUB : CHORISTER, at: w.squad!.at, left: squad, next: this.tick + SQUAD_DELAY_TICKS, rr: 0, wave: n } : null;
+    // Watchmen arrive like a squad, on the room's unrestricted spawn points (rooms.md §6.4).
+    st.watch = watchmen > 0 ? { type: WATCHMAN, at: this.map.roomSpawnPoints[ai], left: watchmen, next: this.tick + SQUAD_DELAY_TICKS, rr: 0, wave: n } : null;
     st.director?.waveStarted(n);
   }
 
@@ -1656,7 +1666,7 @@ export class Simulation {
       const st = this.rooms[ai];
       if (st.phase !== PHASE_COMBAT || a.boss || this.benchRoom >= 0) return;
       const allWavesStarted = this.noWaves || st.wave >= a.waves.length - 1;
-      if (!allWavesStarted || st.queue.length > 0 || st.squad || st.alive > 0) return;
+      if (!allWavesStarted || st.queue.length > 0 || st.squad || st.watch || st.alive > 0) return;
       st.phase = PHASE_CLEARED;
       this.rewards.roomCleared(ai);
       this.items.clearCombat(ai);
@@ -1721,7 +1731,7 @@ export class Simulation {
         if (this.livingTargetable(p) && this.activeCount > 0) this.computeFields(p, ROOM_NONE);
         continue;
       }
-      if (!this.livingTargetable(p) || room === ROOM_NONE || !this.hasEnemies(room) && this.rooms[room].queue.length === 0 && !this.rooms[room].squad && this.rooms[room].trickleAt < 0) {
+      if (!this.livingTargetable(p) || room === ROOM_NONE || !this.hasEnemies(room) && this.rooms[room].queue.length === 0 && !this.rooms[room].squad && !this.rooms[room].watch && this.rooms[room].trickleAt < 0) {
         this.fieldValid[p.index] = false;
         this.dryNavigation.release(p.index);
         continue;
@@ -1836,7 +1846,20 @@ export class Simulation {
     }
 
     this.placeQueued(ai);
-    this.placeSquad(ai);
+    this.placeSquad(ai, 'squad');
+    this.placeSquad(ai, 'watch');
+  }
+
+  /** A room's Watchman alive cap (rooms.md §6.4): `ceil(4 × mult(P))`, or `ceil(6 × mult(P))` in a ranged template. */
+  watchmanCap(ai: number): number {
+    const room = this.map.rooms[ai];
+    const ranged = room.focus === 'ranged' || room.secondary === 'ranged';
+    return Math.ceil((ranged ? 6 : 4) * partyMultiplier(this.rooms[ai].partySize) - 1e-9);
+  }
+
+  /** Whether any of wave `n` waits in the room's queue, squad or Watchman queue. */
+  private waveQueued(st: RoomState, n: number): boolean {
+    return st.queue.some((b) => b.wave === n) || st.squad?.wave === n || st.watch?.wave === n;
   }
 
   /**
@@ -1844,10 +1867,12 @@ export class Simulation {
    * over its points more than 8 m from every living player. When none is (a player stands among
    * them), it uses the same distant-marker or warned safe-floor fallback as its ordinary wave.
    */
-  private placeSquad(ai: number): void {
+  private placeSquad(ai: number, which: 'squad' | 'watch'): void {
     const st = this.rooms[ai];
-    const q = st.squad;
+    const q = st[which];
     if (!q || q.left <= 0 || this.tick < q.next || this.activeCount >= MAX_LIVING_ENEMIES) return;
+    // Queued Watchmen wait for a free place under the alive cap and stay part of their wave.
+    if (which === 'watch' && st.watchAlive >= this.watchmanCap(ai)) return;
     let points = q.at;
     let eligible = new Uint8Array(points.length);
     const own = this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible, this.spawnEligibility(ai, points, q.type));
@@ -1889,8 +1914,8 @@ export class Simulation {
     q.left--;
     q.next = this.tick + SQUAD_EVERY_TICKS;
     if (q.left === 0) {
-      st.squad = null;
-      if (!st.queue.some((b) => b.wave === q.wave)) st.waveFullySpawned[q.wave] = true;
+      st[which] = null;
+      if (!this.waveQueued(st, q.wave)) st.waveFullySpawned[q.wave] = true;
     }
   }
 
@@ -1986,8 +2011,8 @@ export class Simulation {
       batch.spawned[typeIndex]++;
       if (batch.spawned.every((s, t) => s >= batch.counts[t])) {
         st.queue.shift();
-        // Fully placed once its squad is too (M12 follow-up §4.2).
-        if (batch.wave >= 0 && st.squad?.wave !== batch.wave) st.waveFullySpawned[batch.wave] = true;
+        // Fully placed once its squad and Watchmen are too (M12 follow-up §4.2, rooms.md §6.4).
+        if (batch.wave >= 0 && !this.waveQueued(st, batch.wave)) st.waveFullySpawned[batch.wave] = true;
       }
       const [c, r] = temporary ? [temporary.c, temporary.r] : points[found];
       this.spawnAt(slot, type, c, r, ai, batch.wave);
@@ -2162,6 +2187,7 @@ export class Simulation {
     this.eGrounded[slot] = 1;
     this.eHp[slot] = def.hp;
     if (isCommander(type)) this.livingDominions++;
+    if (type === WATCHMAN && room >= 0) this.rooms[room].watchAlive++;
     this.dominions.reset(slot);
     this.dominions.leapReadyAt[slot] = this.tick + DOMINION_COOLDOWN_TICKS;
     if (isCommander(type) && wave >= 0) {
@@ -2221,6 +2247,7 @@ export class Simulation {
     this.ePooled[slot] = 0;
     const type = this.eType[slot];
     if (isCommander(type)) this.livingDominions--;
+    if (type === WATCHMAN && this.eRoom[slot] >= 0) this.rooms[this.eRoom[slot]].watchAlive--;
     const d = sweep || type === GATEKEEPER ? null : this.activeDirector();
     if (d) {
       for (const p of this.players) {
@@ -3662,7 +3689,7 @@ export class Simulation {
         this.eState[slot] = thrown ? ST_FALLING : ST_IDLE;
       } else if (type === CANTOR && familyHolding) { const phase = this.commanders.active.get(slot)?.phase; this.eState[slot] = phase === 'tell' ? ST_WINDUP : ST_ATTACKING; }
       else if (type === BLESSED) this.updateMelee(slot);
-      else if (type !== DOMINION && type !== CANTOR) this.updateCast(slot);
+      else if (type !== DOMINION && type !== CANTOR && CASTERS[type]) this.updateCast(slot);
     }
     if (this.livingDominions > 0) this.dominionBehavior.update();
   }
@@ -4174,7 +4201,7 @@ export class Simulation {
     if (this.map.rooms[ai].boss) return st.alive;
     let n = st.alive;
     for (const q of st.queue) for (let t = 0; t < q.counts.length; t++) n += q.counts[t] - q.spawned[t];
-    n += st.squad?.left ?? 0;
+    n += (st.squad?.left ?? 0) + (st.watch?.left ?? 0);
     const waves = this.map.rooms[ai].waves;
     if (!this.noWaves && this.benchRoom < 0) {
       for (let i = st.wave + 1; i < waves.length; i++) n += waveSize(waves[i], st.partySize);

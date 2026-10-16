@@ -7,6 +7,8 @@ export const DOMINION = 4;
 /** 5 is reserved for the Gatekeeper's generic boss parts. */
 export const CANTOR = 6;
 export const CARRIER = 7;
+/** An armed Blessed with an instant line-of-sight shot (rooms.md §6.4). */
+export const WATCHMAN = 8;
 export function isCommander(type: number): boolean { return type === DOMINION || type === CANTOR || type === CARRIER; }
 
 /** Enemy states, as encoded in snapshots (§9.4). */
@@ -43,6 +45,8 @@ export const ENEMIES: readonly EnemyDef[] = [
   { hp: 1, radius: 0.4, height: 1, speed: 0, flying: false, draw: 1 }, // reserved boss part
   { hp: 1200, radius: 0.45, height: 3, speed: 2.5, flying: false, draw: 1.4 },
   { hp: 1000, radius: 0.4, height: 0.8, speed: 5, flying: true, draw: 2.5 },
+  // The Watchman (rooms.md §6.4): a Blessed's body, so it moves and wades in the crowd like one.
+  { hp: 60, radius: 0.35, height: 1.8, speed: 3.5, flying: false, draw: 1.15 },
 ];
 
 /** Falling Star's launched walking enemies fly an arc this high (M9 §3.2); drawn only. */

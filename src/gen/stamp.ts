@@ -19,6 +19,11 @@ const BASE_TP: Record<string, number> = { '1x1': 400, '2x1': 700, '1x2': 700, '2
 const BAND_FACTOR = [0, 0.85, 1.0, 1.15];
 const TP = { blessed: 1, chorister: 6, cherub: 4 } as const;
 const ELITE_TP = 60;
+/** A Watchman takes the place of this many Blessed (rooms.md §6.4). */
+export const WATCHMAN_TP = 3;
+/** One Watchman per this many Blessed at 4 players; in a template with a ranged focus or secondary, per 12. */
+const WATCHMAN_PER = 30;
+const WATCHMAN_PER_RANGED = 12;
 
 /** A wave's counts at 4 players (rogue game.md §4.6): `round(rest × mix ÷ TP)`, at least 1 where the mix is nonzero. */
 export function waveCounts(w: TemplateWave, budget: number): WaveDef {
@@ -28,6 +33,20 @@ export function waveCounts(w: TemplateWave, budget: number): WaveDef {
     return m > 0 ? Math.max(1, Math.round((rest * m) / TP[id])) : 0;
   };
   return { blessed: n('blessed'), choristers: n('chorister'), cherubs: n('cherub'), ...(w.elites ? { dominions: w.elites } : {}) };
+}
+
+/**
+ * Converts Blessed into Watchmen (rooms.md §6.4) after the rounded counts: `floor(B ÷ 30)`, or
+ * `floor(B ÷ 12)` when `ranged`, each taking 3 Blessed and their exact XP. None in the first wave, in a
+ * wave with Cherubs or in the crest; the caller leaves trickles, the boss and Bell elites out. Pure.
+ */
+export function convertWatchmen(w: WaveDef, index: number, ranged: boolean, crest: boolean): WaveDef {
+  if (index < 1 || crest || w.cherubs > 0 || (w.squad?.type === 'cherubs')) return w;
+  const n = Math.floor(w.blessed / (ranged ? WATCHMAN_PER_RANGED : WATCHMAN_PER));
+  if (n <= 0) return w;
+  const out: WaveDef = { ...w, blessed: w.blessed - WATCHMAN_TP * n, watchmen: n };
+  if (w.xp) out.xp = [w.xp[0] - WATCHMAN_TP * n, w.xp[1], w.xp[2], w.xp[3], WATCHMAN_TP * n];
+  return out;
 }
 
 export function roomBudget(shape: string, band: number): number {
@@ -161,7 +180,9 @@ export function stampFloor(layout: Layout, a: Assignment, mode: ValidateMode = '
         const counts = waveCounts(wv, roomBudget(r.shape, r.band!));
         const rest = wv.share * roomBudget(r.shape, r.band!) - (wv.elites ?? 0) * ELITE_TP;
         const xp: WaveDef['xp'] = [rest * (wv.mix.blessed ?? 0), rest * (wv.mix.chorister ?? 0), rest * (wv.mix.cherub ?? 0), index * ELITE_TP];
-        return { ...counts, xp, dominions: index, ...(wv.mix.chorister ? { commander: 'cantor' as const } : wv.mix.cherub ? { commander: 'carrier' as const } : {}) };
+        const wave: WaveDef = { ...counts, xp, dominions: index, ...(wv.mix.chorister ? { commander: 'cantor' as const } : wv.mix.cherub ? { commander: 'carrier' as const } : {}) };
+        const ranged = t.focus === 'ranged' || t.secondary === 'ranged';
+        return convertWatchmen(wave, index, ranged, r.shape === '2x2' && index === t.waves.length - 1);
       }) : [],
       boss: r.kind === 'boss',
       shape: r.shape,

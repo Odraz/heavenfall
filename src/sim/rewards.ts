@@ -4,7 +4,7 @@
  * a room clears, a loot prop breaks or a pickup is touched.
  */
 import { ITEM_IDS } from '../data/items';
-import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, isCommander } from '../data/enemies';
+import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, WATCHMAN, isCommander } from '../data/enemies';
 import {
   CHART,
   COIN,
@@ -32,15 +32,15 @@ export const XP_GAIN = 1.5;
 /** XP for clearing a combat room and for the Gatekeeper, paid to every connected human (§9.1). */
 const ROOM_CLEAR_XP = 100;
 const GATEKEEPER_XP = 1500;
-/** A wave's XP by enemy group when its row doesn't list one: Blessed, Chorister, Cherub, commander. */
-const DEFAULT_GROUP_XP = [1, 6, 4, 60];
+/** A wave's XP by enemy group when its row doesn't list one: Blessed, Chorister, Cherub, commander, Watchman. */
+const DEFAULT_GROUP_XP = [1, 6, 4, 60, 3];
 /** A commander's gold halo is worth this much of the room budget (§6.1). */
 const ELITE_GOLD_SHARE = 24;
 /** Item drop chances by killer type (§6.3). */
 const COMMANDER_ITEM_CHANCE = 0.5;
 const BLESSED_ITEM_CHANCE = 0.02;
 const RANGED_ITEM_CHANCE = 0.12;
-/** A Chorister or Cherub drops a heal mote this often (§6.2); commanders always drop two. */
+/** A Chorister, Cherub or Watchman drops a heal mote this often (§6.2); commanders always drop two. */
 const RANGED_MOTE_CHANCE = 0.35;
 const COMMANDER_MOTES = 2;
 /** A heal mote restores this share of max HP (§6.2). */
@@ -80,7 +80,8 @@ export class Rewards {
     const weight = room.waves.reduce((sum, w) => sum +
       HALO_WEIGHT[BLESSED] * scaleCount(w.blessed, party) +
       HALO_WEIGHT[CHORISTER] * scaleCount(w.choristers, party) +
-      HALO_WEIGHT[CHERUB] * scaleCount(w.cherubs, party), 0);
+      HALO_WEIGHT[CHERUB] * scaleCount(w.cherubs, party) +
+      HALO_WEIGHT[WATCHMAN] * scaleCount(w.watchmen ?? 0, party), 0);
     const counts = room.waves.map((w) => scaleCount(w.dominions ?? 0, party));
     const budget = haloBudget(room.shape, room.band);
     // More commanders must not take the crowd's reward budget: reserve at most one quarter.
@@ -103,8 +104,8 @@ export class Rewards {
     if (wave < 0) return;
     const row = this.sim.map.rooms[room].waves[wave];
     const party = this.sim.rooms[room].partySize;
-    const group = isCommander(type) ? 3 : type;
-    const counts = [row.blessed, row.choristers, row.cherubs, row.dominions ?? 0];
+    const group = isCommander(type) ? 3 : type === WATCHMAN ? 4 : type;
+    const counts = [row.blessed, row.choristers, row.cherubs, row.dominions ?? 0, row.watchmen ?? 0];
     const count = scaleCount(counts[group] ?? 0, party);
     if (count > 0) this.eXp[slot] = (row.xp?.[group] ?? counts[group] * DEFAULT_GROUP_XP[group]) / count;
     if (!isCommander(type)) return;
@@ -136,7 +137,7 @@ export class Rewards {
     const x = sim.eX[slot];
     const y = sim.eY[slot];
     if (sim.eWave[slot] >= 0) {
-      const coins = this.haloLedgers.get(room)?.death(HALO_WEIGHT[type as 0 | 1 | 2] ?? 0) ?? 0;
+      const coins = this.haloLedgers.get(room)?.death(HALO_WEIGHT[type] ?? 0) ?? 0;
       for (let i = 0; i < coins; i++) sim.pickups.drop(COIN, room, x, y, sim.tick, 1);
       if (isCommander(type)) {
         if (this.eGoldEntitled[slot]) sim.pickups.drop(GOLD_HALO, room, x, y, sim.tick);
@@ -147,7 +148,7 @@ export class Rewards {
       const itemChance = isCommander(type) ? COMMANDER_ITEM_CHANCE : type === BLESSED ? BLESSED_ITEM_CHANCE : RANGED_ITEM_CHANCE;
       if (sim.random() < itemChance) this.dropItem(room, x, y);
     }
-    if ((type === CHORISTER || type === CHERUB) && sim.random() < RANGED_MOTE_CHANCE) this.dropMote(room, x, y);
+    if ((type === CHORISTER || type === CHERUB || type === WATCHMAN) && sim.random() < RANGED_MOTE_CHANCE) this.dropMote(room, x, y);
   }
 
   /** A random item drop fades after DROPPED_ITEM_LIFETIME (audit A1); clear rewards don't. */
