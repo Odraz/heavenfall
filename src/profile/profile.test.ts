@@ -31,6 +31,18 @@ describe('profile schema and compatibility', () => {
     expect(result.repaired).toBe(true); expect(result.profile.relics).toEqual(['usher']);
     expect(result.profile.characters.binder).toMatchObject({ xp: 4000, talents: [], q: 'chains' });
   });
+  it('keeps a legal learned build and its assigned alternative, and resets one beyond the level', () => {
+    const p = profile(); p.characters.betrayer.xp = 7500;
+    Object.assign(p.characters.betrayer, { talents: ['betrayer.a.1a', 'betrayer.a.1b', 'betrayer.a.2b'], q: 'field', e: 'shadowstep' });
+    expect(validateProfile(p)).toMatchObject({ repaired: false, profile: { characters: { betrayer: { talents: ['betrayer.a.1a', 'betrayer.a.1b', 'betrayer.a.2b'] } } } });
+    p.characters.betrayer.talents.push('betrayer.a.3a'); p.characters.betrayer.q = 'judasCoin';
+    // Four points need level 5 (12 000 XP): the save check resets the build, never the XP.
+    const r = validateProfile(p);
+    expect(r.repaired).toBe(true);
+    expect(r.profile.characters.betrayer).toMatchObject({ xp: 7500, talents: [], q: 'field', e: 'shadowstep' });
+    p.characters.betrayer.xp = 12000;
+    expect(validateProfile(p).profile.characters.betrayer).toMatchObject({ talents: ['betrayer.a.1a', 'betrayer.a.1b', 'betrayer.a.2b', 'betrayer.a.3a'], q: 'judasCoin' });
+  });
   it.each([NaN, Infinity, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])('rejects unsafe XP %s', n => {
     const p = profile(); p.characters.fallen.xp = n; expect(() => validateProfile(p)).toThrow();
   });

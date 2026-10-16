@@ -8,6 +8,8 @@ export interface RunRecord {
   xpBase: number; runXp: number; carried: Inventory; inventory: Inventory;
   wallet: number; sold: number; itemsTried: ItemId[]; committed: boolean; connected: boolean;
   closed: boolean; outcome: Outcome | null; revision: number; presentAtStart: boolean;
+  /** The learned build to save (§13.2): Advocate edits change it; Rites never enter it. */
+  build: { talents: string[]; q: string; e: string };
 }
 /** Host-owned records survive transport removal. Their IDs and accepted bases never come from a resume. */
 export class RunRecords {
@@ -25,7 +27,8 @@ export class RunRecords {
     if (profile.run) throw new Error('Recover the previous run first');
     const r: RunRecord = { profileId: profile.id, playerId, classId, admissionId: this.nextAdmission++, xpBase: profile.characters[classId].xp,
       runXp: 0, carried: copyInventory(profile.inventory), inventory: copyInventory(profile.inventory), wallet: 0, sold: 0,
-      itemsTried: [], committed: false, connected: false, closed: false, outcome: null, revision: 0, presentAtStart: atStart };
+      itemsTried: [], committed: false, connected: false, closed: false, outcome: null, revision: 0, presentAtStart: atStart,
+      build: { talents: [...profile.characters[classId].talents], q: profile.characters[classId].q, e: profile.characters[classId].e } };
     this.records.set(profile.id, r); return this.admission(r);
   }
   admission(r: RunRecord): Admission {
@@ -45,7 +48,8 @@ export class RunRecords {
     if (r.revision >= 0xffffffff) throw new Error('Run revision exhausted');
     return { runId: this.runId, admissionId: r.admissionId, progressionEnabled: this.progressionEnabled, admissionCommitted: r.committed,
       classId: r.classId, heaven: this.heaven, revision: ++r.revision, xp: saturatingAdd(r.xpBase, Math.floor(r.runXp)), runXp: Math.floor(r.runXp),
-      inventory: copyInventory(r.inventory), itemsTried: [...r.itemsTried], outcome: r.outcome };
+      inventory: copyInventory(r.inventory), itemsTried: [...r.itemsTried], outcome: r.outcome,
+      talents: [...r.build.talents], q: r.build.q, e: r.build.e };
   }
   settle(r: RunRecord, outcome: Outcome): ProgressState {
     if (r.outcome !== 'victory' && !r.closed) {

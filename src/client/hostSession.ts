@@ -38,8 +38,8 @@ export class HostSession {
   }
 
   /** Singleplayer: starts the game at once. */
-  start(run: RunConfig, players: SimPlayerInit[], god: boolean, benchArena: number, benchBurst = false, startRoom?: number, diagnostics = false): void {
-    this.post({ ...run, t: 'start', players, god, benchArena, benchBurst, localPlayerId: this.localPlayerId, startRoom, diagnostics });
+  start(run: RunConfig, players: SimPlayerInit[], god: boolean, benchArena: number, benchBurst = false, startRoom?: number, diagnostics = false, devBuild?: string): void {
+    this.post({ ...run, t: 'start', players, god, benchArena, benchBurst, localPlayerId: this.localPlayerId, startRoom, diagnostics, devBuild });
   }
 
   /** Multiplayer: opens the lobby in the worker and connects the clients' connections to it. */
@@ -79,6 +79,16 @@ export class HostSession {
   /** Dev key I: fills the local player's item slots with the next pair of items. */
   devItems(): void {
     this.post({ t: 'devItems', playerId: this.localPlayerId });
+  }
+
+  /** Dev key B: the next development quick build for the local player. */
+  devBuild(): void {
+    this.post({ t: 'devBuild', playerId: this.localPlayerId });
+  }
+
+  /** Dev key R: a Rite offer for the local player now. */
+  devRite(): void {
+    this.post({ t: 'devRite', playerId: this.localPlayerId });
   }
 
   setPaused(paused: boolean): void {

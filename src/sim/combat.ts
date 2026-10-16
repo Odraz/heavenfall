@@ -84,28 +84,31 @@ export interface BulletTarget {
   rooted: boolean;
   /** The Gatekeeper takes whatever is left. */
   boss: boolean;
+  /** Behind His Back: a taunted enemy costs half, like a bound one, without the Bound step's doubling. */
+  half?: boolean;
 }
 
 /**
  * The Silver Bullet's damage carried through the line (M9 §2.4): each enemy, nearest first, takes
- * what's left, a rooted one costing half its HP; the bullet stops when nothing is left, at an enemy
- * it can't kill, or at the Gatekeeper. Returns the damage to deal to each (before the Bound step) and
- * whether it stopped at the last one. Shared by the host and the client's tracer estimate.
+ * what's left, a rooted (or, with Behind His Back, taunted) one costing half its HP; the bullet stops
+ * when nothing is left, at an enemy it can't kill, or at the Gatekeeper. Returns the damage to deal to
+ * each (before the Bound step), what each cost the bullet, and whether it stopped at the last one.
+ * Shared by the host and the client's tracer estimate.
  */
 export function silverBulletHits(
   targets: readonly BulletTarget[],
   damage: number,
-): { hits: Array<{ s: number; amount: number; carried: number }>; stopped: boolean } {
-  const hits: Array<{ s: number; amount: number; carried: number }> = [];
+): { hits: Array<{ s: number; amount: number; carried: number; cost: number }>; stopped: boolean } {
+  const hits: Array<{ s: number; amount: number; carried: number; cost: number }> = [];
   let remaining = damage;
   for (const t of targets) {
-    const m = t.rooted ? 2 : 1;
+    const m = t.rooted || (t.half && !t.boss) ? 2 : 1;
     if (!t.boss && remaining * m >= t.hp - 1e-9) {
-      hits.push({ s: t.s, amount: t.hp / m, carried: remaining });
+      hits.push({ s: t.s, amount: t.rooted ? t.hp / m : t.hp, carried: remaining, cost: t.hp / m });
       remaining -= t.hp / m;
       if (remaining <= 1e-9) return { hits, stopped: true };
     } else {
-      hits.push({ s: t.s, amount: remaining, carried: remaining });
+      hits.push({ s: t.s, amount: t.rooted ? remaining : remaining * m, carried: remaining, cost: remaining });
       return { hits, stopped: true };
     }
   }

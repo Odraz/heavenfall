@@ -14,7 +14,6 @@ import {
   ITEM_FIRST,
   REWARD_GOLD_VALUE,
   RITE_PAGE,
-  RITE_PAGE_HALOS,
   itemDrop,
   type PickupRecord,
 } from '../data/pickups';
@@ -25,6 +24,11 @@ import type { Prop } from './props';
 import { scaleCount } from './party';
 import type { Simulation, SimPlayer } from './sim';
 
+/**
+ * Every XP gain is multiplied by this (§9.1, 2026-10-16): the slice has one dungeon, so points come
+ * half again as fast; a first full clear reaches about level 4–5.
+ */
+export const XP_GAIN = 1.5;
 /** XP for clearing a combat room and for the Gatekeeper, paid to every connected human (§9.1). */
 const ROOM_CLEAR_XP = 100;
 const GATEKEEPER_XP = 1500;
@@ -194,8 +198,8 @@ export class Rewards {
     } else if (drop.kind === RITE_PAGE && !p.bot) {
       const recipients = this.pageRecipients.get(drop.id);
       if (!recipients?.delete(p.offerKey)) return false;
-      p.wallet += RITE_PAGE_HALOS;
-      sim.publishInventory(p);
+      // The page becomes this player's own Rite offer (§9.10); classes without trees yet get halos.
+      sim.rites.grant(p, 'clear');
       // A page stays while it still owes other humans their personal share.
       if (recipients.size) return false;
       this.pageRecipients.delete(drop.id);
@@ -206,6 +210,7 @@ export class Rewards {
 
   /** XP goes to every connected human, summed with compensation so fractional shares don't drift. */
   awardXp(amount: number): void {
+    amount *= XP_GAIN;
     for (const p of this.sim.players) {
       if (!p.connected || p.bot) continue;
       const adjusted = amount - p.xpCorrection;

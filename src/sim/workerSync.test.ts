@@ -1,3 +1,4 @@
+import { XP_GAIN } from './rewards';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { MainToWorker, WorkerToMain } from './workerMessages';
 import { decodeSnapshot, encodeInput, type InputMsg } from '../net/protocol';
@@ -72,7 +73,7 @@ it('publishes victory before exit, then saves post-win purchases in the same set
     live.players[0].wallet = 500;
     live.damageEnemy(live.bossSlot, 100000, 0); vi.advanceTimersByTime(35); apply();
     expect(live.won).toBe(true); expect(live.result).toBeNull();
-    expect(saved.run).toBeNull(); expect(saved.stats.wins).toBe(1); expect(saved.characters.fallen.xp).toBe(1500);
+    expect(saved.run).toBeNull(); expect(saved.stats.wins).toBe(1); expect(saved.characters.fallen.xp).toBe(1500 * XP_GAIN);
     const p = live.players[0], at = stairPoints(live.map, live.floor!.boss)[1];
     Object.assign(p, { x: at.x, y: at.y + 1, z: at.z, yaw: -Math.PI / 2, pitch: Math.atan2(-.6, 1) });
     send({ t: 'ctrl', playerId: 0, msg: { type: 'interact', runId: live.runId, requestId: 1, sourceId: 5 } }); apply();

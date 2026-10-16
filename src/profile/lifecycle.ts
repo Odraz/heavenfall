@@ -1,7 +1,8 @@
 /** Client-side absolute checkpoint application. Transport acceptance and disk success are separate. */
 import type { ClassId } from '../data/classes';
 import { copyInventory, emptyInventory, isItemId, ITEMS, type Inventory, type ItemId } from '../data/items';
-import { saturatingAdd, validateProfile, type Outcome, type Profile } from './model';
+import { levelForXp, saturatingAdd, validateProfile, type Outcome, type Profile } from './model';
+import { learnedError } from '../sim/build';
 
 export interface Admission {
   runId: string; admissionId: number; progressionEnabled: boolean;
@@ -11,6 +12,8 @@ export interface ProgressState {
   runId: string; admissionId: number; progressionEnabled: boolean; admissionCommitted: boolean;
   classId: ClassId; heaven: number; revision: number; xp: number; runXp: number;
   inventory: Inventory; itemsTried: ItemId[]; outcome: Outcome | null;
+  /** The learned build after accepted Advocate edits (§9.6); absent from older hosts. */
+  talents?: string[]; q?: string; e?: string;
 }
 /** Returns a candidate stake for a mandatory durable save; it never mutates accepted memory. */
 export function stakeProfile(current: Profile, admission: Admission): Profile {
@@ -52,7 +55,13 @@ export function applyProgress(current: Profile, state: ProgressState): Profile |
   if (p.run && state.admissionCommitted && !p.run.admissionCommitted) {
     p.run.admissionCommitted = true; p.stats.runs = saturatingAdd(p.stats.runs, 1);
   }
-  p.characters[state.classId].xp = Math.max(p.characters[state.classId].xp, state.xp);
+  const character = p.characters[state.classId];
+  character.xp = Math.max(character.xp, state.xp);
+  // A learned build the host accepted at the Advocate; one that fails the learned check is ignored.
+  if (Array.isArray(state.talents) && state.talents.every((t) => typeof t === 'string') && typeof state.q === 'string' && typeof state.e === 'string' &&
+    learnedError(state.classId, { talents: state.talents, q: state.q, e: state.e }, levelForXp(character.xp)) === null) {
+    character.talents = [...state.talents]; character.q = state.q; character.e = state.e;
+  }
   p.codex.itemsTried = [...new Set([...p.codex.itemsTried, ...state.itemsTried])];
   if (state.outcome) {
     const firstVictory = state.outcome === 'victory' && last?.outcome !== 'victory';

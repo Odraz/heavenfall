@@ -1,15 +1,12 @@
 /** The persistent profile (rogue game.md §2.4): its schema, the XP curve (§9.1–§9.2) and strict validation. */
 import { CLASS_IDS, isClassId, type ClassId } from '../data/classes';
 import { ITEMS, isItemId, emptyInventory, type Inventory } from '../data/items';
+import { learnedError } from '../sim/build';
 
 export const PROFILE_SCHEMA = 1;
 export const MAX_SAVE_BYTES = 256 * 1024;
-export const BASE_ABILITIES: Record<ClassId, [string, string]> = {
-  fallen: ['blasphemy', 'fallingStar'],
-  heretic: ['communion', 'shroud'],
-  binder: ['chains', 'discord'],
-  betrayer: ['field', 'shadowstep'],
-};
+import { BASE_ABILITIES } from '../data/talents';
+export { BASE_ABILITIES };
 export const RELIC_IDS = ['usher', 'thurible', 'link', 'tile', 'qseal', 'eseal', 'comb', 'wheel', 'unbroken', 'mercy', 'armageddon', 'sentence3'];
 export const DEED_IDS = ['unbroken', 'mercy', 'armageddon', 'sentence3'];
 export type Outcome = 'victory' | 'defeat' | 'leave' | 'hostLeft' | 'admissionAborted';
@@ -193,8 +190,11 @@ export function validateProfile(input: unknown): { profile: Profile; repaired: b
     const talents = unique(r.talents, MAX_IDS);
     const q = string(r.q, MAX_TEXT);
     const e = string(r.e, MAX_TEXT);
-    // R4 introduces learned nodes. Unknown content resets this character, preserving XP.
-    repaired ||= talents.length > 0 || q !== BASE_ABILITIES[c][0] || e !== BASE_ABILITIES[c][1];
+    // A build that doesn't pass the learned check (unknown, edited or out of points) resets this
+    // character to its base kit, keeping its XP (§9.8, §13.6).
+    const xp = integer(r.xp);
+    const legal = learnedError(c, { talents, q, e }, levelForXp(xp)) === null;
+    repaired ||= !legal;
     const equipment = array(r.relics, 2);
     if (equipment.length !== 2) return fail();
     const equipped = equipment.map((x) => {
@@ -208,7 +208,7 @@ export function validateProfile(input: unknown): { profile: Profile; repaired: b
     }) as Character['relics'];
     if (equipped[0] && equipped[0] === equipped[1]) return fail();
     const character: Character = {
-      xp: integer(r.xp), talents: [], q: BASE_ABILITIES[c][0], e: BASE_ABILITIES[c][1], relics: equipped,
+      xp, talents: legal ? talents : [], q: legal ? q : BASE_ABILITIES[c][0], e: legal ? e : BASE_ABILITIES[c][1], relics: equipped,
       bestStreak: integer(r.bestStreak), bestSentence: numberRecord(r.bestSentence, MAX_SENTENCE),
     };
     return [c, character];

@@ -8,7 +8,11 @@ import { button, el, PORTRAITS } from './menus';
 import { exportCode, importCode, MAX_CODE_BYTES } from '../profile/codec';
 import { createProfile, importProfile, levelForXp, type Profile } from '../profile/model';
 import { ProfileSession } from '../profile/storage';
-import { CLASS_IDS, CLASSES } from '../data/classes';
+import { CLASS_IDS, CLASSES, type ClassId } from '../data/classes';
+import { hasCatalog } from '../data/talents';
+import { abilityDef, learnedError, pointsFor } from '../sim/build';
+import { spriteUrl } from '../render/atlas';
+import { talentPanel } from './talents';
 import { ITEMS } from '../data/items';
 import { ITEM_ART } from '../client/itemArt';
 import { xpProgress } from '../client/hudModel';
@@ -104,6 +108,44 @@ export function profilesScreen(session: ProfileSession, onBack: () => void, onCh
   return screen;
 }
 
+function talentsLabel(profile: Profile, id: ClassId): string {
+  const c = profile.characters[id], free = pointsFor(levelForXp(c.xp)) - c.talents.length;
+  return free > 0 ? `Talents · ${free} to learn` : 'Talents';
+}
+
+/** The class card's Q and E show the assigned abilities, alternatives included (§9.4). */
+function showAssigned(card: HTMLElement, id: ClassId, profile: Profile): void {
+  const cells = card.querySelectorAll<HTMLElement>('.class-ability');
+  (['Q', 'E'] as const).forEach((slot, i) => {
+    const cell = cells[i];
+    if (!cell) return;
+    const def = abilityDef(id, slot, slot === 'Q' ? profile.characters[id].q : profile.characters[id].e);
+    const img = cell.querySelector('img'), name = cell.querySelector('.class-ability-name');
+    if (img) img.src = spriteUrl(def.icon);
+    if (name) name.textContent = def.name;
+  });
+}
+
+/** Learning and respec in the Lobby (§9.5): the whole result is saved once it passes the learned check. */
+function openLobbyTalents(session: ProfileSession, id: ClassId, saved: () => void): void {
+  const c = session.profile.characters[id];
+  const close = (): void => { view.el.remove(); };
+  const view = talentPanel({
+    classId: id, build: { talents: c.talents, q: c.q, e: c.e }, rites: [], level: levelForXp(c.xp), title: `${CLASSES[id].name} · Talents`,
+    onApply: (b) => {
+      if (session.profile.run) { view.setMessage('Finish or recover the staked run first'); return; }
+      const error = learnedError(id, b, levelForXp(session.profile.characters[id].xp));
+      if (error) { view.setMessage(error); return; }
+      const next = structuredClone(session.profile);
+      Object.assign(next.characters[id], { talents: [...b.talents], q: b.q, e: b.e });
+      if (!session.save(next, true)) { view.setMessage(session.message); return; }
+      view.setBuild(b, []); view.setMessage('Saved'); saved();
+    },
+    onClose: close,
+  });
+  document.body.appendChild(view.el);
+}
+
 /** Emergency export stays available if an accepted checkpoint cannot reach storage. */
 export function saveCodeButton(parent: HTMLElement, profile: () => Profile): void {
   button('Copy save code', parent, () => { void exportCode(profile()).then(code => navigator.clipboard.writeText(code)).catch(error => { el('p', 'message', parent, String(error)); }); });
@@ -116,7 +158,16 @@ export function saveCodeButton(parent: HTMLElement, profile: () => Profile): voi
 export function profileLoadout(parent: HTMLElement, session: ProfileSession, changed: () => void = () => {}): void {
   for (const id of CLASS_IDS) {
     const card = parent.querySelector<HTMLElement>(`.class-card[data-class-id="${id}"]`);
-    if (card) { const level = el('div', 'class-level', undefined, `Level ${levelForXp(session.profile.characters[id].xp)}`); card.insertBefore(level, card.querySelector('.class-role')); }
+    if (!card) continue;
+    const level = el('div', 'class-level', undefined, `Level ${levelForXp(session.profile.characters[id].xp)}`); card.insertBefore(level, card.querySelector('.class-role'));
+    showAssigned(card, id, session.profile);
+    if (hasCatalog(id)) {
+      // A button can't hold a button: a focusable role=button inside the class card.
+      const open = el('div', 'button small class-talents', card, talentsLabel(session.profile, id));
+      open.setAttribute('role', 'button'); open.tabIndex = 0;
+      // A card click picks the class; the Talents button opens the trees without picking.
+      open.addEventListener('click', (e) => { e.stopPropagation(); openLobbyTalents(session, id, () => { open.textContent = talentsLabel(session.profile, id); showAssigned(card, id, session.profile); changed(); }); });
+    }
   }
   const container = parent.querySelector('.panel') ?? parent;
   const panel = el('div', 'profile-loadout');

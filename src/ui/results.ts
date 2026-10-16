@@ -45,6 +45,7 @@ export function showResults(data: ResultsData, a: ResultsActions): ResultsView {
     ['Level', p => (p.levelBefore ?? 1) === (p.levelAfter ?? 1) ? String(p.levelAfter ?? 1) : `${p.levelBefore ?? 1} → ${p.levelAfter ?? 1}`],
   ];
   if (data.players.length > 1) columns.push(['Revive assists', (p) => String(p.reviveAssists)]);
+  if (data.players.some((p) => p.rites?.length)) columns.push(['Rites', (p) => p.rites?.join(', ') || '—']);
   const head = table.createTHead().insertRow();
   head.appendChild(document.createElement('th'));
   for (const [label] of columns) el('th', '', head, label);

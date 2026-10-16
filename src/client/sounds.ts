@@ -262,6 +262,23 @@ export class GameSounds {
       case 'crest':
         sfx('crest');
         break;
+      // R4 Betrayer talents: synthesized stand-ins until the S6 recordings (asset-manifest.md).
+      case 'talentArea': {
+        const at = { x: e.area.x, y: e.area.y };
+        if (!e.end && e.area.kind === 'coin') sfx('goldPickup', at, 0.6);
+        else if (!e.end && e.area.kind === 'wire') sfx('chains', at, 0.5);
+        else if (!e.end && e.area.kind === 'shadow') sfx('shadowstep', at, 0.4);
+        else if (e.end && e.reason === 'split') sfx('goldPickup', at, 1, 0, undefined, 1.5);
+        else if (e.end && e.reason === 'spent') sfx('chains', at, 0.35);
+        break;
+      }
+      case 'wayBack':
+        sfx('shadowstep', e.playerId === this.localId ? null : { x: e.x0, y: e.y0 }, 0.9);
+        break;
+      case 'talentFx':
+        if (e.kind === 'clay' && e.pts.length) sfx('porcelainBreak', { x: e.pts[0], y: e.pts[1] }, 0.4, this.renderDelay);
+        else if (e.kind === 'nail' && e.slots.length) sfx('chains', { x: e.pts[0], y: e.pts[1] }, 0.4, this.renderDelay);
+        break;
       case 'abilityUsed': {
         const key = `${this.classOf(e.playerId)}:${e.slot}`;
         const at = { x: e.x, y: e.y };

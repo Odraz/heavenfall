@@ -37,7 +37,7 @@ export class LocalPlayer {
   /** Falling Star in progress: the arc from → to, ignoring collision. */
   private leap: { fx: number; fy: number; fz: number; tx: number; ty: number; tz: number; t: number } | null = null;
   /** Shadowstep in progress: a horizontal dash with normal movement rules. */
-  private dash: { dx: number; dy: number; t: number } | null = null;
+  private dash: { dx: number; dy: number; t: number; speed: number; time: number } | null = null;
   private launch: { dx: number; dy: number; remaining: number } | null = null;
 
   /** Falling Star (M12 §5.2): flies the arc to the landing point (feet) over 0.4 s, ignoring collision. */
@@ -55,9 +55,21 @@ export class LocalPlayer {
     if (this.carried) return;
     const len = Math.hypot(dx, dy);
     if (len < 1e-9) return;
-    this.dash = { dx: dx / len, dy: dy / len, t: 0 };
+    this.dash = { dx: dx / len, dy: dy / len, t: 0, speed: SHADOWSTEP_SPEED, time: SHADOWSTEP_TIME };
     this.launch = null;
     this.carried = false;
+  }
+
+  /**
+   * A host-granted straight move with normal movement rules (R4): the Way Back's return toward its
+   * shadow, or Recoil's push. (vx, vy) in m/s for `seconds`.
+   */
+  startMove(vx: number, vy: number, seconds: number): void {
+    if (this.carried || this.leap) return;
+    const speed = Math.hypot(vx, vy);
+    if (speed < 1e-9 || seconds <= 0) return;
+    this.dash = { dx: vx / speed, dy: vy / speed, t: 0, speed, time: seconds };
+    this.launch = null;
   }
 
   get leaping(): boolean {
@@ -102,8 +114,8 @@ export class LocalPlayer {
       this.dash.t += dt;
       dirX = this.dash.dx;
       dirY = this.dash.dy;
-      speed = SHADOWSTEP_SPEED;
-      if (this.dash.t >= SHADOWSTEP_TIME) this.dash = null;
+      speed = this.dash.speed;
+      if (this.dash.t >= this.dash.time) this.dash = null;
     }
     if (wantJump) jump(b, JUMP_VZ);
     stepBody(map, b, dirX * speed * dt, dirY * speed * dt, dt, this.moveResult);

@@ -124,6 +124,12 @@ import { ItemView } from './itemView';
 import { FeatherTrails } from './featherTrail';
 import type { VictoryState } from '../sim/victory';
 import { levelForXp } from '../profile/model';
+import { TalentClient } from './talentClient';
+import { riteOverlay, talentPanel, type RiteOverlay, type TalentPanel } from '../ui/talents';
+import { ALT_ABILITIES, hasCatalog, talentNode } from '../data/talents';
+import { ADVOCATE_REACH } from '../sim/sim';
+import type { RiteOffer } from '../net/messages';
+import { advocateSprite } from './advocate';
 
 const BENCH_TURN_RATE = 0.3;
 /** A move longer than this in one frame is a teleport: the weapon's sway resets (M11 §3.2, as the bob). */
@@ -353,6 +359,12 @@ export class Game {
   private victory: VictoryState | null = null;
   private readonly victoryHint = document.createElement('div');
   private readonly pause: PauseOverlay;
+  /** Talents (R4): every player's kit, the Betrayer's areas, and the open Rite or Talents view. */
+  private readonly talents: TalentClient;
+  /** From the floor checkpoint; until then nothing is treated as a free-points development run. */
+  private progressionEnabled = true;
+  private overlayView: { kind: 'rite'; view: RiteOverlay; offerId: number } | { kind: 'talents'; view: TalentPanel } | null = null;
+  private readonly ritePip = document.createElement('div');
   private readonly party: PartyFrames | null;
   private paused = false;
   /** performance.now() when the Pause overlay opened. */
@@ -591,6 +603,14 @@ export class Game {
     this.hud.onReady = () => this.sounds.abilityReady();
     this.overlay = new DebugOverlay(o.root, this.params.dev);
     this.pause = new PauseOverlay(o.root, () => this.resume(), () => this.leave());
+    this.talents = new TalentClient({
+      vfx: this.vfx, glow: o.textures.fx.glow, localId: this.localId,
+      classOf: (id) => this.classOf(id), pose: (id) => this.playerPose(id),
+      later: (id, run) => this.later(id, run),
+    });
+    this.scene.scene.add(this.talents.group);
+    if (o.floor) this.scene.scene.add(advocateSprite(this.map, o.floor.confessional));
+    this.ritePip.className = 'rite-pip'; this.ritePip.hidden = true; this.hud.root.append(this.ritePip);
 
     this.input = new Input(this.canvas);
     this.input.pointerLockAllowed = !this.params.bot && this.params.benchArena < 0;
@@ -669,6 +689,10 @@ export class Game {
     else if (code === 'KeyG' && this.params.dev && this.o.host) this.o.host.toggleGod();
     // Dev key I fills both item slots with the next pair, to try every item's effect.
     else if (code === 'KeyI' && this.params.dev && this.o.host) this.o.host.devItems();
+    // Dev keys B (next quick build), R (a Rite offer now) and T (the Talents view anywhere, free points).
+    else if (code === 'KeyB' && this.params.dev && this.o.host) this.o.host.devBuild();
+    else if (code === 'KeyR' && this.params.dev && this.o.host) this.o.host.devRite();
+    else if (code === 'KeyT' && this.params.dev && !this.dead) this.openTalents();
     else if (this.params.bot) return;
     else if ((code === 'Digit1' || code === 'Digit2') && !this.dead && !this.player.carried) {
       const slot = code === 'Digit1' ? 0 : 1; this.itemPresses[slot] = (this.itemPresses[slot] + 1) & 255;
@@ -676,6 +700,9 @@ export class Game {
     else if (code === 'KeyF' && !this.dead) {
       const sourceId = this.shop.target(this.player.body, this.player.yaw, this.player.pitch);
       if (sourceId >= 0) this.o.transport.sendCtrl({ type: 'interact', runId: this.o.runId, requestId: this.nextRequestId++, sourceId });
+      // The Advocate within 2.5 m, else the oldest pending Rite (rogue game.md §1.4, §9.6).
+      else if (this.advocateInReach()) this.openTalents();
+      else if (this.talents.offers.length) this.openRite(this.talents.offers[0]);
     }
     else if (code === 'KeyQ') this.pressAbility('Q', performance.now());
     else if (code === 'KeyE') this.pressAbility('E', performance.now());
@@ -704,6 +731,11 @@ export class Game {
       return;
     }
     const def = ABILITIES[this.classId].E;
+    // The Way Back and the Silver Wire count every key-down; the host decides each press (R4).
+    if (this.classId === 'betrayer' && this.talents.ability(this.localId, 'E') !== 'shadowstep') {
+      this.ePresses = (this.ePresses + 1) & 0xff;
+      return;
+    }
     // The Heretic and the Binder count every E key-down; the Fallen and the Betrayer only the leaps and
     // dashes they execute (M12 §5.2).
     if (!def.movement) {
@@ -805,7 +837,7 @@ export class Game {
   /** Pause opens when pointer lock is lost, before the result (§3). */
   private readonly onPointerLockChange = (): void => {
     const locked = this.input.pointerLocked;
-    if (this.wasLocked && !locked) this.openPause();
+    if (this.wasLocked && !locked && !this.overlayView) this.openPause();
     this.wasLocked = locked;
   };
 
@@ -876,6 +908,134 @@ export class Game {
     }
   }
 
+  /** Runs another player's effect after the render delay; the own one at once. */
+  private later(playerId: number, run: (now: number) => void): void {
+    const now = performance.now();
+    if (playerId === this.localId) run(now);
+    else this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run });
+  }
+
+  /** A talent event's game-side effects: the own kit, offers, launched enemies, the hidden mark. */
+  private talentEvent(e: GameEvent, now: number): void {
+    if (e.type === 'kit' && e.kit.playerId === this.localId) {
+      this.applyOwnKit();
+      if (this.overlayView?.kind === 'talents') this.overlayView.view.setBuild({ talents: e.kit.learned, q: e.kit.q, e: e.kit.e }, e.kit.rites);
+    }
+    if (e.type === 'hidden' && e.playerId === this.localId) this.hud.setHidden(e.hidden);
+    if (e.type === 'riteOffers') {
+      const open = this.overlayView;
+      if (open?.kind === 'rite') {
+        const current = e.offers.find((o) => o.offerId === open.offerId);
+        if (current) open.view.show(current, e.offers.length);
+        else if (e.offers.length) this.openRite(e.offers[0]);
+        else this.closeOverlay();
+      } else if (e.rites > 0 && !this.dead && !open) {
+        const offer = e.offers.find((o) => o.offerId === e.rites);
+        if (offer) this.openRite(offer);
+      }
+    }
+    if (e.type === 'talentFx' && e.kind === 'sheep') {
+      // Scattered Sheep's launches fly their arc after the render delay, like Falling Star's (M9 §3.2).
+      for (const s of e.slots) {
+        this.launchAt[s] = now + (e.playerId === this.localId ? 0 : this.snaps.delayTicks * TICK_MS);
+        this.wadeLaunchedUntil[s] = now + WADE_LAUNCH_MS;
+      }
+    }
+  }
+
+  /** The HUD slots and hints from the own effective kit (rogue game.md §1.4). */
+  private applyOwnKit(): void {
+    const k = this.talents.own();
+    const slot = (key: 'Q' | 'E') => {
+      const def = this.talents.ownDef(this.classId, key), id = this.talents.ability(this.localId, key);
+      return { name: def.name, icon: def.icon, hint: ALT_ABILITIES[id]?.hint ?? CLASSES[this.classId].hints.find((h) => h.key === key)?.text ?? null };
+    };
+    const lines = k ? [...k.learned, ...k.rites].map((id) => {
+      const n = talentNode(id)!;
+      const suppressed = k.suppressed.find(([learned]) => learned === id);
+      const note = suppressed ? `suppressed this run by ${talentNode(suppressed[1])?.name}` : k.dormant.includes(id) ? 'dormant: its ability is not assigned' : k.rites.includes(id) ? `Rite · ${n.rule}` : '';
+      return { name: n.name, rule: n.rule, note };
+    }) : [];
+    this.hud.setKit({ Q: slot('Q'), E: slot('E') }, lines);
+  }
+
+  /** Within the Advocate's reach in the Confessional (rogue game.md §9.6). */
+  private advocateInReach(): boolean {
+    const room = this.o.floor?.confessional ?? -1, point = room >= 0 ? this.map.rooms[room]?.points?.advocate : undefined;
+    const b = this.player.body;
+    return !!point && this.rooms.roomAt(b.x, b.y) === room && Math.hypot(point[0] + 0.5 - b.x, point[1] + 0.5 - b.y) <= ADVOCATE_REACH;
+  }
+
+  /**
+   * A choice view takes the mouse without opening Pause; in singleplayer the simulation waits, as for
+   * Pause (§9.6). Multiplayer keeps running: a sealed door refuses a later commit, never the offer.
+   */
+  private openOverlay(el: HTMLElement): void {
+    this.closeOverlay();
+    this.input.release();
+    this.input.enabled = false;
+    this.o.root.appendChild(el);
+    if (document.pointerLockElement) document.exitPointerLock();
+    if (this.o.singleplayer && !this.paused) { this.o.host?.setPaused(true); this.pausedAt = performance.now(); }
+    document.addEventListener('keydown', this.overlayKey, true);
+  }
+
+  private closeOverlay(): void {
+    const open = this.overlayView;
+    if (!open) return;
+    this.overlayView = null;
+    open.view.el.remove();
+    document.removeEventListener('keydown', this.overlayKey, true);
+    if (this.o.singleplayer && !this.paused) {
+      this.o.host?.setPaused(false);
+      const ms = performance.now() - this.pausedAt;
+      this.localEReadyAt += ms;
+      this.snaps.shiftArrivals(ms);
+    }
+    if (!this.over && !this.paused) {
+      // The Esc that closed the view stopped in the capture phase, so it can't also reach the game.
+      this.input.enabled = true;
+      if (this.input.pointerLockAllowed) this.input.requestPointerLock();
+    }
+  }
+
+  private readonly overlayKey = (e: KeyboardEvent): void => {
+    // Esc closes the choice only: the same press must not reach the game and open Pause.
+    if (e.code === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); this.closeOverlay(); }
+  };
+
+  /** A pending Rite's cards (§9.10): Take, Pass, or Esc to keep it for later. */
+  private openRite(offer: RiteOffer): void {
+    if (this.over) return;
+    const view = riteOverlay({
+      classId: this.classId,
+      onTake: (offerId, id) => this.o.transport.sendCtrl({ type: 'rite', runId: this.o.runId, requestId: this.nextRequestId++, offerId, choice: id }),
+      onPass: (offerId) => this.o.transport.sendCtrl({ type: 'rite', runId: this.o.runId, requestId: this.nextRequestId++, offerId, choice: 'pass' }),
+      onClose: () => this.closeOverlay(),
+    });
+    this.openOverlay(view.el);
+    this.overlayView = { kind: 'rite', view, offerId: offer.offerId };
+    view.show(offer, this.talents.offers.length);
+  }
+
+  /** The Advocate's Talents view (§9.6); in a development run without saved progression, anywhere with free points. */
+  private openTalents(): void {
+    if (this.over || !hasCatalog(this.classId)) return;
+    const k = this.talents.own();
+    const dev = !this.progressionEnabled;
+    const view = talentPanel({
+      classId: this.classId,
+      build: { talents: k?.learned ?? [], q: this.talents.ability(this.localId, 'Q'), e: this.talents.ability(this.localId, 'E') },
+      rites: k?.rites ?? [],
+      level: dev ? null : levelForXp(this.inventory?.xp ?? 0),
+      title: dev ? 'Talents · development' : 'The Advocate',
+      onApply: (b) => this.o.transport.sendCtrl({ type: 'advocate', runId: this.o.runId, requestId: this.nextRequestId++, talents: [...b.talents], q: b.q, e: b.e }),
+      onClose: () => this.closeOverlay(),
+    });
+    this.openOverlay(view.el);
+    this.overlayView = { kind: 'talents', view };
+  }
+
   /** `Resume`: closes the overlay and requests pointer lock; the click is the required user gesture. */
   private resume(): void {
     this.closePause();
@@ -932,6 +1092,9 @@ export class Game {
   handleCtrl(msg: CtrlMessage): void {
     if (msg.type === 'floorSync' && !this.disposed) {
       if (msg.victory) this.setVictory(msg.victory);
+      if (msg.progressionEnabled !== undefined) this.progressionEnabled = msg.progressionEnabled;
+      this.talents.sync(msg, performance.now());
+      this.applyOwnKit();
       this.itemView.sync(msg.itemEffects ?? []);
       const inventory = msg.inventories?.find(p => p.playerId === this.localId);
       if (inventory) this.setInventory(inventory);
@@ -974,8 +1137,9 @@ export class Game {
 
   private setInventory(state: InventoryState): void {
     if (this.inventory && levelForXp(state.xp) > levelForXp(this.inventory.xp)) {
-      // No talent-point notice until there is a way to spend points (audit A5).
-      this.hud.centerText(`Level ${levelForXp(state.xp)}`, 3000, performance.now()); this.sounds.levelUp();
+      // A new point is learned at the Confessional or in the Lobby (rogue game.md §9.5).
+      const level = levelForXp(state.xp);
+      this.hud.centerText(hasCatalog(this.classId) ? `Level ${level} — learn it at the Confessional` : `Level ${level}`, 3000, performance.now()); this.sounds.levelUp();
     }
     this.inventory = state; this.nextRequestId = Math.max(this.nextRequestId, state.nextRequestId);
     this.hud.setInventory(state); this.shop.update(state);
@@ -986,6 +1150,7 @@ export class Game {
   }
 
   private onEvent(e: GameEvent, now: number): void {
+    if (this.talents.event(e, now)) { this.talentEvent(e, now); return; }
     switch (e.type) {
       case 'victoryState': this.setVictory(e.state); break;
       case 'itemUsed':
@@ -1013,6 +1178,21 @@ export class Game {
         break;
       case 'interactionResult':
         this.hud.centerText(e.reason, 1800, now);
+        if (this.overlayView) this.overlayView.view.setMessage(e.reason);
+        break;
+      case 'wayBack': {
+        // The host's accepted return: the own body runs it at once, others' streak after the render delay.
+        const ms = Math.max(1, e.ms);
+        if (e.playerId === this.localId) {
+          this.player.startMove(((e.x1 - e.x0) / ms) * 1000, ((e.y1 - e.y0) / ms) * 1000, ms / 1000);
+          this.hud.slash(now);
+          this.sounds.ownDaggerCut();
+        }
+        this.later(e.playerId, (t) => this.dashStreak(t, e.x0, e.y0, e.z0, e.x1, e.y1, e.z1));
+        break;
+      }
+      case 'recoil':
+        if (e.playerId === this.localId) this.player.startMove(e.vx, e.vy, 0.15);
         break;
       case 'crest':
         debugState.crests++;
@@ -1280,9 +1460,14 @@ export class Game {
    * 30 coins tossed from 0.5 m in front of the Betrayer's body center.
    */
   private startField(e: Extract<GameEvent, { type: 'abilityUsed' }>, user: { x: number; y: number; z: number; yaw: number } | undefined, now: number): void {
-    this.pool?.dispose();
-    this.pool = new BloodPool(this.map, e.x, e.y, e.z, now);
-    this.scene.scene.add(this.pool.group);
+    // Thrown Silver (classes-betrayer.md `c.1b`): the coins fly 0.5 s before the pool opens.
+    const open = (t: number): void => {
+      this.pool?.dispose();
+      this.pool = new BloodPool(this.map, e.x, e.y, e.z, t);
+      this.scene.scene.add(this.pool.group);
+    };
+    if (e.thrown) this.pendingFx.push({ at: now + 500, run: open });
+    else open(now);
     const from: [number, number, number] = user
       ? [user.x + Math.cos(user.yaw) * OTHERS_MUZZLE, user.y + Math.sin(user.yaw) * OTHERS_MUZZLE, user.z + PLAYER_HEIGHT / 2]
       : [e.x, e.y, e.z + PLAYER_HEIGHT / 2];
@@ -1337,6 +1522,7 @@ export class Game {
 
   private onGameOver(e: Extract<GameEvent, { type: 'gameOver' }>, now: number): void {
     if (this.over) return;
+    this.closeOverlay();
     this.resultAt = now;
     debugState.gameResult = e.result;
     this.resultData = {
@@ -1609,7 +1795,7 @@ export class Game {
     const ms = me ? (slot === 'Q' ? me.cdQ : me.cdE) : 0;
     // The frame timestamp can be slightly earlier than the snapshot's arrival time.
     let cd = Math.max(0, ms - Math.max(0, now - this.snaps.newestArrival)) / 1000;
-    if (slot === 'E' && ABILITIES[this.classId].E.movement) cd = Math.max(cd, (this.localEReadyAt - now) / 1000);
+    if (slot === 'E' && ABILITIES[this.classId].E.movement && (this.classId !== 'betrayer' || this.talents.ability(this.localId, 'E') === 'shadowstep')) cd = Math.max(cd, (this.localEReadyAt - now) / 1000);
     return Math.max(0, cd);
   }
 
@@ -2133,7 +2319,8 @@ export class Game {
     // it. Counted every frame, in the benchmark too, which doesn't move the player.
     const newest = this.snaps.newest;
     const pressing = newest && !this.dead ? wadeCount(this.map, p.body.x, p.body.y, p.body.z, newest, this.wadeLaunchedUntil, now) : 0;
-    p.wade = this.wading.update(pressing, Math.min(dt, MAX_FRAME_DT));
+    // Through the Throng (classes-betrayer.md `b.1a`): the crowd doesn't slow you.
+    p.wade = this.wading.update(this.talents.unslowed ? 0 : pressing, Math.min(dt, MAX_FRAME_DT));
     debugState.wade.count = pressing;
     debugState.wade.factor = p.wade;
     if (!this.dead && !this.bench && !this.over) p.update(this.map, dt, mx, my, wantJump);
@@ -2289,7 +2476,10 @@ export class Game {
     // Low HP (M12 §6.2): the heartbeat and the crimson edge.
     if (this.lowHp.update(now, this.seenSelf && !this.dead && !this.over, this.ownHp, this.maxHp)) this.sounds.heartbeat();
     this.hud.setLowEdge(this.lowHp.edge(now));
-    this.hud.setCooldowns(this.displayedCooldown('Q', simNow), ABILITIES[this.classId].Q.cooldown, this.displayedCooldown('E', simNow), ABILITIES[this.classId].E.cooldown);
+    this.hud.setCooldowns(this.displayedCooldown('Q', simNow), this.talents.ownDef(this.classId, 'Q').cooldown, this.displayedCooldown('E', simNow), this.talents.ownDef(this.classId, 'E').cooldown);
+    this.talents.update(now, this.snaps.out, [...this.snaps.playersOut, { id: this.localId, x: p.body.x, y: p.body.y, z: p.body.z, dead: this.dead }], (x, y) => this.rooms.roomAt(x, y));
+    this.ritePip.hidden = !this.talents.offers.length || this.over;
+    this.ritePip.textContent = `Rite waiting · F (${this.talents.offers.length})`;
     this.hud.update(now);
     this.mapView.open = this.input.mapHeld && !this.over && !this.paused && !this.hud.chatOpen;
     debugState.mapHeld = this.mapView.open;
@@ -2695,6 +2885,10 @@ export class Game {
     this.input.dispose();
     this.overlay.dispose();
     this.pause.dispose();
+    this.overlayView?.view.el.remove();
+    this.overlayView = null;
+    document.removeEventListener('keydown', this.overlayKey, true);
+    this.talents.dispose();
     this.party?.dispose();
     this.sounds.dispose();
     this.pool?.dispose();

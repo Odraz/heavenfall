@@ -23,6 +23,17 @@ describe('durable admission and absolute progression', () => {
     expect(applyProgress(saved, xp)!.characters.fallen.xp).toBe(140);
     expect(applyProgress(applyProgress(saved, xp)!, xp)!.characters.fallen.xp).toBe(140);
   });
+  it('saves an Advocate edit from the run record, and ignores a build the level cannot pay for', () => {
+    const p = createProfile('Tester', 'b'.repeat(32), 0); p.characters.betrayer.xp = 4000;
+    const records = new RunRecords(runId, true), admission = records.reserve(0, 'betrayer', p, true);
+    const staked = stakeProfile(p, admission), r = records.byPlayer(0)!;
+    records.commit(r);
+    r.build = { talents: ['betrayer.c.1a', 'betrayer.a.1a'], q: 'field', e: 'shadowstep' };
+    const saved = applyProgress(staked, records.state(r))!;
+    expect(saved.characters.betrayer.talents).toEqual(['betrayer.c.1a', 'betrayer.a.1a']);
+    r.build = { talents: ['betrayer.c.1a', 'betrayer.a.1a', 'betrayer.b.1a'], q: 'field', e: 'shadowstep' };
+    expect(applyProgress(saved, records.state(r))!.characters.betrayer.talents).toEqual(['betrayer.c.1a', 'betrayer.a.1a']);
+  });
   it('aborts before play with carry restored and no attempt/XP/victory', () => {
     const { records, r, staked } = setup();
     const state = records.settle(r, 'admissionAborted'), saved = applyProgress(staked, state)!;

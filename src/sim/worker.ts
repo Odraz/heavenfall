@@ -8,7 +8,9 @@ import type { CtrlMessage } from '../net/messages';
 import { decodeInput } from '../net/protocol';
 import { PING_MS } from '../net/peerConfig';
 import { MAX_TICKS_PER_LOOP, TICK_MS } from './constants';
-import { Simulation } from './sim';
+import { Simulation, type SimPlayer } from './sim';
+import { slotChoices } from './build';
+import { BASE_ABILITIES } from '../data/talents';
 import { loadRunMap } from './runMap';
 import { propDefs } from '../data/props';
 import { localSnap, type MainToWorker, type WorkerToMain } from './workerMessages';
@@ -47,17 +49,26 @@ const admissionReady = new Set<number>();
 const assetsReady = new Set<number>();
 let pendingSolo: Extract<MainToWorker, { t: 'start' }> | null = null;
 
+/**
+ * The Q/E a profile saves (§9.5): the assigned ability, unless it is held only as a Rite, which
+ * vanishes at the run's end; then the slot's learned fallback, the base ability.
+ */
+function learnedSlot(p: SimPlayer, slot: 'Q' | 'E'): string {
+  const id = slot === 'Q' ? p.build.q : p.build.e;
+  return slotChoices(p.classId, slot, p.build.talents).includes(id) ? id : BASE_ABILITIES[p.classId][slot === 'Q' ? 0 : 1];
+}
+
 function validProfile(input: unknown): Profile | undefined {
   try { return validateProfile(input).profile; } catch { return undefined; }
 }
 function checkpoint(force = false): void {
   if (!sim || !records) return;
-  const shouldSend = force || sim.tick % 30 === 0 || sim.events.some(e => e.event.type === 'roomState' || e.event.type === 'inventory');
+  const shouldSend = force || sim.tick % 30 === 0 || sim.events.some(e => e.event.type === 'roomState' || e.event.type === 'inventory' || e.event.type === 'kit');
   if (sim.tick % 30 === 0) for (const p of sim.players) if (!p.bot) sim.publishInventory(p);
   for (const r of records.records.values()) {
     if (r.closed) continue;
     const p = sim.players.find(p => p.id === r.playerId) ?? sim.retainedPlayers.get(r.playerId)?.player;
-    if (p) { r.runXp = p.runXp; r.wallet = p.wallet; r.inventory = copyInventory(p.inventory); r.itemsTried = [...p.itemsTried]; }
+    if (p) { r.runXp = p.runXp; r.wallet = p.wallet; r.inventory = copyInventory(p.inventory); r.itemsTried = [...p.itemsTried]; r.build = { talents: [...p.build.talents], q: learnedSlot(p, 'Q'), e: learnedSlot(p, 'E') }; }
     if (!r.committed || r.closed) continue;
     if (sim.won && r.outcome !== 'victory') send(r.playerId, { type: 'progress', state: records.settle(r, 'victory') });
     else if (sim.result) send(r.playerId, { type: 'progress', state: records.settle(r, sim.result) });
@@ -137,7 +148,7 @@ function start(m: Extract<MainToWorker, { t: 'start' }>): void {
   const { def, map, floor } = loadRunMap(m);
   sim = new Simulation({
     dungeon: def, map, floor, props: propDefs(floor), runId: m.runId, players: m.players, seed: m.simSeed, god: !m.progressionEnabled && m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
-    startRoom: m.startRoom, progressionEnabled: m.progressionEnabled, diagnostics: !!m.diagnostics,
+    startRoom: m.startRoom, progressionEnabled: m.progressionEnabled, diagnostics: !!m.diagnostics, devBuild: m.devBuild,
   });
   runId = m.runId;
   localPlayerId = m.localPlayerId;
@@ -195,6 +206,14 @@ function hello(conn: number, msg: Extract<CtrlMessage, { type: 'hello' }>): void
 function playerCtrl(playerId: number, msg: CtrlMessage): void {
   if (msg.type === 'interact') {
     if (sim && msg.runId === runId) { sim.interact(playerId, msg.requestId, msg.sourceId); checkpoint(true); flushEvents(); }
+    return;
+  }
+  if (msg.type === 'rite') {
+    if (sim && msg.runId === runId) { sim.rite(playerId, msg.requestId, msg.offerId, msg.choice); checkpoint(true); flushEvents(); }
+    return;
+  }
+  if (msg.type === 'advocate') {
+    if (sim && msg.runId === runId) { sim.advocate(playerId, msg.requestId, msg.talents, msg.q, msg.e); checkpoint(true); flushEvents(); }
     return;
   }
   if (msg.type === 'admissionReady') {
@@ -386,6 +405,12 @@ ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
       break;
     case 'devItems':
       sim?.devItems(m.playerId);
+      break;
+    case 'devBuild':
+      sim?.devBuildCycle(m.playerId);
+      break;
+    case 'devRite':
+      sim?.devRite(m.playerId);
       break;
     case 'stop':
       stopLoop();

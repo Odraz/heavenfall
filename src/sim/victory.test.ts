@@ -1,3 +1,4 @@
+import { XP_GAIN } from './rewards';
 import { describe, expect, it } from 'vitest';
 import { VictoryExit } from './victory';
 import { generateFloor } from '../gen';
@@ -51,11 +52,11 @@ it('latches victory once, resolves living/soul groups, preserves skipped fights,
   sim.damageEnemy(sim.bossSlot, 100000, living.index); sim.step();
   expect(sim.won).toBe(true); expect(sim.result).toBeNull(); expect(sim.admissionClosed).toBe(true);
   expect(living.hp).toBe(220); expect(soul.hp).toBe(75); expect(absentSoul.hp).toBe(120); expect(absentLiving.hp).toBe(17);
-  expect([living.runXp, soul.runXp, absentSoul.runXp, absentLiving.runXp]).toEqual([1500, 1500, 0, 0]);
+  expect([living.runXp, soul.runXp, absentSoul.runXp, absentLiving.runXp]).toEqual([1500 * XP_GAIN, 1500 * XP_GAIN, 0, 0]);
   sim.damagePlayer(living, 100000); expect(living.hp).toBe(220);
   const [x, y] = g.def.rooms[skipped].entry[0].cells[0]; Object.assign(living, { x: x + .5, y: y + .5, z: sim.map.floor[y * sim.map.w + x] });
   sim.step(); expect(sim.rooms[skipped].phase).toBe(PHASE_IDLE); expect(sim.rooms[g.floor.boss].phase).toBe(PHASE_CLEARED);
-  expect(sim.activeCount).toBe(0); expect(living.runXp).toBe(1500);
+  expect(sim.activeCount).toBe(0); expect(living.runXp).toBe(1500 * XP_GAIN);
   const resumed = sim.addPlayer({ id: 2, name: 'Resume', classId: 'binder' })!; expect(resumed.dead).toBe(false); expect(resumed.hp).toBe(120);
 });
 
@@ -77,6 +78,6 @@ it('secures disconnected inventory and accepts a post-win purchase revision with
   sim.interact(0, 1, 5); expect(p.sold).toBe(1); const wallet = p.wallet; sim.interact(0, 1, 5); expect(p.wallet).toBe(wallet);
   const r = records.byPlayer(0)!; r.inventory = structuredClone(p.inventory); const revision = records.state(r);
   saved[0] = applyProgress(saved[0], revision)!; expect(applyProgress(saved[0], revision)).toBeNull();
-  expect(saved[0].stats.wins).toBe(1); expect(saved[0].heavens.clears[1]).toBe(1); expect(saved[0].characters.fallen.xp).toBe(1500);
+  expect(saved[0].stats.wins).toBe(1); expect(saved[0].heavens.clears[1]).toBe(1); expect(saved[0].characters.fallen.xp).toBe(1500 * XP_GAIN);
   expect(saved[0].inventory).toEqual(p.inventory); expect(saved[0].run).toBeNull();
 });

@@ -141,7 +141,11 @@ export class Hud {
   private readonly crosshair: HTMLDivElement;
   private inField = false;
   private fieldEnteredAt = -Infinity;
-  private readonly abilities: Array<{ arc: SVGCircleElement; text: HTMLDivElement; box: HTMLDivElement; glint: HTMLDivElement; cd: number }>;
+  private readonly abilities: Array<{ arc: SVGCircleElement; text: HTMLDivElement; box: HTMLDivElement; glint: HTMLDivElement; icon: HTMLImageElement; cd: number }>;
+  /** The Q/E hint lines' icon and text, rewritten from the effective kit (rogue game.md §1.4). */
+  private readonly abilityHints = new Map<'Q' | 'E', { icon: HTMLImageElement; text: HTMLSpanElement }>();
+  private readonly talentHints: HTMLDivElement;
+  private readonly hiddenMark: HTMLDivElement;
   /** The hints panel (M8 §2.2), toggled with H. */
   private readonly hints: HTMLDivElement;
   /** The hint window's Carried lines (audit batch 3). */
@@ -420,7 +424,7 @@ export class Hud {
       box.appendChild(svg);
       const text = el('div', 'ability-cd', box);
       el('div', 'ability-key', box).textContent = key;
-      return { arc, text, box, glint, cd: 0 };
+      return { arc, text, box, glint, icon, cd: 0 };
     });
 
     // Hints: the class's lines, each ability's with its icon, then the general ones in multiplayer.
@@ -435,20 +439,30 @@ export class Hud {
         const icon = el('img', 'hint-icon', line);
         icon.src = spriteUrl(ABILITIES[classId][h.key].icon);
         icon.alt = h.key;
+        const text = el('span', 'hint-text', line);
+        text.textContent = h.text;
+        this.abilityHints.set(h.key, { icon, text });
+        continue;
       } else el('span', 'hint-icon', line);
       el('span', 'hint-text', line).textContent = h.text;
     }
+    // Active talents, one line each; dormant and suppressed ones are named as such (§1.4).
+    this.talentHints = el('div', 'hint-talents', this.hints);
     // Carried items (audit batch 3): what slots 1 and 2 do, always current; replaces the pickup popup.
     el('div', 'hint-section', this.hints).textContent = 'Carried';
     this.carried = el('div', 'hint-carried', this.hints);
     this.setCarried(null);
     {
-      for (const text of GENERAL_HINTS.filter(text => multiplayer || text.startsWith('1 /') || text.startsWith('F:'))) {
+      for (const text of GENERAL_HINTS.filter(text => multiplayer || text.startsWith('1 /') || text.startsWith('F:') || text.startsWith('Esc:'))) {
         const line = el('div', 'hint hint-general', this.hints);
         el('span', 'hint-icon', line);
         el('span', 'hint-text', line).textContent = text;
       }
     }
+
+    this.hiddenMark = el('div', 'hidden-mark', this.root);
+    this.hiddenMark.textContent = 'Hidden from casters';
+    this.hiddenMark.hidden = true;
 
     this.boss = el('div', 'boss', this.root);
     el('div', 'boss-name', this.boss).textContent = 'The Gatekeeper';
@@ -594,6 +608,33 @@ export class Hud {
   }
 
   /** Displayed cooldowns in seconds and their full lengths. */
+  /**
+   * The assigned abilities and active talents (rogue game.md §1.4, §9.4): slot icons and the Q/E hint
+   * lines follow every accepted change, so no hint teaches a surrendered effect.
+   */
+  setKit(slots: Record<'Q' | 'E', { name: string; icon: string; hint: string | null }>, talents: ReadonlyArray<{ name: string; rule: string; note: string }>): void {
+    (['Q', 'E'] as const).forEach((key, i) => {
+      const s = slots[key];
+      this.abilities[i].icon.src = spriteUrl(s.icon);
+      this.abilities[i].icon.alt = s.name;
+      const line = this.abilityHints.get(key);
+      if (line) { line.icon.src = spriteUrl(s.icon); if (s.hint) line.text.textContent = s.hint; }
+    });
+    this.talentHints.replaceChildren();
+    if (!talents.length) return;
+    el('div', 'hint-section', this.talentHints).textContent = 'Talents';
+    for (const t of talents) {
+      const line = el('div', 'hint hint-general', this.talentHints);
+      el('span', 'hint-icon', line);
+      el('span', 'hint-text', line).textContent = `${t.name}: ${t.note || t.rule}`;
+    }
+  }
+
+  /** One of Them: the own eye mark while ordinary casters ignore you. */
+  setHidden(hidden: boolean): void {
+    this.hiddenMark.hidden = !hidden;
+  }
+
   setCooldowns(q: number, qMax: number, e: number, eMax: number): void {
     [
       [q, qMax],

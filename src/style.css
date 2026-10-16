@@ -2416,3 +2416,263 @@ div.weapon-swing {
   border-bottom: 1px solid var(--danger);
   color: var(--ivory);
 }
+
+/* ---------------------------------------------------------------- Talents and Rites (R4) */
+
+.talent-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: safe center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 16px;
+  background: rgba(18, 12, 10, 0.6);
+  z-index: 70;
+}
+
+.talent-overlay[hidden] {
+  display: none;
+}
+
+.talent-panel {
+  width: min(980px, 100%);
+}
+
+.rite-panel {
+  width: min(720px, 100%);
+}
+
+.talent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.talent-title {
+  margin: 0;
+  font: 700 30px/1 var(--display-font);
+  color: var(--gold);
+}
+
+.talent-points {
+  font: 600 18px/1 var(--display-font);
+  color: var(--xp);
+}
+
+.talent-trees {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.talent-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--hud-band);
+  border: 1px solid var(--rim-deep);
+}
+
+.talent-tree-name {
+  font: 700 18px/1.1 var(--display-font);
+  color: var(--ivory);
+}
+
+.talent-tree-domain {
+  min-height: 2.4em;
+  font-size: 13px;
+  color: var(--parchment-dim);
+}
+
+.talent-tier {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  min-height: 54px;
+}
+
+.talent-tier:last-of-type {
+  grid-template-columns: 1fr;
+}
+
+.talent-node {
+  min-height: 54px;
+  padding: 4px 6px;
+  font: 600 13px/1.15 var(--display-font);
+  color: var(--parchment-faint);
+  text-align: center;
+  background: var(--well-deep);
+  border: 2px solid var(--well);
+  cursor: pointer;
+}
+
+.talent-node.open {
+  color: var(--ivory);
+  border-color: var(--rim-deep);
+}
+
+.talent-node.learned {
+  color: var(--soot);
+  background: var(--gold);
+  border-color: var(--rim-gold);
+}
+
+.talent-node.rite {
+  color: var(--soot);
+  background: var(--sky);
+  border-color: var(--ivory);
+}
+
+.talent-node.dormant,
+.talent-node.suppressed {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+.talent-node.locked {
+  cursor: not-allowed;
+}
+
+.talent-reset {
+  margin-top: auto;
+}
+
+.talent-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.talent-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.talent-slot-key {
+  font: 700 22px/1 var(--display-font);
+  color: var(--gold);
+}
+
+.talent-ability {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 3px;
+  font: 600 14px/1 var(--display-font);
+  color: var(--parchment);
+  background: var(--well-deep);
+  border: 2px solid var(--well);
+  cursor: pointer;
+}
+
+.talent-ability[aria-pressed='true'] {
+  color: var(--ivory);
+  border-color: var(--rim-gold);
+}
+
+.talent-ability img {
+  width: 36px;
+  height: 36px;
+}
+
+.talent-message {
+  min-height: 1.3em;
+}
+
+.talent-footer {
+  justify-content: flex-end;
+}
+
+.rite-sub {
+  font-size: 15px;
+  color: var(--parchment);
+}
+
+.rite-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rite-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 220px;
+  padding: 10px;
+  background: var(--hud-band);
+  border: 2px solid var(--rim-gold);
+}
+
+.rite-card.disabled {
+  opacity: 0.6;
+  border-color: var(--well);
+}
+
+.rite-tree {
+  font-size: 13px;
+  color: var(--parchment-dim);
+}
+
+.rite-name {
+  font: 700 22px/1.1 var(--display-font);
+  color: var(--gold);
+}
+
+.rite-rule {
+  font-size: 16px;
+  color: var(--ivory);
+}
+
+.rite-notes {
+  flex: 1;
+  font-size: 14px;
+  color: var(--warning);
+}
+
+.rite-pip {
+  position: absolute;
+  left: 50%;
+  bottom: 118px;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  font: 600 15px/1 var(--display-font);
+  color: var(--xp);
+  background: var(--hud-band);
+  pointer-events: none;
+}
+
+.rite-pip[hidden] {
+  display: none;
+}
+
+.class-talents {
+  margin-top: 6px;
+}
+
+.hint-talents {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hidden-mark {
+  position: absolute;
+  left: 50%;
+  bottom: 148px;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  font: 600 14px/1 var(--display-font);
+  color: var(--parchment);
+  background: var(--hud-band);
+  border: 1px solid var(--parchment-faint);
+  pointer-events: none;
+}
+
+.hidden-mark[hidden] {
+  display: none;
+}

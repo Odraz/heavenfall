@@ -19,6 +19,10 @@ export class Hazards {
       const room = map.roomOf[i], list = this.cells.get(room) ?? []; list.push(i); this.cells.set(room, list);
     }
   }
+  /** Whether a room has authored hazard cells. */
+  hasRoom(room: number): boolean {
+    return this.cells.has(room);
+  }
   setRoom(room: number): boolean {
     if (!this.cells.has(room)) room = -1;
     if (room === this.room) return false;

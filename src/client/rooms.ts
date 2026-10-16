@@ -71,7 +71,7 @@ export function roomMessage(model: ClientRooms, ownRoom: number, activeRoom: num
   if (!room?.shape) return null;
   switch (room.kind) {
     case 'pardoner': return 'The Pardoner · Personal stock · Aim and press F to buy';
-    case 'confessional': return 'The Confessional · Empty shell (Advocate arrives in R4)';
+    case 'confessional': return 'The Confessional · Press F at the grille: the Advocate teaches and resets talents';
     case 'boss': return 'The Gatekeeper · Inherited fight fixture (authored encounter arrives in R7)';
     default: return null;
   }

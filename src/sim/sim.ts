@@ -4,6 +4,10 @@ import { copyInventory, emptyInventory, FEATHER_SPEED, isItemId, ITEM_IDS, ITEMS
 import { Consumables } from './consumables';
 import { Rewards } from './rewards';
 import { VictoryExit } from './victory';
+import { Talents, type Root } from './talents';
+import { Rites } from './rites';
+import { DEV_BUILDS, DEV_BUILD_ORDER, talentNode } from '../data/talents';
+import { resolveKit, runBuildError, type Kit, type RunBuild } from './build';
 import { levelForXp } from '../profile/model';
 import type { Profile } from '../profile/model';
 import { saturatingAdd } from '../profile/model';
@@ -63,8 +67,6 @@ import {
   SHROUD_BURST_RADIUS,
   MOVEMENT_GRACE,
   MOVEMENT_SPEED_CHECK_SKIP,
-  SHADOWSTEP_CUT_DAMAGE,
-  SHADOWSTEP_CUT_REACH,
   SHADOWSTEP_INVULN,
   SHROUD_AMOUNT,
   SHROUD_DURATION,
@@ -171,6 +173,8 @@ export interface SimOptions {
   startRoom?: number;
   /** `dev=1`: record the Carrier's decision reasons for the host's debug overlay (never sent to peers). */
   diagnostics?: boolean;
+  /** Development quick build for the human players (`build=<name>`, never with saved progression). */
+  devBuild?: string;
 }
 
 export interface SimEvent {
@@ -181,6 +185,9 @@ export interface SimEvent {
 }
 
 export interface SimPlayer {
+  /** Learned build plus held Rites (rogue game.md §9.5, §9.10); `kit` is its resolution. */
+  build: RunBuild;
+  kit: Kit;
   offerKey: string;
   sold: number;
   xpBase: number;
@@ -297,6 +304,8 @@ interface DashRecord {
   full: boolean;
   /** Enemies this dash already cut. */
   cut: Set<number>;
+  /** The dash's root action (§14.11), set when the host accepts it. */
+  root?: Root | null;
 }
 
 interface SpawnBatch {
@@ -487,6 +496,8 @@ const DASH_WINDOW_TICKS = 15;
 const DASH_MAX_SEGMENT = 12;
 
 const ticks = (seconds: number) => Math.round(seconds * TICK_HZ);
+/** F opens the Advocate's view within this reach of its point (rogue game.md §9.6). */
+export const ADVOCATE_REACH = 2.5;
 
 /** The shortest distance between segments p0–p1 and q0–q1 (Ericson, Real-Time Collision Detection 5.1.9). */
 export function segmentDistance(
@@ -531,6 +542,11 @@ export class Simulation {
   get won(): boolean { return this.victory !== null; }
   readonly items = new Consumables(this);
   readonly rewards = new Rewards(this);
+  readonly talents = new Talents(this);
+  readonly rites = new Rites(this);
+  /** The simulation seed, for the stable Rite offer generator (§9.10). */
+  readonly seed: number;
+  private readonly devBuild: string | undefined;
   private nextOfferKey = 1;
   readonly progressionEnabled: boolean;
   readonly retainedPlayers = new Map<number, { player: SimPlayer; tick: number }>();
@@ -639,6 +655,8 @@ export class Simulation {
   fieldY = 0;
   fieldZ = 0;
   fieldUntil = 0;
+  /** Thrown Silver's coins fly 0.5 s before the Field starts. */
+  fieldStart = 0;
 
   // The Gatekeeper (§7.4). Timers are ticks.
   /** The living Gatekeeper's slot, or -1. */
@@ -765,7 +783,9 @@ export class Simulation {
     this.benchBurst = !!opts.benchBurst && this.benchRoom >= 0;
     this.noWaves = !!opts.noWaves;
     this.diagnostics = !!opts.diagnostics;
+    this.devBuild = opts.devBuild;
     this.random = mulberry32(opts.seed);
+    this.seed = opts.seed >>> 0;
     this.rooms = this.map.rooms.map((a, i) => ({
       phase: a.kind === 'breach' ? PHASE_CLEARED : PHASE_IDLE,
       knowledge: a.kind === 'breach' ? 2 : 0,
@@ -844,7 +864,8 @@ export class Simulation {
   /** Detached records: subsequent simulation changes cannot mutate a queued checkpoint. */
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
-      progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)), itemEffects: this.items.records(), victory: this.victory ? { ...this.victory.state } : null,
+      progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)),
+      kits: this.players.map((p) => this.talents.kitState(p)), talentAreas: this.talents.checkpoint(), itemEffects: this.items.records(), victory: this.victory ? { ...this.victory.state } : null,
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
       pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), commanderCasts: this.commanders.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
   }
@@ -951,9 +972,9 @@ export class Simulation {
     const g = groundHeight(this.map, x, y, PLAYER_RADIUS, Infinity, false, true);
     if (g !== -Infinity && z < g) z = g;
     // A Shadowstep press starts its path where the Betrayer stood before this input (M12 §5.7).
-    if (ePressed && p.classId === 'betrayer') {
+    if (ePressed && p.classId === 'betrayer' && p.kit.e === 'shadowstep') {
       if (p.dash) this.endDash(p);
-      p.dash = { pressSeq: m.seq, pts: [p.x, p.y, p.z], done: 1, acceptTick: -1, full: false, cut: new Set() };
+      p.dash = { pressSeq: m.seq, pts: [p.x, p.y, p.z], done: 1, acceptTick: -1, full: false, cut: new Set(), root: null };
     }
     const elapsed = (nowMs - p.lastAcceptMs) / 1000;
     const dx = x - p.x, dy = y - p.y, distance = Math.hypot(dx, dy);
@@ -998,7 +1019,9 @@ export class Simulation {
   /** Adds a player to the game in its slot, with its feet at (x, y, z). */
   private insertPlayer(init: SimPlayerInit, x: number, y: number, z: number): SimPlayer {
     const cls = CLASSES[init.classId];
+    const base: RunBuild = { talents: [], rites: [], q: '', e: '' };
     const p: SimPlayer = {
+      build: base, kit: resolveKit(init.classId, base),
       id: init.id,
       index: init.id,
       name: init.name,
@@ -1059,6 +1082,8 @@ export class Simulation {
       speedCheckSkipUntil: 0,
       launchUntilMs: 0,
     };
+    const character = init.profile?.characters[init.classId];
+    this.talents.setBuild(p, this.talents.initialBuild(p, character && { talents: character.talents, q: character.q, e: character.e }, this.devBuild), false);
     this.slots[p.index] = p;
     this.activeDirector()?.clear(p.index);
     this.players.push(p);
@@ -1112,6 +1137,9 @@ export class Simulation {
         revive: old.dead ? Math.max(0, old.revive - elapsed * REVIVE_DECAY) : 0 });
       this.retainedPlayers.delete(init.id);
     } else if (!p.bot) p.wallet = this.rewards.halosCredited;
+    // Everyone learns the joiner's kit; the joiner gets every kit from its floor checkpoint.
+    this.talents.setBuild(p, p.build);
+    if (this.rites.hasPending(p)) this.rites.publish(p);
     return p;
   }
 
@@ -1124,6 +1152,7 @@ export class Simulation {
     if (!p) return;
     p.connected = false;
     this.items.clearOwner(playerId);
+    this.talents.playerGone(p);
     p.featherUntil = p.sealUntil = 0; p.shield = 0; p.speed = CLASSES[p.classId].speed;
     if (retain) this.retainedPlayers.set(playerId, { player: p, tick: this.tick });
     this.activeDirector()?.clear(p.index);
@@ -1169,6 +1198,7 @@ export class Simulation {
     this.updateFlowFields();
     this.updateSpawning();
     this.updatePlayers();
+    this.talents.update();
     this.items.update();
     this.updateEnemies();
     this.separate(0);
@@ -1237,7 +1267,7 @@ export class Simulation {
   }
   private updateExit(): void {
     if (!this.victory || this.result) return;
-    if (this.victory.update(this.tick, this.players, this.rewards.pagesPending())) this.finish('victory');
+    if (this.victory.update(this.tick, this.players, this.rewards.pagesPending() || this.rites.anyPending())) this.finish('victory');
     else if (this.tick % 30 === 0) this.emit('all', { type: 'victoryState', state: { ...this.victory.state } });
   }
 
@@ -1305,6 +1335,8 @@ export class Simulation {
   }
 
   private enemyMayTarget(slot: number, p: SimPlayer): boolean {
+    // One of Them (classes-betrayer.md `b.2b`): ordinary casters don't pick a player hidden in the crowd.
+    if (this.talents.hidden.has(p.id) && this.talents.caster(slot)) return false;
     return !this.leashed[slot] || this.roomAt(p.x, p.y) === this.home[slot];
   }
 
@@ -1628,6 +1660,7 @@ export class Simulation {
       st.phase = PHASE_CLEARED;
       this.rewards.roomCleared(ai);
       this.items.clearCombat(ai);
+      this.talents.roomCleared();
       for (const { player } of this.retainedPlayers.values()) if (player.dead) {
         player.dead = false; player.hp = player.maxHp * 0.5; player.revive = 0; player.shield = 0;
       }
@@ -1667,7 +1700,8 @@ export class Simulation {
     const stats: Record<number, PlayerStats> = {};
     for (const p of this.players) {
       if (p.connected) stats[p.id] = { kills: p.kills, damage: Math.round(p.damage), deaths: p.deaths, reviveAssists: p.reviveAssists,
-        runXp: Math.floor(p.runXp), levelBefore: levelForXp(p.xpBase), levelAfter: levelForXp(saturatingAdd(p.xpBase, Math.floor(p.runXp))) };
+        runXp: Math.floor(p.runXp), levelBefore: levelForXp(p.xpBase), levelAfter: levelForXp(saturatingAdd(p.xpBase, Math.floor(p.runXp))),
+        rites: p.build.rites.map((id) => talentNode(id)?.name ?? id) };
     }
     this.emit('all', { type: 'gameOver', result, timeMs: Math.round(this.victory?.state.clearTimeMs ?? this.timeMs), unclaimed: this.victory?.unclaimed ?? false, stats });
   }
@@ -1745,13 +1779,13 @@ export class Simulation {
 
   private updateHazardDamage(): void {
     this.ePooled.fill(0);
-    if (this.hazards.room < 0 && this.tick >= this.fieldUntil) return;
+    if (this.hazards.room < 0 && !this.fieldActive()) return;
     // Player snapshots carry accepted feet, not a grounded bit; actual floor contact is the test.
-    for (const p of this.players) if (this.livingTargetable(p) && this.hazards.contact(p.x, p.y, p.z, true)) this.damagePlayer(p, FIRE_PLAYER_DAMAGE);
+    for (const p of this.players) if (this.livingTargetable(p) && !this.talents.ignoresWorld(p) && this.hazards.contact(p.x, p.y, p.z, true)) this.damagePlayer(p, FIRE_PLAYER_DAMAGE);
     let count = 0;
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k], fire = this.hazards.contact(this.eX[s], this.eY[s], this.eZ[s], this.eGrounded[s] === 1);
-      this.ePooled[s] = fire || this.tick < this.fieldUntil && inField(this.fieldX, this.fieldY, this.eX[s], this.eY[s]) ? 1 : 0;
+      this.ePooled[s] = fire || this.fieldActive() && inField(this.fieldX, this.fieldY, this.eX[s], this.eY[s]) ? 1 : 0;
       if (fire) this.hazardVictims[count++] = s;
     }
     // Stable bounded slots: owned shield bursts/removals cannot skip or damage a victim twice.
@@ -2286,6 +2320,64 @@ export class Simulation {
       nextRequestId: p.requests.next, itemReadyTick: p.itemReadyTick, featherUntil: p.featherUntil, sealUntil: p.sealUntil, itemsTried: [...p.itemsTried], xp: saturatingAdd(p.xpBase, Math.floor(p.runXp)), runXp: Math.floor(p.runXp) };
   }
   publishInventory(p: SimPlayer): void { this.emit(p.id, { type: 'inventory', state: this.inventoryState(p) }); }
+  /** Take a Rite card or Pass (rogue game.md §9.10), once per request ID. */
+  rite(playerId: number, requestId: number, offerId: number, choice: string): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot || typeof choice !== 'string' || !Number.isInteger(offerId)) return;
+    const result = p.requests.execute(requestId, `rite:${offerId}`, () => this.rites.choose(p, offerId, choice));
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale choice; try again' }) });
+    this.publishInventory(p);
+  }
+
+  /** Whether the player can reach the Advocate (rogue game.md §9.6): within 2.5 m, in the Confessional. */
+  advocateInReach(p: SimPlayer): boolean {
+    const room = this.floor?.confessional ?? -1, point = room >= 0 ? this.map.rooms[room]?.points?.advocate : undefined;
+    return !!point && this.roomAt(p.x, p.y) === room && Math.hypot(point[0] + 0.5 - p.x, point[1] + 0.5 - p.y) <= ADVOCATE_REACH;
+  }
+
+  /**
+   * A whole learned allocation and Q/E assignment (§9.5, §9.6, §9.8): at the Advocate in a valley or a
+   * countdown, alive; refused whole if illegal. Development runs without saved progression may edit
+   * anywhere with free points, so talents can be tried without leveling.
+   */
+  advocate(playerId: number, requestId: number, talents: unknown, q: unknown, e: unknown): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot) return;
+    const result = p.requests.execute(requestId, 'advocate', (): InteractionResult => {
+      if (!Array.isArray(talents) || talents.length > 32 || talents.some((t) => typeof t !== 'string') || typeof q !== 'string' || typeof e !== 'string') return { accepted: false, reason: 'Malformed loadout' };
+      const free = !this.progressionEnabled;
+      if (!p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
+      if (!free && !this.advocateInReach(p)) return { accepted: false, reason: 'Speak to the Advocate in the Confessional' };
+      if (this.activePhase === PHASE_COMBAT) return { accepted: false, reason: 'Not while the doors are sealed' };
+      const error = this.talents.edit(p, talents as string[], q, e, free);
+      if (error) return { accepted: false, reason: error };
+      if (this.rites.hasPending(p)) this.rites.publish(p);
+      return { accepted: true, reason: 'Your build is set' };
+    });
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale loadout; try again' }) });
+    // The view snaps back to the accepted kit on refusal (§9.8).
+    this.emit(playerId, { type: 'kit', kit: this.talents.kitState(p) });
+  }
+
+  private devBuildIndex = 0;
+
+  /** Dev key B: the next development quick build for this player, replacing its Rites (never with saved progression). */
+  devBuildCycle(playerId: number): void {
+    const p = this.playerById(playerId);
+    if (this.progressionEnabled || !p || p.bot || p.classId !== 'betrayer') return;
+    const name = DEV_BUILD_ORDER[this.devBuildIndex++ % DEV_BUILD_ORDER.length], d = DEV_BUILDS[name];
+    const build = { talents: [...d.talents], rites: [...(d.rites ?? [])], q: d.q ?? 'field', e: d.e ?? 'shadowstep' };
+    const error = runBuildError(p.classId, build, null);
+    if (!error) this.talents.setBuild(p, build);
+    this.emit(playerId, { type: 'interactionResult', requestId: 0, accepted: !error, reason: error ?? `Dev build: ${d.label}` });
+  }
+
+  /** Dev key R: a Rite offer now, as if a page was touched. */
+  devRite(playerId: number): void {
+    const p = this.playerById(playerId);
+    if (p) this.rites.dev(p);
+  }
+
   /** A shop request (rogue game.md §6.6), executed once per request ID like every scoped request. */
   interact(playerId: number, requestId: number, sourceId: number): void {
     const p = this.playerById(playerId);
@@ -2338,7 +2430,7 @@ export class Simulation {
     }
     for (const s of victims) this.damageEnemy(s, 60, -1, Infinity, p.x, p.y, true);
     for (const q of this.players) {
-      if (!this.livingTargetable(q) || this.roomAt(q.x, q.y) !== p.room ||
+      if (!this.livingTargetable(q) || this.talents.ignoresWorld(q) || this.roomAt(q.x, q.y) !== p.room ||
         distToCylinder(p.x, p.y, z, q.x, q.y, q.z, PLAYER_RADIUS, PLAYER_HEIGHT) > 4 ||
         !lineOfSight(this.map, p.x, p.y, z, q.x, q.y, q.z + PLAYER_HEIGHT / 2)) continue;
       this.damagePlayer(q, PROP_BLAST_PLAYER_DAMAGE);
@@ -2347,7 +2439,7 @@ export class Simulation {
   }
 
   /** Native damage rays carry on through props, like globes, until their accepted enemy/terrain stop. */
-  private propsOnRay(x: number, y: number, z: number, dx: number, dy: number, dz: number, stop: number): void {
+  propsOnRay(x: number, y: number, z: number, dx: number, dy: number, dz: number, stop: number): void {
     for (const { prop } of this.props.ray(x, y, z, dx, dy, dz, stop)) this.props.break(prop.id, this.tick);
   }
 
@@ -2422,6 +2514,7 @@ export class Simulation {
     p.pendingE = false;
     p.landingTick = -1;
     p.dash = null;
+    this.talents.playerGone(p);
     this.emit('all', { type: 'playerDied', playerId: p.id });
     // Blasphemy ends when the Fallen dies (§7.2).
     if (p.classId === 'fallen') for (let k = 0; k < this.activeCount; k++) this.eTauntUntil[this.active[k]] = 0;
@@ -2621,7 +2714,11 @@ export class Simulation {
 
   /** A living player in the Field of Blood, by its latest accepted position (M9 §3.4). */
   inField(p: SimPlayer): boolean {
-    return this.tick < this.fieldUntil && !p.dead && inField(this.fieldX, this.fieldY, p.x, p.y);
+    return this.fieldActive() && !p.dead && inField(this.fieldX, this.fieldY, p.x, p.y);
+  }
+
+  fieldActive(): boolean {
+    return this.tick >= this.fieldStart && this.tick < this.fieldUntil;
   }
 
   /**
@@ -2642,6 +2739,11 @@ export class Simulation {
 
   /** Fires one of the player's attacks from the eye, along the latest reported aim. */
   fireWeapon(p: SimPlayer, slot: AttackSlot = ATTACK_PRIMARY): void {
+    // The Betrayer's two lines carry its talents' Delivery and Payload (classes-betrayer.md §3).
+    if (p.classId === 'betrayer') {
+      this.talents.shoot(p, slot !== ATTACK_PRIMARY);
+      return;
+    }
     const w = attackDef(p.classId, slot);
     const ex = p.x;
     const ey = p.y;
@@ -2715,7 +2817,7 @@ export class Simulation {
   }
 
   /** Adds to `out` the souls (not the shooter's) that a ray passes through before `stop` (M8 §4.2). */
-  private soulsOnRay(p: SimPlayer, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, stop: number, out: Set<SimPlayer>): void {
+  soulsOnRay(p: SimPlayer, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, stop: number, out: Set<SimPlayer>): void {
     for (const o of this.players) {
       if (o === p || !this.hasSoul(o) || out.has(o)) continue;
       if (rayCylinder(ox, oy, oz, dx, dy, dz, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= stop) out.add(o);
@@ -2726,7 +2828,7 @@ export class Simulation {
    * Shoots down every globe whose path in the last 0.25 s passes within 0.3 m of a player's ray from
    * (ox, oy, oz) along the unit (dx, dy, dz) up to `stop` (M12 follow-up §1.3). The ray carries on.
    */
-  private globesOnRay(p: SimPlayer, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, stop: number): void {
+  globesOnRay(p: SimPlayer, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, stop: number): void {
     let hit: number[] | null = null;
     for (const g of this.projectiles) {
       if (this.pKind[g] !== PROJ_GLOBE || this.pOwner[g] >= 0) continue;
@@ -2940,6 +3042,7 @@ export class Simulation {
   }
 
   private useQ(p: SimPlayer): void {
+    if (p.classId === 'betrayer' && this.talents.useQ(p)) return;
     if (p.cdQ > 1e-6) return;
     const cd = ABILITIES[p.classId].Q.cooldown;
     const bx = p.x;
@@ -2991,6 +3094,7 @@ export class Simulation {
         // Field of Blood (M9 §3.4): 3 m ahead along the yaw; it always has a place. A new field
         // replaces the old one, and it lasts its 8 s whatever happens to the Betrayer.
         [this.fieldX, this.fieldY, this.fieldZ] = fieldCenter(this.map, p.x, p.y, p.yaw);
+        this.fieldStart = this.tick;
         this.fieldUntil = this.tick + ticks(FIELD_TIME);
         p.cdQ = cd;
         this.abilityEvent(p, 'Q', this.fieldX, this.fieldY, this.fieldZ);
@@ -3002,6 +3106,7 @@ export class Simulation {
   }
 
   private useE(p: SimPlayer, allyId: number): void {
+    if (p.classId === 'betrayer' && this.talents.useE(p)) return;
     const def = ABILITIES[p.classId].E;
     if (def.movement) {
       // Movement abilities run on the client; the host accepts within 0.25 s of ready (§9.3). A
@@ -3025,7 +3130,7 @@ export class Simulation {
         p.invulUntil = Math.max(p.invulUntil, this.tick + ticks(SHADOWSTEP_INVULN));
         p.cdE = def.cooldown;
         p.speedCheckSkipUntil = this.nowMs + MOVEMENT_SPEED_CHECK_SKIP * 1000;
-        if (p.dash) p.dash.acceptTick = this.tick;
+        if (p.dash) { p.dash.acceptTick = this.tick; p.dash.root = this.talents.root(p, 'E'); }
         this.abilityEvent(p, 'E', p.x, p.y, p.z);
       }
       return;
@@ -3091,6 +3196,7 @@ export class Simulation {
     const dash = p.dash!;
     if (dash.acceptTick < 0) return;
     this.cutNewSegments(p, dash);
+    if (dash.root) this.talents.finish(dash.root);
     if (dash.full || this.tick >= dash.acceptTick + DASH_WINDOW_TICKS) this.endDash(p);
   }
 
@@ -3106,30 +3212,16 @@ export class Simulation {
     const dy = y1 - y0;
     const len2 = dx * dx + dy * dy;
     if (len2 > DASH_MAX_SEGMENT * DASH_MAX_SEGMENT) return;
-    const len = Math.sqrt(len2);
-    const ux = len > 1e-9 ? dx / len : 0;
-    const uy = len > 1e-9 ? dy / len : 0;
+    const reach = this.talents.dashReach(p);
     for (const q of this.props.all) {
       if (q.broken) continue;
       const t = len2 > 1e-12 ? Math.max(0, Math.min(1, ((q.x - x0) * dx + (q.y - y0) * dy) / len2)) : 0;
       const x = x0 + dx * t, y = y0 + dy * t, z = z0 + (z1 - z0) * t + PLAYER_HEIGHT / 2;
-      if (this.props.inArea(q, x, y, z, SHADOWSTEP_CUT_REACH)) this.props.break(q.id, this.tick);
+      if (this.props.inArea(q, x, y, z, reach)) this.props.break(q.id, this.tick);
     }
-    const hit: number[] = [];
-    for (let k = 0; k < this.activeCount; k++) {
-      const s = this.active[k];
-      if (dash.cut.has(s)) continue;
-      const def = ENEMIES[this.eType[s]];
-      const t = len2 > 1e-12 ? Math.max(0, Math.min(1, ((this.eX[s] - x0) * dx + (this.eY[s] - y0) * dy) / len2)) : 0;
-      const cz = z0 + (z1 - z0) * t + PLAYER_HEIGHT / 2;
-      if (distToCylinder(x0 + dx * t, y0 + dy * t, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= SHADOWSTEP_CUT_REACH) hit.push(s);
-    }
-    // Applied after the scan: a kill removes the enemy from the active list. A burst flies along the
-    // dash, from a point behind the enemy on the segment's direction (M12 §4.1).
-    for (const s of hit) {
-      dash.cut.add(s);
-      this.damageEnemy(s, SHADOWSTEP_CUT_DAMAGE, p.index, SHADOWSTEP_CUT_DAMAGE, this.eX[s] - ux, this.eY[s] - uy, false, false);
-    }
+    // Hits apply after the scan; a burst flies along the dash (M12 §4.1). The Long Knife widens the
+    // path; Scattered Sheep launches instead of cutting (classes-betrayer.md `b.2a`, `b.3b`).
+    this.talents.cutSegment(p, dash.root ?? this.talents.root(p, 'E'), dash.cut, reach, x0, y0, z0, x1, y1, z1);
   }
 
   /** Closes a dash's window, cutting along what's left of its path; `dashCut` carries the path's ends. A press never accepted sends nothing. */
@@ -3138,6 +3230,7 @@ export class Simulation {
     p.dash = null;
     if (!dash || dash.acceptTick < 0) return;
     this.cutNewSegments(p, dash);
+    if (dash.root) this.talents.finish(dash.root);
     const q = dash.pts;
     const l = q.length - 3;
     this.emit('all', { type: 'dashCut', playerId: p.id, x0: q[0], y0: q[1], z0: q[2], x1: q[l], y1: q[l + 1], z1: q[l + 2] });

@@ -53,15 +53,49 @@ export interface FloorSync {
   dominionCasts?: DominionCast[];
   commanderCasts?: CommanderCast[];
   spawnWarnings?: SpawnWarning[];
+  kits?: KitState[];
+  talentAreas?: TalentArea[];
 }
 
 export interface InventoryState {
+
   playerId: number; inventory: Inventory; wallet: number; sold: number; chart: boolean;
   nextRequestId: number; itemReadyTick: number; xp: number; runXp: number;
   featherUntil: number; sealUntil: number; itemsTried: ItemId[];
 }
 
+/** One player's resolved kit (rogue game.md §9.3, §14.7), sent to everyone on every accepted change. */
+export interface KitState {
+  playerId: number; q: string; e: string;
+  learned: string[]; rites: string[]; active: string[]; dormant: string[];
+  /** Learned augment, then the Rite suppressing it. */
+  suppressed: Array<[string, string]>;
+}
+/** A Rite card as the host checked it now (§9.10): the reason when it is temporarily illegal. */
+export interface RiteCard { id: string; ok: boolean; reason: string; surrenders: string | null; replaces: string | null; dormant: string[] }
+/** A pending Rite offer: fixed card ids, rechecked after every accepted build change. */
+export interface RiteOffer { offerId: number; source: 'clear' | 'dev'; cards: RiteCard[] }
+/** Talent effects for every client's VFX, bounded per root action. `pts` are x, y, z triples (pairs of them for arcs). */
+export type TalentFxKind = 'frost' | 'spark' | 'clay' | 'nail' | 'sheep' | 'recoil' | 'split' | 'potter' | 'sicarius' | 'knownGround';
+export interface TalentArea {
+  id: number; kind: 'coin' | 'wire' | 'trap' | 'shadow'; playerId: number;
+  x: number; y: number; z: number; x1: number; y1: number; z1: number; startTick: number; endTick: number;
+}
+
 export type GameEvent =
+  | { type: 'kit'; kit: KitState }
+  | { type: 'talentFx'; playerId: number; kind: TalentFxKind; pts: number[]; slots: number[] }
+  /** A branch, glance or pass-through segment of a shot beyond its first line. */
+  | { type: 'tracer'; playerId: number; silver: boolean; x: number; y: number; z: number; ex: number; ey: number; ez: number }
+  /** A Judas Coin, Silver Wire, Blood Money coin or Way Back shadow appeared, or ended (`end`). */
+  | { type: 'talentArea'; area: TalentArea; end: boolean; reason: string }
+  /** The Way Back's accepted return (to everyone): the path's ends and its duration. */
+  | { type: 'wayBack'; playerId: number; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number; ms: number }
+  /** Recoil's accepted envelope, to its owner: horizontal velocity in m/s for 0.15 s. */
+  | { type: 'recoil'; playerId: number; vx: number; vy: number }
+  /** One of Them hides or shows a player (everyone sees the silhouette). */
+  | { type: 'hidden'; playerId: number; hidden: boolean }
+  | { type: 'riteOffers'; playerId: number; offers: RiteOffer[]; rites: number }
   | { type: 'victoryState'; state: VictoryState }
   | { type: 'itemUsed'; actionId: number; playerId: number; item: ItemId; first: boolean; instance: ItemEffect | null; x: number; y: number; z: number }
   | { type: 'itemEffectActivated'; effect: ItemEffect }
@@ -81,7 +115,7 @@ export type GameEvent =
    * `targets`: the player IDs the ability affected (M8 §10): every player Communion healed, including
    * at full HP; the player Martyr's Shroud shielded; the Falling Star ally. Empty for the others.
    */
-  | { type: 'abilityUsed'; playerId: number; slot: 'Q' | 'E'; x: number; y: number; z: number; targets: number[] }
+  | { type: 'abilityUsed'; playerId: number; slot: 'Q' | 'E'; x: number; y: number; z: number; targets: number[]; /** Thrown Silver: the coins fly 0.5 s before the Field starts. */ thrown?: boolean }
   | { type: 'teleport'; teleportId: number; x: number; y: number; z: number; /** Horizontal launch velocity, m/s. */ launch?: { dx: number; dy: number }; carry?: boolean }
   | { type: 'playerDied'; playerId: number }
   | { type: 'playerRespawned'; playerId: number }
@@ -107,6 +141,8 @@ export type GameEvent =
 /** One player's numbers on Results. */
 export interface PlayerStats {
   runXp?: number; levelBefore?: number; levelAfter?: number;
+  /** The run's Rites by name; they vanish with the run (§9.10). */
+  rites?: string[];
   kills: number;
   /** Damage dealt to enemies, rounded. */
   damage: number;
@@ -129,6 +165,10 @@ export type RejectReason = 'bad_password' | 'full' | 'in_progress' | 'version' |
 
 export type CtrlMessage =
   | { type: 'interact'; runId: string; requestId: number; sourceId: number }
+  /** Take a Rite card or Pass (§9.10). */
+  | { type: 'rite'; runId: string; requestId: number; offerId: number; choice: string | 'pass' }
+  /** A whole learned allocation and Q/E assignment from the Advocate's view (§9.5, §9.6). */
+  | { type: 'advocate'; runId: string; requestId: number; talents: string[]; q: string; e: string }
   | FloorSync
   | { type: 'hello'; name: string; password: string; version: string; bot: boolean; profile?: Profile }
   | { type: 'loadout'; profile: Profile }

@@ -1,3 +1,4 @@
+import { XP_GAIN } from './rewards';
 import { describe, expect, it } from 'vitest';
 import { BLESSED } from '../data/enemies';
 import { enemyAt, makeSim, room } from './testutil/sims';
@@ -8,7 +9,7 @@ describe('host XP and retained bodies', () => {
     const absent = sim.players[1]; sim.removePlayer(1, true);
     const s = enemyAt(sim, BLESSED, 10, 10); sim.rewards.eXp[s] = 2.5;
     sim.damageEnemy(s, 1000, -1); sim.damageEnemy(s, 1000, -1);
-    expect(sim.players[0].runXp).toBe(2.5); expect(sim.players[1].runXp).toBe(0); expect(absent.runXp).toBe(0);
+    expect(sim.players[0].runXp).toBe(2.5 * XP_GAIN); expect(sim.players[1].runXp).toBe(0); expect(absent.runXp).toBe(0);
   });
   it('retains HP, death count, wallet and charges but advances cooldowns through absence', () => {
     const sim = makeSim(room(20, 20), ['fallen', 'binder']); const p = sim.players[1];
