@@ -132,6 +132,7 @@ import { Props, type Prop } from './props';
 import { Pickups } from './pickups';
 import { DominionBehavior, Dominions } from './dominion';
 import { Commanders, carryPathClear, type beamSegment } from './commanders';
+import { Watchmen } from './watchmen';
 import { hymnalReduction } from '../data/commanders';
 import { directionalSpeedFactor } from '../data/movement';
 import { DOMINION_ALIVE_CAP, DOMINION_COOLDOWN_TICKS, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_SECONDS, DOMINION_MELEE_RANGE, DOMINION_MELEE_DAMAGE } from '../data/dominion';
@@ -592,6 +593,7 @@ export class Simulation {
   readonly dominions: Dominions;
   readonly dominionBehavior = new DominionBehavior(this);
   readonly commanders = new Commanders(this);
+  readonly watchmen = new Watchmen(this);
   private livingDominions = 0;
   readonly eType = new Uint8Array(ENEMY_SLOTS);
   readonly eState = new Uint8Array(ENEMY_SLOTS);
@@ -1341,8 +1343,8 @@ export class Simulation {
     return this.roomAt(p.x, p.y) === ROOM_NONE && p.x >= x0 - 4 && p.x < x1 + 5 && p.y >= y0 - 4 && p.y < y1 + 5;
   }
 
-  private enemyMayTarget(slot: number, p: SimPlayer): boolean {
-    // One of Them (classes-betrayer.md `b.2b`): ordinary casters don't pick a player hidden in the crowd.
+  enemyMayTarget(slot: number, p: SimPlayer): boolean {
+    // One of Them (classes-betrayer.md `b.2b`): ordinary casters (Watchmen too) don't pick a player hidden in the crowd.
     if (this.talents.hidden.has(p.id) && this.talents.caster(slot)) return false;
     return !this.leashed[slot] || this.roomAt(p.x, p.y) === this.home[slot];
   }
@@ -2231,6 +2233,7 @@ export class Simulation {
       if (type !== GATEKEEPER) st.alive++;
       if (wave >= 0) st.waveAlive[wave]++;
     }
+    this.watchmen.spawn(slot);
     this.retarget(slot);
     this.commanders.spawn(slot);
   }
@@ -2243,6 +2246,7 @@ export class Simulation {
     if (!this.eAlive[slot]) return;
     this.dominions.cancel(slot, this.tick);
     this.commanders.remove(slot);
+    this.watchmen.remove(slot);
     this.eAlive[slot] = 0;
     this.ePooled[slot] = 0;
     const type = this.eType[slot];
@@ -2594,6 +2598,7 @@ export class Simulation {
     this.eStunUntil[slot] = Math.max(this.eStunUntil[slot], this.tick + ticks(seconds));
     this.dominions.cancel(slot, this.tick);
     this.commanders.cancel(slot);
+    this.watchmen.cancel(slot);
     this.eCast[slot] = 0;
     this.eCastT[slot] = 0;
   }
@@ -2607,6 +2612,7 @@ export class Simulation {
     this.eSilenceUntil[slot] = Math.max(this.eSilenceUntil[slot], this.tick + ticks(seconds));
     this.dominions.cancel(slot, this.tick);
     this.commanders.cancel(slot);
+    this.watchmen.cancel(slot);
     this.eCast[slot] = 0;
     this.eCastT[slot] = 0;
   }
@@ -2634,7 +2640,7 @@ export class Simulation {
     if (this.immune(slot) || this.isRooted(slot) || !this.eGrounded[slot] || this.tick < this.eKbUntil[slot]) return false;
     this.knockAway(slot, x, y, PLUME_THROW, .5);
     this.eVz[slot] = PLUME_LIFT; this.eGrounded[slot] = 0;
-    this.commanders.cancel(slot); this.dominions.cancel(slot, this.tick);
+    this.commanders.cancel(slot); this.dominions.cancel(slot, this.tick); this.watchmen.cancel(slot);
     return true;
   }
 
@@ -3208,6 +3214,7 @@ export class Simulation {
       if (!this.eAlive[s] || this.isRooted(s) || this.immune(s)) continue;
       this.knockAway(s, cx, cy, KNOCKBACK_DIST, FALLING_STAR_KNOCKBACK_TIME);
       this.commanders.cancel(s);
+      this.watchmen.cancel(s);
       this.dominions.cancel(s, this.tick); // Falling Star's accepted launch, even though its arc is drawn only.
       launched.push(s);
     }
@@ -3566,6 +3573,8 @@ export class Simulation {
       this.retargetBoss(slot);
       return;
     }
+    // A Watchman's aim keeps its locked target (rooms.md §6.4); otherwise its sight checks choose.
+    if (this.eType[slot] === WATCHMAN && this.watchmen.retarget(slot)) return;
     if (this.eTauntUntil[slot] > this.tick) {
       const f = this.fallenIndex();
       if (f >= 0 && this.livingTargetable(this.slots[f]) && this.enemyMayTarget(slot, this.slots[f]!)) {
@@ -3670,6 +3679,7 @@ export class Simulation {
       if (familyHolding && type === CARRIER) continue;
       if (type === DOMINION && this.dominionBehavior.flight(slot)) continue;
       if (this.ePullStart[slot] >= 0) {
+        if (type === WATCHMAN) this.watchmen.cancel(slot);
         this.updatePull(slot);
         continue;
       }
@@ -3681,7 +3691,8 @@ export class Simulation {
       else if (ENEMIES[type].flying) this.updateCherub(slot, stunned);
       else this.updateWalker(slot, stunned, familyHolding);
       const thrown = tick <= this.eKbUntil[slot] && !this.eGrounded[slot];
-      if (stunned || thrown) {
+      if (type === WATCHMAN) this.watchmen.update(slot, stunned || thrown, thrown);
+      else if (stunned || thrown) {
         this.eMeleeNext[slot] = -1;
         this.eCast[slot] = 0;
         this.eCastT[slot] = 0;
@@ -3689,7 +3700,7 @@ export class Simulation {
         this.eState[slot] = thrown ? ST_FALLING : ST_IDLE;
       } else if (type === CANTOR && familyHolding) { const phase = this.commanders.active.get(slot)?.phase; this.eState[slot] = phase === 'tell' ? ST_WINDUP : ST_ATTACKING; }
       else if (type === BLESSED) this.updateMelee(slot);
-      else if (type !== DOMINION && type !== CANTOR && CASTERS[type]) this.updateCast(slot);
+      else if (type !== DOMINION && type !== CANTOR) this.updateCast(slot);
     }
     if (this.livingDominions > 0) this.dominionBehavior.update();
   }
@@ -3718,6 +3729,10 @@ export class Simulation {
   }
 
   private updateLos(slot: number): void {
+    if (this.eType[slot] === WATCHMAN) {
+      if (slot % LOS_TICKS === this.tick % LOS_TICKS) this.watchmen.look(slot);
+      return;
+    }
     const t = this.eTarget[slot];
     if (t < 0 || slot % LOS_TICKS !== this.tick % LOS_TICKS) return;
     const p = this.slots[t];
@@ -3920,7 +3935,8 @@ export class Simulation {
     let mx = 0;
     let my = 0;
     const rooted = this.tick < this.eRootUntil[slot];
-    const holds = familyHolding || (type === DOMINION ? this.dominions.holding(slot, this.tick) : type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot)));
+    const holds = familyHolding || (type === DOMINION ? this.dominions.holding(slot, this.tick) : type === WATCHMAN ? this.watchmen.holds(slot) :
+      type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot)));
     const p = t >= 0 ? this.slots[t] : undefined;
     const avoids = this.dryNavigation.room >= 0 && this.dryNavigation.room === this.roomAt(b.x, b.y);
     const cell = avoids ? this.hazards.cell(b.x, b.y) : -1, inFire = avoids && !!this.hazards.active[cell];

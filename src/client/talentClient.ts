@@ -4,7 +4,7 @@
  * talent effect's VFX. Accepted host facts only: nothing here decides a hit, a bind or an offer.
  */
 import * as THREE from 'three';
-import { ENEMIES, CHERUB, CHORISTER, isCommander } from '../data/enemies';
+import { ENEMIES, CHERUB, CHORISTER, WATCHMAN, isCommander } from '../data/enemies';
 import { BASE_ABILITIES, TALENT, talentNode } from '../data/talents';
 import type { ClassId } from '../data/classes';
 import type { FloorSync, GameEvent, KitState, RiteOffer, TalentArea } from '../net/messages';
@@ -201,7 +201,7 @@ export class TalentClient {
     if (informers.length) {
       for (let i = 0; i < enemies.count; i++) {
         const type = enemies.type[i];
-        if (type !== CHORISTER && type !== CHERUB && !isCommander(type)) continue;
+        if (type !== CHORISTER && type !== CHERUB && type !== WATCHMAN && !isCommander(type)) continue;
         const x = enemies.x[i], y = enemies.y[i], z = enemies.z[i];
         if (!informers.some((p) => Math.hypot(p.x - x, p.y - y) <= TALENT.informer && roomAt(p.x, p.y) === roomAt(x, y))) continue;
         const s = this.outlines[n] ?? this.newOutline();

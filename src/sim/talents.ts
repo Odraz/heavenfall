@@ -9,7 +9,7 @@
  * says and never start another bundle. A root dispatches each active kill-discharge node once, at its
  * first tick with kills.
  */
-import { ENEMIES, GATEKEEPER, CHERUB, CHORISTER, BLESSED } from '../data/enemies';
+import { ENEMIES, GATEKEEPER, CHERUB, CHORISTER, BLESSED, WATCHMAN } from '../data/enemies';
 import { DEV_BUILDS, JUDAS, TALENT, WAY_BACK, WIRE } from '../data/talents';
 import { SECONDARIES, WEAPONS, MOVEMENT_GRACE, SHADOWSTEP_CUT_DAMAGE, SHADOWSTEP_CUT_REACH } from '../data/weapons';
 import type { KitState, TalentArea, TalentFxKind } from '../net/messages';
@@ -601,10 +601,10 @@ export class Talents {
     }
   }
 
-  /** Ordinary Choristers and Cherubs: the enemies One of Them hides from. */
+  /** Ordinary Choristers, Cherubs and Watchmen: the enemies One of Them hides from (a Watchman's aim is canceled). */
   caster(s: number): boolean {
     const t = this.sim.eType[s];
-    return t === CHORISTER || t === CHERUB;
+    return t === CHORISTER || t === CHERUB || t === WATCHMAN;
   }
 
   /** Known Ground (`c.3b`): authored hazard cells and blast props don't hurt this player. */

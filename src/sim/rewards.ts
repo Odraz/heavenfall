@@ -46,6 +46,16 @@ const COMMANDER_MOTES = 2;
 /** A heal mote restores this share of max HP (§6.2). */
 const MOTE_HEAL = 0.08;
 
+/** An ordinary wave kill's item chance by type (§6.3): commanders 50%, Blessed 2%, ranged enemies (Watchmen too) 12%. */
+export function itemDropChance(type: number): number {
+  return isCommander(type) ? COMMANDER_ITEM_CHANCE : type === BLESSED ? BLESSED_ITEM_CHANCE : RANGED_ITEM_CHANCE;
+}
+
+/** A kill's heal-mote chance by type (§6.2): Choristers, Cherubs and Watchmen 35%; commanders drop theirs separately. */
+export function moteDropChance(type: number): number {
+  return type === CHORISTER || type === CHERUB || type === WATCHMAN ? RANGED_MOTE_CHANCE : 0;
+}
+
 export class Rewards {
   /** The Pardoner's Chart (§5.4): every room is known to the party. */
   chartRevealed = false;
@@ -145,10 +155,11 @@ export class Rewards {
         for (let i = 0; i < COMMANDER_MOTES; i++) this.dropMote(room, x, y);
       }
       // Reward ordinary wave kills too; cleanup, leashed enemies and boss adds never roll items.
-      const itemChance = isCommander(type) ? COMMANDER_ITEM_CHANCE : type === BLESSED ? BLESSED_ITEM_CHANCE : RANGED_ITEM_CHANCE;
-      if (sim.random() < itemChance) this.dropItem(room, x, y);
+      if (sim.random() < itemDropChance(type)) this.dropItem(room, x, y);
     }
-    if ((type === CHORISTER || type === CHERUB || type === WATCHMAN) && sim.random() < RANGED_MOTE_CHANCE) this.dropMote(room, x, y);
+    // Only the types that can drop a mote draw a random number for it, as before.
+    const mote = moteDropChance(type);
+    if (mote > 0 && sim.random() < mote) this.dropMote(room, x, y);
   }
 
   /** A random item drop fades after DROPPED_ITEM_LIFETIME (audit A1); clear rewards don't. */
