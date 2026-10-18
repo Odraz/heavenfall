@@ -31,7 +31,13 @@ interface Puff {
 }
 
 interface Cloud {
+  /** The host's cloud area id (R5), or -1 for an unnamed cloud. */
+  id: number;
   start: number;
+  life: number;
+  /** Puffs spread scale: the cloud's radius over the base 3 m. */
+  scale: number;
+  follow: (() => readonly [number, number, number] | null) | null;
   x: number;
   y: number;
   /** The height the puffs float above, per puff. */
@@ -52,23 +58,40 @@ export class IncenseClouds {
    * A new cloud at (x, y); `baseAt(x, y)` gives the height a puff floats above there. A fifth cloud
    * replaces the oldest, as on the host.
    */
-  add(now: number, x: number, y: number, baseAt: (x: number, y: number) => number): void {
-    if (this.clouds.length >= CLOUD_MAX) this.remove(0);
+  add(now: number, x: number, y: number, baseAt: (x: number, y: number) => number, opts: { id?: number; radius?: number; life?: number; tall?: boolean; follow?: () => readonly [number, number, number] | null } = {}): void {
+    if (this.clouds.length >= CLOUD_MAX * 3) this.remove(0);
     const puffs: Puff[] = [];
     const base: number[] = [];
-    for (let i = 0; i < PUFFS; i++) {
+    const scale = (opts.radius ?? 3) / 3;
+    // A Pillar of Cloud (classes-heretic.md `c.cap`) adds puffs climbing its 8 m column.
+    const count = Math.round(PUFFS * Math.max(0.6, scale * scale)) + (opts.tall ? 10 : 0);
+    for (let i = 0; i < count; i++) {
       const material = this.free.pop() ?? new THREE.SpriteMaterial({ map: this.texture, color: TINT, transparent: true, depthWrite: false, fog: false });
       material.opacity = 0;
       const sprite = new THREE.Sprite(material);
       const size = 1.4 + Math.random() * 0.6;
       sprite.scale.set(i % 2 ? -size : size, size, 1);
       const a = (i / PUFFS) * Math.PI * 2 + Math.random() * 0.6;
-      const r = SPREAD * Math.sqrt(0.15 + 0.85 * Math.random());
-      puffs.push({ sprite, material, a, r, h: 0.3 + Math.random() * 0.6, spin: (Math.random() - 0.5) * 0.6 });
+      const r = SPREAD * scale * Math.sqrt(0.15 + 0.85 * Math.random());
+      const high = opts.tall && i >= count - 10;
+      puffs.push({ sprite, material, a, r: high ? r * 0.8 : r, h: high ? 1.2 + Math.random() * 6.8 : 0.3 + Math.random() * 0.6, spin: (Math.random() - 0.5) * 0.6 });
       base.push(baseAt(x + Math.cos(a) * r, y + Math.sin(a) * r));
       this.group.add(sprite);
     }
-    this.clouds.push({ start: now, x, y, base, puffs });
+    this.clouds.push({ id: opts.id ?? -1, start: now, life: opts.life ?? CLOUD_TIME, scale, follow: opts.follow ?? null, x, y, base, puffs });
+  }
+
+  /** Moves a named cloud (a worn cloud detached by the host) and stops following. */
+  move(id: number, x: number, y: number): void {
+    const c = this.clouds.find((k) => k.id === id);
+    if (!c) return;
+    c.x = x; c.y = y; c.follow = null;
+  }
+
+  /** Removes a named cloud (the host ended it). */
+  removeId(id: number): void {
+    const i = this.clouds.findIndex((k) => k.id === id);
+    if (i >= 0) this.remove(i);
   }
 
   /** A random point inside a cloud, for its rising embers, or null with none. */
@@ -77,7 +100,7 @@ export class IncenseClouds {
     const c = this.clouds[Math.floor(Math.random() * this.clouds.length)];
     const p = Math.floor(Math.random() * c.puffs.length);
     const a = Math.random() * Math.PI * 2;
-    const r = SPREAD * Math.sqrt(Math.random());
+    const r = SPREAD * c.scale * Math.sqrt(Math.random());
     return [c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, c.base[p] + 0.2];
   }
 
@@ -90,11 +113,18 @@ export class IncenseClouds {
     for (let i = this.clouds.length - 1; i >= 0; i--) {
       const c = this.clouds[i];
       const t = (now - c.start) / 1000;
-      if (t >= CLOUD_TIME) {
+      if (t >= c.life) {
         this.remove(i);
         continue;
       }
-      const alpha = OPACITY * Math.min(1, t / FADE_IN_S) * Math.min(1, (CLOUD_TIME - t) / FADE_OUT_S);
+      // A worn cloud follows its wearer's feet (The Altar, Cloud of Witnesses).
+      const at = c.follow?.();
+      if (at) {
+        const dz = at[2] - c.base[0];
+        c.x = at[0]; c.y = at[1];
+        if (Math.abs(dz) > 1e-3) for (let k = 0; k < c.base.length; k++) c.base[k] += dz;
+      }
+      const alpha = OPACITY * Math.min(1, t / FADE_IN_S) * Math.min(1, (c.life - t) / FADE_OUT_S);
       const turn = (t / TURN_S) * Math.PI * 2;
       c.puffs.forEach((p, k) => {
         const a = p.a + turn;

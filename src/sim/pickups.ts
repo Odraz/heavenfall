@@ -54,12 +54,17 @@ export class Pickups {
     const z = this.floor(p.x, p.y);
     return Math.hypot(c.x - p.x, c.y - p.y, c.z - z) <= reach && lineOfSight(this.map, c.x, c.y, c.z + 0.1, p.x, p.y, z + 0.1);
   }
-  update(tick: number, collectors: readonly Collector[], collect: (p: PickupRecord, c: Collector) => boolean): void {
+  /**
+   * `steer` may send a heal mote to one collector instead of the nearest in reach (Cunning Folk,
+   * Resurrection's rally); it still has to reach and be eligible to collect.
+   */
+  update(tick: number, collectors: readonly Collector[], collect: (p: PickupRecord, c: Collector) => boolean, steer?: (p: PickupRecord, collectors: readonly Collector[]) => Collector | undefined): void {
     for (let i = 0; i < this.live.length;) {
       const p = this.live[i];
       if (p.expiresTick >= 0 && tick >= p.expiresTick) { this.live.splice(i, 1); continue; }
       const reach = p.kind === HEAL_MOTE ? 2 : p.kind <= GOLD_HALO ? 4 : 1;
-      const candidates = collectors.filter((c) => this.eligible(p, c, reach)).sort((a, b) =>
+      const steered = p.kind === HEAL_MOTE ? steer?.(p, collectors) : undefined;
+      const candidates = steered ? [steered] : collectors.filter((c) => this.eligible(p, c, reach)).sort((a, b) =>
         Math.hypot(a.x - p.x, a.y - p.y, a.z - this.floor(p.x, p.y)) - Math.hypot(b.x - p.x, b.y - p.y, b.z - this.floor(p.x, p.y)) || a.id - b.id);
       let consumed = false;
       for (const c of candidates) {

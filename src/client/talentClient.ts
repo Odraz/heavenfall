@@ -15,6 +15,7 @@ import type { InterpolatedEnemies } from './snapshots';
 import { INFORMER, THROUGH_THE_THRONG } from '../sim/talents';
 import type { GameMap } from '../sim/map';
 import { FireView } from './fireView';
+import type { IncenseClouds } from '../render/incense';
 import { FLAG_ROOTED, FLAG_SLOWED } from '../net/protocol';
 
 interface Pose { x: number; y: number; z: number }
@@ -29,6 +30,9 @@ export interface TalentDeps {
   /** The map, for floor fire cells; and the estimated host tick now (fractional). */
   map: GameMap;
   tick: () => number;
+  /** The incense renderer and the height its puffs float above at a point under a cloud at height z. */
+  incense: IncenseClouds;
+  cloudBase: (x: number, y: number, z: number) => number;
 }
 
 const SILVER = 0xdfe6ef;
@@ -99,7 +103,9 @@ export class TalentClient {
   inSmoke(x: number, y: number, z: number): boolean {
     for (const { area } of this.drawn.values()) {
       if (area.kind !== 'cloud' || !this.kits.get(area.playerId)?.active.includes('heretic.c.1b')) continue;
-      if (Math.hypot(x - area.x, y - area.y) <= area.x1 && Math.abs(z - area.z) <= 2) return true;
+      const at = area.y1 >= 0 ? this.d.pose(area.y1) : undefined;
+      const cx = at?.x ?? area.x, cy = at?.y ?? area.y, cz = at ? at.z + 0.9 : area.z;
+      if (Math.hypot(x - cx, y - cy) <= area.x1 && Math.abs(z - cz) <= 2.5) return true;
     }
     return false;
   }
@@ -125,6 +131,13 @@ export class TalentClient {
       case 'hidden': if (e.hidden) this.hidden.add(e.playerId); else this.hidden.delete(e.playerId); return true;
       case 'riteOffers': this.offers = e.offers; return true;
       case 'talentArea':
+        // A worn cloud detached (or Bread's count changed): update in place, never restart the puffs.
+        if (!e.end && this.drawn.has(e.area.id) && (e.area.kind === 'cloud' || e.area.kind === 'bread')) {
+          const d = this.drawn.get(e.area.id)!;
+          d.area = e.area;
+          if (e.area.kind === 'cloud' && e.area.y1 < 0) { this.d.incense.move(e.area.id, e.area.x, e.area.y); d.obj.position.set(e.area.x, e.area.z, e.area.y); }
+          return true;
+        }
         if (e.end) {
           const old = this.drawn.get(e.area.id);
           if (old && e.reason === 'spent') this.d.vfx.glow(now, old.area.x, old.area.y, old.area.z + 0.3, CHAIN, 0.2, 0.9, 260);
@@ -203,6 +216,25 @@ export class TalentClient {
       case 'wrath':
         v.ring(now, p[0], p[1], p[2], 0xff3a10, 0.5, 4, 360); v.glow(now, p[0], p[1], p[2] + 1, 0xff5a1c, 0.5, 3, 300);
         break;
+      // The Heretic Saint (R5).
+      case 'exorcism':
+        v.ring(now, p[0], p[1], p[2], 0xffffff, 0.5, 5, 320);
+        break;
+      case 'fork':
+        v.beam(now, [[p[0], p[1], p[2]], [p[3], p[4], p[5]]], 0x5ee65e, 0.1, 520);
+        break;
+      case 'lazarus':
+        v.ring(now, p[0], p[1], p[2], 0xfff4c8, 0.3, p[3], 360); v.glow(now, p[0], p[1], p[2] + 1, 0xfff0b0, 0.3, p[3] * 0.7, 300);
+        break;
+      case 'harvest':
+        v.glow(now, p[0], p[1], p[2] + 0.6, 0x5ee65e, 0.2, 0.8, 360);
+        break;
+      case 'irons': case 'stake':
+        v.ring(now, p[0], p[1], p[2], CHAIN, 0.2, e.kind === 'stake' ? 3.5 : 0.8, 360);
+        break;
+      case 'resurrect':
+        for (let i = 0; i < p.length; i += 3) v.beam(now, [[p[i], p[i + 1], p[i + 2]], [p[i], p[i + 1], p[i + 2] + 6]], 0xfff6d8, 0.4, 700);
+        break;
       case 'crash':
         for (let i = 0; i < p.length; i += 3) { v.ring(now, p[i], p[i + 1], p[i + 2], 0xfff0c0, 0.2, 1.2, 280); v.glow(now, p[i], p[i + 1], p[i + 2] + 0.3, 0xffe6a0, 0.2, 1, 240); }
         break;
@@ -244,6 +276,12 @@ export class TalentClient {
     } else obj = this.r5Area(a);
     this.group.add(obj);
     this.drawn.set(a.id, { area: a, obj, arrived: now });
+    if (a.kind === 'cloud') {
+      // The incense puffs: for its remaining life, following its wearer while worn.
+      const left = Math.max(0.2, (a.endTick - this.d.tick()) / 30);
+      const follow = a.y1 >= 0 ? () => { const p = this.d.pose(a.y1); return p ? [p.x, p.y, p.z] as const : null; } : undefined;
+      this.d.incense.add(now, a.x, a.y, (x, y) => this.d.cloudBase(x, y, a.z), { id: a.id, radius: a.x1, life: left, tall: a.z1 === 1, follow });
+    }
   }
 
   /** R5 areas: flat floor shapes in each effect's color, so everyone sees where it acts. */
@@ -284,7 +322,8 @@ export class TalentClient {
         flat(new THREE.RingGeometry(a.x1 - 0.12, a.x1, 48), 0x5ee65e, 0.5);
         break;
       case 'cloud':
-        flat(new THREE.RingGeometry(a.x1 - 0.12, a.x1, 48), 0xd8a24a, 0.6);
+        // A faint rusty-gold rim at the incense's reach (worn clouds follow their wearer).
+        flat(new THREE.RingGeometry(a.x1 - 0.1, a.x1, 48), 0xd8a24a, 0.35);
         break;
       default:
         break;
@@ -296,6 +335,7 @@ export class TalentClient {
   private remove(id: number): void {
     const d = this.drawn.get(id);
     if (!d) return;
+    if (d.area.kind === 'cloud') this.d.incense.removeId(id);
     this.group.remove(d.obj);
     d.obj.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
     this.drawn.delete(id);

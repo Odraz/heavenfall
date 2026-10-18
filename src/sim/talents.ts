@@ -28,7 +28,7 @@ import { ENEMY_SLOTS } from './constants';
 import { FloorFire } from './floorFire';
 import { Launches, type Landing } from './launches';
 import { FallenTalents } from './talentsFallen';
-import { CLOUD_RADIUS } from '../data/weapons';
+import { HereticTalents } from './talentsHeretic';
 import type { FireState } from '../net/messages';
 
 const ticks = (s: number) => Math.round(s * TICK_HZ);
@@ -71,10 +71,14 @@ export class Talents {
   readonly launches: Launches;
   readonly fires = new Map<number, FloorFire>();
   readonly fallen: FallenTalents;
+  readonly heretic: HereticTalents;
+  /** Set while a root's native hit resolves, so a death knows it was a primary kill (Bread of Angels). */
+  private primaryHit = false;
 
   constructor(private readonly sim: Simulation) {
     this.launches = new Launches(sim, ENEMY_SLOTS);
     this.fallen = new FallenTalents(sim, this, ENEMY_SLOTS);
+    this.heretic = new HereticTalents(sim, this, ENEMY_SLOTS);
   }
 
   /** A player's floor fire: the Fallen's holds 600 burning cells, the Heretic's 400. */
@@ -91,12 +95,7 @@ export class Talents {
 
   /** Whether an enemy stands in a Heretic's incense (`censed`, game.md §4.11). */
   censed(s: number): boolean {
-    const sim = this.sim, def = ENEMIES[sim.eType[s]];
-    for (const c of sim.clouds) {
-      if (sim.tick < c.from || sim.tick >= c.until) continue;
-      if (distToCylinder(c.x, c.y, c.z, sim.eX[s], sim.eY[s], sim.eZ[s], def.radius, def.height) <= CLOUD_RADIUS) return true;
-    }
-    return false;
+    return this.heretic.censed(s);
   }
 
   // ------------------------------------------------------------------ builds
@@ -162,7 +161,9 @@ export class Talents {
     const sim = this.sim;
     if (!sim.eAlive[s]) return;
     const v: Victim = { s, x: sim.eX[s], y: sim.eY[s], z: sim.eZ[s], room: sim.roomAt(sim.eX[s], sim.eY[s]), slowed: this.slowed(s), bound: sim.isRooted(s) };
+    this.primaryHit = true;
     sim.damageEnemy(s, amount, root.owner.index, force, fromX, fromY, false, area);
+    this.primaryHit = false;
     if (!sim.eAlive[s]) root.victims.push(v);
   }
 
@@ -177,6 +178,7 @@ export class Talents {
     if (this.has(p, BLOOD) && root.input === 'LMB') for (const v of victims) this.addTrap(p, v);
     if (this.has(p, VESSEL)) this.clay(p, victims.filter((v) => v.bound));
     if (this.has(p, 'fallen.b.1b') && root.input === 'LMB') this.fallen.kindleBundle(p, victims);
+    if (this.has(p, 'heretic.b.1b')) this.heretic.kindleBundle(p, victims);
   }
 
   /** Enemies other than the boss and its parts whose center is within `r` of a point, in that room, in sight. */
@@ -494,6 +496,7 @@ export class Talents {
   /** A player died, left, teleported or the room cleared: markers end (§4 host/client split). */
   playerGone(p: SimPlayer): void {
     this.fallen.playerGone(p);
+    this.heretic.playerGone(p);
     this.endShadow(p, 'gone');
     this.returns.delete(p.id);
     this.lastFeet.delete(p.id);
@@ -507,6 +510,7 @@ export class Talents {
     this.flushFires();
     this.launches.clear();
     this.fallen.roomCleared();
+    this.heretic.roomCleared();
   }
 
   checkpoint(): TalentArea[] {
@@ -535,6 +539,7 @@ export class Talents {
     const landed = this.launches.due();
     if (landed.length) this.landings(landed);
     this.fallen.pools();
+    this.heretic.pools();
     this.flushFires();
   }
 
@@ -552,6 +557,7 @@ export class Talents {
   /** An enemy's death, before its removal; `source` is the credited player index or -1. */
   died(s: number, source: number): void {
     this.fallen.died(s, source);
+    this.heretic.died(s, source, this.primaryHit);
   }
 
   // ------------------------------------------------------------------ per tick
@@ -559,6 +565,7 @@ export class Talents {
   update(): void {
     const sim = this.sim;
     this.fallen.update();
+    this.heretic.update();
     for (const a of [...this.areas.values()]) {
       if (sim.tick < a.endTick) continue;
       const owner = sim.playerById(a.playerId);

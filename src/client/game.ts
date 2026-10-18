@@ -628,6 +628,7 @@ export class Game {
       classOf: (id) => this.classOf(id), pose: (id) => this.playerPose(id),
       later: (id, run) => this.later(id, run),
       map: this.map, tick: () => this.snaps.estimatedTick(performance.now()),
+      incense: this.incense, cloudBase: (x, y, z) => this.cloudBase(x, y, z),
     });
     this.scene.scene.add(this.talents.group);
     if (o.floor) this.scene.scene.add(advocateSprite(this.map, o.floor.confessional));
@@ -2502,7 +2503,7 @@ export class Game {
         this.particles.censerBreak(b.x, b.y, b.z);
         this.vfx.glow(now, b.x, b.y, b.z, 0xf08a24, 0.15, 0.6, 250);
         this.sounds.censerBreak(b);
-        this.incense.add(now, b.x, b.y, (x, y) => this.cloudBase(x, y, b.z));
+        // The cloud itself comes from the host's published area (R5: worn, triple, pillar clouds, furrows).
       } else {
         // A burst's ripple delays it once (M12 §4.2).
         const ripple = this.burstMemory.peek(b.slot, now)?.ripple ?? 0;

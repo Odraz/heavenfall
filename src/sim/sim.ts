@@ -5,6 +5,7 @@ import { Consumables } from './consumables';
 import { Rewards } from './rewards';
 import { VictoryExit } from './victory';
 import { Talents, type Root } from './talents';
+import type { HereticCloud } from './talentsHeretic';
 import { Rites } from './rites';
 import { BASE_ABILITIES, DEV_BUILDS, devBuildOrder, FALLEN as FALLEN_NUMBERS, talentNode } from '../data/talents';
 import { resolveKit, runBuildError, type Kit, type RunBuild } from './build';
@@ -36,11 +37,7 @@ import {
   BLASPHEMY_DURATION,
   BLASPHEMY_RADIUS,
   BLASPHEMY_STUN,
-  CLOUD_DAMAGE,
-  CLOUD_MAX,
   CLOUD_PULSE_TICKS,
-  CLOUD_RADIUS,
-  CLOUD_TIME,
   CENSER_RADIUS,
   CENSER_SPEED,
   CHAINS_ANGLE,
@@ -629,7 +626,7 @@ export class Simulation {
   /** Stunned by Blasphemy (M12 §5.3): no steering, striking or casting. */
   readonly eStunUntil = new Int32Array(ENEMY_SLOTS);
   /** The last tick incense hurt the enemy: at most once per 15 ticks (M12 §5.4). */
-  private readonly eIncenseTick = new Int32Array(ENEMY_SLOTS).fill(-CLOUD_PULSE_TICKS);
+  readonly eIncenseTick = new Int32Array(ENEMY_SLOTS).fill(-CLOUD_PULSE_TICKS);
   /** Knocked back on ticks kbFrom < tick ≤ kbUntil. */
   readonly eKbUntil = new Int32Array(ENEMY_SLOTS);
   private readonly eKbFrom = new Int32Array(ENEMY_SLOTS);
@@ -652,7 +649,7 @@ export class Simulation {
   /** Seconds until the next melee hit while in range; -1 when out of range. */
   readonly eMeleeNext = new Float64Array(ENEMY_SLOTS).fill(-1);
   /** Incense clouds (M9 §2.8), oldest first: where each censer broke, who threw it, and its ticks. */
-  readonly clouds: Array<{ x: number; y: number; z: number; owner: SimPlayer; from: number; until: number }> = [];
+  readonly clouds: HereticCloud[] = [];
   /** The one Field of Blood (M9 §3.4): its center and floor, active while tick < fieldUntil. */
   fieldX = 0;
   fieldY = 0;
@@ -1216,7 +1213,8 @@ export class Simulation {
     this.talents.pools();
     this.items.membership();
     this.updateSouls();
-    this.pickups.update(this.tick, this.players, (drop, collector) => this.rewards.collect(drop, this.slots[collector.id]!));
+    this.pickups.update(this.tick, this.players, (drop, collector) => this.rewards.collect(drop, this.slots[collector.id]!),
+      (drop, collectors) => this.talents.heretic.moteTarget(drop, collectors));
     this.recoverEnemies();
     this.checkVictory();
     this.updateExit();
@@ -2518,6 +2516,12 @@ export class Simulation {
     p.shieldCaster = null;
     const source = caster && caster.connected ? caster.index : -1;
     const cz = z + PLAYER_HEIGHT / 2;
+    // The Stake binds the crowd instead of the burst (classes-heretic.md `c.1a`).
+    if (caster && this.talents.heretic.stake(caster, x, y, z)) {
+      this.emit('all', { type: 'shroudBurst', playerId: p.id, x, y, z });
+      return;
+    }
+    const root = caster && caster.connected ? this.talents.root(caster, 'E') : null;
     const hit: number[] = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
@@ -2525,7 +2529,8 @@ export class Simulation {
       if (distToCylinder(x, y, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= SHROUD_BURST_RADIUS) hit.push(s);
     }
     // Applied after the scan: a kill removes the enemy from the active list.
-    for (const s of hit) this.damageEnemy(s, SHROUD_BURST_DAMAGE, source, Infinity, x, y);
+    for (const s of hit) { if (root) this.talents.primary(root, s, SHROUD_BURST_DAMAGE, Infinity, x, y); else this.damageEnemy(s, SHROUD_BURST_DAMAGE, source, Infinity, x, y); }
+    if (root) this.talents.finish(root);
     if (caster?.connected) this.props.area(x, y, cz, SHROUD_BURST_RADIUS, this.tick);
     this.emit('all', { type: 'shroudBurst', playerId: p.id, x, y, z });
   }
@@ -2794,7 +2799,8 @@ export class Simulation {
     switch (w.kind) {
       case 'censer': {
         const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
-        this.spawnProjectile(PROJ_CENSER, ex, ey, ez, dx, dy, dz, CENSER_SPEED, CENSER_RADIUS, w.damage, w.range, p.index);
+        const censer = this.spawnProjectile(PROJ_CENSER, ex, ey, ez, dx, dy, dz, CENSER_SPEED, CENSER_RADIUS, w.damage, w.range, p.index);
+        if (censer >= 0) this.talents.heretic.censerThrown(censer, p);
         return;
       }
       case 'sacrament': {
@@ -2803,7 +2809,7 @@ export class Simulation {
         const ally = this.sacramentTarget(p);
         if (!ally) return;
         if (ally.dead) this.addRevive(ally, reviveHit(w.interval, true), p);
-        else this.heal(ally, w.damage);
+        else { this.heal(ally, w.damage); this.talents.heretic.fork(p, ally); }
         p.beamId = ally.id;
         p.beamUntil = this.tick + BEAM_HOLD_TICKS;
         return;
@@ -2997,7 +3003,11 @@ export class Simulation {
     if (!this.hasSoul(p)) return;
     p.revive = Math.min(1, p.revive + amount / reviveSlowdown(p.deaths));
     if (by) p.revivers |= 1 << by.index;
-    if (p.revive >= 1 - 1e-9) this.revivePlayer(p);
+    if (p.revive >= 1 - 1e-9) {
+      this.revivePlayer(p);
+      // Lazarus: a revival the Saint completes bursts into light (classes-heretic.md `a.2b`).
+      if (by?.classId === 'heretic') this.talents.heretic.revived(by, p);
+    }
   }
 
   /** Revived on the soul's ground point with half HP, invulnerable for 2 s. */
@@ -3071,6 +3081,7 @@ export class Simulation {
   private useQ(p: SimPlayer): void {
     if (p.classId === 'betrayer' && this.talents.useQ(p)) return;
     if (p.classId === 'fallen' && p.kit.q === 'castOut') { this.talents.fallen.castOut(p); return; }
+    if (p.classId === 'heretic' && p.kit.q === 'cloudOfWitnesses') { this.talents.heretic.witnesses(p); return; }
     if (p.cdQ > 1e-6) return;
     const cd = ABILITIES[p.classId].Q.cooldown;
     const bx = p.x;
@@ -3103,8 +3114,9 @@ export class Simulation {
           this.heal(o, COMMUNION_HEAL);
           healed.push(o.id);
         }
-        // It also adds to every soul within its radius.
-        for (const o of this.players) {
+        // It also adds to every soul within its radius; Resurrection of the Body raises them instead, and
+        // Exorcism and Wall of Fire add their effect (classes-heretic.md `a.cap`, `a.1b`, `b.2b`).
+        if (!this.talents.heretic.communion(p, healed)) for (const o of this.players) {
           if (o === p || !this.hasSoul(o)) continue;
           if (distToCylinder(bx, by, bz, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= COMMUNION_RADIUS) this.addRevive(o, REVIVE_COMMUNION, p);
         }
@@ -3140,6 +3152,7 @@ export class Simulation {
   private useE(p: SimPlayer, allyId: number): void {
     if (p.classId === 'betrayer' && this.talents.useE(p)) return;
     if (p.classId === 'fallen' && this.talents.fallen.useE(p)) return;
+    if (p.classId === 'heretic' && this.talents.heretic.useE(p)) return;
     const def = ABILITIES[p.classId].E;
     if (def.movement) {
       // Movement abilities run on the client; the host accepts within 0.25 s of ready (§9.3). A
@@ -3402,8 +3415,11 @@ export class Simulation {
     let hitT = Infinity;
     let hitSlot = -1;
     if (owner >= 0) {
+      const thrower = this.slots[owner];
       for (let k = 0; k < this.activeCount; k++) {
         const s = this.active[k];
+        // The Long Chain: the censer flies through Blessed (classes-heretic.md `a.3b`).
+        if (this.talents.heretic.passesBlessed(thrower, this.eType[s])) continue;
         const def = ENEMIES[this.eType[s]];
         const t = rayCylinder(x, y, z, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s] - pr, def.radius + pr, def.height + 2 * pr);
         if (t <= terrainT && t < hitT) {
@@ -3509,16 +3525,19 @@ export class Simulation {
   private explodeCenser(slot: number, x: number, y: number, z: number, direct: number): void {
     const owner = this.pOwner[slot];
     const damage = this.pDamage[slot];
+    const hx = this.pDx[slot], hy = this.pDy[slot];
     this.pX[slot] = x;
     this.pY[slot] = y;
     this.pZ[slot] = z;
     this.removeProjectile(slot);
-    if (direct >= 0) this.damageEnemy(direct, damage, owner, damage, x, y);
     const shooter = this.slots[owner];
+    // The censer's hit and its cloud are one LMB root (classes-heretic.md "Button kills").
+    const root = this.talents.heretic.takeRoot(slot) ?? (shooter ? this.talents.root(shooter, 'LMB') : null);
+    if (direct >= 0) { if (root && shooter) this.talents.primary(root, direct, damage, damage, x, y); else this.damageEnemy(direct, damage, owner, damage, x, y); }
     if (!shooter) return;
-    // At most 6 clouds: a new one replaces the oldest.
-    if (this.clouds.length >= CLOUD_MAX) this.clouds.shift();
-    this.clouds.push({ x, y, z, owner: shooter, from: this.tick, until: this.tick + ticks(CLOUD_TIME) });
+    // Its cloud (at most 6 per Heretic, the oldest going out), or its LMB Payload's area.
+    this.talents.heretic.censerBroke(shooter, x, y, z, direct, hx, hy, root!);
+    this.talents.finish(root!);
     for (const o of this.players) {
       if (o === shooter || !this.hasSoul(o)) continue;
       if (distToCylinder(x, y, z, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= REVIVE_CENSER_RADIUS) {
@@ -3534,26 +3553,8 @@ export class Simulation {
    * pulsing cloud's Heretic (no one if it left).
    */
   private updateClouds(): void {
-    while (this.clouds.length && this.tick >= this.clouds[0].until) this.clouds.shift();
-    const pulsing = this.clouds.filter((c) => this.tick >= c.from && (this.tick - c.from) % CLOUD_PULSE_TICKS === 0);
-    if (pulsing.length === 0) return;
-    for (const c of pulsing) if (c.owner.connected) this.props.area(c.x, c.y, c.z, CLOUD_RADIUS, this.tick);
-    const hits: Array<[number, number, number, number]> = [];
-    for (let k = 0; k < this.activeCount; k++) {
-      const s = this.active[k];
-      if (this.tick - this.eIncenseTick[s] < CLOUD_PULSE_TICKS) continue;
-      const def = ENEMIES[this.eType[s]];
-      // Newest first, so the credit goes to the newest cloud covering the enemy.
-      for (let i = pulsing.length - 1; i >= 0; i--) {
-        const c = pulsing[i];
-        if (distToCylinder(c.x, c.y, c.z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > CLOUD_RADIUS) continue;
-        hits.push([s, c.owner.connected ? c.owner.index : -1, c.x, c.y]);
-        this.eIncenseTick[s] = this.tick;
-        break;
-      }
-    }
-    // Applied after the scan: a kill removes the enemy from the active list.
-    for (const [s, source, x, y] of hits) this.damageEnemy(s, CLOUD_DAMAGE, source, CLOUD_DAMAGE, x, y);
+    // Cloud shapes, worn clouds and their pulses live with the Heretic's talents (classes-heretic.md §3).
+    this.talents.heretic.updateClouds();
   }
 
   // ------------------------------------------------------------------ enemies
