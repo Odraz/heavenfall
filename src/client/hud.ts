@@ -96,6 +96,7 @@ export class Hud {
   private readonly itemSlots: Array<{ box: HTMLDivElement; icon: HTMLImageElement; count: HTMLDivElement }>;
   private readonly hpFill: HTMLDivElement;
   private readonly shieldFill: HTMLDivElement;
+  private readonly cutFill: HTMLDivElement;
   private readonly hpText: HTMLDivElement;
   private readonly wallet: HTMLDivElement;
   private readonly walletCount: HTMLSpanElement;
@@ -368,6 +369,8 @@ export class Hud {
     this.hpBar = el('div', 'hp-bar', hp);
     this.hpFill = el('div', 'hp-fill', this.hpBar);
     this.shieldFill = el('div', 'shield-fill', this.hpBar);
+    this.cutFill = el('div', 'hp-cut', this.hpBar);
+    this.cutFill.hidden = true;
     // Wrath of Dis (classes-fallen.md `a.cap`): the red-iron ring's fill toward its eruption, along the bar's foot.
     this.wrathFill = el('div', 'wrath-fill', this.hpBar);
     this.wrathFill.hidden = true;
@@ -545,8 +548,11 @@ export class Hud {
     this.wallet.setAttribute('aria-label', `Halos: ${value}`);
   }
 
-  setHp(hp: number, shield: number, maxHp: number): void {
-    const total = Math.max(maxHp, hp + shield);
+  setHp(hp: number, shield: number, maxHp: number, cut = 0): void {
+    // The bargain's cut stays visible as a dark segment at the bar's right end (game.md §9.6).
+    const total = Math.max(maxHp + cut, hp + shield + cut);
+    this.cutFill.hidden = cut <= 0;
+    this.cutFill.style.width = `${(cut / total) * 100}%`;
     this.hpFill.style.width = `${(Math.max(0, hp) / total) * 100}%`;
     this.hpFill.dataset.tier = hpTier(hp, maxHp);
     this.shieldFill.style.left = `${(Math.max(0, hp) / total) * 100}%`;

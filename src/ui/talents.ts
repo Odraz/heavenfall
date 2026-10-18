@@ -214,14 +214,24 @@ export function riteOverlay(o: RiteOverlayOptions): RiteOverlay {
   const message = el('div', 'message talent-message', panel);
   const footer = el('div', 'buttons talent-footer', panel);
   let offerId = 0;
-  button('Pass', footer, () => o.onPass(offerId), 'small secondary');
+  const title = panel.querySelector('.talent-title')!;
+  const pass = button('Pass', footer, () => o.onPass(offerId), 'small secondary');
   button('Close (Esc)', footer, o.onClose, 'small secondary');
   return {
     el: root,
     setMessage: (text) => { message.textContent = text; },
     show: (offer, pending) => {
       offerId = offer.offerId;
-      sub.textContent = `One of your talents until this run ends.${pending > 1 ? ` ${pending} offers wait.` : ''} Pass keeps your kit as it is.`;
+      const more = pending > 1 ? ` ${pending} offers wait.` : '';
+      title.textContent = offer.source === 'bargain' ? 'The Advocate’s bargain' : offer.source === 'sundial' ? 'The Sundial’s Rite' : offer.source === 'bell' ? 'A Rite of the Bell' : 'A Rite';
+      sub.textContent = offer.source === 'bargain'
+        ? `Every chest relic is yours, so the Advocate sells a Rite: it costs ${offer.price ?? 0} max HP until the run ends. Decline to keep your health.`
+        : offer.source === 'sundial'
+          ? offer.fallback ? 'No talent can be offered: seal the Gatekeeper before the Sundial goes dark for 6 halos instead.'
+            : 'Select one now. It becomes a Rite only if the Gatekeeper’s doors seal before 14:00; nothing is spent until then.'
+          : `One of your talents until this run ends.${more} Pass keeps your kit as it is.`;
+      pass.textContent = offer.source === 'bargain' ? 'Decline' : offer.source === 'sundial' ? 'Unselect' : 'Pass';
+      pass.hidden = offer.source === 'sundial' && !offer.selected;
       message.textContent = '';
       cards.replaceChildren();
       for (const card of offer.cards) {
@@ -235,8 +245,11 @@ export function riteOverlay(o: RiteOverlayOptions): RiteOverlay {
         el('div', 'rite-rule', c, n.rule);
         const notes = el('div', 'rite-notes', c);
         for (const line of cardNotes(o.classId, card)) el('div', '', notes, line);
-        const take = button('Take', c, () => o.onTake(offerId, card.id), 'small');
-        take.disabled = !card.ok;
+        const selected = offer.source === 'sundial' && offer.selected === card.id;
+        const label = offer.source === 'bargain' ? `Accept · −${offer.price ?? 0} max HP` : offer.source === 'sundial' ? (selected ? 'Selected' : 'Select') : 'Take';
+        const take = button(label, c, () => o.onTake(offerId, card.id), 'small');
+        take.disabled = !card.ok || selected;
+        if (selected) c.classList.add('selected');
       }
     },
   };

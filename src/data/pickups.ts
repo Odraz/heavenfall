@@ -3,6 +3,8 @@ export const COIN = 0, GOLD_HALO = 1, HEAL_MOTE = 2;
 export const ITEM_FIRST = 3, ITEM_LAST = 10, STRUCTURAL_FIRST = 11, PICKUP_KIND_COUNT = 16;
 /** The structural kinds R03 uses: the Chart (§5.4) and a clear reward's Rite page (§6.4). */
 export const CHART = 13, RITE_PAGE = 15;
+/** R6: St Peter's key on the floor (§6.5). */
+export const KEY = 11;
 /** A gold halo from a commander, a coin from a loot prop (game.md §6.1). */
 export const GOLD_HALO_VALUE = 6, PROP_COIN_VALUE = 3;
 /**

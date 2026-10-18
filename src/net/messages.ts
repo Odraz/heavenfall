@@ -63,6 +63,7 @@ export interface FloorSync {
   relicAreas?: RelicAreaState[];
   relicShots?: RelicShotState[];
   relicStates?: Array<Extract<GameEvent, { type: 'relicState' }>>;
+  route?: RouteState;
 }
 
 /** A relic floor area (items-relics.md §2.2): Usher's circle, the First Plea's rune or the Comb's rectangle. */
@@ -85,6 +86,8 @@ export interface FireState { playerId: number; cells: number[]; ends: number[] }
 export interface InventoryState {
 
   playerId: number; inventory: Inventory; wallet: number; sold: number; chart: boolean;
+  /** R6: owned and pawned relics, max HP after the bargain, and whether the bargain is still open. */
+  ownedRelics?: string[]; pawnedRelics?: string[]; maxHp?: number; bargainOpen?: boolean;
   nextRequestId: number; itemReadyTick: number; xp: number; runXp: number;
   featherUntil: number; sealUntil: number; itemsTried: ItemId[];
 }
@@ -99,7 +102,23 @@ export interface KitState {
 /** A Rite card as the host checked it now (§9.10): the reason when it is temporarily illegal. */
 export interface RiteCard { id: string; ok: boolean; reason: string; surrenders: string | null; replaces: string | null; dormant: string[] }
 /** A pending Rite offer: fixed card ids, rechecked after every accepted build change. */
-export interface RiteOffer { offerId: number; source: 'clear' | 'dev'; cards: RiteCard[] }
+export interface RiteOffer {
+  offerId: number; source: 'clear' | 'bell' | 'chest' | 'bargain' | 'sundial' | 'dev'; cards: RiteCard[];
+  /** The Sundial's selected card (it applies at a qualifying boss seal) and whether it is a pending halo fallback. */
+  selected?: string | null; fallback?: boolean;
+  /** The bargain's HP price, 0 for free offers. */
+  price?: number;
+}
+/** A personal relic offer (game.md §6.5, §9.6): two unowned chest relics, each with its dormancy note now. */
+export interface RelicOfferState { offerId: number; source: 'chest' | 'bargain'; price: number; cards: Array<{ id: string; note: string | null }> }
+/** The floor's shared route state (§6.5): the key's holder, whether it opened the chest, and the chest. */
+export interface RouteState {
+  keyHolder: number; keyUsed: boolean;
+  chest: { x: number; y: number; z: number; room: number; open: boolean } | null;
+  /** The two Bells of Judgment (§4.12): hidden until their room clears, then available, pending (rung, in countdown) or spent. */
+  bells: BellState[];
+}
+export interface BellState { room: number; x: number; y: number; z: number; state: 'hidden' | 'available' | 'pending' | 'spent' }
 /** Talent effects for every client's VFX, bounded per root action. `pts` are x, y, z triples (pairs of them for arcs). */
 export type TalentFxKind = 'frost' | 'spark' | 'clay' | 'nail' | 'sheep' | 'recoil' | 'split' | 'potter' | 'sicarius' | 'knownGround'
   | 'ranks' | 'kindle' | 'brand' | 'wormwood' | 'fireRing' | 'charge' | 'shove' | 'underfoot' | 'redIron' | 'wrath' | 'land' | 'crash'
@@ -147,6 +166,10 @@ export type GameEvent =
   /** One of Them hides or shows a player (everyone sees the silhouette). */
   | { type: 'hidden'; playerId: number; hidden: boolean }
   | { type: 'riteOffers'; playerId: number; offers: RiteOffer[]; rites: number }
+  | { type: 'relicOffers'; playerId: number; offers: RelicOfferState[]; open: number }
+  | { type: 'route'; state: RouteState }
+  /** The bargain was paid: that player's max HP for the rest of the run, and the cut. */
+  | { type: 'bargain'; playerId: number; maxHp: number; cut: number }
   | { type: 'victoryState'; state: VictoryState }
   | { type: 'itemUsed'; actionId: number; playerId: number; item: ItemId; first: boolean; instance: ItemEffect | null; x: number; y: number; z: number }
   | { type: 'itemEffectActivated'; effect: ItemEffect }
@@ -221,6 +244,12 @@ export type CtrlMessage =
   | { type: 'interact'; runId: string; requestId: number; sourceId: number }
   /** Take a Rite card or Pass (§9.10). */
   | { type: 'rite'; runId: string; requestId: number; offerId: number; choice: string | 'pass' }
+  /** Take a relic card, or Pass (the chest) / decline (the bargain). */
+  | { type: 'relicChoice'; runId: string; requestId: number; offerId: number; choice: string | 'pass' }
+  /** Equip two relics at the Advocate (§9.6). */
+  | { type: 'relics'; runId: string; requestId: number; relics: [string | null, string | null] }
+  /** Open the Advocate's bargain or the Sundial's Rite offer. */
+  | { type: 'advocateOffer'; runId: string; requestId: number; offer: 'bargain' | 'sundial' }
   /** A whole learned allocation and Q/E assignment from the Advocate's view (§9.5, §9.6). */
   | { type: 'advocate'; runId: string; requestId: number; talents: string[]; q: string; e: string }
   | FloorSync

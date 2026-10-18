@@ -8,6 +8,7 @@ import { button, el } from './menus';
 import { COMBOS, COMBO_IDS, RELICS, RELIC_IDS, activeCombo, relicEffect, type ComboId, type RelicId } from '../data/relics';
 import { RELIC_ART } from '../client/itemArt';
 import { attachTooltip } from './tooltip';
+import type { RelicOfferState } from '../net/messages';
 
 const RARITY_NAMES = { common: 'Common', rare: 'Rare', legendary: 'Legendary' } as const;
 
@@ -134,4 +135,83 @@ export function relicPanel(o: RelicPanelOptions): RelicPanel {
       accepted = [equipped[0], equipped[1]]; draft = [...accepted]; draw();
     },
   };
+}
+
+// ------------------------------------------------------------------ relic offers (§6.5, §9.6)
+
+export interface RelicOfferOverlay {
+  el: HTMLElement;
+  show(offer: RelicOfferState, pending: number, maxHp: number): void;
+  setMessage(text: string): void;
+}
+
+/**
+ * A relic offer: the chest's two cards with Take and Pass, or the bargain's with Accept and Decline and
+ * the HP price stated plainly. Esc closes the view and keeps the same cards.
+ */
+export function relicOfferOverlay(o: { onTake: (offerId: number, id: string) => void; onPass: (offerId: number) => void; onClose: () => void }): RelicOfferOverlay {
+  const root = el('div', 'talent-overlay');
+  const panel = el('div', 'panel rite-panel', root);
+  const title = el('h2', 'talent-title', panel, 'The Reliquary');
+  const sub = el('div', 'rite-sub', panel);
+  const cards = el('div', 'rite-cards', panel);
+  const message = el('div', 'message talent-message', panel);
+  const footer = el('div', 'buttons talent-footer', panel);
+  let offerId = 0;
+  const pass = button('Pass', footer, () => o.onPass(offerId), 'small secondary');
+  button('Close (Esc)', footer, o.onClose, 'small secondary');
+  return {
+    el: root,
+    setMessage: (text) => { message.textContent = text; },
+    show: (offer, pending, maxHp) => {
+      offerId = offer.offerId;
+      const bargain = offer.source === 'bargain';
+      title.textContent = bargain ? 'The Advocate’s bargain' : 'The Reliquary';
+      sub.textContent = bargain
+        ? `“A second relic, for a part of you. You will have it back if you win.” Costs ${offer.price} max HP until the run ends (${maxHp} → ${maxHp - offer.price}). The relic is yours only if the Gatekeeper falls.`
+        : `One relic, yours to keep.${pending > 1 ? ` ${pending} offers wait.` : ''} Pass leaves the chest without one.`;
+      pass.textContent = bargain ? 'Decline' : 'Pass';
+      message.textContent = '';
+      cards.replaceChildren();
+      for (const card of offer.cards) {
+        const id = card.id as RelicId, r = RELICS[id];
+        const c = el('div', `rite-card relic-offer-card ${r.rarity}`, cards);
+        const head = el('div', 'rite-head', c);
+        const img = el('img', 'talent-icon', head); img.src = RELIC_ART[id]; img.alt = '';
+        const text = el('div', '', head);
+        el('div', 'rite-tree', text, `${RARITY_NAMES[r.rarity]} · ${r.trigger}`);
+        el('div', 'rite-name', text, r.name);
+        el('div', 'rite-rule', c, r.rule);
+        const notes = el('div', 'rite-notes', c);
+        el('div', '', notes, r.numbers);
+        if (card.note) el('div', '', notes, `${card.note} · For another build or character`);
+        const combo = COMBOS[r.combo];
+        el('div', '', notes, `Combo with ${RELICS[combo.a === id ? combo.b : combo.a].name}: ${combo.name}`);
+        button(bargain ? `Accept · −${offer.price} max HP` : 'Take', c, () => o.onTake(offerId, id), 'small');
+      }
+    },
+  };
+}
+
+/** The Advocate's view (§9.6): Talents, Relics, the bargain and, while the Sundial is lit, its Rite. */
+export function advocateHub(o: { bargain: boolean; sundial: string | null; onTalents: () => void; onRelics: () => void; onBargain: () => void; onSundial: () => void; onClose: () => void }): { el: HTMLElement; setMessage(text: string): void } {
+  const root = el('div', 'talent-overlay');
+  const panel = el('div', 'panel advocate-panel', root);
+  el('h2', 'talent-title', panel, 'The Advocate');
+  el('div', 'rite-sub', panel, 'Hell’s counsel in the appeal of the damned speaks through the grille.');
+  const list = el('div', 'advocate-list', panel);
+  const row = (name: string, line: string, action: () => void, enabled = true): void => {
+    const b = button('', list, action, 'advocate-row');
+    el('span', 'advocate-row-name', b, name);
+    el('span', 'advocate-row-line', b, line);
+    b.disabled = !enabled;
+  };
+  row('Talents', 'Learn, respec and assign Q and E.', o.onTalents);
+  row('Relics', 'Equip two relics, pawned ones included.', o.onRelics);
+  row('The bargain', o.bargain ? 'A second relic for 30% of your max HP, kept if you win.' : 'Your bargain for this floor is settled.', o.onBargain, o.bargain);
+  row('The Sundial', o.sundial ?? 'The Sundial has gone dark.', o.onSundial, o.sundial !== null);
+  const message = el('div', 'message talent-message', panel);
+  const footer = el('div', 'buttons talent-footer', panel);
+  button('Close (Esc)', footer, o.onClose, 'small secondary');
+  return { el: root, setMessage: (text) => { message.textContent = text; } };
 }

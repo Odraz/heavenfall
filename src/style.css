@@ -483,6 +483,15 @@ body {
   background: linear-gradient(#9fd2ff, #3b8fe0);
 }
 
+/* The Advocate's bargain: the max HP pawned until the run ends, dark at the bar's right end (§9.6). */
+.hp-cut {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(135deg, var(--soot) 0 4px, var(--danger-deep) 4px 6px);
+}
+
 .hp-text {
   padding-left: 6px;
   font: 600 18px/1 var(--display-font);
@@ -1048,7 +1057,7 @@ div.weapon-swing {
 .remaining {
   position: absolute;
   right: 0;
-  top: 224px;
+  top: 290px;
   padding: 6px 24px 6px 64px;
   background: linear-gradient(to left, rgba(18, 13, 12, 0.75) 60%, transparent);
   font: 600 18px/1.2 var(--display-font);
@@ -3027,4 +3036,84 @@ div.weapon-swing {
 .relic-combo-name {
   font: 700 14px/1.2 var(--display-font);
   color: var(--ivory);
+}
+
+.relic-offer-card.rare {
+  border-color: #6fa4e8;
+}
+
+.relic-offer-card.legendary {
+  border-color: var(--gold);
+}
+
+/* The Advocate's view (rogue game.md §9.6): one row per thing it offers. */
+.advocate-panel {
+  width: min(560px, 100%);
+}
+
+.advocate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.advocate-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 14px;
+  text-align: left;
+  color: var(--parchment);
+  background: var(--well-deep);
+  border: 2px solid var(--rim-deep);
+  cursor: pointer;
+}
+
+.advocate-row:disabled {
+  color: var(--parchment-faint);
+  border-color: var(--well);
+  cursor: default;
+}
+
+.advocate-row-name {
+  font: 700 17px/1.2 var(--display-font);
+  color: var(--ivory);
+}
+
+.advocate-row:disabled .advocate-row-name {
+  color: var(--parchment-faint);
+}
+
+.advocate-row-line {
+  font: 13px/1.35 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Under the minimap (rogue game.md §5.1): the key's holder and the lit Sundial, in fixed rows. */
+.route-line {
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 24px 4px 48px;
+  background: linear-gradient(to left, var(--hud-band) 60%, transparent);
+  font: 600 16px/1.2 var(--display-font);
+  color: var(--ivory);
+  text-shadow: 0 1px 2px #000;
+}
+
+.key-line {
+  top: 220px;
+}
+
+.sundial-line {
+  top: 254px;
+  color: var(--gold);
+}
+
+.route-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
 }

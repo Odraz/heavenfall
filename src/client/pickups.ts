@@ -1,12 +1,12 @@
 /** R2 world pickup projection. Only complete snapshots create/remove visible entities. */
 import * as THREE from 'three';
-import { CHART, COIN, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, ITEM_LAST, PICKUP_CAP, PICKUP_KIND_COUNT, RITE_PAGE, type PickupRecord } from '../data/pickups';
+import { CHART, COIN, GOLD_HALO, HEAL_MOTE, ITEM_FIRST, ITEM_LAST, KEY, PICKUP_CAP, PICKUP_KIND_COUNT, RITE_PAGE, type PickupRecord } from '../data/pickups';
 import type { FloorSync } from '../net/messages';
 import type { Snapshot } from '../net/protocol';
 import type { GameMap } from '../sim/map';
 import type { Atlas } from '../render/atlas';
 import { ITEM_IDS } from '../data/items';
-import { ITEM_ART, PAGE_ART, CHART_ART } from './itemArt';
+import { ITEM_ART, PAGE_ART, CHART_ART, KEY_ART } from './itemArt';
 
 export class PickupProjection {
   readonly records = new Map<number, { pickup: PickupRecord; tick: number }>();
@@ -48,7 +48,7 @@ export class PickupView {
       transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false }), PICKUP_CAP);
     this.glows.count = 0; this.glows.frustumCulled = false; this.glows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.group.add(this.glows);
-    for (const kind of [...Array.from({ length: ITEM_LAST + 1 }, (_, i) => i), CHART, RITE_PAGE]) {
+    for (const kind of [...Array.from({ length: ITEM_LAST + 1 }, (_, i) => i), KEY, CHART, RITE_PAGE]) {
       let geometry: THREE.BufferGeometry;
       let material: THREE.MeshBasicMaterial;
       if (kind <= HEAL_MOTE) {
@@ -61,7 +61,7 @@ export class PickupView {
         material = new THREE.MeshBasicMaterial({ map: atlas.texture, alphaTest: 0.02, transparent: true,
           depthWrite: false, color: kind === COIN ? 0xc5b987 : kind === GOLD_HALO ? 0xdfc584 : 0xffffff });
       } else {
-        const art = kind === RITE_PAGE ? PAGE_ART : kind === CHART ? CHART_ART : ITEM_ART[ITEM_IDS[kind - ITEM_FIRST]];
+        const art = kind === RITE_PAGE ? PAGE_ART : kind === CHART ? CHART_ART : kind === KEY ? KEY_ART : ITEM_ART[ITEM_IDS[kind - ITEM_FIRST]];
         const texture = new THREE.TextureLoader().load(art);
         texture.colorSpace = THREE.SRGBColorSpace;
         geometry = new THREE.PlaneGeometry(0.8, 0.8);

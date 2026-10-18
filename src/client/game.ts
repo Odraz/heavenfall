@@ -138,6 +138,14 @@ import type { RiteOffer } from '../net/messages';
 import { advocateSprite } from './advocate';
 import { RelicView } from './relicView';
 import { RelicHud } from './relicHud';
+import { RouteView } from './routeView';
+import { advocateHub, relicOfferOverlay, relicPanel, type RelicOfferOverlay, type RelicPanel } from '../ui/relics';
+import { relicDormancy } from '../sim/relicUse';
+import { resolveKit } from '../sim/build';
+import { SOURCE_BELL_FIRST, SOURCE_CHEST } from '../sim/route';
+import { KEY } from '../data/pickups';
+import type { RelicOfferState, RouteState } from '../net/messages';
+import type { RelicId } from '../data/relics';
 import { STREAK_NAMES } from '../sim/streaks';
 
 const BENCH_TURN_RATE = 0.3;
@@ -350,7 +358,9 @@ export class Game {
   /** The players' names and classes by id, kept current during the game (M8 §6.2). */
   private roster: RosterEntry[];
   private readonly classId: ClassId;
-  private readonly maxHp: number;
+  private maxHp: number;
+  /** The bargain's cut from max HP, drawn dark at the HP bar's end (game.md §9.6). */
+  private hpCut = 0;
   private readonly scene: GameScene;
   private readonly canvas: HTMLCanvasElement;
   private readonly input: Input;
@@ -375,7 +385,11 @@ export class Game {
   private readonly talents: TalentClient;
   /** From the floor checkpoint; until then nothing is treated as a free-points development run. */
   private progressionEnabled = true;
-  private overlayView: { kind: 'rite'; view: RiteOverlay; offerId: number } | { kind: 'talents'; view: TalentPanel } | null = null;
+  private overlayView: { kind: 'rite'; view: RiteOverlay; offerId: number } | { kind: 'talents'; view: TalentPanel }
+    | { kind: 'relicOffer'; view: RelicOfferOverlay; offerId: number } | { kind: 'relics'; view: RelicPanel } | { kind: 'advocate'; view: { el: HTMLElement; setMessage(text: string): void } } | null = null;
+  /** R6: the key, the chest and the Bells; the own pending relic offers. */
+  private readonly routeView: RouteView;
+  private relicOffers: RelicOfferState[] = [];
   private readonly ritePip = document.createElement('div');
   private readonly party: PartyFrames | null;
   private paused = false;
@@ -622,6 +636,8 @@ export class Game {
     this.relicView = new RelicView(this.map, this.vfx);
     this.scene.scene.add(this.relicView.group);
     this.relicHud = new RelicHud(this.hud.root);
+    this.routeView = new RouteView(this.map, o.textures.fx.beam);
+    this.scene.scene.add(this.routeView.group);
     this.shopHint.className = 'shop-hint'; this.hud.root.append(this.shopHint);
     this.victoryHint.className = 'victory-hint'; this.hud.root.append(this.victoryHint);
     this.party = o.singleplayer ? null : new PartyFrames(this.hud.leftColumn, this.hud.ownFrame);
@@ -738,10 +754,12 @@ export class Game {
     }
     else if (code === 'KeyF' && !this.dead) {
       const sourceId = this.shop.target(this.player.body, this.player.yaw, this.player.pitch);
+      const route = sourceId < 0 ? this.routeView.target(this.player.body) : null;
       if (sourceId >= 0) this.o.transport.sendCtrl({ type: 'interact', runId: this.o.runId, requestId: this.nextRequestId++, sourceId });
-      // The Advocate within 2.5 m, else the oldest pending Rite (rogue game.md §1.4, §9.6).
-      else if (this.advocateInReach()) this.openTalents();
-      else if (this.talents.offers.length) this.openRite(this.talents.offers[0]);
+      else if (route) this.o.transport.sendCtrl({ type: 'interact', runId: this.o.runId, requestId: this.nextRequestId++, sourceId: route.kind === 'chest' ? SOURCE_CHEST : SOURCE_BELL_FIRST + route.room });
+      // The Advocate within 2.5 m, else the oldest pending offer (rogue game.md §1.4, §9.6).
+      else if (this.advocateInReach()) this.openAdvocate();
+      else this.openPendingOffer();
     }
     else if (code === 'KeyQ') this.pressAbility('Q', performance.now());
     else if (code === 'KeyE') this.pressAbility('E', performance.now());
@@ -1111,6 +1129,84 @@ export class Game {
     if (e.code === 'Escape' || (e.code === 'KeyT' && !e.repeat && this.overlayView?.kind === 'talents')) { e.preventDefault(); e.stopImmediatePropagation(); this.closeOverlay(); }
   };
 
+  /** The host's route state: the chest and Bells drawn, the key holder named under the minimap. */
+  private applyRoute(state: RouteState): void {
+    this.routeView.set(state);
+    this.relicHud.setKey(state.keyHolder >= 0 ? this.roster.find((r) => r.id === state.keyHolder)?.name ?? `Player ${state.keyHolder}` : null);
+  }
+
+  /** F with nothing to interact with: the oldest free Rite offer, else a waiting chest offer (§9.10). */
+  private openPendingOffer(): void {
+    const free = this.talents.offers.find((o) => o.source !== 'sundial' && o.source !== 'bargain');
+    if (free) { this.openRite(free); return; }
+    const chest = this.relicOffers.find((o) => o.source === 'chest');
+    if (chest) this.openRelicOffer(chest);
+  }
+
+  /** The host published the own relic offers: refresh an open one, or open the one it asks for. */
+  private relicOfferEvent(open: number): void {
+    const view = this.overlayView;
+    if (view?.kind === 'relicOffer') {
+      const current = this.relicOffers.find((o) => o.offerId === view.offerId);
+      if (current) view.view.show(current, this.relicOffers.length, this.maxHp + this.hpCut);
+      else this.closeOverlay();
+    } else if (open && !this.dead && (!view || view.kind === 'advocate')) {
+      const offer = this.relicOffers.find((o) => o.offerId === open);
+      if (offer) this.openRelicOffer(offer);
+    }
+  }
+
+  private openRelicOffer(offer: RelicOfferState): void {
+    if (this.over) return;
+    const view = relicOfferOverlay({
+      onTake: (offerId, id) => this.o.transport.sendCtrl({ type: 'relicChoice', runId: this.o.runId, requestId: this.nextRequestId++, offerId, choice: id }),
+      onPass: (offerId) => this.o.transport.sendCtrl({ type: 'relicChoice', runId: this.o.runId, requestId: this.nextRequestId++, offerId, choice: 'pass' }),
+      onClose: () => this.closeOverlay(),
+    });
+    this.openOverlay(view.el);
+    this.overlayView = { kind: 'relicOffer', view, offerId: offer.offerId };
+    view.show(offer, this.relicOffers.length, this.maxHp + this.hpCut);
+  }
+
+  /** The Advocate's view (§9.6): Talents, Relics, the bargain and the Sundial's Rite while it is lit. */
+  private openAdvocate(): void {
+    if (this.over) return;
+    const sundialLeft = this.sundialLeft();
+    const view = advocateHub({
+      bargain: this.inventory?.bargainOpen ?? true,
+      sundial: sundialLeft > 0 ? `Seal the Gatekeeper within ${Math.floor(sundialLeft / 60)}:${String(Math.floor(sundialLeft % 60)).padStart(2, '0')} for a Rite of your choice.` : null,
+      onTalents: () => this.openTalents(),
+      onRelics: () => this.openRelics(false),
+      onBargain: () => this.o.transport.sendCtrl({ type: 'advocateOffer', runId: this.o.runId, requestId: this.nextRequestId++, offer: 'bargain' }),
+      onSundial: () => this.o.transport.sendCtrl({ type: 'advocateOffer', runId: this.o.runId, requestId: this.nextRequestId++, offer: 'sundial' }),
+      onClose: () => this.closeOverlay(),
+    });
+    this.openOverlay(view.el);
+    this.overlayView = { kind: 'advocate', view };
+  }
+
+  /** Seconds the Sundial still burns, from the host's run clock (0 when dark); stage 3 lights it. */
+  private sundialLeft(): number {
+    return 0;
+  }
+
+  /** The Relics view: at the Advocate (or anywhere in a development run) it equips; otherwise it reads. */
+  private openRelics(readOnly: boolean): void {
+    if (this.over) return;
+    const inv = this.inventory, own = this.talents.own();
+    const kit = resolveKit(this.classId, { talents: own?.learned ?? [], rites: own?.rites ?? [], q: this.talents.ability(this.localId, 'Q'), e: this.talents.ability(this.localId, 'E') });
+    const view = relicPanel({
+      title: readOnly ? 'Relics' : 'The Advocate · Relics',
+      owned: inv?.ownedRelics ?? [], pawned: inv?.pawnedRelics ?? [], equipped: this.relicHud.equipped(),
+      dormancy: (id: RelicId) => relicDormancy(id, kit, { allies: [], items: (inv?.inventory ?? []).flatMap((s) => (s ? [s.item] : [])), areas: new Set(), hazard: true }),
+      readOnly, note: readOnly ? 'Equip relics with the Advocate in the Confessional.' : 'A pawned relic is yours only if the Gatekeeper falls.',
+      onApply: (relics) => this.o.transport.sendCtrl({ type: 'relics', runId: this.o.runId, requestId: this.nextRequestId++, relics }),
+      onClose: () => this.closeOverlay(),
+    });
+    this.openOverlay(view.el);
+    this.overlayView = { kind: 'relics', view };
+  }
+
   /** A pending Rite's cards (§9.10): Take, Pass, or Esc to keep it for later. */
   private openRite(offer: RiteOffer): void {
     if (this.over) return;
@@ -1210,6 +1306,7 @@ export class Game {
       this.applyOwnKit();
       this.itemView.sync(msg.itemEffects ?? []);
       this.relicView.sync(msg.relicAreas ?? [], msg.relicShots ?? []);
+      if (msg.route) this.applyRoute(msg.route);
       const relics = msg.relicStates?.find((r) => r.playerId === this.localId);
       if (relics) this.relicHud.setRelics(relics.relics, relics.combo, relics.ready);
       const inventory = msg.inventories?.find(p => p.playerId === this.localId);
@@ -1259,6 +1356,7 @@ export class Game {
       this.hud.centerText(hasCatalog(this.classId) ? `Level ${level} — learn it at the Confessional` : `Level ${level}`, 3000, performance.now()); this.sounds.levelUp();
     }
     this.inventory = state; this.nextRequestId = Math.max(this.nextRequestId, state.nextRequestId);
+    if (state.maxHp !== undefined) { this.hpCut = Math.max(0, CLASSES[this.classId].hp - state.maxHp); this.maxHp = state.maxHp; }
     this.hud.setInventory(state); this.shop.update(state);
   }
   private setVictory(state: VictoryState): void {
@@ -1293,7 +1391,17 @@ export class Game {
       case 'relicArea': if (e.end) this.relicView.endArea(e.area.id); else this.relicView.area(e.area); break;
       case 'relicShot': if (e.end) this.relicView.endShot(e.shot.id, e, now); else this.relicView.shot(e.shot); break;
       case 'relicFx': this.relicView.fx(e, now); break;
-      case 'relicState': if (e.playerId === this.localId) this.relicHud.setRelics(e.relics, e.combo, e.ready); break;
+      case 'relicState':
+        if (e.playerId !== this.localId) break;
+        this.relicHud.setRelics(e.relics, e.combo, e.ready);
+        if (this.overlayView?.kind === 'relics') this.overlayView.view.setEquipped(e.relics, this.inventory?.ownedRelics, this.inventory?.pawnedRelics);
+        break;
+      case 'route': this.applyRoute(e.state); break;
+      case 'relicOffers':
+        if (e.playerId !== this.localId) break;
+        this.relicOffers = e.offers;
+        this.relicOfferEvent(e.open);
+        break;
       case 'streak':
         if (e.playerId === this.localId) this.relicHud.streakTier(e.tier, e.count, now);
         else this.hud.addChat(this.roster.find((r) => r.id === e.playerId)?.name ?? `Player ${e.playerId}`, `${STREAK_NAMES[e.tier]} (${e.count})`, now);
@@ -1779,7 +1887,7 @@ export class Game {
         this.ownRevive = progress;
         this.hud.setOwnRevive(progress);
       } else this.ownRevive = 0;
-      this.hud.setHp(me.hp, me.shield, this.maxHp);
+      this.hud.setHp(me.hp, me.shield, this.maxHp, this.hpCut);
       this.hud.setWallet(me.wallet);
       this.ownHp = me.hp;
       // The steady blue edge while the own shield is up (M12 §6.1).
@@ -2624,6 +2732,8 @@ export class Game {
     this.drawBillboards(now, ents, enemyZ);
     this.pickups.update(this.snaps.newest, this.scene.camera, this.snaps.estimatedTick(now));
     const rewardIds = this.o.floor ? rewardPickupIds([...this.pickups.model.records.values()].map((r) => r.pickup), this.o.floor, this.map) : new Set<number>();
+    // St Peter's key lies in its own narrow gold beam (§6.5).
+    for (const r of this.pickups.model.records.values()) if (r.pickup.kind === KEY) rewardIds.add(r.pickup.id);
     this.rewardShafts.update(now, this.snaps.newest, rewardIds, (x, y) => this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)], this.scene.camera.position);
     const itemTick = this.snaps.estimatedTick(simNow);
     this.itemView.update(itemTick);
@@ -2664,8 +2774,9 @@ export class Game {
     this.hud.setLowEdge(this.lowHp.edge(now));
     this.hud.setCooldowns(this.displayedCooldown('Q', simNow), this.talents.ownDef(this.classId, 'Q').cooldown, this.displayedCooldown('E', simNow), this.talents.ownDef(this.classId, 'E').cooldown);
     this.talents.update(now, this.snaps.out, [...this.snaps.playersOut, { id: this.localId, x: p.body.x, y: p.body.y, z: p.body.z, dead: this.dead }], (x, y) => this.rooms.roomAt(x, y));
-    this.ritePip.hidden = !this.talents.offers.length || this.over;
-    this.ritePip.textContent = `Rite waiting · F (${this.talents.offers.length})`;
+    const waiting = this.talents.offers.filter((o) => o.source !== 'sundial' && o.source !== 'bargain').length + this.relicOffers.filter((o) => o.source === 'chest').length;
+    this.ritePip.hidden = !waiting || this.over;
+    this.ritePip.textContent = `Choice waiting · F (${waiting})`;
     this.hud.update(now);
     this.mapView.open = this.input.mapHeld && !this.over && !this.paused && !this.hud.chatOpen;
     debugState.mapHeld = this.mapView.open;
@@ -2678,7 +2789,10 @@ export class Game {
     });
     mapPlayers.push({ id: this.localId, name: this.roster.find((r) => r.id === this.localId)!.name, classId: this.classId, x: p.body.x, y: p.body.y, yaw: p.yaw });
     this.mapView.update(now, mapPlayers, ownRoom);
-    this.shopHint.textContent = this.dead || this.paused ? '' : this.shop.label(this.shop.target(this.player.body, this.player.yaw, this.player.pitch), this.inventory);
+    const shopTarget = this.shop.target(this.player.body, this.player.yaw, this.player.pitch);
+    this.shopHint.textContent = this.dead || this.paused ? '' : shopTarget >= 0 ? this.shop.label(shopTarget, this.inventory)
+      : this.routeView.label(this.routeView.target(this.player.body), this.localId) || (this.advocateInReach() ? 'The Advocate · F: talents, relics, the bargain' : '');
+    this.routeView.update(this.scene.camera.position);
     debugState.fps = this.fps.frame(now);
     debugState.simMs = this.o.host ? this.o.host.simMs(now) : 0;
     debugState.director = this.o.host?.director ?? null;
@@ -3093,6 +3207,7 @@ export class Game {
     this.shop.dispose();
     this.itemView.dispose();
     this.relicView.dispose();
+    this.routeView.dispose();
     this.bench?.dispose();
     this.scene.dispose();
     this.o.root.replaceChildren();

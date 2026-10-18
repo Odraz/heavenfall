@@ -14,7 +14,13 @@ import { mulberry32 } from './rng';
 import type { InteractionResult } from './shop';
 import type { Simulation, SimPlayer } from './sim';
 
-interface Offer { offerId: number; source: RiteOffer['source']; cards: string[] }
+interface Offer {
+  offerId: number; source: RiteOffer['source']; cards: string[];
+  /** The Sundial's chosen card, pending until a qualifying boss seal (game.md §6.8); `fallback` when it began with no node or at the cap. */
+  selected?: string | null; fallback?: boolean;
+}
+/** Free earned sources: their initial exhaustion or a later cap pays the six-halo fallback once (§9.10). */
+const FREE: ReadonlySet<RiteOffer['source']> = new Set(['clear', 'bell', 'chest', 'dev']);
 
 export class Rites {
   private nextOffer = 1;
@@ -26,7 +32,12 @@ export class Rites {
 
   constructor(private readonly sim: Simulation) {}
 
-  private playerKey(p: SimPlayer): number {
+  /** A run-global increasing offer id, shared by Rite and relic offers (§9.10). */
+  newOfferId(): number {
+    return this.nextOffer++;
+  }
+
+  playerKey(p: SimPlayer): number {
     let ordinal = this.ordinals.get(p.offerKey);
     if (ordinal === undefined) { ordinal = this.nextOrdinal++; this.ordinals.set(p.offerKey, ordinal); }
     return fmix32((this.sim.seed ^ Math.imul(ordinal + 1, 0x9e3779b1)) >>> 0);
@@ -92,19 +103,80 @@ export class Rites {
       sim.emit(p.id, { type: 'interactionResult', requestId: 0, accepted: true, reason: `No Rite to learn · ${RITE_FALLBACK_HALOS} halos` });
       return;
     }
-    const offerId = this.nextOffer++;
-    const cards = drawCards(eligible, mulberry32(fmix32((sim.seed ^ offerId ^ this.playerKey(p)) >>> 0)));
+    this.open(p, source, eligible);
+  }
+
+  private open(p: SimPlayer, source: RiteOffer['source'], eligible: readonly string[], extra: Partial<Offer> = {}): number {
+    const sim = this.sim, offerId = this.nextOffer++;
+    const cards = eligible.length ? drawCards(eligible, mulberry32(fmix32((sim.seed ^ offerId ^ this.playerKey(p)) >>> 0))) : [];
     const list = this.pending.get(p.offerKey) ?? [];
-    list.push({ offerId, source, cards });
+    list.push({ offerId, source, cards, ...extra });
     this.pending.set(p.offerKey, list);
     this.publish(p, offerId);
+    return offerId;
+  }
+
+  /** A paid bargain Rite (§9.6): only a legal node with a free slot; never a halo fallback. Returns its offer id or 0. */
+  openPaid(p: SimPlayer, source: 'bargain'): number {
+    if (!hasCatalog(p.classId) || p.build.rites.length >= MAX_RITES) return 0;
+    const eligible = eligibleRites(p.classId, p.build, this.context(p));
+    return eligible.length ? this.open(p, source, eligible) : 0;
+  }
+
+  /**
+   * The Sundial's offer at the Advocate while it is lit (§6.8): two cards to select from, applied only at a
+   * qualifying boss seal. With no node or a full hand it is a pending six-halo fallback, paid only then.
+   */
+  openSundial(p: SimPlayer): number {
+    const existing = this.offerOf(p, 'sundial');
+    if (existing) { this.publish(p, existing); return existing; }
+    const eligible = p.build.rites.length >= MAX_RITES || !hasCatalog(p.classId) ? [] : eligibleRites(p.classId, p.build, this.context(p));
+    return this.open(p, 'sundial', eligible, { selected: null, fallback: !eligible.length });
+  }
+
+  /** The id of the player's pending offer from a source, or 0. */
+  offerOf(p: SimPlayer, source: RiteOffer['source']): number {
+    return (this.pending.get(p.offerKey) ?? []).find((o) => o.source === source)?.offerId ?? 0;
+  }
+
+  /**
+   * The boss sealed: each pending Sundial offer resolves (§6.8). Before 14:00 a selected legal card
+   * becomes a Rite (within the cap), a stored fallback pays six halos; otherwise, or after 14:00, the
+   * offer just disappears. Every record keeps its offer until here, disconnected ones included.
+   */
+  resolveSundial(qualified: boolean, records: readonly SimPlayer[]): void {
+    for (const p of records) {
+      const list = this.pending.get(p.offerKey);
+      const offer = list?.find((o) => o.source === 'sundial');
+      if (!list || !offer) continue;
+      list.splice(list.indexOf(offer), 1);
+      if (!list.length) this.pending.delete(p.offerKey);
+      if (!qualified) { if (p.connected) this.publish(p); continue; }
+      // A stored no-node fallback, or an offer whose owner has since filled the hand, pays six halos once;
+      // a selected card still legal becomes the Rite; an unselected or since-illegal card gives nothing.
+      if (offer.fallback || p.build.rites.length >= MAX_RITES) p.wallet += RITE_FALLBACK_HALOS;
+      else if (offer.selected) {
+        const r = checkRite(p.classId, p.build, this.context(p), offer.selected);
+        if (r.ok) this.sim.talents.setBuild(p, r.build);
+      }
+      if (p.connected) { this.publish(p); this.sim.publishInventory(p); }
+    }
+  }
+
+  /** Victory closes every unaccepted bargain Rite (§9.6). */
+  closeBargains(): void {
+    for (const [key, list] of this.pending) {
+      const kept = list.filter((o) => o.source !== 'bargain');
+      if (kept.length) this.pending.set(key, kept); else this.pending.delete(key);
+    }
   }
 
   /** The player's pending offers with each card rechecked now; `open` asks the client to show that one. */
   publish(p: SimPlayer, open = 0): void {
     const ctx = this.context(p);
     const offers: RiteOffer[] = (this.pending.get(p.offerKey) ?? []).map((o) => ({
-      offerId: o.offerId, source: o.source,
+      offerId: o.offerId, source: o.source, selected: o.selected ?? null, fallback: !!o.fallback,
+      price: o.source === 'bargain' ? this.sim.bargain.price(p) : 0,
       cards: o.cards.map((id): RiteCard => {
         const r = checkRite(p.classId, p.build, ctx, id);
         return r.ok ? { id, ok: true, reason: '', surrenders: r.surrenders, replaces: r.replaces, dormant: r.dormant }
@@ -124,10 +196,32 @@ export class Rites {
     // A click arriving after the seal is refused without losing the offer.
     if (sim.activePhase === PHASE_COMBAT) return { accepted: false, reason: 'Choose after the fight' };
     const settle = () => { list.splice(list.indexOf(offer), 1); if (!list.length) this.pending.delete(p.offerKey); };
-    if (choice === 'pass') { settle(); this.publish(p); return { accepted: true, reason: 'Passed: your kit stays as it is' }; }
+    if (offer.source === 'sundial') {
+      // Selecting only marks the card; it applies at a qualifying seal (§6.8). Pass unselects.
+      if (choice === 'pass') { offer.selected = null; this.publish(p); return { accepted: true, reason: 'No Sundial Rite selected' }; }
+      if (!offer.cards.includes(choice)) return { accepted: false, reason: 'Not on this offer' };
+      const check = checkRite(p.classId, p.build, this.context(p), choice);
+      if (!check.ok) return { accepted: false, reason: check.reason };
+      offer.selected = choice; this.publish(p);
+      return { accepted: true, reason: `Sundial Rite chosen: ${talentNode(choice)!.name} · it applies if the Gatekeeper is sealed before 14:00` };
+    }
+    if (choice === 'pass') {
+      settle(); if (offer.source === 'bargain') this.sim.bargain.declined(p);
+      this.publish(p); return { accepted: true, reason: offer.source === 'bargain' ? 'You refused the bargain' : 'Passed: your kit stays as it is' };
+    }
     if (!offer.cards.includes(choice)) return { accepted: false, reason: 'Not on this offer' };
+    if (offer.source === 'bargain') {
+      // A paid Rite at the cap or with an illegal card is refused with no HP charge (§9.10).
+      if (p.build.rites.length >= MAX_RITES) return { accepted: false, reason: 'Four Rites already: decline instead' };
+      const check = checkRite(p.classId, p.build, this.context(p), choice);
+      if (!check.ok) return { accepted: false, reason: check.reason };
+      const why = this.sim.bargain.paidRite(p);
+      if (why) return { accepted: false, reason: why };
+      settle(); sim.talents.setBuild(p, check.build); this.publish(p); sim.publishInventory(p);
+      return { accepted: true, reason: `Rite: ${talentNode(choice)!.name} · paid with ${this.sim.bargain.price(p)} max HP` };
+    }
     // A free earned source resolved at the cap settles its fallback once (§9.10).
-    if (p.build.rites.length >= MAX_RITES) {
+    if (p.build.rites.length >= MAX_RITES && FREE.has(offer.source)) {
       settle(); p.wallet += RITE_FALLBACK_HALOS; sim.publishInventory(p); this.publish(p);
       return { accepted: true, reason: `Four Rites already · ${RITE_FALLBACK_HALOS} halos` };
     }
@@ -149,9 +243,19 @@ export class Rites {
     return (this.pending.get(p.offerKey)?.length ?? 0) > 0;
   }
 
-  /** Whether a connected human still holds an unsettled offer: the exit waits for it (§11.6). */
+  /** Free earned offers still unsettled (a bargain or Sundial offer never holds anything). */
+  private hasFree(p: SimPlayer): boolean {
+    return (this.pending.get(p.offerKey) ?? []).some((o) => FREE.has(o.source));
+  }
+
+  /** Whether a connected human still holds an unsettled free offer: the exit waits for it (§11.6). */
   anyPending(): boolean {
-    return this.sim.players.some((p) => p.connected && !p.bot && this.hasPending(p));
+    return this.sim.players.some((p) => p.connected && !p.bot && this.hasFree(p));
+  }
+
+  /** The oldest free earned offer, for F with nothing else to interact with. */
+  oldestFree(p: SimPlayer): number {
+    return (this.pending.get(p.offerKey) ?? []).find((o) => FREE.has(o.source))?.offerId ?? 0;
   }
 }
 

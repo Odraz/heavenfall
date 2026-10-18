@@ -5,7 +5,7 @@
  * strip and the banner never move other HUD elements.
  */
 import { COMBOS, RELICS, effectName, relicEffect, type ComboId, type RelicId } from '../data/relics';
-import { RELIC_ART } from './itemArt';
+import { KEY_ART, RELIC_ART, SUNDIAL_ART } from './itemArt';
 import { STREAK_NAMES } from '../sim/streaks';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, parent?: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
@@ -30,6 +30,8 @@ export class RelicHud {
   private readonly bannerName: HTMLDivElement;
   private readonly bannerSub: HTMLDivElement;
   private bannerAt = -Infinity;
+  private readonly keyLine: HTMLDivElement;
+  private readonly sundialLine: HTMLDivElement;
   private tierShown = false;
 
   constructor(root: HTMLElement) {
@@ -42,6 +44,10 @@ export class RelicHud {
       return { box, icon };
     });
     this.combo = el('div', 'relic-combo', this.strip);
+    this.keyLine = el('div', 'route-line key-line', root);
+    this.keyLine.hidden = true;
+    this.sundialLine = el('div', 'route-line sundial-line', root);
+    this.sundialLine.hidden = true;
     this.banner = el('div', 'streak-banner', root);
     this.bannerName = el('div', 'streak-name', this.banner);
     this.bannerSub = el('div', 'streak-sub', this.banner);
@@ -66,6 +72,29 @@ export class RelicHud {
     });
     this.combo.textContent = combo ? COMBOS[combo as ComboId]?.name ?? '' : '';
     this.combo.hidden = !combo;
+  }
+
+  /** Under the minimap: who carries St Peter's key (§6.5), or nothing while nobody does. */
+  setKey(holder: string | null): void {
+    this.keyLine.hidden = holder === null;
+    this.keyLine.replaceChildren();
+    if (holder === null) return;
+    const img = el('img', 'route-icon', this.keyLine); img.src = KEY_ART; img.alt = '';
+    el('span', '', this.keyLine, `Key · ${holder}`);
+  }
+
+  /** Under the minimap while the Sundial is lit (§6.8): the time left to seal the Gatekeeper; null hides it. */
+  setSundial(seconds: number | null): void {
+    this.sundialLine.hidden = seconds === null;
+    if (seconds === null) return;
+    const s = Math.max(0, Math.ceil(seconds));
+    if (!this.sundialLine.firstChild) { const img = el('img', 'route-icon', this.sundialLine); img.src = SUNDIAL_ART; img.alt = ''; el('span', '', this.sundialLine); }
+    this.sundialLine.lastChild!.textContent = `Sundial · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  /** The equipped pair as last published. */
+  equipped(): [string | null, string | null] {
+    return [this.relics[0], this.relics[1]];
   }
 
   /** Each slot's sweep at the estimated host tick: dark over the part of its cooldown still to run. */

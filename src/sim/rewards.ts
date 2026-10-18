@@ -14,6 +14,7 @@ import {
   ITEM_FIRST,
   REWARD_GOLD_VALUE,
   RITE_PAGE,
+  KEY,
   itemDrop,
   type PickupRecord,
 } from '../data/pickups';
@@ -213,6 +214,8 @@ export class Rewards {
       sim.publishInventory(p);
     } else if (drop.kind === CHART && !p.bot) {
       this.revealChart();
+    } else if (drop.kind === KEY) {
+      if (!sim.route.takeKey(p)) return false;
     } else if (drop.kind === RITE_PAGE && !p.bot) {
       const recipients = this.pageRecipients.get(drop.id);
       if (!recipients?.delete(p.offerKey)) return false;
@@ -261,6 +264,11 @@ export class Rewards {
       sim.roomState(i);
     });
     for (const other of sim.players) sim.publishInventory(other);
+  }
+
+  /** The humans (offer keys) in a room's latest seal. */
+  recipients(ai: number): ReadonlySet<string> {
+    return this.roomRecipients.get(ai) ?? new Set();
   }
 
   /** Whether a lying Rite page still owes a connected human: the exit waits for it (§11.6). */

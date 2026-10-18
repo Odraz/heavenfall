@@ -9,6 +9,9 @@ import type { HereticCloud } from './talentsHeretic';
 import { Rites } from './rites';
 import { Relics, type VictimStates } from './relics';
 import { Streaks } from './streaks';
+import { RelicOffers } from './relicOffers';
+import { Route, SOURCE_CHEST } from './route';
+import { Bargain } from './bargain';
 import { isRelicId } from '../data/relics';
 import { BASE_ABILITIES, BINDER as BINDER_NUMBERS, DEV_BUILDS, devBuildOrder, FALLEN as FALLEN_NUMBERS, talentNode } from '../data/talents';
 import { resolveKit, runBuildError, type Kit, type RunBuild } from './build';
@@ -187,6 +190,12 @@ export interface SimPlayer {
   /** Equipped relics for this run (items-relics.md §2.1) and the profile's owned relics, pawns included. */
   relics: [string | null, string | null];
   ownedRelics: string[];
+  /** Relics claimed from the chest this run (saved at once), pawned at the bargain (saved at victory), and the saved loadout. */
+  claimedRelics: string[];
+  pawnedRelics: string[];
+  savedRelics: [string | null, string | null];
+  /** Max HP taken by the Advocate's bargain until the run ends (game.md §9.6). */
+  bargainCut: number;
   /** Each relic id's cooldown end tick: retained through death, reconnect and re-equip (§2.4 rule 7). */
   relicCd: Record<string, number>;
   /** The kill streak (game.md §10): count, last counted kill's tick, best this run, own kills and assists counted. */
@@ -560,11 +569,16 @@ export class Simulation {
   readonly rites = new Rites(this);
   readonly relics = new Relics(this);
   readonly streaks = new Streaks(this);
+  readonly relicOffers = new RelicOffers(this);
+  readonly route = new Route(this);
+  readonly bargain = new Bargain(this);
   /** The input slot (or `item`) of the damage `damageEnemy` is resolving: native and direct-item hits may start relics. */
   hitCtx: Root['input'] | 'item' | null = null;
   /** Set while relic damage resolves: its kills never start another relic or talent proc (§2.4 rule 3). */
   private procFree = false;
   private readonly devRelics: string[];
+  /** Offer keys already healed by the Confessional's sanctuary this floor (§9.6). */
+  private readonly sanctuary = new Set<string>();
   /** The simulation seed, for the stable Rite offer generator (§9.10). */
   readonly seed: number;
   private readonly devBuild: string | undefined;
@@ -890,7 +904,7 @@ export class Simulation {
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
       progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)),
-      kits: this.players.map((p) => this.talents.kitState(p)), talentAreas: this.talents.checkpoint(), fires: this.talents.fireCheckpoint(), itemEffects: this.items.records(), ...this.relics.sync(this.players), victory: this.victory ? { ...this.victory.state } : null,
+      kits: this.players.map((p) => this.talents.kitState(p)), talentAreas: this.talents.checkpoint(), fires: this.talents.fireCheckpoint(), itemEffects: this.items.records(), ...this.relics.sync(this.players), route: this.route.state(), victory: this.victory ? { ...this.victory.state } : null,
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
       pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), commanderCasts: this.commanders.checkpoint(), watchmanAims: this.watchmen.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
   }
@@ -1051,7 +1065,7 @@ export class Simulation {
       .map((id) => (id && owned.includes(id) && !init.bot ? id : null)) as [string | null, string | null];
     if (equip[0] && equip[0] === equip[1]) equip[1] = null;
     const p: SimPlayer = {
-      relics: equip, ownedRelics: owned, relicCd: {}, streak: 0, streakTick: 0, bestStreak: 0, streakKills: 0, assists: 0,
+      relics: equip, ownedRelics: owned, relicCd: {}, claimedRelics: [], pawnedRelics: [], savedRelics: [equip[0], equip[1]], bargainCut: 0, streak: 0, streakTick: 0, bestStreak: 0, streakKills: 0, assists: 0,
       build: base, kit: resolveKit(init.classId, base),
       id: init.id,
       index: init.id,
@@ -1171,7 +1185,7 @@ export class Simulation {
     // Everyone learns the joiner's kit; the joiner gets every kit from its floor checkpoint.
     this.talents.setBuild(p, p.build);
     if (this.rites.hasPending(p)) this.rites.publish(p);
-    if (!p.bot) this.relics.publish(p, 'all');
+    if (!p.bot) { this.relics.publish(p, 'all'); this.relicOffers.publish(p); }
     return p;
   }
 
@@ -1186,6 +1200,7 @@ export class Simulation {
     this.items.clearOwner(playerId);
     this.relics.ownerGone(playerId);
     this.streaks.end(p);
+    this.route.playerGone(p);
     this.talents.playerGone(p);
     p.featherUntil = p.sealUntil = 0; p.shield = 0; p.speed = CLASSES[p.classId].speed;
     if (retain) this.retainedPlayers.set(playerId, { player: p, tick: this.tick });
@@ -1294,11 +1309,17 @@ export class Simulation {
     const at = stairPoints(this.map, this.floor.boss)[0];
     this.victory = new VictoryExit(this.tick, this.timeMs, at); this.admissionClosed = true;
     for (const p of [...this.players, ...[...this.retainedPlayers.values()].map(r => r.player)]) {
+      // Pawned relics are now owned, and the run's relic slots become the saved loadout (§9.6, §13.5).
+      for (const id of p.pawnedRelics) if (!p.ownedRelics.includes(id)) p.ownedRelics.push(id);
+      p.savedRelics = [p.relics[0], p.relics[1]];
       if (p.dead) {
         p.dead = false; p.hp = p.maxHp * .5; p.shield = 0; p.revive = 0; p.revivers = 0;
         if (p.connected) { this.emit('all', { type: 'playerRevived', playerId: p.id }); this.teleport(p, at.x, at.y, at.z); }
       } else if (p.connected) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * .3);
     }
+    // Victory closes every unaccepted bargain, including one viewed earlier (§9.6).
+    this.relicOffers.closeBargains(); this.rites.closeBargains();
+    for (const p of this.players) if (!p.bot) { this.relicOffers.publish(p); this.rites.publish(p); }
     this.items.clearAll(); this.relics.clearAll(); for (const s of [...this.projectiles]) this.removeProjectile(s);
     this.clouds.length = 0; this.fieldUntil = 0;
     for (let i = 0; i < this.rooms.length; i++) { this.rooms[i].queue.length = 0; this.rooms[i].squad = this.rooms[i].watch = null; this.items.clearCombat(i); }
@@ -1308,7 +1329,7 @@ export class Simulation {
   }
   private updateExit(): void {
     if (!this.victory || this.result) return;
-    if (this.victory.update(this.tick, this.players, this.rewards.pagesPending() || this.rites.anyPending())) this.finish('victory');
+    if (this.victory.update(this.tick, this.players, this.rewards.pagesPending() || this.rites.anyPending() || this.route.choicesPending())) this.finish('victory');
     else if (this.tick % 30 === 0) this.emit('all', { type: 'victoryState', state: { ...this.victory.state } });
   }
 
@@ -1325,6 +1346,13 @@ export class Simulation {
       const humans = this.players.filter((p) => this.livingTargetable(p) && !p.bot);
       const inside = humans.filter((p) => insideRect(a, p.x, p.y) && !this.onDoor(p));
       if (inside.length > 0) this.visitRoom(ai);
+      // The Confessional's sanctuary heals each human to full on their first entry this floor (§9.6).
+      if (a.kind === 'confessional') for (const p of inside) {
+        if (this.sanctuary.has(p.offerKey)) continue;
+        this.sanctuary.add(p.offerKey);
+        p.hp = p.maxHp;
+        this.emit(p.id, { type: 'interactionResult', requestId: 0, accepted: true, reason: 'Sanctuary · healed to full' });
+      }
       if (st.phase === PHASE_IDLE && inside.length > 0) {
         if (a.kind === 'breach' || a.kind === 'pardoner' || a.kind === 'confessional') {
           st.phase = PHASE_CLEARED;
@@ -1705,6 +1733,7 @@ export class Simulation {
       this.rewards.roomCleared(ai);
       this.items.clearCombat(ai);
       this.relics.roomCleared(ai);
+      this.route.roomCleared(ai);
       this.talents.roomCleared();
       for (const { player } of this.retainedPlayers.values()) if (player.dead) {
         player.dead = false; player.hp = player.maxHp * 0.5; player.revive = 0; player.shield = 0;
@@ -2402,6 +2431,7 @@ export class Simulation {
 
   inventoryState(p: SimPlayer): InventoryState {
     return { playerId: p.id, inventory: copyInventory(p.inventory), wallet: p.wallet, sold: p.sold, chart: this.rewards.chartRevealed,
+      ownedRelics: [...p.ownedRelics], pawnedRelics: [...p.pawnedRelics], maxHp: p.maxHp, bargainOpen: this.bargain.available(p),
       nextRequestId: p.requests.next, itemReadyTick: p.itemReadyTick, featherUntil: p.featherUntil, sealUntil: p.sealUntil, itemsTried: [...p.itemsTried], xp: saturatingAdd(p.xpBase, Math.floor(p.runXp)), runXp: Math.floor(p.runXp) };
   }
   publishInventory(p: SimPlayer): void { this.emit(p.id, { type: 'inventory', state: this.inventoryState(p) }); }
@@ -2466,11 +2496,72 @@ export class Simulation {
     if (p) this.rites.dev(p);
   }
 
-  /** A shop request (rogue game.md §6.6), executed once per request ID like every scoped request. */
+  /** A relic card taken, or the chest passed / the bargain declined (§6.5, §9.6), once per request ID. */
+  relicChoice(playerId: number, requestId: number, offerId: number, choice: unknown): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot || typeof choice !== 'string' || !Number.isInteger(offerId)) return;
+    const result = p.requests.execute(requestId, `relic:${offerId}`, (): InteractionResult => {
+      const offer = this.relicOffers.find(p, offerId);
+      if (!offer) return { accepted: false, reason: 'That offer is settled' };
+      if (!p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
+      if (this.activePhase === PHASE_COMBAT) return { accepted: false, reason: 'Choose after the fight' };
+      if (offer.source === 'bargain') return this.bargain.chooseRelic(p, offer, choice);
+      const chest = this.route.chest;
+      if (!chest || !this.route.inReach(p, chest, 0.6)) return { accepted: false, reason: 'Choose at the Reliquary' };
+      return this.relicOffers.chooseChest(p, offer, choice);
+    });
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale choice; try again' }) });
+  }
+
+  /**
+   * Equips two relics at the Advocate (§8.1, §9.6): owned or pawned, distinct, outside combat, in reach.
+   * Development runs without saved progression may equip anywhere. A pawned relic changes the run's slot
+   * but not the saved one until victory.
+   */
+  equipRelics(playerId: number, requestId: number, relics: unknown): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot) return;
+    const result = p.requests.execute(requestId, 'relics', (): InteractionResult => {
+      if (!Array.isArray(relics) || relics.length !== 2 || relics.some((r) => r !== null && typeof r !== 'string')) return { accepted: false, reason: 'Malformed relics' };
+      const [a, b] = relics as [string | null, string | null];
+      if (!p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
+      if (this.progressionEnabled && !this.advocateInReach(p)) return { accepted: false, reason: 'Equip relics with the Advocate in the Confessional' };
+      if (this.activePhase === PHASE_COMBAT) return { accepted: false, reason: 'Not while the doors are sealed' };
+      const usable = (id: string | null) => id === null || p.ownedRelics.includes(id) || p.pawnedRelics.includes(id);
+      if (!usable(a) || !usable(b) || (a && a === b)) return { accepted: false, reason: 'Equip owned relics, each once' };
+      this.relics.equip(p, [a, b]);
+      // The saved loadout takes owned relics only; a pawn's slot keeps its saved relic until victory.
+      p.savedRelics = [a, b].map((id, i) => (id && p.pawnedRelics.includes(id) && !p.ownedRelics.includes(id) ? p.savedRelics[i] : id)) as [string | null, string | null];
+      if (p.savedRelics[0] && p.savedRelics[0] === p.savedRelics[1]) p.savedRelics[1] = null;
+      return { accepted: true, reason: 'Your relics are set' };
+    });
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale relics; try again' }) });
+    this.relics.publish(p);
+    this.publishInventory(p);
+  }
+
+  /** The Advocate's bargain or Sundial offer opened from its card (§6.8, §9.6). */
+  advocateOffer(playerId: number, requestId: number, offer: unknown): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot || (offer !== 'bargain' && offer !== 'sundial')) return;
+    const result = p.requests.execute(requestId, `offer:${offer}`, (): InteractionResult => {
+      if (offer === 'bargain') return this.bargain.open(p);
+      return this.sundialOffer(p);
+    });
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale request; try again' }) });
+  }
+
+  /** Stage 3 fills the Sundial; until it is lit nothing is offered. */
+  sundialOffer(p: SimPlayer): InteractionResult {
+    void p;
+    return { accepted: false, reason: 'The Sundial has gone dark' };
+  }
+
+  /** A shop, chest or Bell request (rogue game.md §6.5, §6.6, §4.12), executed once per request ID like every scoped request. */
   interact(playerId: number, requestId: number, sourceId: number): void {
     const p = this.playerById(playerId);
     if (!p || p.bot) return;
-    const result = p.requests.execute(requestId, `shop:${sourceId}`, () => interactShop(this, p, sourceId));
+    const result = p.requests.execute(requestId, `shop:${sourceId}`, () => sourceId === SOURCE_CHEST ? this.route.interactChest(p) : interactShop(this, p, sourceId));
     this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale interaction; try again' }) });
     this.publishInventory(p);
   }
@@ -2616,6 +2707,7 @@ export class Simulation {
     this.talents.playerGone(p);
     this.relics.ownerGone(p.id);
     this.streaks.end(p);
+    this.route.playerGone(p);
     this.emit('all', { type: 'playerDied', playerId: p.id });
     // Blasphemy ends when the Fallen dies (§7.2).
     if (p.classId === 'fallen') for (let k = 0; k < this.activeCount; k++) this.eTauntUntil[this.active[k]] = 0;

@@ -68,7 +68,8 @@ function checkpoint(force = false): void {
   for (const r of records.records.values()) {
     if (r.closed) continue;
     const p = sim.players.find(p => p.id === r.playerId) ?? sim.retainedPlayers.get(r.playerId)?.player;
-    if (p) { r.runXp = p.runXp; r.wallet = p.wallet; r.inventory = copyInventory(p.inventory); r.itemsTried = [...p.itemsTried]; r.build = { talents: [...p.build.talents], q: learnedSlot(p, 'Q'), e: learnedSlot(p, 'E') }; }
+    if (p) { r.runXp = p.runXp; r.wallet = p.wallet; r.inventory = copyInventory(p.inventory); r.itemsTried = [...p.itemsTried]; r.build = { talents: [...p.build.talents], q: learnedSlot(p, 'Q'), e: learnedSlot(p, 'E') };
+      r.claimed = [...p.claimedRelics]; r.pawned = [...p.pawnedRelics]; r.savedRelics = [p.savedRelics[0], p.savedRelics[1]]; }
     if (!r.committed || r.closed) continue;
     if (sim.won && r.outcome !== 'victory') send(r.playerId, { type: 'progress', state: records.settle(r, 'victory') });
     else if (sim.result) send(r.playerId, { type: 'progress', state: records.settle(r, sim.result) });
@@ -210,6 +211,18 @@ function playerCtrl(playerId: number, msg: CtrlMessage): void {
   }
   if (msg.type === 'rite') {
     if (sim && msg.runId === runId) { sim.rite(playerId, msg.requestId, msg.offerId, msg.choice); checkpoint(true); flushEvents(); }
+    return;
+  }
+  if (msg.type === 'relicChoice') {
+    if (sim && msg.runId === runId) { sim.relicChoice(playerId, msg.requestId, msg.offerId, msg.choice); checkpoint(true); flushEvents(); }
+    return;
+  }
+  if (msg.type === 'relics') {
+    if (sim && msg.runId === runId) { sim.equipRelics(playerId, msg.requestId, msg.relics); checkpoint(true); flushEvents(); }
+    return;
+  }
+  if (msg.type === 'advocateOffer') {
+    if (sim && msg.runId === runId) { sim.advocateOffer(playerId, msg.requestId, msg.offer); checkpoint(true); flushEvents(); }
     return;
   }
   if (msg.type === 'advocate') {

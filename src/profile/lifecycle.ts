@@ -3,6 +3,7 @@ import type { ClassId } from '../data/classes';
 import { copyInventory, emptyInventory, isItemId, ITEMS, type Inventory, type ItemId } from '../data/items';
 import { levelForXp, saturatingAdd, validateProfile, type Outcome, type Profile } from './model';
 import { learnedError } from '../sim/build';
+import { isRelicId } from '../data/relics';
 
 export interface Admission {
   runId: string; admissionId: number; progressionEnabled: boolean;
@@ -14,6 +15,8 @@ export interface ProgressState {
   inventory: Inventory; itemsTried: ItemId[]; outcome: Outcome | null;
   /** The learned build after accepted Advocate edits (§9.6); absent from older hosts. */
   talents?: string[]; q?: string; e?: string;
+  /** R6: relics this run adds to the profile (chest claims; pawns at victory) and the saved relic loadout. */
+  relics?: string[]; equipped?: [string | null, string | null];
 }
 /** Returns a candidate stake for a mandatory durable save; it never mutates accepted memory. */
 export function stakeProfile(current: Profile, admission: Admission): Profile {
@@ -63,6 +66,13 @@ export function applyProgress(current: Profile, state: ProgressState): Profile |
     character.talents = [...state.talents]; character.q = state.q; character.e = state.e;
   }
   p.codex.itemsTried = [...new Set([...p.codex.itemsTried, ...state.itemsTried])];
+  // Relics are ownership, never removed by a settlement: claims add at once, pawns with the victory.
+  if (Array.isArray(state.relics)) for (const id of state.relics) if (isRelicId(id) && !p.relics.includes(id)) p.relics.push(id);
+  if (Array.isArray(state.equipped) && state.equipped.length === 2) {
+    const [a, b] = state.equipped;
+    const ok = (id: unknown) => id === null || (typeof id === 'string' && p.relics.includes(id));
+    if (ok(a) && ok(b) && !(a && a === b)) character.relics = [a, b];
+  }
   if (state.outcome) {
     const firstVictory = state.outcome === 'victory' && last?.outcome !== 'victory';
     if (firstVictory) {

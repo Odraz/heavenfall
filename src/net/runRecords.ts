@@ -10,6 +10,8 @@ export interface RunRecord {
   closed: boolean; outcome: Outcome | null; revision: number; presentAtStart: boolean;
   /** The learned build to save (§13.2): Advocate edits change it; Rites never enter it. */
   build: { talents: string[]; q: string; e: string };
+  /** R6: chest relics claimed (saved at once), pawns (saved at victory) and the saved relic loadout. */
+  claimed: string[]; pawned: string[]; savedRelics: [string | null, string | null];
 }
 /** Host-owned records survive transport removal. Their IDs and accepted bases never come from a resume. */
 export class RunRecords {
@@ -28,7 +30,8 @@ export class RunRecords {
     const r: RunRecord = { profileId: profile.id, playerId, classId, admissionId: this.nextAdmission++, xpBase: profile.characters[classId].xp,
       runXp: 0, carried: copyInventory(profile.inventory), inventory: copyInventory(profile.inventory), wallet: 0, sold: 0,
       itemsTried: [], committed: false, connected: false, closed: false, outcome: null, revision: 0, presentAtStart: atStart,
-      build: { talents: [...profile.characters[classId].talents], q: profile.characters[classId].q, e: profile.characters[classId].e } };
+      build: { talents: [...profile.characters[classId].talents], q: profile.characters[classId].q, e: profile.characters[classId].e },
+      claimed: [], pawned: [], savedRelics: [profile.characters[classId].relics[0], profile.characters[classId].relics[1]] };
     this.records.set(profile.id, r); return this.admission(r);
   }
   admission(r: RunRecord): Admission {
@@ -49,7 +52,13 @@ export class RunRecords {
     return { runId: this.runId, admissionId: r.admissionId, progressionEnabled: this.progressionEnabled, admissionCommitted: r.committed,
       classId: r.classId, heaven: this.heaven, revision: ++r.revision, xp: saturatingAdd(r.xpBase, Math.floor(r.runXp)), runXp: Math.floor(r.runXp),
       inventory: copyInventory(r.inventory), itemsTried: [...r.itemsTried], outcome: r.outcome,
-      talents: [...r.build.talents], q: r.build.q, e: r.build.e };
+      talents: [...r.build.talents], q: r.build.q, e: r.build.e,
+      // Pawns become owned, and their slots saved, only with the victory settlement (§9.6, §13.5).
+      relics: r.outcome === 'victory' ? [...r.claimed, ...r.pawned] : [...r.claimed],
+      equipped: r.outcome === 'victory' ? this.victoryLoadout(r) : [r.savedRelics[0], r.savedRelics[1]] };
+  }
+  private victoryLoadout(r: RunRecord): [string | null, string | null] {
+    return [r.savedRelics[0], r.savedRelics[1]];
   }
   settle(r: RunRecord, outcome: Outcome): ProgressState {
     if (r.outcome !== 'victory' && !r.closed) {
