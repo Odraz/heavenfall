@@ -5,6 +5,7 @@ import { BAND, SLOT } from '../gen/transform';
 import { PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN } from '../net/protocol';
 import { drawMapIcon, ICON_PATHS, roomIcon, type MapIcon } from './mapIcons';
 import type { ClientRooms } from './rooms';
+import type { RouteState } from '../net/messages';
 import { rewardLabel } from '../gen/rewards';
 import { drawRewardIcon, loadRewardArt } from './rewardIcon';
 
@@ -39,6 +40,10 @@ export class MapView {
   private cursor = { x: 294, y: 294 };
   private lastSummary = '';
   private lastDraw = -Infinity;
+  /** R6: rooms whose Bell still waits to be rung, whether the key lies in its room, and the Reliquary opened. */
+  private bells = new Set<number>();
+  private keyLying = false;
+  private chestOpen = false;
 
   constructor(private readonly parent: HTMLElement, private readonly model: ClientRooms, private readonly floor: Floor | null, private readonly localId: number) {
     this.mini.width = this.mini.height = 200;
@@ -48,7 +53,7 @@ export class MapView {
     this.full.className = 'full-map'; this.full.hidden = true;
     const layout = document.createElement('div'); layout.className = 'map-layout';
     const side = document.createElement('div'); side.className = 'map-legend';
-    this.legend.width = 190; this.legend.height = 380;
+    this.legend.width = 190; this.legend.height = 404;
     this.names.className = 'map-player-names';
     side.append(this.legend, this.names); layout.append(this.plate, side); this.full.append(layout);
     this.roomsList.className = 'map-room-list'; this.roomsList.setAttribute('aria-label', 'Known rooms');
@@ -58,6 +63,11 @@ export class MapView {
     void loadRewardArt().then(() => this.drawLegend());
     void document.fonts?.load(`700 16px ${DISPLAY_FONT}`).then(() => this.drawLegend());
     document.addEventListener('mousemove', this.mousemove);
+  }
+
+  setRoute(state: RouteState, keyLying: boolean): void {
+    this.bells = new Set(state.bells.filter((b) => b.state === 'available').map((b) => b.room));
+    this.keyLying = keyLying; this.chestOpen = !!state.chest?.open;
   }
 
   set open(value: boolean) { this.full.hidden = !value; this.parent.classList.toggle('map-open', value); }
@@ -134,7 +144,12 @@ export class MapView {
       ctx.lineWidth = ownRoom === i ? 3 : 2; ctx.strokeStyle = ownRoom === i ? INK.own : INK.line; ctx.strokeRect(x, y, w, h);
       ctx.globalAlpha = st.knowledge === 1 ? 0.6 : 1;
       const room = this.model.map.rooms[i], size = full ? 40 : 16;
-      drawMapIcon(ctx, roomIcon(room, i === floor.reliquary), x + w / 2, y + h / 2, size, st.phase === PHASE_CLEARED);
+      // The key room shows the key while it lies there; an opened Reliquary greys out (§5.2).
+      const icon = i === floor.keyRoom && this.keyLying ? 'key' : roomIcon(room, i === floor.reliquary);
+      if (i === floor.reliquary && this.chestOpen) ctx.globalAlpha *= 0.45;
+      drawMapIcon(ctx, icon, x + w / 2, y + h / 2, size, st.phase === PHASE_CLEARED);
+      ctx.globalAlpha = st.knowledge === 1 ? 0.6 : 1;
+      if (this.bells.has(i) && st.phase === PHASE_CLEARED) drawMapIcon(ctx, 'bell', x + size * 0.35, y + size * 0.35, size * 0.6, true);
       if (room.secondary && i !== floor.reliquary) drawMapIcon(ctx, room.secondary, x + w - size / 4, y + h - size / 4, size / 2, st.phase === PHASE_CLEARED);
       if (room.kind === 'combat') drawRewardIcon(ctx, floor.rewards[i], x + size * 0.35, y + h - size * 0.35, size * 0.6);
     });
@@ -171,10 +186,10 @@ export class MapView {
     });
     const rewards = [{ kind: 'gold' }, { kind: 'item', item: 'balm' }, { kind: 'rite' }] as const;
     rewards.forEach((reward, i) => {
-      drawRewardIcon(ctx, reward, 16, 294 + i * 24, 20);
-      ctx.fillStyle = INK.line; ctx.fillText(['Halos', 'Consumable', 'Rite page'][i], 34, 299 + i * 24);
+      drawRewardIcon(ctx, reward, 16, 318 + i * 24, 20);
+      ctx.fillStyle = INK.line; ctx.fillText(['Halos', 'Consumable', 'Rite page'][i], 34, 323 + i * 24);
     });
-    ctx.fillStyle = INK.note; ctx.fillText('No mark: no clear reward', 4, 299 + 3 * 24);
+    ctx.fillStyle = INK.note; ctx.fillText('No mark: no clear reward', 4, 323 + 3 * 24);
   }
   dispose(): void {
     this.parent.classList.remove('map-open');

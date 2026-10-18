@@ -103,7 +103,7 @@ import { Input, MOUSE_SENSITIVITY } from './input';
 import { WADE_LAUNCH_MS, wadeCount, Wading } from './wading';
 import { ARC_SEGMENTS, arcPoint, StarAim, starLanding, walkableCells, type Landing, type StarAlly } from './fallingStarAim';
 import { HEAL_FADE_MS, HEAL_VIGNETTE, HURT_FADE_MS, hurtVignette, LowHp, SHIELD_EDGE, SHIELD_FADE_MS, SHIELD_GONE_FLASH, SHIELD_UP_FLASH } from './lowHp';
-import { audio, type LoopHandle } from '../audio/audio';
+import { audio, sfx, type LoopHandle } from '../audio/audio';
 import { SOUL_HEIGHT, SOUL_RADIUS } from '../sim/souls';
 import { pickAllyTarget } from './allyTarget';
 import { GameSounds } from './sounds';
@@ -1131,7 +1131,10 @@ export class Game {
 
   /** The host's route state: the chest and Bells drawn, the key holder named under the minimap. */
   private applyRoute(state: RouteState): void {
+    // A Bell rung: its toll, heard by everyone (rogue game.md §4.12).
+    for (const b of state.bells) if (b.state === 'pending' && this.routeView.state.bells.find((o) => o.room === b.room)?.state === 'available') sfx('bellToll', { x: b.x, y: b.y });
     this.routeView.set(state);
+    this.mapView.setRoute(state, state.keyHolder < 0 && !state.keyUsed && [...this.pickups.model.records.values()].some((r) => r.pickup.kind === KEY && r.pickup.room === this.o.floor?.keyRoom));
     this.relicHud.setKey(state.keyHolder >= 0 ? this.roster.find((r) => r.id === state.keyHolder)?.name ?? `Player ${state.keyHolder}` : null);
   }
 
@@ -1185,9 +1188,10 @@ export class Game {
     this.overlayView = { kind: 'advocate', view };
   }
 
-  /** Seconds the Sundial still burns, from the host's run clock (0 when dark); stage 3 lights it. */
+  /** Seconds the Sundial still burns, from the host's run clock (0 when dark) (§6.8). */
   private sundialLeft(): number {
-    return 0;
+    const r = this.routeView.state;
+    return r.sundial === 'lit' ? Math.max(0, (r.sundialTick - this.snaps.estimatedTick(performance.now())) / 30) : 0;
   }
 
   /** The Relics view: at the Advocate (or anywhere in a development run) it equips; otherwise it reads. */
@@ -2739,6 +2743,8 @@ export class Game {
     this.itemView.update(itemTick);
     this.relicView.update(itemTick);
     this.relicHud.update(itemTick, now);
+    const sundial = this.sundialLeft();
+    this.relicHud.setSundial(this.o.floor && sundial > 0 ? sundial : null);
     for (const [x, y, z] of this.featherTrails.step(now, (id) => id === this.localId ? (this.dead ? undefined : this.player.body) : this.playerPose(id))) this.particles.trailFeather(x, y, z);
     this.player.speed = CLASSES[this.classId].speed + (!this.dead && itemTick < (this.inventory?.featherUntil ?? 0) ? FEATHER_SPEED : 0);
     this.hud.setItemCooldown(this.inventory ? Math.max(0, this.inventory.itemReadyTick - itemTick) / 30 : 0);

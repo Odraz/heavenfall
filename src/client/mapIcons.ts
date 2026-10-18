@@ -17,6 +17,8 @@ export const ICON_PATHS = {
   elite: 'M12 1L15 8L23 9L17 14L19 23L12 18L5 23L7 14L1 9L9 8Z',
   hazard: 'M12 1Q17 8 14 12Q19 11 19 6Q26 20 12 23Q0 21 5 10Q6 15 9 15Q7 8 12 1Z',
   ground: 'M5 2L18 2L18 12L22 20L21 23L3 23L2 20L6 12ZM12 15L12 23',
+  // R6: a cleared room's Bell of Judgment, until it is rung (rogue game.md §5.2).
+  bell: 'M12 1L12 4M6 18Q6 6 12 4Q18 6 18 18ZM3 18L21 18M10 21A2 2 0 0 0 14 21',
 } as const;
 export type MapIcon = keyof typeof ICON_PATHS;
 const paths = new Map<MapIcon, Path2D>();

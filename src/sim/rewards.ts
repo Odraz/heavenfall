@@ -80,13 +80,21 @@ export class Rewards {
 
   constructor(private readonly sim: Simulation) {}
 
-  /** A room seals: record who fought in it and, for a combat room, fix its halo budget. */
-  roomSealed(ai: number): void {
+  /** A room seals: record who fought in it and, for a combat room, fix its halo budget. A Bell's wave drops no halos (§4.12). */
+  roomSealed(ai: number, bell = false): void {
     const sim = this.sim;
     const humans = sim.players.filter((p) => p.connected && !p.bot);
     this.roomRecipients.set(ai, new Set(humans.map((p) => p.offerKey)));
     const room = sim.map.rooms[ai];
     if (room.kind !== 'combat' || !room.shape || !room.band) return;
+    if (bell) {
+      // A separate encounter: its own mote cap, no halo budget, no commander gold.
+      this.moteDrops.delete(ai);
+      this.haloLedgers.set(ai, new HaloLedger(0, 1, 0));
+      this.eliteGold.set(ai, room.waves.map(() => 0));
+      this.elitePlaced.set(ai, room.waves.map(() => 0));
+      return;
+    }
     const party = sim.rooms[ai].partySize;
     const weight = room.waves.reduce((sum, w) => sum +
       HALO_WEIGHT[BLESSED] * scaleCount(w.blessed, party) +
@@ -220,7 +228,7 @@ export class Rewards {
       const recipients = this.pageRecipients.get(drop.id);
       if (!recipients?.delete(p.offerKey)) return false;
       // The page becomes this player's own Rite offer (§9.10).
-      sim.rites.grant(p, 'clear');
+      sim.rites.grant(p, this.bellPages.has(drop.id) ? 'bell' : 'clear');
       // A page stays while it still owes other humans their personal share.
       if (recipients.size) return false;
       this.pageRecipients.delete(drop.id);
@@ -253,6 +261,18 @@ export class Rewards {
     const drop = sim.pickups.drop(kind, ai, point[0] + 0.5, point[1] + 0.5, sim.tick, value);
     if (reward.kind === 'rite' && drop) this.pageRecipients.set(drop.id, new Set(this.roomRecipients.get(ai) ?? []));
   }
+
+  /** A Bell's wave cleared (§4.12): one Rite page on the reward spot for each human in its seal. */
+  bellCleared(ai: number): void {
+    const sim = this.sim, point = sim.map.rooms[ai].points?.reward;
+    if (!point) return;
+    const drop = sim.pickups.drop(RITE_PAGE, ai, point[0] + 0.5, point[1] + 0.5, sim.tick);
+    if (drop) this.pageRecipients.set(drop.id, new Set(this.roomRecipients.get(ai) ?? []));
+    this.bellPages.add(drop?.id ?? -1);
+  }
+
+  /** Rite pages a Bell left (their Rites name the Bell as the source). */
+  readonly bellPages = new Set<number>();
 
   /** The Chart (§5.4): every room becomes at least seen, for the whole party. */
   revealChart(): void {

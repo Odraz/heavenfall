@@ -17,7 +17,7 @@ const EYE = 1.6;
 
 export class RouteView {
   readonly group = new THREE.Group();
-  state: RouteState = { keyHolder: -1, keyUsed: false, chest: null, bells: [] };
+  state: RouteState = { keyHolder: -1, keyUsed: false, chest: null, bells: [], sundial: 'missed', sundialTick: 0 };
   private chest: THREE.Sprite | null = null;
   private readonly beam: { core: Ribbon; glow: Ribbon };
   private readonly closed: THREE.Texture;

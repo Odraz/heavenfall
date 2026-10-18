@@ -10,7 +10,7 @@ import { Rites } from './rites';
 import { Relics, type VictimStates } from './relics';
 import { Streaks } from './streaks';
 import { RelicOffers } from './relicOffers';
-import { Route, SOURCE_CHEST } from './route';
+import { Route, SOURCE_BELL_FIRST, SOURCE_CHEST } from './route';
 import { Bargain } from './bargain';
 import { isRelicId } from '../data/relics';
 import { BASE_ABILITIES, BINDER as BINDER_NUMBERS, DEV_BUILDS, devBuildOrder, FALLEN as FALLEN_NUMBERS, talentNode } from '../data/talents';
@@ -177,6 +177,8 @@ export interface SimOptions {
   devBuild?: string;
   /** Development relics for the human players (`relics=a,b`): owned and equipped, never with saved progression. */
   devRelics?: string[];
+  /** The run's Edicts (game.md §2.5), ids 1–5, fixed by `start`. */
+  edicts?: number[];
 }
 
 export interface SimEvent {
@@ -196,6 +198,8 @@ export interface SimPlayer {
   savedRelics: [string | null, string | null];
   /** Max HP taken by the Advocate's bargain until the run ends (game.md §9.6). */
   bargainCut: number;
+  /** The boss room sealed before the Sundial went dark (§6.8): the Mercy deed's condition. */
+  sundialQualified: boolean;
   /** Each relic id's cooldown end tick: retained through death, reconnect and re-equip (§2.4 rule 7). */
   relicCd: Record<string, number>;
   /** The kill streak (game.md §10): count, last counted kill's tick, best this run, own kills and assists counted. */
@@ -577,6 +581,8 @@ export class Simulation {
   /** Set while relic damage resolves: its kills never start another relic or talent proc (§2.4 rule 3). */
   private procFree = false;
   private readonly devRelics: string[];
+  /** The run's Edicts (§2.5), sorted ids 1–5; the Sentence is their count. */
+  readonly edicts: readonly number[];
   /** Offer keys already healed by the Confessional's sanctuary this floor (§9.6). */
   private readonly sanctuary = new Set<string>();
   /** The simulation seed, for the stable Rite offer generator (§9.10). */
@@ -821,6 +827,7 @@ export class Simulation {
     this.diagnostics = !!opts.diagnostics;
     this.devBuild = opts.devBuild;
     this.devRelics = this.progressionEnabled ? [] : (opts.devRelics ?? []).filter(isRelicId).slice(0, 2);
+    this.edicts = [...new Set((opts.edicts ?? []).filter((e) => Number.isInteger(e) && e >= 1 && e <= 5))].sort((a, b) => a - b);
     this.random = mulberry32(opts.seed);
     this.seed = opts.seed >>> 0;
     this.rooms = this.map.rooms.map((a, i) => ({
@@ -871,6 +878,7 @@ export class Simulation {
     this.hashItems = [new Int32Array(ENEMY_SLOTS), new Int32Array(ENEMY_SLOTS)];
     this.hashFill = new Int32Array(cells);
     this.eFreedTick.fill(-SLOT_REUSE_TICKS);
+    this.route.init();
   }
 
   /** Simulation time since the start, ms. */
@@ -1065,7 +1073,7 @@ export class Simulation {
       .map((id) => (id && owned.includes(id) && !init.bot ? id : null)) as [string | null, string | null];
     if (equip[0] && equip[0] === equip[1]) equip[1] = null;
     const p: SimPlayer = {
-      relics: equip, ownedRelics: owned, relicCd: {}, claimedRelics: [], pawnedRelics: [], savedRelics: [equip[0], equip[1]], bargainCut: 0, streak: 0, streakTick: 0, bestStreak: 0, streakKills: 0, assists: 0,
+      relics: equip, ownedRelics: owned, relicCd: {}, claimedRelics: [], pawnedRelics: [], savedRelics: [equip[0], equip[1]], bargainCut: 0, sundialQualified: false, streak: 0, streakTick: 0, bestStreak: 0, streakKills: 0, assists: 0,
       build: base, kit: resolveKit(init.classId, base),
       id: init.id,
       index: init.id,
@@ -1241,6 +1249,7 @@ export class Simulation {
     this.tick++;
     this.nowMs = nowMs ?? this.tick * TICK_MS;
     this.streaks.update();
+    this.route.update();
     this.checkRoomStarts();
     this.syncHazards();
     this.updateSpawnWarnings();
@@ -1384,7 +1393,8 @@ export class Simulation {
       if (st.phase !== PHASE_COUNTDOWN) continue;
       st.cancelTicks = inside.length === 0 ? st.cancelTicks + 1 : 0;
       if (humans.length === 0 || st.cancelTicks >= ticks(COUNTDOWN_CANCEL)) {
-        st.phase = PHASE_IDLE;
+        // An abandoned Bell countdown leaves its room cleared and the Bell ringable (§4.12).
+        st.phase = this.route.bellCanceled(ai) ? PHASE_CLEARED : PHASE_IDLE;
         st.cancelTicks = 0;
         this.activeRoom = ROOM_NONE;
         this.roomState(ai);
@@ -1625,7 +1635,11 @@ export class Simulation {
     this.activeRoom = ai;
     // Freeze P at the seal: connected humans plus half-player bots.
     st.partySize = this.partySize();
-    this.rewards.roomSealed(ai);
+    // A rung Bell: only sealing spends it, and its room fights the one Judgment wave (§4.12).
+    const bell = this.route.bellFight(ai);
+    if (bell) this.route.bellSealed(ai);
+    if (a.boss) this.route.bossSealed();
+    this.rewards.roomSealed(ai, bell);
     this.updateLeaves();
     this.invalidateFields();
     this.roomState(ai);
@@ -1730,10 +1744,13 @@ export class Simulation {
       const allWavesStarted = this.noWaves || st.wave >= a.waves.length - 1;
       if (!allWavesStarted || st.queue.length > 0 || st.squad || st.watch || st.alive > 0) return;
       st.phase = PHASE_CLEARED;
-      this.rewards.roomCleared(ai);
+      // A Bell's wave cleared: no clear XP, reward or heal; each human in its seal gets a Rite page (§4.12).
+      const bell = this.route.bellFight(ai);
+      if (bell) { this.route.bellCleared(ai); this.rewards.bellCleared(ai); }
+      else this.rewards.roomCleared(ai);
       this.items.clearCombat(ai);
       this.relics.roomCleared(ai);
-      this.route.roomCleared(ai);
+      if (!bell) this.route.roomCleared(ai);
       this.talents.roomCleared();
       for (const { player } of this.retainedPlayers.values()) if (player.dead) {
         player.dead = false; player.hp = player.maxHp * 0.5; player.revive = 0; player.shield = 0;
@@ -1743,8 +1760,8 @@ export class Simulation {
       this.invalidateFields();
       this.roomState(ai);
       st.lastHumanTick = this.tick;
-      // Clear sustain (rogue game.md §4.3), once per encounter.
-      for (const p of this.players) if (p.connected && !p.dead) p.hp = Math.min(p.maxHp, p.hp + 0.3 * p.maxHp);
+      // Clear sustain (rogue game.md §4.3), once per encounter; never after a Bell, never under Penance (§2.5).
+      if (!bell && !this.edicts.includes(2)) for (const p of this.players) if (p.connected && !p.dead) p.hp = Math.min(p.maxHp, p.hp + 0.3 * p.maxHp);
       for (const p of this.players) {
         if (!p.connected || !p.dead) continue;
         p.dead = false;
@@ -2551,17 +2568,33 @@ export class Simulation {
     this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale request; try again' }) });
   }
 
-  /** Stage 3 fills the Sundial; until it is lit nothing is offered. */
+  /** The Sundial's Rite offer at the Advocate while it is lit (§6.8), in a valley or countdown. */
   sundialOffer(p: SimPlayer): InteractionResult {
-    void p;
-    return { accepted: false, reason: 'The Sundial has gone dark' };
+    if (!p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
+    if (this.route.sundial !== 'lit') return { accepted: false, reason: 'The Sundial has gone dark' };
+    if (this.progressionEnabled && !this.advocateInReach(p)) return { accepted: false, reason: 'Speak to the Advocate in the Confessional' };
+    if (this.activePhase === PHASE_COMBAT) return { accepted: false, reason: 'Not while the doors are sealed' };
+    this.rites.openSundial(p);
+    return { accepted: true, reason: 'The Sundial’s Rite' };
+  }
+
+  /** A Bell rung (§4.12): its cleared room counts down again from its original entry socket. */
+  ringBell(ai: number): void {
+    const st = this.rooms[ai];
+    st.phase = PHASE_COUNTDOWN;
+    st.cancelTicks = 0;
+    st.sealTick = this.tick + ticks(COUNTDOWN);
+    this.activeRoom = ai;
+    this.roomState(ai);
+    this.updateLeaves();
   }
 
   /** A shop, chest or Bell request (rogue game.md §6.5, §6.6, §4.12), executed once per request ID like every scoped request. */
   interact(playerId: number, requestId: number, sourceId: number): void {
     const p = this.playerById(playerId);
     if (!p || p.bot) return;
-    const result = p.requests.execute(requestId, `shop:${sourceId}`, () => sourceId === SOURCE_CHEST ? this.route.interactChest(p) : interactShop(this, p, sourceId));
+    const result = p.requests.execute(requestId, `shop:${sourceId}`, () => sourceId === SOURCE_CHEST ? this.route.interactChest(p)
+      : sourceId >= SOURCE_BELL_FIRST ? this.route.ringBell(p, sourceId - SOURCE_BELL_FIRST) : interactShop(this, p, sourceId));
     this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale interaction; try again' }) });
     this.publishInventory(p);
   }

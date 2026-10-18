@@ -7,9 +7,10 @@
  * offer there (or a Rite once their collection is complete), taking one card or passing.
  */
 import { KEY } from '../data/pickups';
+import type { WaveDef } from '../data/dungeons/types';
 import type { BellState, RouteState } from '../net/messages';
 import { PHASE_COMBAT } from '../net/protocol';
-import { PLAYER_EYE } from './constants';
+import { PLAYER_EYE, ROOM_NONE, TICK_HZ } from './constants';
 import { itemFloor } from './consumables';
 import { lineOfSight } from './los';
 import type { InteractionResult } from './shop';
@@ -25,6 +26,33 @@ export const CHEST_REACH = 2.5;
 export const CHEST_HEIGHT = 0.6;
 
 export interface Spot { x: number; y: number; z: number; room: number }
+
+/** The Sundial goes dark at 14:00 of run time in the Pearly Gates (§6.8). */
+export const SUNDIAL_TICKS = 14 * 60 * TICK_HZ;
+/** A Bell hangs 3 m above the center of its room's reward square (§4.12). */
+export const BELL_HEIGHT = 3;
+/** The Judgment wave: this share of the room's budget in its last wave's mix, plus two elites at four players (three under Host). */
+const BELL_SHARE = 0.4;
+const BELL_ELITES = 2;
+const ELITE_XP = 60;
+
+/**
+ * The Bell's one Judgment wave (§4.12): 40% of the room's whole TP budget, using only its last wave's
+ * mix and ignoring its own elites, plus two external Dominions (counts at four players, scaled as any
+ * wave). Its XP ledger is that 40% plus 60 per elite: 0.4 × budget + 120.
+ */
+export function judgmentWave(waves: readonly WaveDef[], host = false): WaveDef {
+  const groups = (w: WaveDef) => [w.xp?.[0] ?? w.blessed, w.xp?.[1] ?? w.choristers * 6, w.xp?.[2] ?? w.cherubs * 4, 0, w.xp?.[4] ?? (w.watchmen ?? 0) * 3];
+  const budget = waves.reduce((n, w) => n + groups(w).reduce((a, b) => a + b, 0), 0);
+  const last = waves[waves.length - 1];
+  const mix = groups(last), mixTp = mix.reduce((a, b) => a + b, 0) || 1;
+  const k = (BELL_SHARE * budget) / mixTp, elites = BELL_ELITES + (host ? 1 : 0);
+  return {
+    blessed: Math.round(last.blessed * k), choristers: Math.round(last.choristers * k), cherubs: Math.round(last.cherubs * k),
+    watchmen: Math.round((last.watchmen ?? 0) * k), dominions: elites,
+    xp: [mix[0] * k, mix[1] * k, mix[2] * k, ELITE_XP * elites, mix[4] * k],
+  };
+}
 
 /** The center of a room's 4 × 4 reward square on its floor, or the nearest legal floor within 2 m of it. */
 export function squareCenter(sim: Simulation, room: number): Spot | null {
@@ -42,26 +70,47 @@ export class Route {
   chest: (Spot & { open: boolean }) | null = null;
   /** The humans in the Reliquary's seal, by offer key, and those whose chest entitlement has settled. */
   private readonly chestOwed = new Set<string>();
-  /** The Bells of Judgment (§4.12), filled in by the Bell stage. */
+  /** The Bells of Judgment (§4.12): one per bell room, hidden until its ordinary clear. */
   readonly bells: BellState[] = [];
+  /** The rung Bell's room while its countdown or wave runs, and its room's authored waves to restore. */
+  private bellRoom = ROOM_NONE;
+  private bellWaves: WaveDef[] | null = null;
+  /** The Sundial (§6.8): lit until 14:00 or the boss seal; `qualified` when the boss sealed strictly before 14:00. */
+  sundial: 'lit' | 'qualified' | 'missed' = 'lit';
 
   constructor(private readonly sim: Simulation) {}
 
+  /** Once the simulation has its map and floor: the Bells' places, and the Sundial lit on a generated floor. */
+  init(): void {
+    const sim = this.sim, floor = sim.floor;
+    if (!floor) { this.sundial = 'missed'; return; }
+    for (const room of floor.bells) {
+      if (room < 0) continue;
+      const point = sim.map.rooms[room]?.points?.reward;
+      if (!point) continue;
+      const c = point[0] + 2, rr = point[1] + 2, z = sim.map.floor[Math.floor(rr) * sim.map.w + Math.floor(c)];
+      this.bells.push({ room, x: c, y: rr, z: (Number.isFinite(z) ? z : 0) + BELL_HEIGHT, state: 'hidden' });
+    }
+  }
+
   state(): RouteState {
-    return { keyHolder: this.keyHolder, keyUsed: this.keyUsed, chest: this.chest ? { ...this.chest } : null, bells: this.bells.map((b) => ({ ...b })) };
+    return { keyHolder: this.keyHolder, keyUsed: this.keyUsed, chest: this.chest ? { ...this.chest } : null, bells: this.bells.map((b) => ({ ...b })),
+      sundial: this.sundial, sundialTick: SUNDIAL_TICKS };
   }
 
   private publish(): void {
     this.sim.emit('all', { type: 'route', state: this.state() });
   }
 
-  /** A combat room cleared: the key appears in the key room, the chest in the Reliquary. */
+  /** A combat room cleared: the key appears in the key room, the chest in the Reliquary, a Bell in a bell room. */
   roomCleared(ai: number): void {
     const floor = this.sim.floor;
     if (!floor) return;
+    const bell = this.bells.find((b) => b.room === ai);
+    if (bell?.state === 'hidden') { bell.state = 'available'; this.publish(); }
     if (ai === floor.keyRoom && !this.keyDropped) {
       const at = squareCenter(this.sim, ai);
-      if (at && this.sim.pickups.drop(KEY, ai, at.x, at.y, this.sim.tick)) this.keyDropped = true;
+      if (at && this.sim.pickups.drop(KEY, ai, at.x, at.y, this.sim.tick)) { this.keyDropped = true; this.publish(); }
     }
     if (ai === floor.reliquary && !this.chest) {
       const at = squareCenter(this.sim, ai);
@@ -128,6 +177,79 @@ export class Route {
     }
     sim.relicOffers.publish(p, made.offerId);
     return { accepted: true, reason: 'Choose a relic' };
+  }
+
+  // ------------------------------------------------------------------ the Bells of Judgment (§4.12)
+
+  /** F at a Bell: a living human within 2.5 m of its rim, in a valley, before victory; its countdown starts. */
+  ringBell(p: SimPlayer, room: number): InteractionResult {
+    const sim = this.sim, bell = this.bells.find((b) => b.room === room);
+    if (!bell || bell.state !== 'available' || !this.inReach(p, bell, 0)) return { accepted: false, reason: 'Look at a Bell within 2.5 m' };
+    if (sim.won) return { accepted: false, reason: 'The Bell is silent after the Gatekeeper fell' };
+    if (sim.activeRoom !== ROOM_NONE) return { accepted: false, reason: 'Ring it when no fight is on' };
+    bell.state = 'pending';
+    this.bellRoom = room;
+    sim.ringBell(room);
+    this.publish();
+    return { accepted: true, reason: 'The Bell tolls: one Judgment wave comes' };
+  }
+
+  /** The rung room's waves while its Bell fight runs (startRoom swaps them in); null otherwise. */
+  bellFight(ai: number): boolean {
+    return this.bellRoom === ai;
+  }
+
+  /** The Bell's countdown sealed: the Bell is spent, its room fights the one Judgment wave. */
+  bellSealed(ai: number): void {
+    const bell = this.bells.find((b) => b.room === ai);
+    if (!bell) return;
+    bell.state = 'spent';
+    const room = this.sim.map.rooms[ai];
+    this.bellWaves = room.waves;
+    room.waves = [judgmentWave(this.bellWaves, this.sim.edicts.includes(1))];
+    this.publish();
+  }
+
+  /** The Bell's countdown was abandoned before sealing: it can be rung again. */
+  bellCanceled(ai: number): boolean {
+    if (this.bellRoom !== ai) return false;
+    const bell = this.bells.find((b) => b.room === ai);
+    if (bell?.state === 'pending') bell.state = 'available';
+    this.bellRoom = ROOM_NONE;
+    this.publish();
+    return true;
+  }
+
+  /** The Judgment wave is cleared: the room's own waves come back; its Rite pages are the caller's. */
+  bellCleared(ai: number): void {
+    if (this.bellWaves) this.sim.map.rooms[ai].waves = this.bellWaves;
+    this.bellWaves = null;
+    this.bellRoom = ROOM_NONE;
+  }
+
+  // ------------------------------------------------------------------ the Sundial (§6.8)
+
+  /** Each tick: at 14:00 a still-lit Sundial goes dark and its pending offers disappear. */
+  update(): void {
+    if (this.sundial === 'lit' && this.sim.tick >= SUNDIAL_TICKS) {
+      this.sundial = 'missed';
+      this.sim.rites.resolveSundial(false, this.records());
+      this.publish();
+    }
+  }
+
+  /** The boss room sealed: strictly before 14:00 it qualifies every admitted record (§6.8, §8.6). */
+  bossSealed(): void {
+    if (this.sundial !== 'lit') return;
+    const qualified = this.sim.tick < SUNDIAL_TICKS;
+    this.sundial = qualified ? 'qualified' : 'missed';
+    for (const p of this.records()) if (qualified && !p.bot) p.sundialQualified = true;
+    this.sim.rites.resolveSundial(qualified, this.records());
+    this.publish();
+  }
+
+  private records(): SimPlayer[] {
+    return [...this.sim.players, ...[...this.sim.retainedPlayers.values()].map((r) => r.player)];
   }
 
   /** The player's chest offer settled (taken or passed): no longer owed, no longer holding the exit. */

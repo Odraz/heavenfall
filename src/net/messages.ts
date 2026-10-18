@@ -117,6 +117,8 @@ export interface RouteState {
   chest: { x: number; y: number; z: number; room: number; open: boolean } | null;
   /** The two Bells of Judgment (§4.12): hidden until their room clears, then available, pending (rung, in countdown) or spent. */
   bells: BellState[];
+  /** The Sundial (§6.8): lit until `sundialTick` (run ticks) or the boss seal, then qualified or missed. */
+  sundial: 'lit' | 'qualified' | 'missed'; sundialTick: number;
 }
 export interface BellState { room: number; x: number; y: number; z: number; state: 'hidden' | 'available' | 'pending' | 'spent' }
 /** Talent effects for every client's VFX, bounded per root action. `pts` are x, y, z triples (pairs of them for arcs). */
