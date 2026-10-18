@@ -23,7 +23,13 @@ import { distToCylinder } from './movement';
 import type { Simulation, SimPlayer } from './sim';
 import { reviveHit } from './souls';
 import { coinHeight, glance, judasCoinSpot, pathLength, pathPoint, raySphere, segmentClosest, thrownFieldCenter, wayBackPath, wireEnds } from './talentGeometry';
-import { BASE_ABILITIES } from '../data/talents';
+import { BASE_ABILITIES, FALLEN, HERETIC } from '../data/talents';
+import { ENEMY_SLOTS } from './constants';
+import { FloorFire } from './floorFire';
+import { Launches, type Landing } from './launches';
+import { FallenTalents } from './talentsFallen';
+import { CLOUD_RADIUS } from '../data/weapons';
+import type { FireState } from '../net/messages';
 
 const ticks = (s: number) => Math.round(s * TICK_HZ);
 /** Kill-discharge nodes in their fixed dispatch order. */
@@ -61,8 +67,37 @@ export class Talents {
   private readonly sicariusCut = new Map<number, number>();
   private readonly lastFeet = new Map<number, [number, number, number]>();
   readonly hidden = new Set<number>();
+  /** R5 shared systems: launches with their landings, and each owner's class floor fire. */
+  readonly launches: Launches;
+  readonly fires = new Map<number, FloorFire>();
+  readonly fallen: FallenTalents;
 
-  constructor(private readonly sim: Simulation) {}
+  constructor(private readonly sim: Simulation) {
+    this.launches = new Launches(sim, ENEMY_SLOTS);
+    this.fallen = new FallenTalents(sim, this, ENEMY_SLOTS);
+  }
+
+  /** A player's floor fire: the Fallen's holds 600 burning cells, the Heretic's 400. */
+  fireOf(p: SimPlayer): FloorFire {
+    let f = this.fires.get(p.id);
+    if (!f) { f = new FloorFire(this.sim.map, p.id, p.classId === 'heretic' ? HERETIC.fireCap : FALLEN.fireCap); this.fires.set(p.id, f); }
+    return f;
+  }
+
+  /** Tells everyone which enemies were launched: they fly the arc and don't hold a wading player. */
+  launched(p: SimPlayer, slots: number[]): void {
+    if (slots.length) this.sim.emit('all', { type: 'launched', playerId: p.id, slots: [...slots] });
+  }
+
+  /** Whether an enemy stands in a Heretic's incense (`censed`, game.md §4.11). */
+  censed(s: number): boolean {
+    const sim = this.sim, def = ENEMIES[sim.eType[s]];
+    for (const c of sim.clouds) {
+      if (sim.tick < c.from || sim.tick >= c.until) continue;
+      if (distToCylinder(c.x, c.y, c.z, sim.eX[s], sim.eY[s], sim.eZ[s], def.radius, def.height) <= CLOUD_RADIUS) return true;
+    }
+    return false;
+  }
 
   // ------------------------------------------------------------------ builds
 
@@ -84,6 +119,7 @@ export class Talents {
     if (old && old.e === 'wayBack' && build.e !== 'wayBack') this.endShadow(p, 'reassigned');
     if (old && old.q === 'judasCoin' && build.q !== 'judasCoin') this.endArea(this.areaOf(p.id, 'coin'), 'reassigned');
     if (old && old.e === 'silverWire' && build.e !== 'silverWire') this.endArea(this.areaOf(p.id, 'wire'), 'reassigned');
+    if (old && old.e === 'gatebreaker' && build.e !== 'gatebreaker') this.fallen.playerGone(p);
     p.build = { talents: [...build.talents], rites: [...build.rites], q: build.q, e: build.e };
     p.kit = resolveKit(p.classId, p.build);
     // Outgoing augments lose their contributions (§9.10): Blood Money's coins, a hidden silhouette.
@@ -140,6 +176,7 @@ export class Talents {
     if (this.has(p, HAND) && (root.input === 'LMB' || root.input === 'RMB')) this.sparks(p, victims);
     if (this.has(p, BLOOD) && root.input === 'LMB') for (const v of victims) this.addTrap(p, v);
     if (this.has(p, VESSEL)) this.clay(p, victims.filter((v) => v.bound));
+    if (this.has(p, 'fallen.b.1b') && root.input === 'LMB') this.fallen.kindleBundle(p, victims);
   }
 
   /** Enemies other than the boss and its parts whose center is within `r` of a point, in that room, in sight. */
@@ -156,7 +193,7 @@ export class Talents {
     }
   }
 
-  private fx(p: SimPlayer, kind: TalentFxKind, pts: number[], slots: number[] = []): void {
+  fx(p: SimPlayer, kind: TalentFxKind, pts: number[], slots: number[] = []): void {
     if (pts.length || slots.length) this.sim.emit('all', { type: 'talentFx', playerId: p.id, kind, pts, slots });
   }
 
@@ -419,14 +456,14 @@ export class Talents {
 
   // ------------------------------------------------------------------ areas
 
-  private addArea(a: Omit<TalentArea, 'id'>): TalentArea {
+  addArea(a: Omit<TalentArea, 'id'>): TalentArea {
     const area = { ...a, id: this.nextArea++ };
     this.areas.set(area.id, area);
     this.sim.emit('all', { type: 'talentArea', area: { ...area }, end: false, reason: '' });
     return area;
   }
 
-  private endArea(a: TalentArea | undefined, reason: string): void {
+  endArea(a: TalentArea | undefined, reason: string): void {
     if (!a || !this.areas.delete(a.id)) return;
     this.wireBound.delete(a.id);
     this.sim.emit('all', { type: 'talentArea', area: { ...a }, end: true, reason });
@@ -456,6 +493,7 @@ export class Talents {
 
   /** A player died, left, teleported or the room cleared: markers end (§4 host/client split). */
   playerGone(p: SimPlayer): void {
+    this.fallen.playerGone(p);
     this.endShadow(p, 'gone');
     this.returns.delete(p.id);
     this.lastFeet.delete(p.id);
@@ -463,17 +501,64 @@ export class Talents {
   }
 
   roomCleared(): void {
-    for (const a of [...this.areas.values()]) if (a.kind === 'trap' || a.kind === 'wire') this.endArea(a, 'cleared');
+    for (const a of [...this.areas.values()]) if (a.kind !== 'coin' && a.kind !== 'shadow') this.endArea(a, 'cleared');
+    // Clear deletes outstanding combat effects (classes-fallen.md "Resolution and lifetime").
+    for (const f of this.fires.values()) f.clear(this.sim.tick);
+    this.flushFires();
+    this.launches.clear();
+    this.fallen.roomCleared();
   }
 
   checkpoint(): TalentArea[] {
     return [...this.areas.values()].map((a) => ({ ...a }));
   }
 
+  /** Every owner's still-burning cells, for floorSync. */
+  fireCheckpoint(): FireState[] {
+    return [...this.fires.values()].filter((f) => f.cells.size).map((f) => ({ playerId: f.ownerId, ...f.checkpoint() }));
+  }
+
+  private flushFires(): void {
+    for (const f of this.fires.values()) {
+      const c = f.flush();
+      if (c) this.sim.emit('all', { type: 'fire', playerId: f.ownerId, ...c });
+    }
+  }
+
+  /**
+   * After movement and hazards (each tick): landings due (controls, then damage, then crashes), fire
+   * pulses and their `pooled` membership, then the tick's fire changes for every client.
+   */
+  pools(): void {
+    const sim = this.sim;
+    for (const f of this.fires.values()) f.expire(sim.tick);
+    const landed = this.launches.due();
+    if (landed.length) this.landings(landed);
+    this.fallen.pools();
+    this.flushFires();
+  }
+
+  private landings(landed: Landing[]): void {
+    for (const l of landed) this.fallen.landControl(l);
+    for (const l of landed) this.fallen.landDamage(l);
+    const crashes = new Map<SimPlayer, number[]>();
+    for (const l of landed) {
+      const pts = this.fallen.landCrash(l);
+      if (pts.length && l.owner) crashes.set(l.owner, [...(crashes.get(l.owner) ?? []), ...pts]);
+    }
+    for (const [p, pts] of crashes) this.fx(p, 'crash', pts);
+  }
+
+  /** An enemy's death, before its removal; `source` is the credited player index or -1. */
+  died(s: number, source: number): void {
+    this.fallen.died(s, source);
+  }
+
   // ------------------------------------------------------------------ per tick
 
   update(): void {
     const sim = this.sim;
+    this.fallen.update();
     for (const a of [...this.areas.values()]) {
       if (sim.tick < a.endTick) continue;
       const owner = sim.playerById(a.playerId);

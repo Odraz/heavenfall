@@ -1,5 +1,6 @@
 /** Local player movement, run every render frame on the player's own main thread (§2.2, §5.2). */
 import { FALLING_STAR_TIME, SHADOWSTEP_SPEED, SHADOWSTEP_TIME } from '../data/weapons';
+import { GATEBREAKER } from '../data/talents';
 import { DOMINION_LAUNCH_SECONDS, DOMINION_LAUNCH_VZ } from '../data/dominion';
 import { directionalSpeedFactor } from '../data/movement';
 import { arcPoint } from './fallingStarAim';
@@ -39,6 +40,25 @@ export class LocalPlayer {
   /** Shadowstep in progress: a horizontal dash with normal movement rules. */
   private dash: { dx: number; dy: number; t: number; speed: number; time: number } | null = null;
   private launch: { dx: number; dy: number; remaining: number } | null = null;
+  /** Gatebreaker in progress (classes-fallen.md §4): its heading, elapsed time and the requested end. */
+  private charge: { heading: number; t: number; release: number } | null = null;
+
+  /** Gatebreaker: charges at 15 m/s along the view, turning toward it at up to 180°/s, for 0.3–1.2 s. */
+  startCharge(): void {
+    if (this.carried || this.leap) return;
+    this.charge = { heading: this.yaw, t: 0, release: GATEBREAKER.maxTime };
+    this.dash = null;
+    this.launch = null;
+  }
+
+  /** E released: the charge ends now, or at its 0.3 s minimum. */
+  releaseCharge(): void {
+    if (this.charge) this.charge.release = Math.max(GATEBREAKER.minTime, Math.min(this.charge.release, this.charge.t));
+  }
+
+  get charging(): boolean {
+    return this.charge !== null;
+  }
 
   /** Falling Star (M12 §5.2): flies the arc to the landing point (feet) over 0.4 s, ignoring collision. */
   startLeap(tx: number, ty: number, tz: number): void {
@@ -109,6 +129,17 @@ export class LocalPlayer {
       }
       return;
     }
+    if (this.charge) {
+      const c = this.charge, step = Math.min(dt, Math.max(0, c.release - c.t));
+      const turn = wrapAngle(this.yaw - c.heading), max = GATEBREAKER.turn * dt;
+      c.heading = wrapAngle(c.heading + Math.max(-max, Math.min(max, turn)));
+      c.t += dt;
+      this.moveResult.blocked = false;
+      stepBody(map, b, Math.cos(c.heading) * GATEBREAKER.speed * step, Math.sin(c.heading) * GATEBREAKER.speed * step, dt, this.moveResult);
+      // A wall stops the charge; so does its end.
+      if (this.moveResult.blocked || c.t >= c.release - 1e-9) this.charge = null;
+      return;
+    }
     let speed = this.speed * this.wade * directionalSpeedFactor(this.yaw, dirX, dirY);
     if (this.dash) {
       this.dash.t += dt;
@@ -126,6 +157,7 @@ export class LocalPlayer {
     this.carried = false;
     this.leap = null;
     this.dash = null;
+    this.charge = null;
     this.launch = launch ? { ...launch, remaining: DOMINION_LAUNCH_SECONDS } : null;
     this.body.x = x;
     this.body.y = y;

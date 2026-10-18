@@ -57,7 +57,12 @@ export interface FloorSync {
   spawnWarnings?: SpawnWarning[];
   kits?: KitState[];
   talentAreas?: TalentArea[];
+  /** Every class floor fire still burning (R5): per owner, cell indices and end ticks. */
+  fires?: FireState[];
 }
+
+/** One owner's burning floor cells (classes-fallen.md "Hellfire", classes-heretic.md "Burning ground"). */
+export interface FireState { playerId: number; cells: number[]; ends: number[] }
 
 export interface InventoryState {
 
@@ -78,9 +83,18 @@ export interface RiteCard { id: string; ok: boolean; reason: string; surrenders:
 /** A pending Rite offer: fixed card ids, rechecked after every accepted build change. */
 export interface RiteOffer { offerId: number; source: 'clear' | 'dev'; cards: RiteCard[] }
 /** Talent effects for every client's VFX, bounded per root action. `pts` are x, y, z triples (pairs of them for arcs). */
-export type TalentFxKind = 'frost' | 'spark' | 'clay' | 'nail' | 'sheep' | 'recoil' | 'split' | 'potter' | 'sicarius' | 'knownGround';
+export type TalentFxKind = 'frost' | 'spark' | 'clay' | 'nail' | 'sheep' | 'recoil' | 'split' | 'potter' | 'sicarius' | 'knownGround'
+  | 'ranks' | 'kindle' | 'brand' | 'wormwood' | 'fireRing' | 'charge' | 'shove' | 'underfoot' | 'redIron' | 'wrath' | 'land' | 'crash'
+  | 'exorcism' | 'fork' | 'lazarus' | 'harvest' | 'irons' | 'stake' | 'rally' | 'resurrect'
+  | 'holds' | 'fall' | 'shatter' | 'voice' | 'hymn' | 'wind' | 'procession' | 'ring' | 'whirl' | 'whip' | 'tartarus' | 'castDown';
+/**
+ * A talent area: R4's coin, wire, trap and shadow; R5's Rain of Fire circle (x1 = radius), the Well
+ * (x1 = radius), the Boundary Chain (x..z to x1..z1), a frost patch (x1 = radius), a Heretic cloud
+ * (x1 = radius, y1 = wearer id or -1, z1 = 1 with Pillar of Cloud) or furrow (x..z to x1..z1), and Bread
+ * of Angels' harvest ring (x1 = motes left).
+ */
 export interface TalentArea {
-  id: number; kind: 'coin' | 'wire' | 'trap' | 'shadow'; playerId: number;
+  id: number; kind: 'coin' | 'wire' | 'trap' | 'shadow' | 'rain' | 'well' | 'boundary' | 'frost' | 'cloud' | 'furrow' | 'bread'; playerId: number;
   x: number; y: number; z: number; x1: number; y1: number; z1: number; startTick: number; endTick: number;
 }
 
@@ -91,6 +105,12 @@ export type GameEvent =
   | { type: 'tracer'; playerId: number; silver: boolean; x: number; y: number; z: number; ex: number; ey: number; ez: number }
   /** A Judas Coin, Silver Wire, Blood Money coin or Way Back shadow appeared, or ended (`end`). */
   | { type: 'talentArea'; area: TalentArea; end: boolean; reason: string }
+  /** Floor fire changed this tick: cells lit or refreshed until `ends`, or put out (an end at or before now). */
+  | { type: 'fire'; playerId: number; cells: number[]; ends: number[] }
+  /** Enemies launched (drawn in Falling Star's arc; they don't hold a wading player while in the air). */
+  | { type: 'launched'; playerId: number; slots: number[] }
+  /** An owner-only meter: Wrath of Dis's fill toward its eruption. */
+  | { type: 'meter'; playerId: number; kind: 'wrath'; value: number; max: number }
   /** The Way Back's accepted return (to everyone): the path's ends and its duration. */
   | { type: 'wayBack'; playerId: number; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number; ms: number }
   /** Recoil's accepted envelope, to its owner: horizontal velocity in m/s for 0.15 s. */

@@ -32,6 +32,12 @@ const ABILITY_SFX: Record<string, SfxName> = {
   'betrayer:Q': 'fieldOfBlood',
   'betrayer:E': 'shadowstep',
 };
+/** The R5 alternatives' synthesized stand-ins until their recordings (audio-prompts.md) arrive. */
+const ALT_SFX: Record<string, SfxName> = {
+  castOut: 'fallingStarLand', gatebreaker: 'fallingStarLeap', rainOfFire: 'refinerIgnite',
+  breadOfAngels: 'chaliceHeal', trialByFire: 'refinerIgnite', cloudOfWitnesses: 'incense',
+  well: 'chains', ring: 'chains', boundary: 'chains',
+};
 /** An enemy melee blow: a Blessed attacking within this horizontal distance. */
 const MELEE_REACH = 1.6;
 const NO_STATE = 255;
@@ -114,6 +120,8 @@ export class GameSounds {
     private readonly map: GameMap,
     private readonly localId: number,
     private readonly classOf: (playerId: number) => ClassId | undefined,
+    /** A player's assigned alternative ability in a slot, if it holds one (R4–R5). */
+    private readonly altOf: (playerId: number, slot: 'Q' | 'E') => string | undefined = () => undefined,
   ) {
     audio()?.music.keepStings(true);
   }
@@ -303,6 +311,8 @@ export class GameSounds {
       case 'abilityUsed': {
         const key = `${this.classOf(e.playerId)}:${e.slot}`;
         const at = { x: e.x, y: e.y };
+        const alt = this.altOf(e.playerId, e.slot);
+        if (alt) { if (ALT_SFX[alt]) sfx(ALT_SFX[alt], e.playerId === this.localId ? null : at); break; }
         if (key === 'fallen:E') {
           // The leap from where the Fallen is; the landing sounds when it lands (M12 §5.2).
           sfx('fallingStarLeap', e.playerId === this.localId ? null : (pose(e.playerId) ?? at));

@@ -129,7 +129,10 @@ import type { VictoryState } from '../sim/victory';
 import { levelForXp } from '../profile/model';
 import { TalentClient } from './talentClient';
 import { riteOverlay, talentPanel, type RiteOverlay, type TalentPanel } from '../ui/talents';
-import { ALT_ABILITIES, hasCatalog } from '../data/talents';
+import { ALT_ABILITIES, GATEBREAKER, RAIN, hasCatalog } from '../data/talents';
+import { rainPoint } from '../sim/talentGeometry';
+/** Alternatives whose `abilityUsed` the base class key must not draw or sound (R5). */
+const ALT_SFX_KEYS = new Set(['castOut', 'gatebreaker', 'rainOfFire', 'breadOfAngels', 'trialByFire', 'cloudOfWitnesses', 'well', 'ring', 'boundary']);
 import { ADVOCATE_REACH } from '../sim/sim';
 import type { RiteOffer } from '../net/messages';
 import { advocateSprite } from './advocate';
@@ -513,8 +516,12 @@ export class Game {
   private wasLeaping = false;
   /** Falling Star aimed anywhere (M12 §5.2): the hold, the walkable cells (once per map), this frame's preview, the ally leapt to. */
   private readonly starAim = new StarAim();
+  /** Gatebreaker's key is still held since its charge started. */
+  private chargeHeld = false;
   private walkable: Uint8Array | null = null;
   private starPreview: Landing | null = null;
+  /** An aimed cast's preview while its key is held (R5: Rain of Fire, the Well, the Boundary): feet, radius, validity and an optional line. */
+  private aimPreview: { at: [number, number, number]; radius: number; valid: boolean; line?: [[number, number, number], [number, number, number]] } | null = null;
   private leapAlly = ALLY_NONE;
   /** Shadowstep (M12 §5.7): when the local slash began, and where the dash started. */
   private slashAt = -Infinity;
@@ -609,7 +616,10 @@ export class Game {
     this.shopHint.className = 'shop-hint'; this.hud.root.append(this.shopHint);
     this.victoryHint.className = 'victory-hint'; this.hud.root.append(this.victoryHint);
     this.party = o.singleplayer ? null : new PartyFrames(this.hud.leftColumn, this.hud.ownFrame);
-    this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id));
+    this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id), (id, slot) => {
+      const ab = this.talents?.ability(id, slot);
+      return ab && ALT_SFX_KEYS.has(ab) ? ab : undefined;
+    });
     this.hud.onReady = () => this.sounds.abilityReady();
     this.overlay = new DebugOverlay(o.root, this.params.dev);
     this.pause = new PauseOverlay(o.root, () => this.resume(), () => this.leave());
@@ -617,6 +627,7 @@ export class Game {
       vfx: this.vfx, glow: o.textures.fx.glow, localId: this.localId,
       classOf: (id) => this.classOf(id), pose: (id) => this.playerPose(id),
       later: (id, run) => this.later(id, run),
+      map: this.map, tick: () => this.snaps.estimatedTick(performance.now()),
     });
     this.scene.scene.add(this.talents.group);
     if (o.floor) this.scene.scene.add(advocateSprite(this.map, o.floor.confessional));
@@ -729,7 +740,7 @@ export class Game {
   /** Discard predictions canceled by the host's grab correction. */
   private cancelCarriedActions(): void {
     this.fire = 0;
-    this.starAim.reset(); this.starPreview = null;
+    this.starAim.reset(); this.starPreview = null; this.aimPreview = null; this.chargeHeld = false;
     this.wasLeaping = this.wasDashing = false;
     this.dashFrom = null;
   }
@@ -768,6 +779,21 @@ export class Game {
     }
     const ready = this.displayedCooldown('E', now) <= 0;
     const p = this.player;
+    const eAbility = this.talents.ability(this.localId, 'E');
+    // Gatebreaker (classes-fallen.md §4): the press starts the charge at once; the release is the next press.
+    if (this.classId === 'fallen' && eAbility === 'gatebreaker') {
+      if (!ready || p.charging) return;
+      p.startCharge();
+      this.ePresses = (this.ePresses + 1) & 0xff;
+      this.localEReadyAt = now + (GATEBREAKER.maxTime + GATEBREAKER.cooldown) * 1000;
+      this.chargeHeld = true;
+      return;
+    }
+    // Rain of Fire: held to aim like Falling Star, counted for the host on release.
+    if (this.classId === 'fallen' && eAbility === 'rainOfFire') {
+      if (!this.bot) this.starAim.keyDown(this.displayedCooldown('E', now) <= 0, !this.dead);
+      return;
+    }
     if (this.classId === 'fallen') {
       // Falling Star: held to aim, released to leap (M12 §5.2). The bot leaps at once, only to an ally target.
       if (!this.bot) {
@@ -813,7 +839,30 @@ export class Game {
    */
   private updateStarAim(now: number, fire: number): number {
     const p = this.player;
-    if (p.carried) { this.starAim.reset(); this.starPreview = null; return 0; }
+    if (p.carried) { this.starAim.reset(); this.starPreview = null; this.aimPreview = null; return 0; }
+    const eAbility = this.talents.ability(this.localId, 'E');
+    if (eAbility === 'gatebreaker') {
+      this.starPreview = null;
+      // Letting go of E releases the charge (the host gets the release as the next press).
+      if (this.chargeHeld && !this.input.isDown('KeyE')) {
+        this.chargeHeld = false;
+        if (p.charging) { p.releaseCharge(); this.ePresses = (this.ePresses + 1) & 0xff; }
+      }
+      if (!p.charging) this.chargeHeld = false;
+      return fire;
+    }
+    if (eAbility === 'rainOfFire') {
+      this.starPreview = null;
+      const step = this.starAim.frame(this.input.isDown('KeyE'), this.input.rightHeld, this.input.releases);
+      if (this.starAim.aiming || step === 'release') {
+        const b = p.body, [dx, dy, dz] = aimDir(p.yaw, p.pitch);
+        const at = rainPoint(this.map, b.x, b.y, b.z, dx, dy, dz, RAIN.range);
+        const radius = this.talents.ownHas('fallen.c.1b') ? RAIN.wide : RAIN.radius;
+        this.aimPreview = this.starAim.aiming ? { at: [at.x, at.y, at.z], radius, valid: at.valid } : null;
+        if (step === 'release' && at.valid) this.ePresses = (this.ePresses + 1) & 0xff;
+      } else this.aimPreview = null;
+      return this.starAim.rightBlocked ? fire & ~(FIRE_RIGHT | FIRE_RIGHT_LAST) : fire;
+    }
     const step = this.starAim.frame(this.input.isDown('KeyE'), this.input.rightHeld, this.input.releases);
     let landing: Landing | null = null;
     if (this.starAim.aiming || step === 'release') {
@@ -829,6 +878,12 @@ export class Game {
   /** The teammates a leap can snap to: their interpolated feet. */
   private starAllies(): StarAlly[] {
     return this.snaps.playersOut.filter((q) => q.id !== this.localId).map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, dead: q.dead }));
+  }
+
+  /** An aimed cast's ring (and line) on the floor while its key is held. */
+  private drawAimPreview(): void {
+    const a = this.aimPreview;
+    this.vfx.setAimPreview(a ? a.at : null, a?.radius ?? 0, a?.valid ?? false, this.scene.camera.position, a?.line);
   }
 
   /** Falling Star's preview: its arc from the feet and its rings, gold-orange when valid, red when not. */
@@ -950,6 +1005,13 @@ export class Game {
       } else if (e.rites > 0 && !this.dead && !open) {
         const offer = e.offers.find((o) => o.offerId === e.rites);
         if (offer) this.openRite(offer);
+      }
+    }
+    if (e.type === 'launched') {
+      // R5 launches fly Falling Star's arc after the render delay and don't hold a wading player.
+      for (const s of e.slots) {
+        this.launchAt[s] = now + (e.playerId === this.localId ? 0 : this.snaps.delayTicks * TICK_MS);
+        this.wadeLaunchedUntil[s] = now + WADE_LAUNCH_MS;
       }
     }
     if (e.type === 'talentFx' && e.kind === 'sheep') {
@@ -1455,9 +1517,15 @@ export class Game {
   /** Ability VFX at the event position (§10). */
   private abilityVfx(e: Extract<GameEvent, { type: 'abilityUsed' }>, now: number): void {
     const cls = this.classOf(e.playerId);
-    const key = `${cls}:${e.slot}`;
+    const ab = this.talents.ability(e.playerId, e.slot);
+    // R4–R5 alternatives draw their own effects (talent areas and events); the base key never applies to them.
+    const key = ALT_SFX_KEYS.has(ab) ? `alt:${ab}` : `${cls}:${e.slot}`;
     const user = this.playerPose(e.playerId);
     switch (key) {
+      case 'alt:castOut': // two wings of shock sweeping forward over the 10 m cone
+        if (user) this.vfx.gust(now, [user.x, user.y, user.z + 1.2], [Math.cos(user.yaw), Math.sin(user.yaw), 0], Math.PI / 4, 10);
+        this.vfx.ring(now, e.x, e.y, e.z, 0xe0301e, 0.5, 10, 350);
+        break;
       case 'fallen:Q': // taunt sphere, growing to Blasphemy's radius (M8 §3.1), and its shockwave (M12 §5.3)
         this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0xe0301e, 1, BLASPHEMY_RADIUS, 400, 0.45);
         this.vfx.ring(now, e.x, e.y, e.z, BLASPHEMY_RING, 0.5, BLASPHEMY_RADIUS, BLASPHEMY_RING_MS);
@@ -2376,9 +2444,12 @@ export class Game {
     // Wading (M12 §3.1): the ground enemies of the newest snapshot pressing against the player slow
     // it. Counted every frame, in the benchmark too, which doesn't move the player.
     const newest = this.snaps.newest;
-    const pressing = newest && !this.dead ? wadeCount(this.map, p.body.x, p.body.y, p.body.z, newest, this.wadeLaunchedUntil, now) : 0;
-    // Through the Throng (classes-betrayer.md `b.1a`): the crowd doesn't slow you.
-    p.wade = this.wading.update(this.talents.unslowed ? 0 : pressing, Math.min(dt, MAX_FRAME_DT));
+    // Wading talents (R4–R5) leave some enemies out: Unbowed counts only bound ones, Iron Stride skips slowed
+    // ones, Walk in the Smoke skips all while in its owner's incense.
+    const ignore = this.talents.wadeIgnore(p.body.x, p.body.y, p.body.z);
+    const pressing = newest && !this.dead ? wadeCount(this.map, p.body.x, p.body.y, p.body.z, newest, this.wadeLaunchedUntil, now, ignore) : 0;
+    // Through the Throng (classes-betrayer.md `b.1a`): the crowd doesn't slow you; Gatebreaker's charge ignores it too.
+    p.wade = this.wading.update(this.talents.unslowed || p.charging ? 0 : pressing, Math.min(dt, MAX_FRAME_DT));
     debugState.wade.count = pressing;
     debugState.wade.factor = p.wade;
     if (!this.dead && !this.bench && !this.over) p.update(this.map, dt, mx, my, wantJump);
@@ -2496,6 +2567,7 @@ export class Game {
       this.scene.setView(cam.x, cam.y, cam.z ?? (this.map.floor[ci] ?? 0) + PLAYER_EYE, cam.yaw, cam.pitch, 0);
     }
     this.drawStarPreview();
+    this.drawAimPreview();
     this.drawBillboards(now, ents, enemyZ);
     this.pickups.update(this.snaps.newest, this.scene.camera, this.snaps.estimatedTick(now));
     const rewardIds = this.o.floor ? rewardPickupIds([...this.pickups.model.records.values()].map((r) => r.pickup), this.o.floor, this.map) : new Set<number>();

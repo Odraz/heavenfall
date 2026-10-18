@@ -13,6 +13,9 @@ import { coinHeight } from '../sim/talentGeometry';
 import type { Vfx } from '../render/vfx';
 import type { InterpolatedEnemies } from './snapshots';
 import { INFORMER, THROUGH_THE_THRONG } from '../sim/talents';
+import type { GameMap } from '../sim/map';
+import { FireView } from './fireView';
+import { FLAG_ROOTED, FLAG_SLOWED } from '../net/protocol';
 
 interface Pose { x: number; y: number; z: number }
 export interface TalentDeps {
@@ -23,6 +26,9 @@ export interface TalentDeps {
   pose: (id: number) => Pose | undefined;
   /** Runs an effect of another player's after the render delay; the own one at once. */
   later: (playerId: number, run: (now: number) => void) => void;
+  /** The map, for floor fire cells; and the estimated host tick now (fractional). */
+  map: GameMap;
+  tick: () => number;
 }
 
 const SILVER = 0xdfe6ef;
@@ -44,8 +50,12 @@ export class TalentClient {
   private readonly dark = new THREE.MeshBasicMaterial({ color: 0x07060a, transparent: true, opacity: 0.6, depthWrite: false });
   private readonly outlineMaterial: THREE.SpriteMaterial;
 
+  readonly fire: FireView;
+
   constructor(private readonly d: TalentDeps) {
     this.outlineMaterial = new THREE.SpriteMaterial({ map: d.glow, color: 0xe8f0ff, transparent: true, opacity: 0.55, depthTest: false, depthWrite: false, fog: false });
+    this.fire = new FireView(d.map, d.glow);
+    this.group.add(this.fire.group);
   }
 
   own(): KitState | undefined {
@@ -73,6 +83,27 @@ export class TalentClient {
     return this.ownHas(THROUGH_THE_THRONG);
   }
 
+  /**
+   * The own wading rule from talents (R5), by an enemy's snapshot flags: Unbowed counts only bound
+   * enemies, Iron Stride leaves out slowed ones, and Walk in the Smoke leaves out every enemy while the
+   * feet stand in its owner's incense. Undefined: every pressing enemy counts.
+   */
+  wadeIgnore(x: number, y: number, z: number): ((flags: number) => boolean) | undefined {
+    if (this.inSmoke(x, y, z)) return () => true;
+    const unbowed = this.ownHas('fallen.a.2b'), stride = this.ownHas('binder.b.1b');
+    if (!unbowed && !stride) return undefined;
+    return (f) => (unbowed && !(f & FLAG_ROOTED)) || (stride && !!(f & FLAG_SLOWED));
+  }
+
+  /** Whether feet stand in the incense of a Heretic with Walk in the Smoke (any player qualifies). */
+  inSmoke(x: number, y: number, z: number): boolean {
+    for (const { area } of this.drawn.values()) {
+      if (area.kind !== 'cloud' || !this.kits.get(area.playerId)?.active.includes('heretic.c.1b')) continue;
+      if (Math.hypot(x - area.x, y - area.y) <= area.x1 && Math.abs(z - area.z) <= 2) return true;
+    }
+    return false;
+  }
+
   areaOf(playerId: number, kind: TalentArea['kind']): TalentArea | undefined {
     for (const { area } of this.drawn.values()) if (area.playerId === playerId && area.kind === kind) return area;
     return undefined;
@@ -84,6 +115,7 @@ export class TalentClient {
       for (const id of [...this.drawn.keys()]) this.remove(id);
       for (const a of msg.talentAreas) this.add(a, now);
     }
+    if (msg.fires || msg.talentAreas) this.fire.sync(msg.fires, msg.tick);
   }
 
   /** A host event; returns true when it was a talent event. */
@@ -100,6 +132,7 @@ export class TalentClient {
         } else this.add(e.area, now);
         return true;
       case 'talentFx': this.d.later(e.playerId, (t) => this.fx(e, t)); return true;
+      case 'fire': this.fire.apply(e.playerId, e.cells, e.ends, this.d.tick()); return true;
       case 'tracer': {
         const pts: Array<[number, number, number]> = [[e.x, e.y, e.z], [e.ex, e.ey, e.ez]];
         this.d.later(e.playerId, (t) => {
@@ -139,6 +172,40 @@ export class TalentClient {
       case 'sicarius':
         for (let i = 0; i < p.length; i += 3) v.glow(now, p[i], p[i + 1], p[i + 2] + 0.9, 0xf2f6ff, 0.1, 0.5, 160);
         break;
+      // The Fallen (R5).
+      case 'ranks':
+        for (let i = 0; i < p.length; i += 6) v.beam(now, [[p[i], p[i + 1], p[i + 2]], [p[i + 3], p[i + 4], p[i + 5]]], 0xff8a3a, 0.05, 160);
+        break;
+      case 'kindle':
+        for (let i = 0; i < p.length; i += 3) v.glow(now, p[i], p[i + 1], p[i + 2] + 0.4, 0xff6a1a, 0.2, 0.9, 260);
+        break;
+      case 'brand':
+        v.glow(now, p[0], p[1], p[2] + 0.6, 0xff5a1c, 0.4, 2.2, 320); v.ring(now, p[0], p[1], p[2], 0xff6a2a, 0.3, 2, 360);
+        break;
+      case 'wormwood':
+        v.glow(now, p[0], p[1], p[2] + 0.8, 0xfff4d8, 0.4, 2.5, 260); v.ring(now, p[0], p[1], p[2], 0xfff0c8, 0.3, 2.5, 320);
+        break;
+      case 'fireRing':
+        v.ring(now, p[0], p[1], p[2], 0xff5a1c, 0.5, 4, 420);
+        break;
+      case 'charge':
+        for (let i = 3; i < p.length; i += 3) v.beam(now, [[p[i - 3], p[i - 2], p[i - 1] + 0.1], [p[i], p[i + 1], p[i + 2] + 0.1]], 0xff4a12, 0.9, 1000);
+        break;
+      case 'shove':
+        for (let i = 0; i < p.length; i += 3) v.smoke(now, p[i], p[i + 1], p[i + 2] + 0.6, 0x5a3424, 0.2, 0.7, 260);
+        break;
+      case 'underfoot':
+        for (let i = 0; i < p.length; i += 3) v.ring(now, p[i], p[i + 1], p[i + 2], 0xff6a2a, 0.1, 0.8, 240);
+        break;
+      case 'redIron':
+        v.beam(now, [[p[0], p[1], p[2]], [p[3], p[4], p[5]]], 0xff3a10, 0.06, 200);
+        break;
+      case 'wrath':
+        v.ring(now, p[0], p[1], p[2], 0xff3a10, 0.5, 4, 360); v.glow(now, p[0], p[1], p[2] + 1, 0xff5a1c, 0.5, 3, 300);
+        break;
+      case 'crash':
+        for (let i = 0; i < p.length; i += 3) { v.ring(now, p[i], p[i + 1], p[i + 2], 0xfff0c0, 0.2, 1.2, 280); v.glow(now, p[i], p[i + 1], p[i + 2] + 0.3, 0xffe6a0, 0.2, 1, 240); }
+        break;
       default:
         break;
     }
@@ -169,14 +236,61 @@ export class TalentClient {
       const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.02, 16), this.silver);
       disc.position.set(a.x, a.z + 0.03, a.y);
       obj = disc;
-    } else {
+    } else if (a.kind === 'shadow') {
       // The Way Back's shadow: a dark standing silhouette everyone sees.
       const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 1.75, 10), this.dark);
       body.position.set(a.x, a.z + 0.9, a.y);
       obj = body;
-    }
+    } else obj = this.r5Area(a);
     this.group.add(obj);
     this.drawn.set(a.id, { area: a, obj, arrived: now });
+  }
+
+  /** R5 areas: flat floor shapes in each effect's color, so everyone sees where it acts. */
+  private r5Area(a: TalentArea): THREE.Object3D {
+    const g = new THREE.Group();
+    const flat = (geo: THREE.BufferGeometry, color: number, opacity: number, y = 0.05) => {
+      geo.rotateX(-Math.PI / 2);
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide }));
+      m.position.y = y; m.renderOrder = 2; g.add(m);
+      return m;
+    };
+    const line = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: number, width: number) => {
+      const dx = x1 - x0, dy = y1 - y0, len = Math.max(0.01, Math.hypot(dx, dy));
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(len, 0.08, width), new THREE.MeshBasicMaterial({ color }));
+      bar.position.set((x0 + x1) / 2 - a.x, (z0 + z1) / 2 + 0.08 - a.z, (y0 + y1) / 2 - a.y);
+      bar.rotation.y = -Math.atan2(dy, dx);
+      g.add(bar);
+    };
+    switch (a.kind) {
+      case 'rain':
+        // Rain of Fire: a red-orange rim at the circle's edge and a faint glow inside; flakes fall in update.
+        flat(new THREE.RingGeometry(a.x1 - 0.2, a.x1, 48), 0xff6a2a, 0.75);
+        flat(new THREE.CircleGeometry(a.x1, 40), 0xff4a1a, 0.12, 0.03);
+        break;
+      case 'well':
+        flat(new THREE.CircleGeometry(1, 24), 0x050407, 0.95, 0.06);
+        flat(new THREE.RingGeometry(a.x1 - 0.15, a.x1, 56), 0x8b8f99, 0.7);
+        flat(new THREE.RingGeometry(1, 1.2, 24), 0x55585f, 0.9, 0.07);
+        break;
+      case 'frost':
+        flat(new THREE.CircleGeometry(a.x1, 28), 0xa58cff, 0.35);
+        flat(new THREE.RingGeometry(a.x1 - 0.1, a.x1, 28), 0xd8ccff, 0.7, 0.06);
+        break;
+      case 'boundary': case 'furrow':
+        line(a.x, a.y, a.z, a.x1, a.y1, a.z1, a.kind === 'boundary' ? CHAIN : 0xff5a1c, a.kind === 'boundary' ? 0.18 : 1.5);
+        break;
+      case 'bread':
+        flat(new THREE.RingGeometry(a.x1 - 0.12, a.x1, 48), 0x5ee65e, 0.5);
+        break;
+      case 'cloud':
+        flat(new THREE.RingGeometry(a.x1 - 0.12, a.x1, 48), 0xd8a24a, 0.6);
+        break;
+      default:
+        break;
+    }
+    g.position.set(a.x, a.z, a.y);
+    return g;
   }
 
   private remove(id: number): void {
@@ -189,6 +303,18 @@ export class TalentClient {
 
   /** Animates coins and draws the outlines and silhouettes for this frame. */
   update(now: number, enemies: InterpolatedEnemies, players: ReadonlyArray<{ id: number; x: number; y: number; z: number; dead: boolean }>, roomAt: (x: number, y: number) => number): void {
+    this.fire.update(this.d.tick(), now);
+    const tick = this.d.tick();
+    for (const { area, obj } of this.drawn.values()) {
+      // Areas that follow a player (Bread's ring, a worn cloud) take its pose each frame.
+      const wearer = area.kind === 'bread' ? area.playerId : area.kind === 'cloud' && area.y1 >= 0 ? area.y1 : -1;
+      if (wearer >= 0) { const pose = this.d.pose(wearer) ?? players.find((q) => q.id === wearer); if (pose) obj.position.set(pose.x, pose.z, pose.y); }
+      if (area.kind === 'rain' && tick >= area.startTick && Math.random() < 0.6) {
+        const r = Math.sqrt(Math.random()) * area.x1, t = Math.random() * Math.PI * 2;
+        const x = area.x + Math.cos(t) * r, y = area.y + Math.sin(t) * r;
+        this.d.vfx.mote(now, [x, y, area.z + 7], [x, y, area.z + 0.1], 0xff7a2a, 0.18, 600);
+      }
+    }
     for (const { area, obj, arrived } of this.drawn.values()) {
       if (area.kind !== 'coin') continue;
       const age = (now - arrived) / 1000;

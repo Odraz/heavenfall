@@ -283,6 +283,45 @@ export class Vfx {
     });
   }
 
+  /** An aimed cast's preview (R5: Rain of Fire, the Well, the Boundary Chain): a floor ring and an optional line. */
+  private aimRing: { mesh: THREE.Mesh; material: THREE.MeshBasicMaterial } | null = null;
+  private aimLine: Ribbon | null = null;
+
+  /**
+   * Shows the aimed cast's ring of `radius` at `at` (feet), orange when valid and red when not, and, with
+   * `line`, the segment it will lay; null hides both.
+   */
+  setAimPreview(at: readonly [number, number, number] | null, radius: number, valid: boolean, camera: THREE.Vector3, line?: readonly [readonly [number, number, number], readonly [number, number, number]]): void {
+    if (at && !this.aimRing) {
+      const material = this.material(this.tex.ring, STAR_VALID);
+      material.opacity = 0.85;
+      const mesh = new THREE.Mesh(groundGeo, material);
+      this.group.add(mesh);
+      this.aimRing = { mesh, material };
+    }
+    if (line && !this.aimLine) {
+      this.aimLine = new Ribbon([[0, 0, 0], [0, 0, 1]], STAR_ARC_WIDTH * 2, this.material(this.tex.beam, STAR_VALID), BEAM_TILE);
+      this.group.add(this.aimLine.mesh);
+    }
+    const color = valid ? STAR_VALID : STAR_INVALID;
+    if (this.aimRing) {
+      this.aimRing.mesh.visible = !!at && radius > 0;
+      if (at) {
+        this.aimRing.mesh.position.set(at[0], at[2] + 0.06, at[1]);
+        this.aimRing.mesh.scale.set(radius / RING_RADIUS, 1, radius / RING_RADIUS);
+        this.aimRing.material.color.setHex(color);
+      }
+    }
+    if (this.aimLine) {
+      this.aimLine.mesh.visible = !!at && !!line;
+      if (at && line) {
+        this.aimLine.setPoints([[line[0][0], line[0][1], line[0][2] + 0.15], [line[1][0], line[1][1], line[1][2] + 0.15]]);
+        this.aimLine.face(camera);
+        (this.aimLine.mesh.material as THREE.MeshBasicMaterial).color.setHex(color);
+      }
+    }
+  }
+
   /**
    * Sacrament's beams (M9 §5.1): green, 0.15 m wide, from each healer to its ally, while healing.
    * Each entry is [from, to]; beams not listed are hidden.

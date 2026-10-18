@@ -36,9 +36,9 @@ export interface WadeEnemies {
  * (x, y, z): centers within the player's radius + the enemy's + 0.45 m horizontally and feet within
  * 1.5 m vertically. An enemy's feet are the ground under it (snapshots carry no height), computed only
  * for enemies within reach. Stunned enemies (`FLAG_STUNNED`, M12 §5.3) don't count, nor launched ones
- * until `launchedUntil[slot]` (ms).
+ * until `launchedUntil[slot]` (ms), nor those a wading talent leaves out (`ignore`, by snapshot flags).
  */
-export function wadeCount(map: GameMap, x: number, y: number, z: number, e: WadeEnemies, launchedUntil: ArrayLike<number>, now: number): number {
+export function wadeCount(map: GameMap, x: number, y: number, z: number, e: WadeEnemies, launchedUntil: ArrayLike<number>, now: number, ignore?: (flags: number) => boolean): number {
   let n = 0;
   for (let i = 0; i < e.enemyCount; i++) {
     const type = e.enemyType[i];
@@ -48,7 +48,7 @@ export function wadeCount(map: GameMap, x: number, y: number, z: number, e: Wade
     const dx = e.enemyX[i] - x;
     const dy = e.enemyY[i] - y;
     if (dx * dx + dy * dy > reach * reach) continue;
-    if (now < launchedUntil[e.enemySlot[i]] || e.enemyFlags[i] & FLAG_STUNNED) continue;
+    if (now < launchedUntil[e.enemySlot[i]] || e.enemyFlags[i] & FLAG_STUNNED || ignore?.(e.enemyFlags[i])) continue;
     const g = groundHeight(map, e.enemyX[i], e.enemyY[i], r, Infinity, false, true);
     if (g === -Infinity || Math.abs(g - z) > WADE_HEIGHT) continue;
     n++;

@@ -6,7 +6,7 @@ import { Rewards } from './rewards';
 import { VictoryExit } from './victory';
 import { Talents, type Root } from './talents';
 import { Rites } from './rites';
-import { BASE_ABILITIES, DEV_BUILDS, devBuildOrder, talentNode } from '../data/talents';
+import { BASE_ABILITIES, DEV_BUILDS, devBuildOrder, FALLEN as FALLEN_NUMBERS, talentNode } from '../data/talents';
 import { resolveKit, runBuildError, type Kit, type RunBuild } from './build';
 import { levelForXp } from '../profile/model';
 import type { Profile } from '../profile/model';
@@ -58,12 +58,8 @@ import {
   FALLING_STAR_LANDING_TICKS,
   FALLING_STAR_RADIUS,
   FALLING_STAR_REACH_DAMAGE,
-  FALLING_STAR_KNOCKBACK_TIME,
   KNOCKBACK_DIST,
   KNOCKBACK_TIME,
-  SHOTGUN_CLOSE_DAMAGE,
-  SHOTGUN_KNOCKBACK_DIST,
-  SHOTGUN_KNOCKBACK_RANGE,
   SHROUD_BURST_DAMAGE,
   SHROUD_BURST_RADIUS,
   MOVEMENT_GRACE,
@@ -874,7 +870,7 @@ export class Simulation {
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
       progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)),
-      kits: this.players.map((p) => this.talents.kitState(p)), talentAreas: this.talents.checkpoint(), itemEffects: this.items.records(), victory: this.victory ? { ...this.victory.state } : null,
+      kits: this.players.map((p) => this.talents.kitState(p)), talentAreas: this.talents.checkpoint(), fires: this.talents.fireCheckpoint(), itemEffects: this.items.records(), victory: this.victory ? { ...this.victory.state } : null,
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
       pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), commanderCasts: this.commanders.checkpoint(), watchmanAims: this.watchmen.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
   }
@@ -1217,6 +1213,7 @@ export class Simulation {
     this.updateClouds();
     this.props.update(this.tick, (p) => this.explodeProp(p), (p) => this.emit('all', { type: 'propReady', id: p.id, x: p.x, y: p.y, z: p.z }));
     this.updateHazardDamage();
+    this.talents.pools();
     this.items.membership();
     this.updateSouls();
     this.pickups.update(this.tick, this.players, (drop, collector) => this.rewards.collect(drop, this.slots[collector.id]!));
@@ -2333,6 +2330,7 @@ export class Simulation {
     this.eHurtTick[slot] = this.tick;
     // 5. Death and kill credit.
     if (this.eHp[slot] <= 0) {
+      this.talents.died(slot, shooter ? source : -1);
       this.rewards.enemyKilled(slot);
       if (shooter) {
         shooter.kills++;
@@ -2477,14 +2475,14 @@ export class Simulation {
     for (const { prop } of this.props.ray(x, y, z, dx, dy, dz, stop)) this.props.break(prop.id, this.tick);
   }
 
-  /** A hit on a player. */
-  damagePlayer(p: SimPlayer, amount: number): void {
-    if (p.dead || !p.connected) return;
+  /** A hit on a player; returns the HP and shield it removed. */
+  damagePlayer(p: SimPlayer, amount: number): number {
+    if (p.dead || !p.connected) return 0;
     // 2. Brimstone Hide.
     if (p.classId === 'fallen') amount *= 0.6;
     // 3. Invulnerability.
     if (this.isInvulnerable(p)) amount = 0;
-    if (amount <= 0) return;
+    if (amount <= 0) return 0;
     p.lastDamageTick = this.tick;
     p.lastHurtTick = this.tick;
     // 4. Shield; one taken to 0 bursts (M9 §3.3).
@@ -2499,11 +2497,15 @@ export class Simulation {
     const [x, y, z] = [p.x, p.y, p.z];
     // Intensity (M12 §2.3): the shield absorbed plus the HP lost, counted down to 0 only.
     this.activeDirector()?.hurt(p.index, absorbed + Math.min(amount, p.hp), p.maxHp);
+    const removed = absorbed + Math.min(amount, p.hp);
     p.hp -= amount;
     // 5. Death.
     if (p.hp <= 0) this.killPlayer(p);
+    // Wrath of Dis fills from what the Fallen survives, and resets on death (classes-fallen.md `a.cap`).
+    if (p.classId === 'fallen') this.talents.fallen.hurt(p, removed);
     // Even if the hit killed the player: the burst is where they stood.
     if (burst) this.shroudBurst(p, x, y, z);
+    return removed;
   }
 
   /**
@@ -2780,6 +2782,11 @@ export class Simulation {
       this.talents.shoot(p, slot !== ATTACK_PRIMARY);
       return;
     }
+    // The Fallen's shotgun and slug carry its Delivery and Payload (classes-fallen.md §3).
+    if (p.classId === 'fallen') {
+      if (slot === ATTACK_PRIMARY) this.talents.fallen.shotgun(p); else this.talents.fallen.slug(p);
+      return;
+    }
     const w = attackDef(p.classId, slot);
     const ex = p.x;
     const ey = p.y;
@@ -2808,10 +2815,9 @@ export class Simulation {
         this.silverBullet(p);
         return;
     }
-    // Souls this trigger pull hit: all pellets together count one hit per soul (M8 §4.2).
+    // The Chain Gun (the Fallen and the Betrayer shoot through their talent modules). Souls this trigger
+    // pull hit: all pellets together count one hit per soul (M8 §4.2).
     const souls = new Set<SimPlayer>();
-    const knock = p.classId === 'fallen' && slot === ATTACK_PRIMARY ? new Set<number>() : null;
-    const bodyZ = p.z + PLAYER_HEIGHT / 2;
     for (let i = 0; i < w.pellets; i++) {
       const yaw = w.spreadYaw > 0 ? p.yaw + (this.random() * 2 - 1) * w.spreadYaw : p.yaw;
       const pitch = w.spreadPitch > 0 ? p.pitch + (this.random() * 2 - 1) * w.spreadPitch : p.pitch;
@@ -2824,26 +2830,11 @@ export class Simulation {
       this.globesOnRay(p, ex, ey, ez, dx, dy, dz, stop);
       this.propsOnRay(ex, ey, ez, dx, dy, dz, stop);
       for (const s of hits) {
-        // A shotgun pellet within 6 m deals 20, a Blessed's HP, and always bursts what it kills; beyond, 10
-        // (M12 §5.1, §4.1).
-        const def = ENEMIES[this.eType[s]];
-        const close = knock !== null && distToCylinder(p.x, p.y, bodyZ, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= SHOTGUN_KNOCKBACK_RANGE;
-        const damage = close ? SHOTGUN_CLOSE_DAMAGE : w.damage;
-        this.damageEnemy(s, damage, p.index, close ? Infinity : damage);
+        this.damageEnemy(s, w.damage, p.index, w.damage);
         if (w.slow > 0 && this.eAlive[s]) this.slow(s, w.slow);
-        knock?.add(s);
       }
     }
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, p.classId === 'heretic'), p);
-    // The shotgun knocks back each survivor within 6 m once per shot, except rooted ones (M9 §3.1).
-    if (knock) {
-      for (const s of knock) {
-        if (!this.eAlive[s] || this.isRooted(s)) continue;
-        const def = ENEMIES[this.eType[s]];
-        if (distToCylinder(p.x, p.y, bodyZ, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > SHOTGUN_KNOCKBACK_RANGE) continue;
-        this.knockAway(s, p.x, p.y, SHOTGUN_KNOCKBACK_DIST, KNOCKBACK_TIME);
-      }
-    }
   }
 
   /** Distance along a ray to where it enters an enemy's cylinder. */
@@ -3079,6 +3070,7 @@ export class Simulation {
 
   private useQ(p: SimPlayer): void {
     if (p.classId === 'betrayer' && this.talents.useQ(p)) return;
+    if (p.classId === 'fallen' && p.kit.q === 'castOut') { this.talents.fallen.castOut(p); return; }
     if (p.cdQ > 1e-6) return;
     const cd = ABILITIES[p.classId].Q.cooldown;
     const bx = p.x;
@@ -3087,15 +3079,19 @@ export class Simulation {
     switch (p.classId) {
       case 'fallen': {
         // Blasphemy: every enemy within 12 m, including the Gatekeeper, targets the Fallen for 5 s, and
-        // every one but the Gatekeeper is stunned for 1 s (M12 §5.3).
+        // every one but the Gatekeeper is stunned for 1 s (M12 §5.3). Weight of Sin slows for 3 s instead
+        // of the stun; Blasphemer's Ring sets the ground burning instead (classes-fallen.md `a.1b`, `b.3b`).
+        const sin = this.talents.has(p, 'fallen.a.1b'), ring = this.talents.has(p, 'fallen.b.3b');
         for (let k = 0; k < this.activeCount; k++) {
           const s = this.active[k];
           const def = ENEMIES[this.eType[s]];
           if (distToCylinder(bx, by, bz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > BLASPHEMY_RADIUS) continue;
           this.eTauntUntil[s] = this.tick + ticks(BLASPHEMY_DURATION);
           this.eTarget[s] = p.index;
-          this.stun(s, BLASPHEMY_STUN);
+          if (sin) this.slow(s, FALLEN_NUMBERS.sinSlow);
+          else if (!ring) this.stun(s, BLASPHEMY_STUN);
         }
+        if (ring) this.talents.fallen.blasphemerRing(p, this.talents.root(p, 'Q'));
         break;
       }
       case 'heretic': {
@@ -3143,6 +3139,7 @@ export class Simulation {
 
   private useE(p: SimPlayer, allyId: number): void {
     if (p.classId === 'betrayer' && this.talents.useE(p)) return;
+    if (p.classId === 'fallen' && this.talents.fallen.useE(p)) return;
     const def = ABILITIES[p.classId].E;
     if (def.movement) {
       // Movement abilities run on the client; the host accepts within 0.25 s of ready (§9.3). A
@@ -3200,25 +3197,26 @@ export class Simulation {
     const g = groundHeight(this.map, cx, cy, PLAYER_RADIUS, Infinity, false, true);
     const floor = g === -Infinity ? p.z : g;
     const cz = floor + PLAYER_HEIGHT / 2;
-    this.props.area(cx, cy, cz, FALLING_STAR_RADIUS, this.tick);
+    // Son of the Morning widens the outer launch ring to 8 m; the crater stays 3.5 m (classes-fallen.md `c.1b`).
+    const reach = this.talents.has(p, 'fallen.c.1b') ? FALLEN_NUMBERS.starRing : FALLING_STAR_RADIUS;
+    this.props.area(cx, cy, cz, reach, this.tick);
     const hit: Array<{ s: number; d: number }> = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
       const def = ENEMIES[this.eType[s]];
       const d = distToCylinder(cx, cy, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height);
-      if (d <= FALLING_STAR_RADIUS) hit.push({ s, d });
+      if (d <= reach) hit.push({ s, d });
     }
     const launched: number[] = [];
+    const root = this.talents.root(p, 'E'), cast = this.talents.launches.newCast();
     for (const { s, d } of hit) {
-      if (d <= FALLING_STAR_CRATER) this.damageEnemy(s, FALLING_STAR_DAMAGE, p.index, Infinity, cx, cy);
-      else this.damageEnemy(s, FALLING_STAR_REACH_DAMAGE, p.index, FALLING_STAR_REACH_DAMAGE, cx, cy);
+      if (d <= FALLING_STAR_CRATER) this.talents.primary(root, s, FALLING_STAR_DAMAGE, Infinity, cx, cy);
+      else this.talents.primary(root, s, FALLING_STAR_REACH_DAMAGE, FALLING_STAR_REACH_DAMAGE, cx, cy);
       if (!this.eAlive[s] || this.isRooted(s) || this.immune(s)) continue;
-      this.knockAway(s, cx, cy, KNOCKBACK_DIST, FALLING_STAR_KNOCKBACK_TIME);
-      this.commanders.cancel(s);
-      this.watchmen.cancel(s);
-      this.dominions.cancel(s, this.tick); // Falling Star's accepted launch, even though its arc is drawn only.
-      launched.push(s);
+      // Falling Star's accepted launch, even though its arc is drawn only; its landing is recorded.
+      if (this.talents.launches.launchFrom(s, cx, cy, KNOCKBACK_DIST, p, 'qe', cast)) launched.push(s);
     }
+    this.talents.finish(root);
     this.emit('all', { type: 'starLanded', playerId: p.id, x: cx, y: cy, z: floor, launched });
   }
 
@@ -4040,7 +4038,8 @@ export class Simulation {
     if (this.eMeleeNext[slot] < 0) this.eMeleeNext[slot] = MELEE_FIRST;
     this.eMeleeNext[slot] -= TICK_DT;
     if (this.eMeleeNext[slot] <= 1e-9) {
-      this.damagePlayer(p!, dominion ? DOMINION_MELEE_DAMAGE : MELEE_DAMAGE);
+      // Red Iron answers an accepted melee hit the Fallen survives (classes-fallen.md `a.1a`).
+      if (this.damagePlayer(p!, dominion ? DOMINION_MELEE_DAMAGE : MELEE_DAMAGE) > 0 && p!.classId === 'fallen') this.talents.fallen.meleeStruck(p!, slot);
       this.eMeleeNext[slot] += MELEE_INTERVAL;
     }
     if (this.eState[slot] !== ST_FALLING) this.eState[slot] = ST_ATTACKING;

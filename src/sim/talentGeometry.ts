@@ -6,7 +6,7 @@
 import { JUDAS, TALENT, WAY_BACK, WIRE } from '../data/talents';
 import { PLAYER_EYE, PLAYER_RADIUS } from './constants';
 import { walkDestination } from './field';
-import { raycastTerrain, raycastTerrainHit } from './los';
+import { lineOfSight, raycastTerrain, raycastTerrainHit } from './los';
 import type { GameMap } from './map';
 import { groundHeight, moveHorizontal, type Body, type MoveResult } from './movement';
 
@@ -150,4 +150,61 @@ export function segmentClosest(px: number, py: number, x0: number, y0: number, x
   const t = l2 > 1e-12 ? Math.max(0, Math.min(1, ((px - x0) * dx + (py - y0) * dy) / l2)) : 0;
   const qx = x0 + dx * t - px, qy = y0 + dy * t - py;
   return { d2: qx * qx + qy * qy, t };
+}
+
+/**
+ * The floor point the crosshair ray from the eye meets within `reach` m (R5 aimed casts): a wall hit is
+ * brought 0.5 m back from its foot; null when the ray meets nothing within reach or no open floor.
+ */
+export function aimFloorPoint(map: GameMap, x: number, y: number, z: number, dx: number, dy: number, dz: number, reach: number): [number, number, number] | null {
+  const ez = z + PLAYER_EYE;
+  const hit = raycastTerrainHit(map, x, y, ez, dx, dy, dz, reach);
+  if (hit.t >= reach - 1e-6) return null;
+  let px = x + dx * hit.t, py = y + dy * hit.t;
+  const h = Math.hypot(dx, dy);
+  if (hit.side && h > 1e-6) { px -= (dx / h) * 0.5; py -= (dy / h) * 0.5; }
+  for (let back = 0; back < 4; back++) {
+    const g = floorAt(map, px, py);
+    if (g !== null) return [px, py, g];
+    if (h < 1e-6) break;
+    px -= (dx / h) * 0.25; py -= (dy / h) * 0.25;
+  }
+  return null;
+}
+
+/**
+ * Rain of Fire's circle (classes-fallen.md §4): the crosshair's floor point, at most 30 m away
+ * horizontally, in the caster's room, in sight of the eye. `valid` false draws the preview red.
+ */
+export function rainPoint(map: GameMap, x: number, y: number, z: number, dx: number, dy: number, dz: number, range: number): { x: number; y: number; z: number; valid: boolean } {
+  const pt = aimFloorPoint(map, x, y, z, dx, dy, dz, range * 2);
+  if (!pt) {
+    const h = Math.hypot(dx, dy) || 1;
+    return { x: x + (dx / h) * range, y: y + (dy / h) * range, z, valid: false };
+  }
+  const [px, py, pz] = pt;
+  const room = map.roomOf[Math.floor(y) * map.w + Math.floor(x)];
+  const valid = Math.hypot(px - x, py - y) <= range + 1e-6 && map.roomOf[Math.floor(py) * map.w + Math.floor(px)] === room &&
+    lineOfSight(map, x, y, z + PLAYER_EYE, px, py, pz + 0.3);
+  return { x: px, y: py, z: pz, valid };
+}
+
+/**
+ * An aimed walked destination (classes-binder.md Cast Down, the Well, the Boundary): the horizontal
+ * distance to the crosshair's floor point (aimed above the horizon or at nothing: `max`), held between
+ * `min` and `max`, then walked from the feet along the yaw like Chains' pile point (a wall, a closed
+ * door or a step over 0.5 m stops it).
+ */
+export function aimedWalk(map: GameMap, x: number, y: number, z: number, yaw: number, pitch: number, min: number, max: number): [number, number, number] {
+  const dx = Math.cos(pitch) * Math.cos(yaw), dy = Math.cos(pitch) * Math.sin(yaw), dz = Math.sin(pitch);
+  const pt = pitch >= 0 ? null : aimFloorPoint(map, x, y, z, dx, dy, dz, 80);
+  const d = pt ? Math.max(min, Math.min(max, Math.hypot(pt[0] - x, pt[1] - y))) : max;
+  return walkDestination(map, x, y, yaw, d);
+}
+
+/** The Boundary Chain's ends: each half walked sideways from the center, square to the yaw. */
+export function boundaryEnds(map: GameMap, cx: number, cy: number, yaw: number, length: number): [number, number, number, number, number, number] {
+  const [ax, ay, az] = walkDestination(map, cx, cy, yaw + Math.PI / 2, length / 2);
+  const [bx, by, bz] = walkDestination(map, cx, cy, yaw - Math.PI / 2, length / 2);
+  return [ax, ay, az, bx, by, bz];
 }
