@@ -235,6 +235,19 @@ export class TalentClient {
       case 'resurrect':
         for (let i = 0; i < p.length; i += 3) v.beam(now, [[p[i], p[i + 1], p[i + 2]], [p[i], p[i + 1], p[i + 2] + 6]], 0xfff6d8, 0.4, 700);
         break;
+      // The Binder (R5).
+      case 'holds': case 'procession':
+        for (let i = 0; i < p.length; i += 6) v.beam(now, [[p[i], p[i + 1], p[i + 2]], [p[i + 3], p[i + 4], p[i + 5]]], CHAIN, 0.07, 320);
+        break;
+      case 'fall': case 'wind':
+        for (let i = 0; i < p.length; i += 3) v.ring(now, p[i], p[i + 1], p[i + 2], e.kind === 'wind' ? 0xcfe3ff : CHAIN, 0.2, 0.9, 300);
+        break;
+      case 'shatter':
+        for (let i = 0; i < p.length; i += 3) { v.ring(now, p[i], p[i + 1], p[i + 2], CHAIN, 0.2, 2, 280); v.glow(now, p[i], p[i + 1], p[i + 2] + 0.8, 0xff8a3a, 0.2, 1, 220); }
+        break;
+      case 'hymn':
+        for (let i = 0; i < p.length; i += 3) v.glow(now, p[i], p[i + 1], p[i + 2], 0xe8f0ff, 0.2, 1.2, 240);
+        break;
       case 'crash':
         for (let i = 0; i < p.length; i += 3) { v.ring(now, p[i], p[i + 1], p[i + 2], 0xfff0c0, 0.2, 1.2, 280); v.glow(now, p[i], p[i + 1], p[i + 2] + 0.3, 0xffe6a0, 0.2, 1, 240); }
         break;

@@ -129,8 +129,8 @@ import type { VictoryState } from '../sim/victory';
 import { levelForXp } from '../profile/model';
 import { TalentClient } from './talentClient';
 import { riteOverlay, talentPanel, type RiteOverlay, type TalentPanel } from '../ui/talents';
-import { ALT_ABILITIES, GATEBREAKER, RAIN, hasCatalog } from '../data/talents';
-import { rainPoint } from '../sim/talentGeometry';
+import { ALT_ABILITIES, BINDER, GATEBREAKER, RAIN, hasCatalog } from '../data/talents';
+import { aimedWalk, rainPoint } from '../sim/talentGeometry';
 /** Alternatives whose `abilityUsed` the base class key must not draw or sound (R5). */
 const ALT_SFX_KEYS = new Set(['castOut', 'gatebreaker', 'rainOfFire', 'breadOfAngels', 'trialByFire', 'cloudOfWitnesses', 'well', 'ring', 'boundary']);
 import { ADVOCATE_REACH } from '../sim/sim';
@@ -756,8 +756,8 @@ export class Game {
       this.qPresses = (this.qPresses + 1) & 0xff;
       // Your Blasphemy shakes the screen on its press (M12 §4.5).
       if (this.classId === 'fallen' && this.displayedCooldown('Q', now) <= 0) this.shake.add(now, SHAKE_BLASPHEMY);
-      // Your Chains come down at once (M12 follow-up §2.2).
-      if (this.classId === 'binder' && this.displayedCooldown('Q', now) <= 0) this.ownChains(now);
+      // Your Chains come down at once (M12 follow-up §2.2); Ring and the Boundary come from the host.
+      if (this.classId === 'binder' && this.talents.ability(this.localId, 'Q') === 'chains' && this.displayedCooldown('Q', now) <= 0) this.ownChains(now);
       return;
     }
     const def = ABILITIES[this.classId].E;
@@ -771,7 +771,7 @@ export class Game {
     if (!def.movement) {
       this.ePresses = (this.ePresses + 1) & 0xff;
       // Your Discord's gust leaves at once, along your view (M12 follow-up §2.4).
-      if (this.classId === 'binder' && this.displayedCooldown('E', now) <= 0) {
+      if (this.classId === 'binder' && this.talents.ability(this.localId, 'E') === 'discord' && this.displayedCooldown('E', now) <= 0) {
         const b = this.player.body;
         const [dx, dy, dz] = aimDir(this.player.yaw, this.player.pitch);
         this.vfx.gust(now, [b.x, b.y, b.z + PLAYER_EYE - GUST_BELOW_EYE], [dx, dy, dz], DISCORD_HALF_ANGLE, DISCORD_RANGE);
@@ -906,6 +906,21 @@ export class Game {
     const pts: Array<[number, number, number]> = [[x0, y0, z0 + DASH_STREAK_HEIGHT], [x1, y1, z1 + DASH_STREAK_HEIGHT]];
     this.vfx.beam(now, pts, DASH_SHADOW, DASH_STREAK_WIDTH, DASH_STREAK_MS);
     this.vfx.beam(now, pts, DASH_STREAK, DASH_STREAK_CORE, DASH_STREAK_MS);
+  }
+
+  /**
+   * A Scourge swing's shape: the base 3 m arc, The Long Flail's 4 m arc, Whirl's full circle or the
+   * Whip's 7 m line (classes-binder.md `b.1a`, `b.3b`, `c.2b`).
+   */
+  private scourgeShape(now: number, playerId: number, x: number, y: number, z: number, yaw: number): void {
+    const has = (id: string) => this.talents.kits.get(playerId)?.active.includes(id) ?? false;
+    if (has('binder.b.1a')) { this.vfx.ring(now, x, y, z + 0.9, 0xff6a2a, 0.6, 3, 260); return; }
+    if (has('binder.c.2b')) {
+      const pts: Array<[number, number, number]> = [[x, y, z + 0.9], [x + Math.cos(yaw) * BINDER.whipLength, y + Math.sin(yaw) * BINDER.whipLength, z + 0.9]];
+      this.vfx.beam(now, pts, 0xff6a2a, 0.12, 240); this.vfx.beam(now, pts, 0xfff0c0, 0.04, 240);
+      return;
+    }
+    this.vfx.scourgeArc(now, x, y, z, yaw);
   }
 
   /** Pause opens when pointer lock is lost, before the result (§3). */
@@ -1416,7 +1431,9 @@ export class Game {
    */
   private ownChains(now: number): void {
     const b = this.player.body;
-    const [px, py] = walkDestination(this.map, b.x, b.y, this.player.yaw, CHAINS_MAX);
+    // Cast Down drops the pile at the crosshair's floor point; All of Tartarus reaches every direction.
+    const [px, py] = this.talents.ownHas('binder.a.1a') ? aimedWalk(this.map, b.x, b.y, b.z, this.player.yaw, this.player.pitch, BINDER.castDownMin, BINDER.castDown) : walkDestination(this.map, b.x, b.y, this.player.yaw, CHAINS_MAX);
+    const everyWay = this.talents.ownHas('binder.a.cap');
     const ents = this.snaps.out;
     const ex = b.x;
     const ey = b.y;
@@ -1431,7 +1448,7 @@ export class Game {
       const dz = this.zScratch[i] + def.height / 2 - ez;
       const len = Math.hypot(dx, dy, dz);
       if (len - def.radius > CHAINS_RANGE) continue;
-      if (len > 1e-9 && (dx * ax + dy * ay + dz * az) / len < cosMax) continue;
+      if (!everyWay && len > 1e-9 && (dx * ax + dy * ay + dz * az) / len < cosMax) continue;
       this.chainsDown(now, px, py, this.map.floor[Math.floor(py) * this.map.w + Math.floor(px)], this.localId);
       return;
     }
@@ -1523,6 +1540,11 @@ export class Game {
     const key = ALT_SFX_KEYS.has(ab) ? `alt:${ab}` : `${cls}:${e.slot}`;
     const user = this.playerPose(e.playerId);
     switch (key) {
+      case 'alt:ring': // chains burst up from the 7 m circle and haul the crowd into the ring
+        this.vfx.ring(now, e.x, e.y, e.z, 0xd8401c, 7, 2.5, 320);
+        if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.pileChains(t, e.x, e.y, e.z, e.playerId) });
+        else this.pileChains(now, e.x, e.y, e.z, e.playerId);
+        break;
       case 'alt:castOut': // two wings of shock sweeping forward over the 10 m cone
         if (user) this.vfx.gust(now, [user.x, user.y, user.z + 1.2], [Math.cos(user.yaw), Math.sin(user.yaw), 0], Math.PI / 4, 10);
         this.vfx.ring(now, e.x, e.y, e.z, 0xe0301e, 0.5, 10, 350);
@@ -1811,7 +1833,7 @@ export class Game {
             at: now + delay + (i * gap) / n,
             run: (t) => {
               const q = this.snaps.playersOut.find((o) => o.id === p.id);
-              if (q) this.vfx.scourgeArc(t, q.x, q.y, q.z, q.yaw);
+              if (q) this.scourgeShape(t, p.id, q.x, q.y, q.z, q.yaw);
             },
           });
         }
@@ -2051,7 +2073,7 @@ export class Game {
       case 'scourge': {
         this.hud.swing(now);
         this.sounds.ownShot(this.classId, true);
-        this.vfx.scourgeArc(now, p.body.x, p.body.y, p.body.z, p.yaw);
+        this.scourgeShape(now, this.localId, p.body.x, p.body.y, p.body.z, p.yaw);
         const hits = this.scourgeHits(ents, enemyZ);
         if (hits.length) {
           this.hud.hit(now);
@@ -2477,7 +2499,8 @@ export class Game {
       this.fireAcc -= TICK_DT;
       if (this.attack !== ATTACK_NONE && this.fireTimer <= 1e-6) {
         this.cosmeticShot(now, this.attack, ents, enemyZ);
-        this.fireTimer += attackDef(this.classId, this.attack).interval;
+        // Whirl swings every 1.2 s (classes-binder.md `b.1a`).
+        this.fireTimer += this.classId === 'binder' && this.attack === ATTACK_SECONDARY && this.talents.ownHas('binder.b.1a') ? BINDER.whirlInterval : attackDef(this.classId, this.attack).interval;
       }
       this.fireTimer -= TICK_DT * this.localFireRate();
       if (this.attack === ATTACK_NONE && this.fireTimer < 0) this.fireTimer = 0;

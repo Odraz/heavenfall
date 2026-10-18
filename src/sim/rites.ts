@@ -42,6 +42,15 @@ export class Rites {
       if (e.item === 'frost') areas.add('slowed');
       if (e.item === 'chain') areas.add('bound');
     }
+    // R5 areas still supplying their states in this room: fire, the Well, frost, the Boundary, clouds.
+    for (const a of sim.talents.areas.values()) {
+      if (sim.roomAt(a.x, a.y) !== room || sim.tick >= a.endTick) continue;
+      if (a.kind === 'well' || a.kind === 'frost' || a.kind === 'boundary' || a.kind === 'rain' || a.kind === 'furrow') areas.add('pooled');
+      if (a.kind === 'frost') areas.add('slowed');
+      if (a.kind === 'boundary') areas.add('bound');
+      if (a.kind === 'cloud') areas.add('censed');
+    }
+    for (const f of sim.talents.fires.values()) if ([...f.cells.values()].some((c) => c.room === room)) areas.add('pooled');
     const hazard = sim.props.all.some((q) => q.family === 'blast') ||
       sim.map.rooms.some((_, i) => sim.rooms[i].phase !== PHASE_CLEARED && sim.hazards.hasRoom(i));
     // What the floor still holds: living enemies and the waves of rooms not yet cleared.

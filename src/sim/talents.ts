@@ -29,6 +29,7 @@ import { FloorFire } from './floorFire';
 import { Launches, type Landing } from './launches';
 import { FallenTalents } from './talentsFallen';
 import { HereticTalents } from './talentsHeretic';
+import { BinderTalents } from './talentsBinder';
 import type { FireState } from '../net/messages';
 
 const ticks = (s: number) => Math.round(s * TICK_HZ);
@@ -41,7 +42,7 @@ export const KNOWN_GROUND = KNOWN;
 export const THROUGH_THE_THRONG = 'betrayer.b.1a';
 export const INFORMER = 'betrayer.a.2b';
 
-interface Victim { s: number; x: number; y: number; z: number; room: number; slowed: boolean; bound: boolean }
+interface Victim { s: number; inc: number; x: number; y: number; z: number; room: number; slowed: boolean; bound: boolean }
 /** One native action (§14.11): its owner, input, shared hit set and the deaths it caused this tick. */
 export interface Root {
   owner: SimPlayer;
@@ -72,6 +73,7 @@ export class Talents {
   readonly fires = new Map<number, FloorFire>();
   readonly fallen: FallenTalents;
   readonly heretic: HereticTalents;
+  readonly binder: BinderTalents;
   /** Set while a root's native hit resolves, so a death knows it was a primary kill (Bread of Angels). */
   private primaryHit = false;
 
@@ -79,6 +81,7 @@ export class Talents {
     this.launches = new Launches(sim, ENEMY_SLOTS);
     this.fallen = new FallenTalents(sim, this, ENEMY_SLOTS);
     this.heretic = new HereticTalents(sim, this, ENEMY_SLOTS);
+    this.binder = new BinderTalents(sim, this, ENEMY_SLOTS);
   }
 
   /** A player's floor fire: the Fallen's holds 600 burning cells, the Heretic's 400. */
@@ -160,7 +163,7 @@ export class Talents {
   primary(root: Root, s: number, amount: number, force: number, fromX = NaN, fromY = NaN, area?: boolean): void {
     const sim = this.sim;
     if (!sim.eAlive[s]) return;
-    const v: Victim = { s, x: sim.eX[s], y: sim.eY[s], z: sim.eZ[s], room: sim.roomAt(sim.eX[s], sim.eY[s]), slowed: this.slowed(s), bound: sim.isRooted(s) };
+    const v: Victim = { s, inc: sim.eIncarnation[s], x: sim.eX[s], y: sim.eY[s], z: sim.eZ[s], room: sim.roomAt(sim.eX[s], sim.eY[s]), slowed: this.slowed(s), bound: sim.isRooted(s) };
     this.primaryHit = true;
     sim.damageEnemy(s, amount, root.owner.index, force, fromX, fromY, false, area);
     this.primaryHit = false;
@@ -179,6 +182,7 @@ export class Talents {
     if (this.has(p, VESSEL)) this.clay(p, victims.filter((v) => v.bound));
     if (this.has(p, 'fallen.b.1b') && root.input === 'LMB') this.fallen.kindleBundle(p, victims);
     if (this.has(p, 'heretic.b.1b')) this.heretic.kindleBundle(p, victims);
+    if (p.classId === 'binder' && (root.input === 'LMB' || root.input === 'RMB')) this.binder.bundle(p, victims);
   }
 
   /** Enemies other than the boss and its parts whose center is within `r` of a point, in that room, in sight. */
@@ -318,6 +322,11 @@ export class Talents {
     }
     // The wall end, just in front of the face, so the Nail's sight test starts in the open.
     ends.push(ex - dx * 0.05, ey - dy * 0.05, ez - dz * 0.05);
+  }
+
+  /** Distance along a ray to where it enters an enemy's cylinder. */
+  rayTo(s: number, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number): number {
+    return this.rayT(s, ox, oy, oz, dx, dy, dz);
   }
 
   private rayT(s: number, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number): number {
@@ -511,6 +520,7 @@ export class Talents {
     this.launches.clear();
     this.fallen.roomCleared();
     this.heretic.roomCleared();
+    this.binder.roomCleared();
   }
 
   checkpoint(): TalentArea[] {
@@ -540,11 +550,12 @@ export class Talents {
     if (landed.length) this.landings(landed);
     this.fallen.pools();
     this.heretic.pools();
+    this.binder.pools();
     this.flushFires();
   }
 
   private landings(landed: Landing[]): void {
-    for (const l of landed) this.fallen.landControl(l);
+    for (const l of landed) { this.fallen.landControl(l); this.binder.landControl(l); }
     for (const l of landed) this.fallen.landDamage(l);
     const crashes = new Map<SimPlayer, number[]>();
     for (const l of landed) {
@@ -566,6 +577,7 @@ export class Talents {
     const sim = this.sim;
     this.fallen.update();
     this.heretic.update();
+    this.binder.update();
     for (const a of [...this.areas.values()]) {
       if (sim.tick < a.endTick) continue;
       const owner = sim.playerById(a.playerId);

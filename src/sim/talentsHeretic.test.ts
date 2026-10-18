@@ -6,6 +6,7 @@ import { BREAD, HERETIC, TRIAL, WITNESSES } from '../data/talents';
 import { ATTACK_PRIMARY, ATTACK_SECONDARY, CLOUD_DAMAGE, CLOUD_TIME } from '../data/weapons';
 import type { ClassId } from '../data/classes';
 import { TICK_HZ } from './constants';
+import { PHASE_CLEARED } from '../net/protocol';
 import type { Simulation, SimPlayer } from './sim';
 import { Simulation as Sim } from './sim';
 import { dungeonOf } from './testutil/maps';
@@ -18,7 +19,10 @@ function kit(sim: Simulation, p: SimPlayer, talents: string[], q = 'communion', 
 /** An open 40 × 20 room that is one arena, so drops and room checks have a room. */
 function setup(classes: ClassId[] = ['heretic'], w = 40, h = 20): Simulation {
   const dungeon = dungeonOf(room(w, h), { arenas: [{ id: 'a', name: 'A', rect: { x0: 1, y0: 1, x1: w, y1: h }, doors: [], entryCells: [[2, 2], [3, 2], [2, 3], [3, 3]], waves: [], boss: false }] });
-  return new Sim({ dungeon, players: classes.map((classId, id) => ({ id, name: `P${id}`, classId })), seed: 1, noWaves: true });
+  const sim = new Sim({ dungeon, players: classes.map((classId, id) => ({ id, name: `P${id}`, classId })), seed: 1, noWaves: true });
+  // Already cleared: its countdown, seal and clear stay out of these tests (a clear ends combat effects).
+  sim.rooms[0].phase = PHASE_CLEARED;
+  return sim;
 }
 const run = (sim: Simulation, n: number) => { for (let i = 0; i < n; i++) sim.step(); };
 /** Throws a censer straight at an enemy from 2 m and lets it break. */

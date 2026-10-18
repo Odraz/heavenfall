@@ -7,7 +7,7 @@ import { VictoryExit } from './victory';
 import { Talents, type Root } from './talents';
 import type { HereticCloud } from './talentsHeretic';
 import { Rites } from './rites';
-import { BASE_ABILITIES, DEV_BUILDS, devBuildOrder, FALLEN as FALLEN_NUMBERS, talentNode } from '../data/talents';
+import { BASE_ABILITIES, BINDER as BINDER_NUMBERS, DEV_BUILDS, devBuildOrder, FALLEN as FALLEN_NUMBERS, talentNode } from '../data/talents';
 import { resolveKit, runBuildError, type Kit, type RunBuild } from './build';
 import { levelForXp } from '../profile/model';
 import type { Profile } from '../profile/model';
@@ -19,7 +19,6 @@ import type { DungeonDef } from '../data/dungeons/types';
 import {
   BLESSED,
   CHERUB,
-  CHERUB_CLIMB,
   CHERUB_HOVER,
   CHORISTER,
   DOMINION, CANTOR, CARRIER, isCommander,
@@ -2744,7 +2743,8 @@ export class Simulation {
       this.fireWeapon(p, slot);
       if (slot === ATTACK_PRIMARY) p.shots++;
       else p.shots2++;
-      p.fireTimer += attackDef(p.classId, slot).interval;
+      // Whirl slows the Scourge to 1.2 s between swings (classes-binder.md `b.1a`).
+      p.fireTimer += p.classId === 'binder' && slot !== ATTACK_PRIMARY ? this.talents.binder.scourgeInterval(p) : attackDef(p.classId, slot).interval;
     }
     p.fireTimer -= TICK_DT * this.fireRate(p);
     if (slot === ATTACK_NONE && p.fireTimer < 0) p.fireTimer = 0;
@@ -2785,6 +2785,11 @@ export class Simulation {
     // The Betrayer's two lines carry its talents' Delivery and Payload (classes-betrayer.md §3).
     if (p.classId === 'betrayer') {
       this.talents.shoot(p, slot !== ATTACK_PRIMARY);
+      return;
+    }
+    // The Binder's Chain Gun and Scourge carry its Delivery (classes-binder.md §3).
+    if (p.classId === 'binder') {
+      if (slot === ATTACK_PRIMARY) this.talents.binder.chainGun(p); else this.talents.binder.scourge(p);
       return;
     }
     // The Fallen's shotgun and slug carry its Delivery and Payload (classes-fallen.md §3).
@@ -2879,7 +2884,18 @@ export class Simulation {
   }
 
   /** A globe shot down by player `p`: 40 to every enemy within 3 m in its line of sight, credited, and nothing to players. */
-  private shootDownGlobe(slot: number, p: SimPlayer): void {
+  /** The owner index of a projectile: a player's, or -1 for an enemy's. */
+  projectileOwner(slot: number): number {
+    return this.pOwner[slot];
+  }
+
+  /** Moves an enemy horizontally by (dx, dy) with collision, as a drag (the Well of the Giants). */
+  drift(slot: number, dx: number, dy: number): void {
+    const b = this.loadBody(slot);
+    if (tryDisplace(this.map, b, dx, dy)) this.storeBody(slot, b);
+  }
+
+  shootDownGlobe(slot: number, p: SimPlayer): void {
     if (!this.pAlive[slot]) return;
     const x = this.pX[slot];
     const y = this.pY[slot];
@@ -3082,6 +3098,7 @@ export class Simulation {
     if (p.classId === 'betrayer' && this.talents.useQ(p)) return;
     if (p.classId === 'fallen' && p.kit.q === 'castOut') { this.talents.fallen.castOut(p); return; }
     if (p.classId === 'heretic' && p.kit.q === 'cloudOfWitnesses') { this.talents.heretic.witnesses(p); return; }
+    if (p.classId === 'binder' && this.talents.binder.useQ(p)) return;
     if (p.cdQ > 1e-6) return;
     const cd = ABILITIES[p.classId].Q.cooldown;
     const bx = p.x;
@@ -3129,8 +3146,11 @@ export class Simulation {
         const c = Math.floor(dx);
         const r = Math.floor(dy);
         const floorZ = this.map.floor[r * this.map.w + c];
-        for (const s of this.chainsTargets(p)) this.pull(s, dx, dy, floorZ);
-        p.cdQ = cd;
+        const targets = this.chainsTargets(p);
+        for (const s of targets) this.pull(s, dx, dy, floorZ);
+        // Own pulls, and The Procession's file behind them (classes-binder.md `c.2a`).
+        this.talents.binder.chained(p, targets, dx, dy, floorZ);
+        p.cdQ = this.talents.binder.allOfTartarus(p) ? BINDER_NUMBERS.tartarusCooldown : cd;
         this.abilityEvent(p, 'Q', dx, dy, floorZ);
         return;
       }
@@ -3153,6 +3173,7 @@ export class Simulation {
     if (p.classId === 'betrayer' && this.talents.useE(p)) return;
     if (p.classId === 'fallen' && this.talents.fallen.useE(p)) return;
     if (p.classId === 'heretic' && this.talents.heretic.useE(p)) return;
+    if (p.classId === 'binder' && this.talents.binder.useE(p)) return;
     const def = ABILITIES[p.classId].E;
     if (def.movement) {
       // Movement abilities run on the client; the host accepts within 0.25 s of ready (§9.3). A
@@ -3190,7 +3211,10 @@ export class Simulation {
       p.cdE = def.cooldown;
       this.abilityEvent(p, 'E', target.x, target.y, target.z, [target.id]);
     } else if (p.classId === 'binder') {
-      for (const s of this.discordTargets(p)) this.silence(s, DISCORD_SILENCE);
+      const targets = this.discordTargets(p);
+      for (const s of targets) this.silence(s, DISCORD_SILENCE);
+      // Voice of the Pit, Shattered Hymn and The Wind of Cocytus (classes-binder.md `b.2a`, `c.3b`, `c.cap`).
+      this.talents.binder.discord(p, targets, DISCORD_SILENCE);
       p.cdE = def.cooldown;
       // At the Binder's feet; clients fan the shout out along its yaw.
       this.abilityEvent(p, 'E', p.x, p.y, p.z);
@@ -3289,6 +3313,9 @@ export class Simulation {
    * 5 m; a step into a wall, a closed door or a floor more than 0.5 m above the previous one is blocked.
    */
   chainsDestination(p: SimPlayer): [number, number] {
+    // Cast Down: where the crosshair meets the floor, 1.5–15 m away (classes-binder.md `a.1a`).
+    const cast = this.talents.binder.chainsDestination(p);
+    if (cast) return cast;
     const [x, y] = walkDestination(this.map, p.x, p.y, p.yaw, CHAINS_MAX);
     return [x, y];
   }
@@ -3327,6 +3354,7 @@ export class Simulation {
     const ey = p.y;
     const ez = p.z + PLAYER_EYE;
     const cosMax = Math.cos(CHAINS_ANGLE);
+    const all = this.talents.binder.allOfTartarus(p);
     const out: number[] = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
@@ -3337,7 +3365,8 @@ export class Simulation {
       const by = this.eY[s] - ey;
       const bz = this.eZ[s] + def.height / 2 - ez;
       const len = Math.hypot(bx, by, bz);
-      if (len > 1e-9 && (bx * ax + by * ay + bz * az) / len < cosMax - 1e-9) continue;
+      // All of Tartarus reaches every direction (classes-binder.md `a.cap`).
+      if (!all && len > 1e-9 && (bx * ax + by * ay + bz * az) / len < cosMax - 1e-9) continue;
       if (!lineOfSight(this.map, ex, ey, ez, this.eX[s], this.eY[s], this.eZ[s] + def.height / 2)) continue;
       out.push(s);
     }
@@ -3725,6 +3754,7 @@ export class Simulation {
       this.eGrounded[slot] = 1;
       this.eVz[slot] = 0;
       this.root(slot, CHAINS_ROOT);
+      this.talents.binder.pullDone(slot);
     }
   }
 
@@ -4011,8 +4041,9 @@ export class Simulation {
     // Hover with the feet 4 m above the ground height, changing height at up to 6 m/s.
     const g = groundHeight(this.map, b.x, b.y, b.radius, Infinity, false, true);
     if (g !== -Infinity) {
-      const want = g + CHERUB_HOVER;
-      const maxDz = CHERUB_CLIMB * TICK_DT;
+      // Brought Low holds a flyer its Binder binds on the floor (classes-binder.md `a.2b`).
+      const want = g + (this.talents.binder.grounded(slot) ? 0 : CHERUB_HOVER);
+      const maxDz = this.talents.binder.climbRate(slot) * TICK_DT;
       b.z += Math.max(-maxDz, Math.min(maxDz, want - b.z));
     }
     this.storeBody(slot, b);
@@ -4032,7 +4063,8 @@ export class Simulation {
       inRange = Math.hypot(p.x - this.eX[slot], p.y - this.eY[slot]) <= (dominion ? DOMINION_MELEE_RANGE : MELEE_RANGE) && Math.abs(p.z - this.eZ[slot]) < MELEE_HEIGHT &&
         (!dominion || lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eyeZ(slot), p.x, p.y, p.z + PLAYER_HEIGHT / 2));
     }
-    if (!inRange) {
+    // Fettered Hands: a Blessed bound by its Binder strains at the chains instead of striking (classes-binder.md `b.2b`).
+    if (!inRange || this.talents.binder.fettered(slot)) {
       this.eMeleeNext[slot] = -1;
       return;
     }
