@@ -22,6 +22,7 @@ export type MainToWorker =
       diagnostics?: boolean;
       /** `build=<name>` with dev=1: a development quick build for the human players. */
       devBuild?: string;
+      devRelics?: string[];
     } & RunConfig)
   /** Multiplayer: the host clicked `Create`; the worker opens the lobby with the host as player 0. */
   | { t: 'host'; heaven: 1; fixture: string | null; password: string; name: string; god: boolean; bot: boolean; profile?: Profile; progressionEnabled?: boolean; diagnostics?: boolean }

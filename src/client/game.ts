@@ -136,6 +136,9 @@ const ALT_SFX_KEYS = new Set(['castOut', 'gatebreaker', 'rainOfFire', 'breadOfAn
 import { ADVOCATE_REACH } from '../sim/sim';
 import type { RiteOffer } from '../net/messages';
 import { advocateSprite } from './advocate';
+import { RelicView } from './relicView';
+import { RelicHud } from './relicHud';
+import { STREAK_NAMES } from '../sim/streaks';
 
 const BENCH_TURN_RATE = 0.3;
 /** A move longer than this in one frame is a teleport: the weapon's sway resets (M11 §3.2, as the bob). */
@@ -358,6 +361,9 @@ export class Game {
   private readonly mapView: MapView;
   private readonly shop: ShopView;
   private readonly itemView: ItemView;
+  /** R6: relic areas, projectiles and rings, and the HUD's relic strip and streak banner. */
+  private readonly relicView: RelicView;
+  private readonly relicHud: RelicHud;
   private readonly featherTrails = new FeatherTrails();
   private readonly shopHint = document.createElement('div');
   private inventory: InventoryState | null = null;
@@ -613,6 +619,9 @@ export class Game {
     this.shop = new ShopView(this.map, o.floor); this.scene.scene.add(this.shop.group);
     this.itemView = new ItemView(this.map);
     this.scene.scene.add(this.itemView.group);
+    this.relicView = new RelicView(this.map, this.vfx);
+    this.scene.scene.add(this.relicView.group);
+    this.relicHud = new RelicHud(this.hud.root);
     this.shopHint.className = 'shop-hint'; this.hud.root.append(this.shopHint);
     this.victoryHint.className = 'victory-hint'; this.hud.root.append(this.victoryHint);
     this.party = o.singleplayer ? null : new PartyFrames(this.hud.leftColumn, this.hud.ownFrame);
@@ -1200,6 +1209,9 @@ export class Game {
       this.talents.sync(msg, performance.now());
       this.applyOwnKit();
       this.itemView.sync(msg.itemEffects ?? []);
+      this.relicView.sync(msg.relicAreas ?? [], msg.relicShots ?? []);
+      const relics = msg.relicStates?.find((r) => r.playerId === this.localId);
+      if (relics) this.relicHud.setRelics(relics.relics, relics.combo, relics.ready);
       const inventory = msg.inventories?.find(p => p.playerId === this.localId);
       if (inventory) this.setInventory(inventory);
       this.dominion.sync(msg);
@@ -1278,6 +1290,15 @@ export class Game {
       case 'itemEffectActivated': this.itemView.state(e.effect); break;
       case 'itemEffectEnded': this.itemView.remove(e.instanceId); break;
       case 'itemReflected': this.vfx.glow(now, e.x, e.y, e.z, 0xddeeff, .2, .5, 180); break;
+      case 'relicArea': if (e.end) this.relicView.endArea(e.area.id); else this.relicView.area(e.area); break;
+      case 'relicShot': if (e.end) this.relicView.endShot(e.shot.id, e, now); else this.relicView.shot(e.shot); break;
+      case 'relicFx': this.relicView.fx(e, now); break;
+      case 'relicState': if (e.playerId === this.localId) this.relicHud.setRelics(e.relics, e.combo, e.ready); break;
+      case 'streak':
+        if (e.playerId === this.localId) this.relicHud.streakTier(e.tier, e.count, now);
+        else this.hud.addChat(this.roster.find((r) => r.id === e.playerId)?.name ?? `Player ${e.playerId}`, `${STREAK_NAMES[e.tier]} (${e.count})`, now);
+        break;
+      case 'streakEnd': if (e.playerId === this.localId) this.relicHud.streakEnd(e.count, now); break;
       case 'inventory':
         if (e.state.playerId === this.localId) this.setInventory(e.state);
         break;
@@ -2606,6 +2627,8 @@ export class Game {
     this.rewardShafts.update(now, this.snaps.newest, rewardIds, (x, y) => this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)], this.scene.camera.position);
     const itemTick = this.snaps.estimatedTick(simNow);
     this.itemView.update(itemTick);
+    this.relicView.update(itemTick);
+    this.relicHud.update(itemTick, now);
     for (const [x, y, z] of this.featherTrails.step(now, (id) => id === this.localId ? (this.dead ? undefined : this.player.body) : this.playerPose(id))) this.particles.trailFeather(x, y, z);
     this.player.speed = CLASSES[this.classId].speed + (!this.dead && itemTick < (this.inventory?.featherUntil ?? 0) ? FEATHER_SPEED : 0);
     this.hud.setItemCooldown(this.inventory ? Math.max(0, this.inventory.itemReadyTick - itemTick) / 30 : 0);
@@ -3069,6 +3092,7 @@ export class Game {
     this.mapView.dispose();
     this.shop.dispose();
     this.itemView.dispose();
+    this.relicView.dispose();
     this.bench?.dispose();
     this.scene.dispose();
     this.o.root.replaceChildren();

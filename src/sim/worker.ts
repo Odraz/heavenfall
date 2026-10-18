@@ -148,7 +148,7 @@ function start(m: Extract<MainToWorker, { t: 'start' }>): void {
   const { def, map, floor } = loadRunMap(m);
   sim = new Simulation({
     dungeon: def, map, floor, props: propDefs(floor), runId: m.runId, players: m.players, seed: m.simSeed, god: !m.progressionEnabled && m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
-    startRoom: m.startRoom, progressionEnabled: m.progressionEnabled, diagnostics: !!m.diagnostics, devBuild: m.devBuild,
+    startRoom: m.startRoom, progressionEnabled: m.progressionEnabled, diagnostics: !!m.diagnostics, devBuild: m.devBuild, devRelics: m.devRelics,
   });
   runId = m.runId;
   localPlayerId = m.localPlayerId;

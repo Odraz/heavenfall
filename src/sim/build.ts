@@ -264,7 +264,7 @@ const allyKit = (a: SourceContext['allies'][number]): Kit => {
   return { classId: a.classId, q: a.q, e: a.e, owned: active, active, suppressed: new Map(), dormant: [] };
 };
 
-function stateAvailable(state: EnemyState, kit: Kit, ctx: SourceContext): boolean {
+export function stateAvailable(state: EnemyState, kit: Kit, ctx: SourceContext): boolean {
   if (producedStates(kit).has(state) || ctx.areas.has(state)) return true;
   if (state === 'slowed' && ctx.items.includes('frost')) return true;
   if (state === 'bound' && ctx.items.includes('chain')) return true;

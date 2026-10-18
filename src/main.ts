@@ -226,7 +226,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
     game.handleCtrl(msg);
   };
   await game.prepare();
-  host.start(run, roster, params.god, params.benchArena, params.benchBurst, startRoom, params.dev, params.devBuild ?? undefined);
+  host.start(run, roster, params.god, params.benchArena, params.benchBurst, startRoom, params.dev, params.devBuild ?? undefined, params.devRelics);
 }
 
 // ------------------------------------------------------------------ multiplayer (§3, §9)

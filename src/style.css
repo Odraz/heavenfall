@@ -1539,7 +1539,7 @@ div.weapon-swing {
 }
 
 /* A Talents button takes a ninth row; every card reserves it, so the rows still line up. */
-.class-cards:has(.class-talents) .class-card:has(.class-level) {
+.class-cards:has(.class-actions) .class-card:has(.class-level) {
   grid-row: span 9;
 }
 
@@ -2698,7 +2698,11 @@ div.weapon-swing {
   display: none;
 }
 
-.class-talents {
+.class-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
   margin-top: 6px;
 }
 
@@ -2727,4 +2731,300 @@ div.weapon-swing {
 
 .talent-unused {
   visibility: hidden;
+}
+
+/* ------------------------------------------------------------------ R6 relics and streaks */
+
+/* The two equipped relics (rogue game.md §8.1): beside the ability box, each with its cooldown swept over it. */
+.relic-strip {
+  position: absolute;
+  right: 184px;
+  bottom: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, 44px);
+  gap: 10px;
+  justify-items: center;
+  padding: 8px;
+  background: var(--hud-band);
+  border-radius: 10px;
+}
+
+.relic-slot {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: radial-gradient(circle, var(--well) 55%, var(--well-deep) 100%);
+  box-shadow: 0 0 0 2px var(--rim-gold), 0 0 0 4px var(--rim-dark);
+}
+
+.relic-slot.empty {
+  background: var(--soot);
+  box-shadow: 0 0 0 2px var(--rim-deep), 0 0 0 4px var(--rim-dark);
+}
+
+.relic-icon {
+  position: absolute;
+  inset: 3px;
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+}
+
+.relic-slot:not(.ready)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 8px;
+  background: conic-gradient(rgba(14, 10, 8, 0.72) var(--relic-cooldown), transparent 0);
+  pointer-events: none;
+}
+
+.relic-combo {
+  grid-column: 1 / -1;
+  max-width: 98px;
+  font: 600 11px/1.2 var(--display-font);
+  color: var(--gold);
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+}
+
+/* Your streak's tier (m12-followup-2.md §3.2): top center, 18% down, gold capitals over the count. */
+.streak-banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18%;
+  text-align: center;
+  pointer-events: none;
+}
+
+.streak-banner.pop {
+  animation: streak-pop 120ms ease-out;
+}
+
+@keyframes streak-pop {
+  from {
+    transform: scale(1.3);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.streak-name {
+  font: 800 66px/1 var(--display-font);
+  color: var(--gold);
+  text-shadow: 0 2px 8px #000, 0 0 3px #000;
+}
+
+.streak-sub {
+  font: 600 18px/1.4 var(--display-font);
+  color: var(--ivory);
+  text-shadow: 0 1px 3px #000;
+}
+
+/* The Relics view (rogue game.md §2.2): the collection grid, the two slots, the card and the combos. */
+.relic-panel {
+  width: min(900px, 100%);
+}
+
+.relic-body {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+}
+
+.relic-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.relic-cell,
+.relic-equip-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 104px;
+  padding: 6px;
+  font: 600 12px/1.15 var(--display-font);
+  color: var(--parchment);
+  text-align: center;
+  background: var(--well-deep);
+  border: 2px solid var(--parchment-dim);
+  cursor: pointer;
+}
+
+.relic-cell.rare {
+  border-color: #6fa4e8;
+}
+
+.relic-cell.legendary {
+  border-color: var(--gold);
+}
+
+.relic-cell.unowned {
+  color: var(--parchment-faint);
+  background: var(--soot);
+  border-color: var(--well);
+}
+
+.relic-cell.selected {
+  box-shadow: 0 0 0 3px var(--gold);
+}
+
+.relic-cell.equipped::after {
+  content: 'Equipped';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 1px 4px;
+  font: 600 10px/1.2 var(--display-font);
+  color: var(--soot);
+  background: var(--gold);
+}
+
+.relic-cell-icon {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+.relic-cell-unknown {
+  font: 800 34px/56px var(--display-font);
+  color: var(--well);
+}
+
+.relic-cell-tag {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 1px 4px;
+  font: 600 10px/1.2 var(--display-font);
+  color: var(--ivory);
+  background: var(--danger-deep);
+}
+
+.relic-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.relic-equip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.relic-equip-slot {
+  border-color: var(--rim-gold);
+}
+
+.relic-equip-slot.empty {
+  border-style: dashed;
+  border-color: var(--rim-deep);
+}
+
+.relic-equip-slot.view {
+  cursor: default;
+}
+
+.relic-equip-combo {
+  grid-column: 1 / -1;
+  min-height: 18px;
+  font: 700 14px/1.2 var(--display-font);
+  color: var(--gold);
+  text-align: center;
+}
+
+.relic-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 196px;
+  padding: 10px;
+  color: var(--parchment);
+  background: var(--well-deep);
+  border: 1px solid var(--well);
+}
+
+.relic-card-rarity {
+  font: 600 11px/1.2 'Segoe UI', system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--parchment-dim);
+}
+
+.relic-card-rarity.rare {
+  color: #8db8ee;
+}
+
+.relic-card-rarity.legendary {
+  color: var(--gold);
+}
+
+.relic-card-name {
+  font: 700 18px/1.2 var(--display-font);
+  color: var(--ivory);
+}
+
+.relic-card-trigger {
+  font: 600 13px/1.3 var(--display-font);
+  color: var(--gold);
+}
+
+.relic-card-rule {
+  font: 14px/1.35 'Segoe UI', system-ui, sans-serif;
+}
+
+.relic-card-numbers,
+.relic-card-flavor {
+  font: 12px/1.35 'Segoe UI', system-ui, sans-serif;
+  color: var(--parchment-faint);
+}
+
+.relic-card-flavor {
+  font-style: italic;
+}
+
+.relic-card-note {
+  font: 600 12px/1.35 'Segoe UI', system-ui, sans-serif;
+  color: var(--warning);
+}
+
+.relic-combos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 16px;
+}
+
+.relic-combos .section-label {
+  grid-column: 1 / -1;
+}
+
+.relic-combo-row {
+  display: flex;
+  flex-direction: column;
+  min-height: 46px;
+  font: 12px/1.3 'Segoe UI', system-ui, sans-serif;
+  color: var(--parchment);
+}
+
+.relic-combo-row.undiscovered {
+  color: var(--parchment-faint);
+}
+
+.relic-combo-row.active .relic-combo-name {
+  color: var(--gold);
+}
+
+.relic-combo-name {
+  font: 700 14px/1.2 var(--display-font);
+  color: var(--ivory);
 }

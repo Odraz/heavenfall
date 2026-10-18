@@ -16,6 +16,10 @@ import { talentPanel } from './talents';
 import { ITEMS } from '../data/items';
 import { ITEM_ART } from '../client/itemArt';
 import { xpProgress } from '../client/hudModel';
+import { relicPanel } from './relics';
+import { relicDormancy } from '../sim/relicUse';
+import { resolveKit } from '../sim/build';
+import { activeCombo, RELICS, type RelicId } from '../data/relics';
 
 /** How long a destructive button waits for its confirming second press. */
 const CONFIRM_MS = 10000;
@@ -146,6 +150,36 @@ function openLobbyTalents(session: ProfileSession, id: ClassId, saved: () => voi
   document.body.appendChild(view.el);
 }
 
+/** Equipping in the Lobby (§2.2, §8.1): any owned relic on either slot, saved for that character. */
+function openLobbyRelics(session: ProfileSession, id: ClassId, saved: () => void): void {
+  const c = session.profile.characters[id];
+  const kit = resolveKit(id, { talents: c.talents, rites: [], q: c.q, e: c.e });
+  const items = session.profile.inventory.flatMap((s) => (s ? [s.item] : []));
+  const close = (): void => { view.el.remove(); };
+  const view = relicPanel({
+    title: `${CLASSES[id].name} · Relics`, owned: session.profile.relics, equipped: [c.relics[0], c.relics[1]],
+    dormancy: (relic: RelicId) => relicDormancy(relic, kit, { allies: [], items, areas: new Set(), hazard: true }),
+    note: 'Equip two relics. In a run, change them only with the Advocate in the Confessional.',
+    onApply: (equipped) => {
+      if (session.profile.run) { view.setMessage('Finish or recover the staked run first'); return; }
+      if (equipped.some((r) => r && !session.profile.relics.includes(r)) || (equipped[0] && equipped[0] === equipped[1])) { view.setMessage('Equip owned relics, each once'); return; }
+      const next = structuredClone(session.profile);
+      next.characters[id].relics = [equipped[0], equipped[1]];
+      if (!session.save(next, true)) { view.setMessage(session.message); return; }
+      view.setEquipped(equipped); view.setMessage('Saved'); saved();
+    },
+    onClose: close,
+  });
+  document.body.appendChild(view.el);
+}
+
+/** The class card's relic line: the equipped pair and the combo they make, if any. */
+function relicsLabel(profile: Profile, id: ClassId): string {
+  const r = profile.characters[id].relics, combo = activeCombo(r);
+  const names = r.filter(Boolean).map((x) => RELICS[x as RelicId].name);
+  return combo ? `Relics · ${combo.name}` : names.length ? `Relics · ${names.length}` : profile.relics.length ? 'Relics · none equipped' : 'Relics';
+}
+
 /** Emergency export stays available if an accepted checkpoint cannot reach storage. */
 export function saveCodeButton(parent: HTMLElement, profile: () => Profile): void {
   button('Copy save code', parent, () => { void exportCode(profile()).then(code => navigator.clipboard.writeText(code)).catch(error => { el('p', 'message', parent, String(error)); }); });
@@ -161,13 +195,18 @@ export function profileLoadout(parent: HTMLElement, session: ProfileSession, cha
     if (!card) continue;
     const level = el('div', 'class-level', undefined, `Level ${levelForXp(session.profile.characters[id].xp)}`); card.insertBefore(level, card.querySelector('.class-role'));
     showAssigned(card, id, session.profile);
+    // One row of card buttons, so every card keeps its rows aligned (UI stability).
+    const actions = el('div', 'class-actions', card);
     if (hasCatalog(id)) {
       // A button can't hold a button: a focusable role=button inside the class card.
-      const open = el('div', 'button small class-talents', card, talentsLabel(session.profile, id));
+      const open = el('div', 'button small class-talents', actions, talentsLabel(session.profile, id));
       open.setAttribute('role', 'button'); open.tabIndex = 0;
       // A card click picks the class; the Talents button opens the trees without picking.
       open.addEventListener('click', (e) => { e.stopPropagation(); openLobbyTalents(session, id, () => { open.textContent = talentsLabel(session.profile, id); showAssigned(card, id, session.profile); changed(); }); });
     }
+    const relics = el('div', 'button small class-relics', actions, relicsLabel(session.profile, id));
+    relics.setAttribute('role', 'button'); relics.tabIndex = 0;
+    relics.addEventListener('click', (e) => { e.stopPropagation(); openLobbyRelics(session, id, () => { relics.textContent = relicsLabel(session.profile, id); changed(); }); });
   }
   const container = parent.querySelector('.panel') ?? parent;
   const panel = el('div', 'profile-loadout');

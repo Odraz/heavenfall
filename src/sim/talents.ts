@@ -48,6 +48,10 @@ export interface Root {
   owner: SimPlayer;
   id: number;
   input: 'LMB' | 'RMB' | 'Q' | 'E';
+  /** The cast's accepted yaw and the owner's feet when it began (the Comb's heading, items-relics.md §2.2). */
+  yaw: number; ox: number; oy: number;
+  /** A native movement leg (a dash, a return, a charge): its hit-count window spans the leg. */
+  leg?: boolean;
   hit: Set<number>;
   victims: Victim[];
   dispatched: boolean;
@@ -151,8 +155,9 @@ export class Talents {
 
   // ------------------------------------------------------------------ roots and kill bundles
 
-  root(owner: SimPlayer, input: Root['input']): Root {
-    return { owner, id: this.nextAction++, input, hit: new Set(), victims: [], dispatched: false };
+  /** A native action; `leg` marks a movement leg (a dash, a return, a charge) whose hit window spans the leg. */
+  root(owner: SimPlayer, input: Root['input'], leg = false, ox = owner.x, oy = owner.y): Root {
+    return { owner, id: this.nextAction++, input, yaw: owner.yaw, ox, oy, leg, hit: new Set(), victims: [], dispatched: false };
   }
 
   slowed(s: number): boolean {
@@ -164,8 +169,11 @@ export class Talents {
     const sim = this.sim;
     if (!sim.eAlive[s]) return;
     const v: Victim = { s, inc: sim.eIncarnation[s], x: sim.eX[s], y: sim.eY[s], z: sim.eZ[s], room: sim.roomAt(sim.eX[s], sim.eY[s]), slowed: this.slowed(s), bound: sim.isRooted(s) };
+    if (amount > 0) sim.relics.nativeHit(root, s);
     this.primaryHit = true;
+    sim.hitCtx = root.input;
     sim.damageEnemy(s, amount, root.owner.index, force, fromX, fromY, false, area);
+    sim.hitCtx = null;
     this.primaryHit = false;
     if (!sim.eAlive[s]) root.victims.push(v);
   }
@@ -417,7 +425,7 @@ export class Talents {
     p.invulUntil = Math.max(p.invulUntil, sim.tick + ticks(seconds + WAY_BACK.invulnAfter));
     p.speedCheckSkipUntil = sim.nowMs + (seconds + 0.6) * 1000;
     const sheep = this.has(p, SHEEP);
-    this.returns.set(p.id, { root: this.root(p, 'E'), pts, length, startTick: sim.tick, done: 0, reach: this.has(p, KNIFE) ? TALENT.longKnife : WAY_BACK.cut, sheep, cut: new Set() });
+    this.returns.set(p.id, { root: this.root(p, 'E', true), pts, length, startTick: sim.tick, done: 0, reach: this.has(p, KNIFE) ? TALENT.longKnife : WAY_BACK.cut, sheep, cut: new Set() });
     const n = pts.length;
     sim.emit('all', { type: 'wayBack', playerId: p.id, x0: pts[0], y0: pts[1], z0: pts[2], x1: pts[n - 3], y1: pts[n - 2], z1: pts[n - 1], ms: seconds * 1000 });
     this.endShadow(p, 'return');

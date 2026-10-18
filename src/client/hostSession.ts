@@ -38,8 +38,8 @@ export class HostSession {
   }
 
   /** Singleplayer: starts the game at once. */
-  start(run: RunConfig, players: SimPlayerInit[], god: boolean, benchArena: number, benchBurst = false, startRoom?: number, diagnostics = false, devBuild?: string): void {
-    this.post({ ...run, t: 'start', players, god, benchArena, benchBurst, localPlayerId: this.localPlayerId, startRoom, diagnostics, devBuild });
+  start(run: RunConfig, players: SimPlayerInit[], god: boolean, benchArena: number, benchBurst = false, startRoom?: number, diagnostics = false, devBuild?: string, devRelics?: string[]): void {
+    this.post({ ...run, t: 'start', players, god, benchArena, benchBurst, localPlayerId: this.localPlayerId, startRoom, diagnostics, devBuild, devRelics });
   }
 
   /** Multiplayer: opens the lobby in the worker and connects the clients' connections to it. */

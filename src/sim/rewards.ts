@@ -200,9 +200,12 @@ export class Rewards {
     if (drop.kind === COIN || drop.kind === GOLD_HALO) {
       this.halosCredited += drop.value;
       for (const human of sim.players) if (human.connected && !human.bot) human.wallet += drop.value;
+      // A world halo pickup is its human collector's relic event, never a bot's (items-relics.md §2.4 rule 9).
+      if (!p.bot) sim.relics.pickup(p, 'halo');
     } else if (drop.kind === HEAL_MOTE) {
       p.hp = Math.min(p.maxHp, p.hp + p.maxHp * MOTE_HEAL);
       if (p.classId === 'heretic') sim.talents.heretic.motePicked(p);
+      if (!p.bot) sim.relics.pickup(p, 'mote');
     }
     else if (drop.kind >= ITEM_FIRST && drop.kind < ITEM_FIRST + ITEM_IDS.length && !p.bot) {
       const item = ITEM_IDS[drop.kind - ITEM_FIRST];

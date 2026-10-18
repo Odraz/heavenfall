@@ -5,7 +5,7 @@ import { expect, it } from 'vitest';
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
 const css = read('./style.css');
 // Custom properties the client sets at run time instead of in the stylesheet.
-const RUNTIME_PROPERTIES = ['--item-cooldown'];
+const RUNTIME_PROPERTIES = ['--item-cooldown', '--relic-cooldown'];
 
 it('writes every rule over several lines', () => {
   const oneLine = css.split('\n').filter((line) => !line.trim().startsWith('/*') && /\{[^}]*;[^}]*\}\s*$/.test(line));

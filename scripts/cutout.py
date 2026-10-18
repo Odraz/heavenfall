@@ -211,6 +211,10 @@ MAGENTA_BACKGROUND = {'heal-mote', 'item-balm', 'item-venom'}
 
 # Item icons: square size in pixels (B7).
 ITEMS = {f'item-{n}': 512 for n in ('balm', 'seal', 'feather', 'mirror', 'venom', 'frost', 'chain', 'plume')}
+# R6 (rogue art-prompts B5, B8): the twelve relic icons, and the key, Reliquary chest, Bell and Sundial,
+# cut out the same way into assets/items/.
+ITEMS.update({f'relic-{n}': 256 for n in ('usher', 'thurible', 'link', 'tile', 'qseal', 'eseal', 'comb', 'wheel', 'unbroken', 'mercy', 'armageddon', 'sentence3')})
+ITEMS.update({'shared-key': 256, 'reliquary-chest': 512, 'reliquary-chest-open': 512, 'judgment-bell': 512, 'sundial': 256})
 ITEM_OUT = ROOT / 'assets' / 'items'
 OWN_GREEN = 0.15
 

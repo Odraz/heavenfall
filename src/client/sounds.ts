@@ -274,6 +274,15 @@ export class GameSounds {
     this.music(s);
   }
 
+  /** Relic sounds batch by kind: at most one per kind per 0.25 s (items-relics.md §2.4 rule 10). */
+  private readonly relicAt = new Map<string, number>();
+  private relicSound(name: 'relicRune' | 'relicEmber' | 'relicWheel' | 'relicStamp' | 'relicChorus' | 'relicRing' | 'chains' | 'shieldUp', at: SoundPos): void {
+    const now = performance.now();
+    if (now - (this.relicAt.get(name) ?? -Infinity) < 250) return;
+    this.relicAt.set(name, now);
+    sfx(name, at, 0.6);
+  }
+
   /** A game event's sound. `pose` gives a player's position. */
   event(e: GameEvent, pose: (id: number) => SoundPos | undefined): void {
     switch (e.type) {
@@ -291,6 +300,22 @@ export class GameSounds {
       case 'crest':
         sfx('crest');
         break;
+      case 'relicArea':
+        if (!e.end) this.relicSound('relicRune', { x: e.area.x, y: e.area.y });
+        break;
+      case 'relicShot':
+        if (!e.end) this.relicSound(e.shot.effect === 'sentence3' ? 'relicStamp' : e.shot.effect === 'wheel' || e.shot.effect === 'harrow' ? 'relicWheel' : 'relicEmber', { x: e.shot.x, y: e.shot.y });
+        break;
+      case 'relicFx':
+        if (e.kind === 'shield') this.relicSound('shieldUp', { x: e.x, y: e.y });
+        else if (e.kind === 'burst') this.relicSound(e.effect === 'appeal' ? 'relicStamp' : e.effect === 'sentence3' ? 'relicStamp' : 'relicChorus', { x: e.x, y: e.y });
+        else this.relicSound(e.effect === 'tile' ? 'chains' : 'relicRing', { x: e.x, y: e.y });
+        break;
+      case 'streak':
+        // Your own tier only, rising with the tier (m12-followup-2.md §3.2).
+        if (e.playerId === this.localId) sfx('streakTier', null, 1, 0, undefined, 2 ** (2 * e.tier / 12));
+        break;
+
       // R4 Betrayer talents: synthesized stand-ins until the S6 recordings (asset-manifest.md).
       case 'talentArea': {
         const at = { x: e.area.x, y: e.area.y };

@@ -260,7 +260,7 @@ export class FallenTalents {
       if (p.cdE > MOVEMENT_GRACE + 1e-6) return true;
       sim.commanders.releasePlayer(p.id, false);
       this.charges.set(p.id, { start: sim.tick, release: Infinity, x: p.x, y: p.y, z: p.z, path: 0, pts: [p.x, p.y, p.z], lane: new Set(), side: new Set(),
-        root: this.t.root(p, 'E'), cast: this.t.launches.newCast(), launched: [] });
+        root: this.t.root(p, 'E', true), cast: this.t.launches.newCast(), launched: [] });
       // Blocked until the charge ends; its 10 s cooldown starts then (§4).
       p.cdE = GATEBREAKER.maxTime + GATEBREAKER.cooldown;
       p.speedCheckSkipUntil = sim.nowMs + (GATEBREAKER.maxTime + 0.6) * 1000;

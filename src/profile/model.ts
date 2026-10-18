@@ -7,8 +7,8 @@ export const PROFILE_SCHEMA = 1;
 export const MAX_SAVE_BYTES = 256 * 1024;
 import { BASE_ABILITIES } from '../data/talents';
 export { BASE_ABILITIES };
-export const RELIC_IDS = ['usher', 'thurible', 'link', 'tile', 'qseal', 'eseal', 'comb', 'wheel', 'unbroken', 'mercy', 'armageddon', 'sentence3'];
-export const DEED_IDS = ['unbroken', 'mercy', 'armageddon', 'sentence3'];
+import { RELIC_IDS, DEED_IDS } from '../data/relics';
+export { RELIC_IDS, DEED_IDS };
 export type Outcome = 'victory' | 'defeat' | 'leave' | 'hostLeft' | 'admissionAborted';
 const OUTCOMES: readonly string[] = ['victory', 'defeat', 'leave', 'hostLeft', 'admissionAborted'];
 

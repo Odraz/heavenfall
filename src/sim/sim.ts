@@ -7,6 +7,9 @@ import { VictoryExit } from './victory';
 import { Talents, type Root } from './talents';
 import type { HereticCloud } from './talentsHeretic';
 import { Rites } from './rites';
+import { Relics, type VictimStates } from './relics';
+import { Streaks } from './streaks';
+import { isRelicId } from '../data/relics';
 import { BASE_ABILITIES, BINDER as BINDER_NUMBERS, DEV_BUILDS, devBuildOrder, FALLEN as FALLEN_NUMBERS, talentNode } from '../data/talents';
 import { resolveKit, runBuildError, type Kit, type RunBuild } from './build';
 import { levelForXp } from '../profile/model';
@@ -169,6 +172,8 @@ export interface SimOptions {
   diagnostics?: boolean;
   /** Development quick build for the human players (`build=<name>`, never with saved progression). */
   devBuild?: string;
+  /** Development relics for the human players (`relics=a,b`): owned and equipped, never with saved progression. */
+  devRelics?: string[];
 }
 
 export interface SimEvent {
@@ -179,6 +184,17 @@ export interface SimEvent {
 }
 
 export interface SimPlayer {
+  /** Equipped relics for this run (items-relics.md §2.1) and the profile's owned relics, pawns included. */
+  relics: [string | null, string | null];
+  ownedRelics: string[];
+  /** Each relic id's cooldown end tick: retained through death, reconnect and re-equip (§2.4 rule 7). */
+  relicCd: Record<string, number>;
+  /** The kill streak (game.md §10): count, last counted kill's tick, best this run, own kills and assists counted. */
+  streak: number;
+  streakTick: number;
+  bestStreak: number;
+  streakKills: number;
+  assists: number;
   /** Learned build plus held Rites (rogue game.md §9.5, §9.10); `kit` is its resolution. */
   build: RunBuild;
   kit: Kit;
@@ -542,6 +558,13 @@ export class Simulation {
   readonly rewards = new Rewards(this);
   readonly talents = new Talents(this);
   readonly rites = new Rites(this);
+  readonly relics = new Relics(this);
+  readonly streaks = new Streaks(this);
+  /** The input slot (or `item`) of the damage `damageEnemy` is resolving: native and direct-item hits may start relics. */
+  hitCtx: Root['input'] | 'item' | null = null;
+  /** Set while relic damage resolves: its kills never start another relic or talent proc (§2.4 rule 3). */
+  private procFree = false;
+  private readonly devRelics: string[];
   /** The simulation seed, for the stable Rite offer generator (§9.10). */
   readonly seed: number;
   private readonly devBuild: string | undefined;
@@ -783,6 +806,7 @@ export class Simulation {
     this.noWaves = !!opts.noWaves;
     this.diagnostics = !!opts.diagnostics;
     this.devBuild = opts.devBuild;
+    this.devRelics = this.progressionEnabled ? [] : (opts.devRelics ?? []).filter(isRelicId).slice(0, 2);
     this.random = mulberry32(opts.seed);
     this.seed = opts.seed >>> 0;
     this.rooms = this.map.rooms.map((a, i) => ({
@@ -866,7 +890,7 @@ export class Simulation {
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
       progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)),
-      kits: this.players.map((p) => this.talents.kitState(p)), talentAreas: this.talents.checkpoint(), fires: this.talents.fireCheckpoint(), itemEffects: this.items.records(), victory: this.victory ? { ...this.victory.state } : null,
+      kits: this.players.map((p) => this.talents.kitState(p)), talentAreas: this.talents.checkpoint(), fires: this.talents.fireCheckpoint(), itemEffects: this.items.records(), ...this.relics.sync(this.players), victory: this.victory ? { ...this.victory.state } : null,
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
       pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), commanderCasts: this.commanders.checkpoint(), watchmanAims: this.watchmen.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
   }
@@ -1021,7 +1045,13 @@ export class Simulation {
   private insertPlayer(init: SimPlayerInit, x: number, y: number, z: number): SimPlayer {
     const cls = CLASSES[init.classId];
     const base: RunBuild = { talents: [], rites: [], q: '', e: '' };
+    const character0 = init.profile?.characters[init.classId];
+    const owned = init.bot ? [] : this.devRelics.length ? [...new Set([...(init.profile?.relics ?? []), ...this.devRelics])] : [...(init.profile?.relics ?? [])];
+    const equip = (this.devRelics.length ? [this.devRelics[0] ?? null, this.devRelics[1] ?? null] : character0?.relics ?? [null, null])
+      .map((id) => (id && owned.includes(id) && !init.bot ? id : null)) as [string | null, string | null];
+    if (equip[0] && equip[0] === equip[1]) equip[1] = null;
     const p: SimPlayer = {
+      relics: equip, ownedRelics: owned, relicCd: {}, streak: 0, streakTick: 0, bestStreak: 0, streakKills: 0, assists: 0,
       build: base, kit: resolveKit(init.classId, base),
       id: init.id,
       index: init.id,
@@ -1141,6 +1171,7 @@ export class Simulation {
     // Everyone learns the joiner's kit; the joiner gets every kit from its floor checkpoint.
     this.talents.setBuild(p, p.build);
     if (this.rites.hasPending(p)) this.rites.publish(p);
+    if (!p.bot) this.relics.publish(p, 'all');
     return p;
   }
 
@@ -1153,6 +1184,8 @@ export class Simulation {
     if (!p) return;
     p.connected = false;
     this.items.clearOwner(playerId);
+    this.relics.ownerGone(playerId);
+    this.streaks.end(p);
     this.talents.playerGone(p);
     p.featherUntil = p.sealUntil = 0; p.shield = 0; p.speed = CLASSES[p.classId].speed;
     if (retain) this.retainedPlayers.set(playerId, { player: p, tick: this.tick });
@@ -1192,6 +1225,7 @@ export class Simulation {
     if (this.result) return;
     this.tick++;
     this.nowMs = nowMs ?? this.tick * TICK_MS;
+    this.streaks.update();
     this.checkRoomStarts();
     this.syncHazards();
     this.updateSpawnWarnings();
@@ -1201,6 +1235,7 @@ export class Simulation {
     this.updatePlayers();
     this.talents.update();
     this.items.update();
+    this.relics.update();
     this.updateEnemies();
     this.separate(0);
     this.separate(1);
@@ -1211,9 +1246,12 @@ export class Simulation {
     this.updateHazardDamage();
     this.talents.pools();
     this.items.membership();
+    this.relics.membership();
     this.updateSouls();
     this.pickups.update(this.tick, this.players, (drop, collector) => this.rewards.collect(drop, this.slots[collector.id]!),
       (drop, collectors) => this.talents.heretic.moteTarget(drop, collectors));
+    this.streaks.flush();
+    this.relics.flush();
     this.recoverEnemies();
     this.checkVictory();
     this.updateExit();
@@ -1261,7 +1299,7 @@ export class Simulation {
         if (p.connected) { this.emit('all', { type: 'playerRevived', playerId: p.id }); this.teleport(p, at.x, at.y, at.z); }
       } else if (p.connected) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * .3);
     }
-    this.items.clearAll(); for (const s of [...this.projectiles]) this.removeProjectile(s);
+    this.items.clearAll(); this.relics.clearAll(); for (const s of [...this.projectiles]) this.removeProjectile(s);
     this.clouds.length = 0; this.fieldUntil = 0;
     for (let i = 0; i < this.rooms.length; i++) { this.rooms[i].queue.length = 0; this.rooms[i].squad = this.rooms[i].watch = null; this.items.clearCombat(i); }
     this.rooms[this.floor.boss].phase = PHASE_CLEARED; this.activeRoom = ROOM_NONE;
@@ -1666,6 +1704,7 @@ export class Simulation {
       st.phase = PHASE_CLEARED;
       this.rewards.roomCleared(ai);
       this.items.clearCombat(ai);
+      this.relics.roomCleared(ai);
       this.talents.roomCleared();
       for (const { player } of this.retainedPlayers.values()) if (player.dead) {
         player.dead = false; player.hp = player.maxHp * 0.5; player.revive = 0; player.shield = 0;
@@ -1705,7 +1744,7 @@ export class Simulation {
     this.result = result;
     const stats: Record<number, PlayerStats> = {};
     for (const p of this.players) {
-      if (p.connected) stats[p.id] = { kills: p.kills, damage: Math.round(p.damage), deaths: p.deaths, reviveAssists: p.reviveAssists,
+      if (p.connected) stats[p.id] = { kills: p.kills, damage: Math.round(p.damage), deaths: p.deaths, reviveAssists: p.reviveAssists, bestStreak: p.bestStreak, assists: p.assists,
         runXp: Math.floor(p.runXp), levelBefore: levelForXp(p.xpBase), levelAfter: levelForXp(saturatingAdd(p.xpBase, Math.floor(p.runXp))),
         rites: p.build.rites.map((id) => talentNode(id)?.name ?? id) };
     }
@@ -2171,6 +2210,7 @@ export class Simulation {
     const def = ENEMIES[type];
     this.eIncarnation[slot] = this.nextIncarnation++;
     this.eSpawnTick[slot] = this.tick;
+    this.streaks.spawned(slot);
     this.eAlive[slot] = 1;
     this.eType[slot] = type;
     this.eState[slot] = ST_IDLE;
@@ -2298,6 +2338,9 @@ export class Simulation {
    * default the credited player.
    */
   damageEnemy(slot: number, amount: number, source: number, force = amount, fromX = NaN, fromY = NaN, worldBurst = false, areaSource = Number.isFinite(fromX) && Number.isFinite(fromY)): void {
+    // Only the call that set the context is native or a direct item: nested damage (a death's discharge) is not.
+    const origin = this.procFree ? null : this.hitCtx;
+    this.hitCtx = null;
     if (!this.eAlive[slot] || amount <= 0) return;
     const cast = this.commanders.active.get(slot);
     if (cast?.kind === 'beam' && (cast.phase === 'tell' || cast.phase === 'active') && !worldBurst && (source >= 0 || Number.isFinite(fromX) && Number.isFinite(fromY))) {
@@ -2321,13 +2364,16 @@ export class Simulation {
       if (this.judgmentDamage >= JUDGMENT_INTERRUPT * bossMultiplier(this.bossParty, this.bossSolo) - 1e-9) this.interruptJudgment();
     }
     const shooter = source >= 0 ? this.slots[source] : undefined;
-    if (shooter) shooter.damage += Math.min(amount, this.eHp[slot]);
+    if (shooter) { shooter.damage += Math.min(amount, this.eHp[slot]); this.streaks.touch(slot, source); }
     this.commanders.damaged(slot, Math.min(amount, this.eHp[slot]));
     this.eHp[slot] -= amount;
     this.eHurtTick[slot] = this.tick;
     // 5. Death and kill credit.
     if (this.eHp[slot] <= 0) {
-      this.talents.died(slot, shooter ? source : -1);
+      // Relic triggers read the victim's states as they were before this killing damage (§2.4 rule 1).
+      if (shooter && origin && !shooter.bot) this.relics.killed(shooter, origin, slot, this.victimStates(slot));
+      this.streaks.killed(slot, shooter ? source : -1, !!origin);
+      if (!this.procFree) this.talents.died(slot, shooter ? source : -1);
       this.rewards.enemyKilled(slot);
       if (shooter) {
         shooter.kills++;
@@ -2340,6 +2386,19 @@ export class Simulation {
 
 
 
+
+  /** An enemy's §4.11 states now, for a relic kill trigger. */
+  private victimStates(s: number): VictimStates {
+    return { taunted: this.eTauntUntil[s] > this.tick, censed: this.talents.censed(s), bound: this.isRooted(s), pooled: this.ePooled[s] === 1,
+      slowed: this.talents.slowed(s), airborne: this.talents.launches.airborne(s) };
+  }
+
+  /** Relic and combo damage (`origin=relic`): credited to the owner, never starting another proc. */
+  relicDamage(s: number, amount: number, owner: SimPlayer, x: number, y: number): void {
+    this.procFree = true;
+    try { this.damageEnemy(s, amount, owner.connected ? owner.index : -1, amount, x, y); }
+    finally { this.procFree = false; }
+  }
 
   inventoryState(p: SimPlayer): InventoryState {
     return { playerId: p.id, inventory: copyInventory(p.inventory), wallet: p.wallet, sold: p.sold, chart: this.rewards.chartRevealed,
@@ -2555,6 +2614,8 @@ export class Simulation {
     p.landingTick = -1;
     p.dash = null;
     this.talents.playerGone(p);
+    this.relics.ownerGone(p.id);
+    this.streaks.end(p);
     this.emit('all', { type: 'playerDied', playerId: p.id });
     // Blasphemy ends when the Fallen dies (§7.2).
     if (p.classId === 'fallen') for (let k = 0; k < this.activeCount; k++) this.eTauntUntil[this.active[k]] = 0;
@@ -3116,6 +3177,7 @@ export class Simulation {
           if (distToCylinder(bx, by, bz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > BLASPHEMY_RADIUS) continue;
           this.eTauntUntil[s] = this.tick + ticks(BLASPHEMY_DURATION);
           this.eTarget[s] = p.index;
+          this.streaks.touch(s, p.index);
           if (sin) this.slow(s, FALLEN_NUMBERS.sinSlow);
           else if (!ring) this.stun(s, BLASPHEMY_STUN);
         }
@@ -3197,7 +3259,7 @@ export class Simulation {
         p.invulUntil = Math.max(p.invulUntil, this.tick + ticks(SHADOWSTEP_INVULN));
         p.cdE = def.cooldown;
         p.speedCheckSkipUntil = this.nowMs + MOVEMENT_SPEED_CHECK_SKIP * 1000;
-        if (p.dash) { p.dash.acceptTick = this.tick; p.dash.root = this.talents.root(p, 'E'); }
+        if (p.dash) { p.dash.acceptTick = this.tick; p.dash.root = this.talents.root(p, 'E', true, p.dash.pts[0], p.dash.pts[1]); }
         this.abilityEvent(p, 'E', p.x, p.y, p.z);
       }
       return;

@@ -59,6 +59,24 @@ export interface FloorSync {
   talentAreas?: TalentArea[];
   /** Every class floor fire still burning (R5): per owner, cell indices and end ticks. */
   fires?: FireState[];
+  /** R6: live relic areas and projectiles, each player's equipped relics and cooldowns, and streaks. */
+  relicAreas?: RelicAreaState[];
+  relicShots?: RelicShotState[];
+  relicStates?: Array<Extract<GameEvent, { type: 'relicState' }>>;
+}
+
+/** A relic floor area (items-relics.md §2.2): Usher's circle, the First Plea's rune or the Comb's rectangle. */
+export interface RelicAreaState {
+  id: number; playerId: number; effect: string; shape: 'circle' | 'rect';
+  x: number; y: number; z: number; radius: number;
+  /** The rectangle's attack heading (its long axis lies across it), length and width. */
+  hx: number; hy: number; length: number; width: number;
+  startTick: number; endTick: number;
+}
+/** A relic projectile as accepted: from its origin along a fixed direction at a fixed speed until its end. */
+export interface RelicShotState {
+  id: number; playerId: number; effect: string;
+  x: number; y: number; z: number; dx: number; dy: number; dz: number; speed: number; width: number; startTick: number; endTick: number;
 }
 
 /** One owner's burning floor cells (classes-fallen.md "Hellfire", classes-heretic.md "Burning ground"). */
@@ -100,6 +118,17 @@ export interface TalentArea {
 
 export type GameEvent =
   | { type: 'kit'; kit: KitState }
+  /** A relic area appeared or ended (R6). */
+  | { type: 'relicArea'; area: RelicAreaState; end: boolean }
+  /** A relic projectile left, or ended at (x, y, z). */
+  | { type: 'relicShot'; shot: RelicShotState; end: boolean; x: number; y: number; z: number }
+  /** A one-wave relic ring or burst, or Mercy's Wax closing (`slots`: the enemies it touched). */
+  | { type: 'relicFx'; playerId: number; effect: string; kind: 'ring' | 'burst' | 'shield'; x: number; y: number; z: number; radius: number; slots: number[] }
+  /** A player's equipped relics, active combo and each slot's cooldown end tick. */
+  | { type: 'relicState'; playerId: number; relics: [string | null, string | null]; combo: string | null; ready: [number, number] }
+  /** A kill streak crossed a tier (0–4), at most once per player per tick (game.md §10). */
+  | { type: 'streak'; playerId: number; count: number; tier: number }
+  | { type: 'streakEnd'; playerId: number; count: number }
   | { type: 'talentFx'; playerId: number; kind: TalentFxKind; pts: number[]; slots: number[] }
   /** A branch, glance or pass-through segment of a shot beyond its first line. */
   | { type: 'tracer'; playerId: number; silver: boolean; x: number; y: number; z: number; ex: number; ey: number; ez: number }
@@ -171,6 +200,9 @@ export interface PlayerStats {
   deaths: number;
   /** Revives the player helped with. */
   reviveAssists: number;
+  /** The best kill streak of the run and the kills counted as assists (game.md §10). */
+  bestStreak?: number;
+  assists?: number;
 }
 
 export interface LobbyPlayer {

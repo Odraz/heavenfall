@@ -141,6 +141,7 @@ export class Consumables {
     if (first) p.itemsTried.push(item);
     sim.emit('all', { type: 'itemUsed', actionId, playerId: p.id, item, first, instance: effect ? record(effect) : null, x: p.x, y: p.y, z: p.z });
     sim.publishInventory(p);
+    sim.relics.itemUsed(p, item);
     return true;
   }
 
@@ -268,6 +269,12 @@ export class Consumables {
     this.affect(false);
   }
 
+  /** Whether a landed item area holds an enemy now (Appeal in the Marble reads its actual membership). */
+  holds(e: ItemEffect, s: number): boolean {
+    const area = this.effects.find((a) => a.id === e.id);
+    return !!area && area.activatedTick >= 0 && this.sim.tick < area.endTick && this.covers(area, s);
+  }
+
   /** Whether an area holds an enemy: the Mirror's sphere in sight, or a grounded body on the area's cells. */
   private covers(e: Area, s: number): boolean {
     const sim = this.sim;
@@ -318,10 +325,12 @@ export class Consumables {
       }
     }
     // Damage after the scan: a kill compacts the active list.
-    for (const { s, area } of hits) sim.damageEnemy(s, VENOM_DAMAGE, sim.playerById(area.owner)?.index ?? -1, VENOM_DAMAGE, area.x, area.y);
+    // Direct item damage may start kill relics (items-relics.md §2.4 rule 3).
+    for (const { s, area } of hits) { sim.hitCtx = 'item'; sim.damageEnemy(s, VENOM_DAMAGE, sim.playerById(area.owner)?.index ?? -1, VENOM_DAMAGE, area.x, area.y); }
     for (const { s, area } of throws) {
-      if (sim.eAlive[s]) sim.damageEnemy(s, PLUME_DAMAGE, sim.playerById(area.owner)?.index ?? -1, PLUME_DAMAGE, area.x, area.y);
+      if (sim.eAlive[s]) { sim.hitCtx = 'item'; sim.damageEnemy(s, PLUME_DAMAGE, sim.playerById(area.owner)?.index ?? -1, PLUME_DAMAGE, area.x, area.y); }
     }
+    sim.hitCtx = null;
   }
 
   /** The nearest Mirror Ward sphere a projectile ray enters within `max`, in sight of the ward. */
