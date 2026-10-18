@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { BLESSED, CHORISTER } from '../data/enemies';
 import { ATTACK_PRIMARY, ATTACK_SECONDARY } from '../data/weapons';
 import { RITE_FALLBACK_HALOS } from '../data/talents';
-import { RITE_PAGE_HALOS } from '../data/pickups';
 import { PHASE_COMBAT } from '../net/protocol';
 import type { GameEvent } from '../net/messages';
 import type { Simulation, SimPlayer } from './sim';
@@ -374,7 +373,7 @@ describe('Rites (§9.10)', () => {
     expect(sim.rites.hasPending(p)).toBe(true);
   });
 
-  it('pays the six-halo fallback at the four-Rite cap, and the page halos to a class without trees yet', () => {
+  it('pays the six-halo fallback at the four-Rite cap; every class now gets an offer (R5)', () => {
     const sim = makeSim(room(30, 8), ['betrayer', 'heretic']);
     const [p, h] = sim.players;
     kit(sim, p, [], 'field', 'shadowstep', ['a.1a', 'b.1a', 'b.1b', 'c.1b']);
@@ -382,7 +381,8 @@ describe('Rites (§9.10)', () => {
     expect(p.wallet).toBe(RITE_FALLBACK_HALOS);
     expect(sim.rites.hasPending(p)).toBe(false);
     sim.rites.grant(h, 'clear');
-    expect(h.wallet).toBe(RITE_PAGE_HALOS);
+    expect(h.wallet).toBe(0);
+    expect(sim.rites.hasPending(h)).toBe(true);
   });
 
   it('a Rite substitution suppresses the learned augment of its channel until the run ends', () => {

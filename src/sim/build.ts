@@ -51,7 +51,7 @@ export function slotChoices(classId: ClassId, slot: 'Q' | 'E', owned: Iterable<s
 /** The named inputs a node's channel may occupy, assigned or not (for learned conflicts). */
 function targetKeys(n: TalentNode): string[] {
   if (n.input === 'LMB' || n.input === 'RMB') return [n.input];
-  if (n.input === 'Q' || n.input === 'E') return (n.targets ?? []).map((t) => `${n.input}:${t}`);
+  if (n.input === 'Q' || n.input === 'E') return [...(n.targets ?? []).map((t) => `${n.input}:${t}`), ...(n.qTargets ?? []).map((t) => `Q:${t}`)];
   return [];
 }
 
@@ -59,7 +59,7 @@ function targetKeys(n: TalentNode): string[] {
 function resolvedKey(n: TalentNode, q: string, e: string): string | null {
   if (n.input === 'LMB' || n.input === 'RMB') return n.input;
   if (n.input === 'Q') return n.targets?.includes(q) ? `Q:${q}` : null;
-  if (n.input === 'E') return n.targets?.includes(e) ? `E:${e}` : null;
+  if (n.input === 'E') return n.targets?.includes(e) ? `E:${e}` : n.qTargets?.includes(q) ? `Q:${q}` : null;
   return null;
 }
 
@@ -193,46 +193,127 @@ export function runBuildError(classId: ClassId, build: RunBuild, level: number |
 
 /** What the party and the room can produce right now, for Rite usefulness (§9.9 "present source"). */
 export interface SourceContext {
-  /** Living connected teammates (humans or active bots) with their resolved kits. */
-  allies: ReadonlyArray<{ classId: ClassId; q: string; e: string }>;
+  /** Living connected teammates (humans or active bots) with their resolved kits (`active` node ids). */
+  allies: ReadonlyArray<{ classId: ClassId; q: string; e: string; active?: readonly string[] }>;
   /** Items the player can use now (carried stacks). */
   items: readonly ItemId[];
   /** Accepted same-room areas still supplying these states for their remaining lifetime. */
   areas: ReadonlySet<EnemyState>;
   /** An applicable environmental hazard encounter or a surviving blast prop remains. */
   hazard: boolean;
+  /** An enemy that survives a censer's 60 is alive or still to come on this floor (Irons in the Fire). */
+  survivors?: boolean;
+  /** A flyer is alive or still to come on this floor (Brought Low). */
+  flyers?: boolean;
 }
 
-/** The states a kit produces by itself; every Betrayer trigger is reachable from its native attacks. */
-function producedStates(kit: Kit): Set<EnemyState> {
+/** An ability's display name, base or alternative. */
+function abilityName(classId: ClassId, id: string): string {
+  if (ALT_ABILITIES[id]) return ALT_ABILITIES[id].name;
+  const [q, e] = BASE_ABILITIES[classId];
+  return id === q ? ABILITIES[classId].Q.name : id === e ? ABILITIES[classId].E.name : id;
+}
+
+/** Whether an active node's states come from this kit: an ability node only while its ability is assigned. */
+const nodeLive = (n: TalentNode, kit: Kit): boolean => n.kind !== 'ability' || n.teaches?.ability === kit.q || n.teaches?.ability === kit.e;
+
+/** Own burning floor or a furrow (§9.9 `own` source): an active fire node, an ability only while assigned. */
+export function ownFire(kit: Kit): boolean {
+  return [...kit.active].some((id) => { const n = talentNode(id)!; return !!n.fire && nodeLive(n, kit); });
+}
+
+/** Own incense: the Heretic's censer unless Ploughshares replaces its cloud, or an assigned Cloud of Witnesses. */
+export function ownIncense(kit: Kit): boolean {
+  return kit.classId === 'heretic' && (!kit.active.has('heretic.b.1a') || kit.q === 'cloudOfWitnesses');
+}
+
+/** Own native ground launches (classes-fallen.md `c.2a`, `c.3b`): Falling Star, Gatebreaker, Cast Out, Heave, Wormwood. */
+export function ownLaunch(kit: Kit, qeOnly = false): boolean {
+  if (kit.classId !== 'fallen') return false;
+  if (kit.e === 'fallingStar' || kit.e === 'gatebreaker' || kit.q === 'castOut') return true;
+  return !qeOnly && (kit.active.has('fallen.c.1a') || kit.active.has('fallen.c.2b'));
+}
+
+/**
+ * The states a kit produces by itself (§9.9 producibility closure over the native kit): base kit
+ * states, then active nodes' applied states; a node that reads a state contributes only once that
+ * state is produced, so an unseeded cycle produces nothing.
+ */
+export function producedStates(kit: Kit): Set<EnemyState> {
   const out = new Set<EnemyState>();
-  for (const id of kit.active) for (const s of talentNode(id)?.applies ?? []) {
-    // An ability node's state comes only from the assigned ability.
-    const n = talentNode(id)!;
-    if (n.kind !== 'ability' || n.teaches?.ability === kit.q || n.teaches?.ability === kit.e) out.add(s);
-  }
-  if (kit.q === 'chains') out.add('bound');
-  if (kit.classId === 'binder') out.add('slowed');
   if (kit.q === 'blasphemy') out.add('taunted');
   if (kit.e === 'fallingStar') out.add('airborne');
+  if (ownIncense(kit)) out.add('censed');
+  if (kit.classId === 'binder') out.add('slowed');
+  if (kit.q === 'chains') out.add('bound');
+  if (kit.e === 'discord') out.add('silenced');
+  if (kit.q === 'field') out.add('pooled');
+  const nodes = [...kit.active].map((id) => talentNode(id)!).filter((n) => nodeLive(n, kit));
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const n of nodes) {
+      if (n.reads && !out.has(n.reads)) continue;
+      for (const st of n.applies ?? []) if (!out.has(st)) { out.add(st); changed = true; }
+    }
+  }
   return out;
 }
+
+const allyKit = (a: SourceContext['allies'][number]): Kit => {
+  const active = new Set(a.active ?? []);
+  return { classId: a.classId, q: a.q, e: a.e, owned: active, active, suppressed: new Map(), dormant: [] };
+};
 
 function stateAvailable(state: EnemyState, kit: Kit, ctx: SourceContext): boolean {
   if (producedStates(kit).has(state) || ctx.areas.has(state)) return true;
   if (state === 'slowed' && ctx.items.includes('frost')) return true;
   if (state === 'bound' && ctx.items.includes('chain')) return true;
-  return ctx.allies.some((a) => producedStates(resolveKit(a.classId, { talents: [], rites: [], q: a.q, e: a.e })).has(state));
+  if (state === 'pooled' && ctx.hazard) return true;
+  return ctx.allies.some((a) => producedStates(allyKit(a)).has(state));
 }
+
+/** A flyer-capable bind of the Binder's own: Chains, Ring of the Giants or The Wind of Cocytus. */
+const ownFlyerBind = (kit: Kit): boolean => kit.q === 'chains' || kit.q === 'ring' || kit.active.has('binder.c.cap');
 
 function useful(n: TalentNode, kit: Kit, ctx: SourceContext): boolean {
   switch (n.rite) {
     case undefined: return true;
     case 'slowSource': return stateAvailable('slowed', kit, ctx);
     case 'bindSource': return stateAvailable('bound', kit, ctx);
+    case 'pooledSource': return stateAvailable('pooled', kit, ctx);
+    case 'airborneSource': return stateAvailable('airborne', kit, ctx);
     case 'blasphemy': return ctx.allies.some((a) => a.q === 'blasphemy');
     case 'hazard': return ctx.hazard;
     case 'field': return kit.q === 'field';
+    case 'ownLaunch': return ownLaunch(kit);
+    case 'ownQELaunch': return ownLaunch(kit, true);
+    case 'ownFire': return ownFire(kit);
+    case 'ownFireOrCensed': return ownFire(kit) || stateAvailable('censed', kit, ctx);
+    case 'ownIncense': return ownIncense(kit);
+    case 'ownIncensePooled': return ownIncense(kit) && stateAvailable('pooled', kit, ctx);
+    case 'pitch': return (ownIncense(kit) || ownFire(kit)) && (['slowed', 'bound', 'airborne'] as const).some((st) => stateAvailable(st, kit, ctx));
+    case 'irons': return stateAvailable('pooled', kit, ctx) && !!ctx.survivors;
+    case 'twoAllies': return ctx.allies.length >= 2;
+    case 'flyers': return !!ctx.flyers && ownFlyerBind(kit);
+  }
+}
+
+function uselessReason(n: TalentNode): string {
+  switch (n.rite) {
+    case 'blasphemy': return 'Needs an ally with Blasphemy';
+    case 'hazard': return 'No hazard left to walk';
+    case 'field': return 'Field of Blood is not assigned';
+    case 'ownLaunch': return 'Nothing of yours launches enemies';
+    case 'ownQELaunch': return 'Your Q and E launch nothing';
+    case 'ownFire': return 'You set nothing burning';
+    case 'ownFireOrCensed': return 'Nothing burns or is censed';
+    case 'ownIncense': return 'You make no incense';
+    case 'ownIncensePooled': return 'Needs your incense and a pool';
+    case 'pitch': return 'Needs your smoke or fire and a slow, bind or launch';
+    case 'irons': return 'Needs a pool and an enemy that survives the censer';
+    case 'twoAllies': return 'Needs two other living allies';
+    case 'flyers': return 'No flyers left that your chains can catch';
+    default: return `Nothing makes enemies ${n.reads}`;
   }
 }
 
@@ -256,6 +337,7 @@ export function checkRite(classId: ClassId, build: RunBuild, ctx: SourceContext,
   if (n.kind === 'capstone' && owned.some((o) => talentNode(o)?.kind === 'capstone')) return fail('You hold a capstone');
   for (const o of owned) if (talentNode(o)?.excludes?.includes(id) || n.excludes?.includes(o)) return fail(`Excluded by ${talentNode(o)?.name}`);
   if (n.kind === 'augment' && !resolvedKey(n, build.q, build.e)) return fail('Its ability is not assigned');
+  if (n.needs && build.q !== n.needs && build.e !== n.needs && n.rite !== 'field') return fail(`${abilityName(classId, n.needs)} is not assigned`);
   const now = resolveKit(classId, build);
   let surrenders: string | null = null;
   if (n.kind === 'augment') {
@@ -275,7 +357,7 @@ export function checkRite(classId: ClassId, build: RunBuild, ctx: SourceContext,
   }
   const kit = resolveKit(classId, next);
   if (dischargeCount(kit) > 2) return fail('A third kill-triggered talent');
-  if (!useful(n, kit, ctx)) return fail(n.rite === 'blasphemy' ? 'Needs an ally with Blasphemy' : n.rite === 'hazard' ? 'No hazard left to walk' : n.rite === 'field' ? 'Field of Blood is not assigned' : `Nothing makes enemies ${n.reads}`);
+  if (!useful(n, kit, ctx)) return fail(uselessReason(n));
   const dormant = kit.dormant.filter((d) => !now.dormant.includes(d));
   return { ok: true, id, build: next, surrenders, replaces, dormant };
 }

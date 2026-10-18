@@ -9,7 +9,7 @@ import { Simulation } from './sim';
 import { HaloLedger, haloBudget } from './economy';
 import { BLESSED } from '../data/enemies';
 import { sealNow } from './testutil/sims';
-import { GOLD_HALO, REWARD_GOLD_VALUE, RITE_PAGE_HALOS } from '../data/pickups';
+import { GOLD_HALO, REWARD_GOLD_VALUE } from '../data/pickups';
 
 describe('R3 shop transactions', () => {
   it('keeps Rite-page entitlements personal across reconnect and gives no reward to a later arrival', () => {
@@ -23,10 +23,12 @@ describe('R3 shop transactions', () => {
       Object.assign(sim.playerById(id)!, { x: page.x, y: page.y, z: sim.pickups.floor(page.x, page.y) }); sim.step();
     };
     sim.removePlayer(1, true); sim.addPlayer({ id: 2, name: 'Late', classId: 'binder' }); touch(2);
-    expect(sim.playerById(2)!.wallet).toBe(0); touch(0); touch(0); expect(sim.playerById(0)!.wallet).toBe(RITE_PAGE_HALOS);
+    // R5: every class has trees, so the page opens one personal Rite offer instead of paying halos.
+    expect(sim.playerById(2)!.wallet).toBe(0); expect(sim.rites.hasPending(sim.playerById(2)!)).toBe(false);
+    touch(0); touch(0); expect(sim.rites.hasPending(sim.playerById(0)!)).toBe(true); expect(sim.playerById(0)!.wallet).toBe(0);
     expect(sim.pickups.live.some(p => p.id === page.id)).toBe(true);
     sim.addPlayer({ id: 1, name: 'B', classId: 'heretic' }); touch(1);
-    expect(sim.playerById(1)!.wallet).toBe(RITE_PAGE_HALOS); expect(sim.pickups.live.some(p => p.id === page.id)).toBe(false);
+    expect(sim.rites.hasPending(sim.playerById(1)!)).toBe(true); expect(sim.pickups.live.some(p => p.id === page.id)).toBe(false);
   });
   it('a gold clear reward is worth a quarter room budget, credited to every human (audit batch 4)', () => {
     // The pinned floor rolls no gold, so its route Rite room pays gold here.

@@ -8,6 +8,7 @@ import { RITE_PAGE_HALOS } from '../data/pickups';
 import { fmix32 } from '../gen/hash';
 import type { RiteCard, RiteOffer } from '../net/messages';
 import { PHASE_CLEARED, PHASE_COMBAT } from '../net/protocol';
+import { ENEMIES, GATEKEEPER } from '../data/enemies';
 import { checkRite, drawCards, eligibleRites, type SourceContext } from './build';
 import { mulberry32 } from './rng';
 import type { InteractionResult } from './shop';
@@ -43,11 +44,28 @@ export class Rites {
     }
     const hazard = sim.props.all.some((q) => q.family === 'blast') ||
       sim.map.rooms.some((_, i) => sim.rooms[i].phase !== PHASE_CLEARED && sim.hazards.hasRoom(i));
+    // What the floor still holds: living enemies and the waves of rooms not yet cleared.
+    let survivors = false, flyers = false;
+    for (let k = 0; k < sim.activeCount; k++) {
+      const t = sim.eType[sim.active[k]];
+      if (t !== GATEKEEPER && !ENEMIES[t].flying && ENEMIES[t].hp > 60) survivors = true;
+      if (ENEMIES[t].flying) flyers = true;
+    }
+    sim.map.rooms.forEach((r, i) => {
+      if (sim.rooms[i].phase === PHASE_CLEARED) return;
+      for (const w of r.waves) {
+        if ((w.watchmen ?? 0) > 0 || (w.dominions ?? 0) > 0 || w.commander === 'cantor') survivors = true;
+        if (w.cherubs > 0 || w.commander === 'carrier') flyers = true;
+      }
+      if (r.boss) flyers = true;
+    });
     return {
-      allies: sim.players.filter((o) => o !== p && sim.livingTargetable(o)).map((o) => ({ classId: o.classId, q: o.kit.q, e: o.kit.e })),
+      allies: sim.players.filter((o) => o !== p && sim.livingTargetable(o)).map((o) => ({ classId: o.classId, q: o.kit.q, e: o.kit.e, active: [...o.kit.active] })),
       items: p.inventory.flatMap((s) => (s ? [s.item] : [])),
       areas,
       hazard,
+      survivors,
+      flyers,
     };
   }
 

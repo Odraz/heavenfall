@@ -70,7 +70,7 @@ export class Talents {
   initialBuild(p: SimPlayer, learned: LearnedBuild | undefined, devBuild?: string): RunBuild {
     const [q, e] = BASE_ABILITIES[p.classId];
     const dev = devBuild ? DEV_BUILDS[devBuild] : undefined;
-    if (dev && !p.bot && p.classId === 'betrayer' && !this.sim.progressionEnabled) {
+    if (dev && !p.bot && (!dev.classId || dev.classId === p.classId) && !this.sim.progressionEnabled) {
       const b = { talents: [...dev.talents], q: dev.q ?? q, e: dev.e ?? e };
       if (!learnedError(p.classId, b, null)) return { ...b, rites: [...(dev.rites ?? [])] };
     }

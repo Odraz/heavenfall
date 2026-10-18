@@ -6,7 +6,7 @@ import { Rewards } from './rewards';
 import { VictoryExit } from './victory';
 import { Talents, type Root } from './talents';
 import { Rites } from './rites';
-import { DEV_BUILDS, DEV_BUILD_ORDER, talentNode } from '../data/talents';
+import { BASE_ABILITIES, DEV_BUILDS, devBuildOrder, talentNode } from '../data/talents';
 import { resolveKit, runBuildError, type Kit, type RunBuild } from './build';
 import { levelForXp } from '../profile/model';
 import type { Profile } from '../profile/model';
@@ -2397,9 +2397,10 @@ export class Simulation {
   /** Dev key B: the next development quick build for this player, replacing its Rites (never with saved progression). */
   devBuildCycle(playerId: number): void {
     const p = this.playerById(playerId);
-    if (this.progressionEnabled || !p || p.bot || p.classId !== 'betrayer') return;
-    const name = DEV_BUILD_ORDER[this.devBuildIndex++ % DEV_BUILD_ORDER.length], d = DEV_BUILDS[name];
-    const build = { talents: [...d.talents], rites: [...(d.rites ?? [])], q: d.q ?? 'field', e: d.e ?? 'shadowstep' };
+    if (this.progressionEnabled || !p || p.bot) return;
+    const order = devBuildOrder(p.classId), name = order[this.devBuildIndex++ % order.length], d = DEV_BUILDS[name];
+    const [q, e] = BASE_ABILITIES[p.classId];
+    const build = { talents: [...d.talents], rites: [...(d.rites ?? [])], q: d.q ?? q, e: d.e ?? e };
     const error = runBuildError(p.classId, build, null);
     if (!error) this.talents.setBuild(p, build);
     this.emit(playerId, { type: 'interactionResult', requestId: 0, accepted: !error, reason: error ?? `Dev build: ${d.label}` });

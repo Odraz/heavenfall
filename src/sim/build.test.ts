@@ -30,7 +30,7 @@ describe('Betrayer catalog', () => {
     for (const p of paths) expect(learnedError('betrayer', b(ids(p)), 10), p).toBeNull();
   });
   it('accepts every development quick build', () => {
-    for (const [name, d] of Object.entries(DEV_BUILDS)) expect(learnedError('betrayer', { talents: d.talents, q: d.q ?? 'field', e: d.e ?? 'shadowstep' }, null), name).toBeNull();
+    for (const [name, d] of Object.entries(DEV_BUILDS).filter(([, d]) => (d.classId ?? 'betrayer') === 'betrayer')) expect(learnedError('betrayer', { talents: d.talents, q: d.q ?? 'field', e: d.e ?? 'shadowstep' }, null), name).toBeNull();
   });
 });
 

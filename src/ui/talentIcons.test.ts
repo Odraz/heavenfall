@@ -4,8 +4,8 @@ import { spriteUrl } from '../render/atlas';
 import { talentIcon } from './talents';
 
 describe('talent icons (art-prompts.md B11)', () => {
-  it('gives every Betrayer node an icon: its ability\'s for an ability node, its own talent icon otherwise', () => {
-    const nodes = TALENT_NODES.betrayer;
+  it.each(['fallen', 'heretic', 'binder', 'betrayer'] as const)('gives every %s node an icon: its ability\'s for an ability node, its own talent icon otherwise', (classId) => {
+    const nodes = TALENT_NODES[classId];
     expect(nodes).toHaveLength(21);
     for (const n of nodes) {
       const icon = talentIcon(n);
