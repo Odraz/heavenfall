@@ -155,7 +155,7 @@ export class RelicView {
     let badge: THREE.Sprite | null = null;
     if (a.effect === 'usher') {
       badge = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.texture(RELIC_ART.usher), depthWrite: false, alphaTest: 0.05 }));
-      badge.scale.set(0.7, 0.7, 1); badge.position.set(a.x, a.z + 0.35, a.y);
+      badge.scale.set(0.45, 0.45, 1); badge.position.set(a.x, a.z + 0.22, a.y);
       this.group.add(badge);
     }
     this.areas.set(a.id, { state: a, mesh, material, badge });
@@ -201,6 +201,10 @@ export class RelicView {
       this.vfx.ring(now, e.x, e.y, e.z, color, 0.5, e.radius, 380);
     } else this.vfx.sphere(now, e.x, e.y, e.z + 0.9, color, 0.9, 1.1, 600, 0.35);
   }
+
+  /** Debug: the effects of the live areas, and how many projectiles fly. */
+  areaEffects(): string[] { return [...this.areas.values()].map((a) => a.state.effect); }
+  shotCount(): number { return this.shots.size; }
 
   /** At the estimated host tick: area spread/fade, projectiles along their accepted lines. */
   update(tick: number): void {

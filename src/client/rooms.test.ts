@@ -62,7 +62,7 @@ describe('R1.5 client room projection', () => {
     const { model } = make();
     for (const [kind, label] of [
       ['pardoner', 'The Pardoner · Personal stock · Aim and press F to buy'],
-      ['confessional', 'The Confessional · Press F at the grille: the Advocate teaches and resets talents'],
+      ['confessional', 'The Confessional · Sanctuary · Press F at the grille: talents, relics and the bargain'],
       ['boss', 'The Gatekeeper · Inherited fight fixture (authored encounter arrives in R7)'],
     ] as const) {
       const room = model.map.rooms.findIndex((r) => r.kind === kind);

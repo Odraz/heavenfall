@@ -20,12 +20,6 @@ export interface ClassDef {
 
 /** The hints panel's general lines, after the class's, in multiplayer only (M8 §2.4). */
 export const GENERAL_HINTS: readonly string[] = ["Shoot a fallen teammate's soul to revive them.", 'Enter: chat.'];
-/** The route controls, solo and in multiplayer (rogue game.md §1.4). */
-export const ROUTE_HINTS: readonly string[] = [
-  'F: the shop, chest, Bell or Advocate you look at; with nothing there, reopen a waiting choice.',
-  'Hold M: the map. Click a cleared room and stand still 1.5 s to return there.',
-  'Esc: close a choice without spending it. Pass refuses it for this run.',
-];
 
 export const CLASS_IDS: readonly ClassId[] = ['fallen', 'heretic', 'binder', 'betrayer'];
 

@@ -218,6 +218,8 @@ describe("the Advocate's bargain", () => {
     const offer = lastOffers(sim, p)[0];
     sim.relicChoice(p.id, p.requests.next, offer.offerId, 'pass');
     expect(p.maxHp).toBe(CLASSES.fallen.hp);
+    // The Advocate's card learns at once that the bargain is settled.
+    expect(events(sim, 'inventory', p.id).at(-1)!.state.bargainOpen).toBe(false);
     expect(sim.bargain.open(p).accepted).toBe(false);
     const sim2 = floorSim('confessional'), q = sim2.players[0];
     sim2.bargain.open(q);

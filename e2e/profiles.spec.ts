@@ -142,7 +142,8 @@ test('both carried keys respect refused use and cooldown in a normal run from an
   await expect(page.locator('.profile-loadout .loadout-name')).toHaveText(['Balm of the Rejected ×2', 'Pilgrim’s Feather ×3']);
   await expect(page.locator('.profile-loadout .item-slot:not(.empty)')).toHaveCount(2);
   await expect(page.getByText('Carried items are lost if you die before the Gatekeeper falls.', { exact: true })).toBeVisible();
-  await expect(page.getByText(/relics/i)).toHaveCount(0);
+  // R6: every class card has its Relics button (relics were hidden until they existed).
+  await expect(page.locator('.class-relics')).toHaveCount(4);
   const cards = await page.locator('.class-cards').boundingBox(), loadout = await page.locator('.profile-loadout').boundingBox(), dungeon = await page.locator('.dungeon-picker').boundingBox();
   expect(loadout!.y).toBeGreaterThanOrEqual(cards!.y + cards!.height);
   expect(dungeon!.y).toBeGreaterThan(loadout!.y + loadout!.height);

@@ -110,7 +110,7 @@ test('empty special rooms identify their later-milestone fixtures', async ({ pag
   const { def } = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
   const [x, y] = def.rooms[floor.confessional].entry[0].cells[0];
   await page.evaluate(([x, y]) => window.__heavenfallTeleport!(x + 0.5, y + 0.5), [x, y]);
-  await expect(page.locator('.room-message')).toHaveText('The Confessional · Press F at the grille: the Advocate teaches and resets talents');
+  await expect(page.locator('.room-message')).toHaveText('The Confessional · Sanctuary · Press F at the grille: talents, relics and the bargain');
 });
 
 test('two browser clients reproduce the pinned Node floor and dev entry positions', async ({ page: a, browser }) => {

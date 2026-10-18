@@ -2,6 +2,8 @@
 
 Revision 9, 2026-10-11. The development sequence for the one-dungeon Pearly Gates slice. [game.md](game.md), its catalogs and [slice-acceptance.md](slice-acceptance.md) remain the gameplay authority; this file decides **order**, not rules.
 
+**R6 checkpoint, 2026-10-18:** relics and combos, the key and the Reliquary, the bargain, the Bells, the Sundial, Pilgrim's Return, deeds, Edicts and streaks are implemented and verified, awaiting your play; see the [R06 report](r06-report.md) for the routes and tradeoffs to compare.
+
 **R4 checkpoint, 2026-10-16:** the Betrayer's three trees, Rites and the Advocate are implemented and verified, awaiting your Gate C play; see the [R04 report](r04-report.md) for quick builds and the two plans.
 
 **R3 checkpoint, 2026-10-14:** all five stages are implemented and verified, awaiting human play. See [R03 report](r03-report.md) for commits, exact checks, disposable item saves, the inherited-boss limitation and remaining art/balance acceptance. Tomas explicitly authorized R03; this does not mark Gate B accepted.

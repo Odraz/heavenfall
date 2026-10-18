@@ -48,6 +48,14 @@ export interface DebugState {
   /** R5: class floor fire cells drawn now, and live talent areas by kind. */
   talentFire: number;
   talentAreas: string[];
+  /** R6: the own equipped relics and combo, live relic area effects, the route state, own pending relic offers, the own streak and the Sentence. */
+  relics: { equipped: [string | null, string | null]; combo: string | null };
+  relicAreas: string[];
+  relicShots: number;
+  route: { keyHolder: number; keyUsed: boolean; chest: { open: boolean } | null; bells: string[]; sundial: string } | null;
+  relicOffers: number;
+  streak: { count: number; best: number };
+  sentence: number;
   commanders: CommanderCast[];
   /** The latest snapshot's Watchman aim records (rogue rooms.md §6.4). */
   watchmen: WatchmanAim[];
@@ -117,6 +125,13 @@ export const debugState: DebugState = {
   crests: 0,
   talentFire: 0,
   talentAreas: [],
+  relics: { equipped: [null, null], combo: null },
+  relicAreas: [],
+  relicShots: 0,
+  route: null,
+  relicOffers: 0,
+  streak: { count: 0, best: 0 },
+  sentence: 0,
   pickups: [],
   props: [],
   brokenProps: [],
@@ -171,6 +186,7 @@ export function resetGameDebug(): void {
     enemyCountsByTick: {},
     projectiles: 0,
     wallet: 0,
+    relics: { equipped: [null, null], combo: null }, relicAreas: [], relicShots: 0, route: null, relicOffers: 0, streak: { count: 0, best: 0 }, sentence: 0,
     pickups: [],
     props: [],
     brokenProps: [],

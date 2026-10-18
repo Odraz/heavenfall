@@ -2575,6 +2575,7 @@ export class Simulation {
       return this.relicOffers.chooseChest(p, offer, choice);
     });
     this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale choice; try again' }) });
+    this.publishInventory(p);
   }
 
   /**

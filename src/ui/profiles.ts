@@ -70,7 +70,7 @@ export function profilesScreen(session: ProfileSession, onBack: () => void, onCh
       const img = el('img', '', portrait); img.src = PORTRAITS[id]; img.alt = '';
       const meta = el('div', 'profile-class-meta', row);
       el('div', 'profile-class-name', meta, CLASSES[id].name);
-      el('div', 'profile-class-level', meta, `Level ${xp.level} · ${xp.max ? 'Max' : `${xp.into} / ${xp.span}`}`);
+      el('div', 'profile-class-level', meta, `Level ${xp.level} · ${xp.max ? 'Max' : `${xp.into} / ${xp.span}`}${classRecords(session.profile, id) ? ` · ${classRecords(session.profile, id)}` : ''}`);
       el('i', '', el('div', 'profile-xp', meta)).style.width = `${xp.percent}%`;
     }
   };
@@ -154,9 +154,14 @@ function openLobbyTalents(session: ProfileSession, id: ClassId, saved: () => voi
 /** The class card's level line: Absolution past level 10, the best streak and the best Sentence won (§2.5, §9.2, §10). */
 function classRecord(profile: Profile, id: ClassId): string {
   const c = profile.characters[id], level = levelForXp(c.xp), rank = absolutionForXp(c.xp);
-  const parts = [`Level ${level}${rank > 0 ? ` · Absolution ${roman(rank)}` : ''}`];
-  if (c.bestStreak > 0) parts.push(`streak ${c.bestStreak}`);
-  if ((c.bestSentence[1] ?? 0) > 0) parts.push(`Sentence ${c.bestSentence[1]}`);
+  return `Level ${level}${rank > 0 ? ` · Absolution ${roman(rank)}` : ''}`;
+}
+
+/** The character's records (§2.5, §10): best streak ever and best Sentence won in the Pearly Gates. */
+export function classRecords(profile: Profile, id: ClassId): string {
+  const c = profile.characters[id], parts: string[] = [];
+  if (c.bestStreak > 0) parts.push(`Best streak ${c.bestStreak}`);
+  if ((c.bestSentence[1] ?? 0) > 0) parts.push(`won at Sentence ${c.bestSentence[1]}`);
   return parts.join(' · ');
 }
 
@@ -187,7 +192,8 @@ function openLobbyRelics(session: ProfileSession, id: ClassId, saved: () => void
 function relicsLabel(profile: Profile, id: ClassId): string {
   const r = profile.characters[id].relics, combo = activeCombo(r);
   const names = r.filter(Boolean).map((x) => RELICS[x as RelicId].name);
-  return combo ? `Relics · ${combo.name}` : names.length ? `Relics · ${names.length}` : profile.relics.length ? 'Relics · none equipped' : 'Relics';
+  void combo;
+  return profile.relics.length ? `Relics · ${names.length}/2` : 'Relics';
 }
 
 /** Emergency export stays available if an accepted checkpoint cannot reach storage. */
@@ -197,13 +203,15 @@ export function saveCodeButton(parent: HTMLElement, profile: () => Profile): voi
 
 /**
  * The class cards' levels and the carried items (audit batch 2): the same round slots as in game,
- * each item's one-line rule, and the risk stated plainly. Relics stay hidden until they exist (R6).
+ * each item's one-line rule, and the risk stated plainly; each class card's Relics button opens its loadout (R6).
  */
 export function profileLoadout(parent: HTMLElement, session: ProfileSession, changed: () => void = () => {}): void {
   for (const id of CLASS_IDS) {
     const card = parent.querySelector<HTMLElement>(`.class-card[data-class-id="${id}"]`);
     if (!card) continue;
     const level = el('div', 'class-level', undefined, classRecord(session.profile, id)); card.insertBefore(level, card.querySelector('.class-role'));
+    const records = classRecords(session.profile, id);
+    if (records) level.title = records;
     showAssigned(card, id, session.profile);
     // One row of card buttons, so every card keeps its rows aligned (UI stability).
     const actions = el('div', 'class-actions', card);
@@ -215,8 +223,10 @@ export function profileLoadout(parent: HTMLElement, session: ProfileSession, cha
       open.addEventListener('click', (e) => { e.stopPropagation(); openLobbyTalents(session, id, () => { open.textContent = talentsLabel(session.profile, id); showAssigned(card, id, session.profile); changed(); }); });
     }
     const relics = el('div', 'button small class-relics', actions, relicsLabel(session.profile, id));
+    const relicNames = (): string => { const r = session.profile.characters[id].relics, combo = activeCombo(r); return [...r.filter(Boolean).map((x) => RELICS[x as RelicId].name), combo ? `Combo: ${combo.name}` : ''].filter(Boolean).join(' · '); };
+    relics.title = relicNames();
     relics.setAttribute('role', 'button'); relics.tabIndex = 0;
-    relics.addEventListener('click', (e) => { e.stopPropagation(); openLobbyRelics(session, id, () => { relics.textContent = relicsLabel(session.profile, id); changed(); }); });
+    relics.addEventListener('click', (e) => { e.stopPropagation(); openLobbyRelics(session, id, () => { relics.textContent = relicsLabel(session.profile, id); relics.title = relicNames(); changed(); }); });
   }
   const container = parent.querySelector('.panel') ?? parent;
   const panel = el('div', 'profile-loadout');

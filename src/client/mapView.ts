@@ -53,7 +53,7 @@ export class MapView {
     this.full.className = 'full-map'; this.full.hidden = true;
     const layout = document.createElement('div'); layout.className = 'map-layout';
     const side = document.createElement('div'); side.className = 'map-legend';
-    this.legend.width = 190; this.legend.height = 404;
+    this.legend.width = 190; this.legend.height = 440;
     this.names.className = 'map-player-names';
     side.append(this.legend, this.names); layout.append(this.plate, side); this.full.append(layout);
     this.roomsList.className = 'map-room-list'; this.roomsList.setAttribute('aria-label', 'Known rooms');
@@ -63,7 +63,12 @@ export class MapView {
     void loadRewardArt().then(() => this.drawLegend());
     void document.fonts?.load(`700 16px ${DISPLAY_FONT}`).then(() => this.drawLegend());
     document.addEventListener('mousemove', this.mousemove);
+    // Without pointer lock the click lands on the plate itself (Pilgrim's Return, §5.5).
+    this.plate.addEventListener('mousedown', (e) => { if (e.button === 0 && this.open) { e.preventDefault(); this.onClick(); } });
   }
+
+  /** LMB on the open full map. */
+  onClick: () => void = () => {};
 
   /** The known room under the full map's cursor, or -1. */
   roomAtCursor(): number {
@@ -207,6 +212,9 @@ export class MapView {
       ctx.fillStyle = INK.line; ctx.fillText(['Halos', 'Consumable', 'Rite page'][i], 34, 323 + i * 24);
     });
     ctx.fillStyle = INK.note; ctx.fillText('No mark: no clear reward', 4, 323 + 3 * 24);
+    // Pilgrim's Return (§5.5).
+    ctx.fillStyle = INK.own; ctx.fillText('Click a cleared room and', 4, 323 + 4 * 24 - 4);
+    ctx.fillText('stand still: return there', 4, 323 + 4 * 24 + 14);
   }
   dispose(): void {
     this.parent.classList.remove('map-open');

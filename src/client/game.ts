@@ -664,11 +664,8 @@ export class Game {
     this.input.pointerLockAllowed = !this.params.bot && this.params.benchArena < 0;
     this.input.onKey = (code) => this.onKey(code);
     // Hold M and click a cleared room to return there (rogue game.md §5.5).
-    this.input.onMapClick = () => {
-      if (this.dead || this.over || this.paused || !this.o.floor) return;
-      const room = this.mapView.roomAtCursor();
-      if (room >= 0) this.o.transport.sendCtrl({ type: 'pilgrimReturn', runId: this.o.runId, requestId: this.nextRequestId++, room });
-    };
+    this.input.onMapClick = () => this.mapClick();
+    this.mapView.onClick = () => { if (!document.pointerLockElement) this.mapClick(); };
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('visibilitychange', this.onVisibility);
 
@@ -1141,8 +1138,16 @@ export class Game {
     // A Bell rung: its toll, heard by everyone (rogue game.md §4.12).
     for (const b of state.bells) if (b.state === 'pending' && this.routeView.state.bells.find((o) => o.room === b.room)?.state === 'available') sfx('bellToll', { x: b.x, y: b.y });
     this.routeView.set(state);
+    debugState.route = { keyHolder: state.keyHolder, keyUsed: state.keyUsed, chest: state.chest ? { open: state.chest.open } : null, bells: state.bells.map((b) => b.state), sundial: state.sundial };
     this.mapView.setRoute(state, state.keyHolder < 0 && !state.keyUsed && [...this.pickups.model.records.values()].some((r) => r.pickup.kind === KEY && r.pickup.room === this.o.floor?.keyRoom));
     this.relicHud.setKey(state.keyHolder >= 0 ? this.roster.find((r) => r.id === state.keyHolder)?.name ?? `Player ${state.keyHolder}` : null);
+  }
+
+  /** LMB with the full map held: Pilgrim's Return to the cleared room under the cursor (§5.5). */
+  private mapClick(): void {
+    if (this.dead || this.over || this.paused || !this.o.floor || !this.mapView.open) return;
+    const room = this.mapView.roomAtCursor();
+    if (room >= 0) this.o.transport.sendCtrl({ type: 'pilgrimReturn', runId: this.o.runId, requestId: this.nextRequestId++, room });
   }
 
   /** Pilgrim's Return (§5.5): a gold ring closing on the channeling player over 1.5 s, a chime, the target outlined. */
@@ -1331,9 +1336,9 @@ export class Game {
       this.itemView.sync(msg.itemEffects ?? []);
       this.relicView.sync(msg.relicAreas ?? [], msg.relicShots ?? []);
       if (msg.route) this.applyRoute(msg.route);
-      if (msg.edicts) this.hud.setSentence(sentenceLabel(msg.edicts.length));
+      if (msg.edicts) { this.hud.setSentence(sentenceLabel(msg.edicts.length)); debugState.sentence = msg.edicts.length; }
       const relics = msg.relicStates?.find((r) => r.playerId === this.localId);
-      if (relics) this.relicHud.setRelics(relics.relics, relics.combo, relics.ready);
+      if (relics) { this.relicHud.setRelics(relics.relics, relics.combo, relics.ready); debugState.relics = { equipped: [relics.relics[0], relics.relics[1]], combo: relics.combo }; }
       const inventory = msg.inventories?.find(p => p.playerId === this.localId);
       if (inventory) this.setInventory(inventory);
       this.dominion.sync(msg);
@@ -1380,6 +1385,9 @@ export class Game {
       const level = levelForXp(state.xp);
       this.hud.centerText(hasCatalog(this.classId) ? `Level ${level} — learn it at the Confessional` : `Level ${level}`, 3000, performance.now()); this.sounds.levelUp();
     }
+    // A relic became yours (claimed, pawned or a deed's): a bright chime with its line.
+    const had = (this.inventory?.ownedRelics?.length ?? 0) + (this.inventory?.pawnedRelics?.length ?? 0);
+    if (this.inventory && (state.ownedRelics?.length ?? 0) + (state.pawnedRelics?.length ?? 0) > had) { sfx('goldPickup', null, 0.9, 0, undefined, 0.75); this.sounds.levelUp(); }
     this.inventory = state; this.nextRequestId = Math.max(this.nextRequestId, state.nextRequestId);
     if (state.maxHp !== undefined) { this.hpCut = Math.max(0, CLASSES[this.classId].hp - state.maxHp); this.maxHp = state.maxHp; }
     this.hud.setInventory(state); this.shop.update(state);
@@ -1419,6 +1427,7 @@ export class Game {
       case 'relicState':
         if (e.playerId !== this.localId) break;
         this.relicHud.setRelics(e.relics, e.combo, e.ready);
+        debugState.relics = { equipped: [e.relics[0], e.relics[1]], combo: e.combo };
         if (this.overlayView?.kind === 'relics') this.overlayView.view.setEquipped(e.relics, this.inventory?.ownedRelics, this.inventory?.pawnedRelics);
         break;
       case 'route': this.applyRoute(e.state); break;
@@ -1426,10 +1435,11 @@ export class Game {
       case 'relicOffers':
         if (e.playerId !== this.localId) break;
         this.relicOffers = e.offers;
+        debugState.relicOffers = e.offers.length;
         this.relicOfferEvent(e.open);
         break;
       case 'streak':
-        if (e.playerId === this.localId) this.relicHud.streakTier(e.tier, e.count, now);
+        if (e.playerId === this.localId) { this.relicHud.streakTier(e.tier, e.count, now); debugState.streak = { count: e.count, best: Math.max(debugState.streak.best, e.count) }; }
         else this.hud.addChat(this.roster.find((r) => r.id === e.playerId)?.name ?? `Player ${e.playerId}`, `${STREAK_NAMES[e.tier]} (${e.count})`, now);
         break;
       case 'streakEnd': if (e.playerId === this.localId) this.relicHud.streakEnd(e.count, now); break;
@@ -2766,6 +2776,8 @@ export class Game {
     const itemTick = this.snaps.estimatedTick(simNow);
     this.itemView.update(itemTick);
     this.relicView.update(itemTick);
+    debugState.relicAreas = this.relicView.areaEffects();
+    debugState.relicShots = this.relicView.shotCount();
     this.relicHud.update(itemTick, now);
     const sundial = this.sundialLeft();
     this.relicHud.setSundial(this.o.floor && sundial > 0 ? sundial : null);
