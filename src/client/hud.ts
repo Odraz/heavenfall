@@ -88,6 +88,7 @@ interface Fade {
 export class Hud {
   readonly root: HTMLDivElement;
   private readonly hpBar: HTMLDivElement;
+  private readonly wrathFill: HTMLDivElement;
   private readonly xpLine: HTMLDivElement;
   private readonly xpLevel: HTMLSpanElement;
   private readonly xpCount: HTMLSpanElement;
@@ -367,6 +368,9 @@ export class Hud {
     this.hpBar = el('div', 'hp-bar', hp);
     this.hpFill = el('div', 'hp-fill', this.hpBar);
     this.shieldFill = el('div', 'shield-fill', this.hpBar);
+    // Wrath of Dis (classes-fallen.md `a.cap`): the red-iron ring's fill toward its eruption, along the bar's foot.
+    this.wrathFill = el('div', 'wrath-fill', this.hpBar);
+    this.wrathFill.hidden = true;
     // Experience (audit batch 2): the level and count above a slim bar in the HP bar's own frame.
     this.xpLine = el('div', 'xp-line', this.root);
     this.xpLine.setAttribute('role', 'progressbar');
@@ -623,6 +627,12 @@ export class Hud {
   /** One of Them: the own eye mark while ordinary casters ignore you. */
   setHidden(hidden: boolean): void {
     this.hiddenMark.hidden = !hidden;
+  }
+
+  /** Wrath of Dis's fill (0–1), or null to hide it. */
+  setWrath(fraction: number | null): void {
+    this.wrathFill.hidden = fraction === null;
+    if (fraction !== null) this.wrathFill.style.width = `${Math.round(Math.max(0, Math.min(1, fraction)) * 100)}%`;
   }
 
   setCooldowns(q: number, qMax: number, e: number, eMax: number): void {

@@ -213,7 +213,7 @@ export class Rewards {
     } else if (drop.kind === RITE_PAGE && !p.bot) {
       const recipients = this.pageRecipients.get(drop.id);
       if (!recipients?.delete(p.offerKey)) return false;
-      // The page becomes this player's own Rite offer (§9.10); classes without trees yet get halos.
+      // The page becomes this player's own Rite offer (§9.10).
       sim.rites.grant(p, 'clear');
       // A page stays while it still owes other humans their personal share.
       if (recipients.size) return false;

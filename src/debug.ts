@@ -45,6 +45,9 @@ export interface DebugState {
   hazards: { activeRoom: number; activeCells: number };
   spawnWarnings: Array<{ id: number; room: number; x: number; y: number; z: number; startTick: number; readyTick: number }>;
   crests: number;
+  /** R5: class floor fire cells drawn now, and live talent areas by kind. */
+  talentFire: number;
+  talentAreas: string[];
   commanders: CommanderCast[];
   /** The latest snapshot's Watchman aim records (rogue rooms.md §6.4). */
   watchmen: WatchmanAim[];
@@ -112,6 +115,8 @@ export const debugState: DebugState = {
   wallet: 0,
   spawnWarnings: [],
   crests: 0,
+  talentFire: 0,
+  talentAreas: [],
   pickups: [],
   props: [],
   brokenProps: [],

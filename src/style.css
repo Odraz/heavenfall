@@ -466,6 +466,16 @@ body {
   }
 }
 
+.wrath-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #8a1a08, #ff5a1c);
+  box-shadow: 0 0 6px #ff5a1c;
+  transition: width 0.12s linear;
+}
+
 .shield-fill {
   position: absolute;
   top: 0;

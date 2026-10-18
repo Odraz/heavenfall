@@ -849,7 +849,8 @@ export class Game {
         this.chargeHeld = false;
         if (p.charging) { p.releaseCharge(); this.ePresses = (this.ePresses + 1) & 0xff; }
       }
-      if (!p.charging) this.chargeHeld = false;
+      // A charge a wall or its 1.2 s ended also tells the host, so it stops cutting along walking steps.
+      if (this.chargeHeld && !p.charging) { this.chargeHeld = false; this.ePresses = (this.ePresses + 1) & 0xff; }
       return fire;
     }
     if (eAbility === 'rainOfFire') {
@@ -1023,6 +1024,7 @@ export class Game {
         if (offer) this.openRite(offer);
       }
     }
+    if (e.type === 'meter' && e.playerId === this.localId && e.kind === 'wrath') this.hud.setWrath(e.value / e.max);
     if (e.type === 'launched') {
       // R5 launches fly Falling Star's arc after the render delay and don't hold a wading player.
       for (const s of e.slots) {
@@ -1046,7 +1048,13 @@ export class Game {
       return { name: def.name, icon: def.icon, hint: ALT_ABILITIES[id]?.hint ?? CLASSES[this.classId].hints.find((h) => h.key === key)?.text ?? null };
     };
     this.hud.setKit({ Q: slot('Q'), E: slot('E') });
+    // Wrath of Dis shows its fill only while the capstone is effective; its value arrives as owner meters.
+    if (!this.talents.ownHas('fallen.a.cap')) this.hud.setWrath(null);
+    else if (this.wrathShown === null) this.hud.setWrath(0);
+    this.wrathShown = this.talents.ownHas('fallen.a.cap') ? 0 : null;
   }
+
+  private wrathShown: number | null = null;
 
   /** Within the Advocate's reach in the Confessional (rogue game.md §9.6). */
   private advocateInReach(): boolean {

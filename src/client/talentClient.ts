@@ -15,6 +15,7 @@ import type { InterpolatedEnemies } from './snapshots';
 import { INFORMER, THROUGH_THE_THRONG } from '../sim/talents';
 import type { GameMap } from '../sim/map';
 import { FireView } from './fireView';
+import { debugState } from '../debug';
 import type { IncenseClouds } from '../render/incense';
 import { FLAG_ROOTED, FLAG_SLOWED } from '../net/protocol';
 
@@ -357,6 +358,8 @@ export class TalentClient {
   /** Animates coins and draws the outlines and silhouettes for this frame. */
   update(now: number, enemies: InterpolatedEnemies, players: ReadonlyArray<{ id: number; x: number; y: number; z: number; dead: boolean }>, roomAt: (x: number, y: number) => number): void {
     this.fire.update(this.d.tick(), now);
+    debugState.talentFire = this.fire.count(this.d.tick());
+    debugState.talentAreas = [...this.drawn.values()].map((d) => d.area.kind);
     const tick = this.d.tick();
     for (const { area, obj } of this.drawn.values()) {
       // Areas that follow a player (Bread's ring, a worn cloud) take its pose each frame.
