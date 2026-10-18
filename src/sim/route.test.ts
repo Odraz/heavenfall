@@ -13,7 +13,7 @@ import { RunRecords } from '../net/runRecords';
 import { applyProgress, stakeProfile } from '../profile/lifecycle';
 import { Simulation, type SimPlayer } from './sim';
 import { drawRelics } from './relicOffers';
-import { SOURCE_BELL_FIRST, SOURCE_CHEST, SUNDIAL_TICKS, judgmentWave } from './route';
+import { RETURN_TICKS, SOURCE_BELL_FIRST, SOURCE_CHEST, SUNDIAL_TICKS, judgmentWave } from './route';
 import { sealNow } from './testutil/sims';
 
 const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
@@ -410,5 +410,55 @@ describe('the Sundial', () => {
     expect(p.wallet).toBe(0);
     sim.step(); sealNow(sim, g.floor.boss);
     expect(p.wallet).toBe(6);
+  });
+});
+
+describe("Pilgrim's Return", () => {
+  function returnSim(): { sim: Simulation; p: SimPlayer; target: number } {
+    const sim = floorSim('keyRoom'), p = sim.players[0];
+    const target = g.def.rooms!.findIndex((x) => x.kind === 'breach');
+    // Stand in a cleared room (the Reliquary), away from the start room's countdown.
+    const [c, r] = g.def.rooms![g.floor.reliquary].entry[0].cells[0];
+    p.x = c + 0.5; p.y = r + 0.5; p.z = sim.map.floor[r * sim.map.w + c];
+    p.mapHeld = true;
+    return { sim, p, target };
+  }
+  const run = (sim: Simulation, n: number) => { for (let i = 0; i < n; i++) sim.step(); };
+
+  it('a cleared room, M held, standing still 1.5 s: the player stands on its lowest socket’s entry', () => {
+    const { sim, p, target } = returnSim();
+    sim.pilgrimReturn(p.id, p.requests.next, target);
+    expect(p.pilgrim?.room).toBe(target);
+    run(sim, RETURN_TICKS - 1);
+    expect(sim.roomAt(p.x, p.y)).not.toBe(target);
+    run(sim, 1);
+    const entry = [...g.def.rooms![target].entry].sort((a, b) => a.socket - b.socket)[0];
+    expect([p.x, p.y]).toEqual([entry.cells[0][0] + 0.5, entry.cells[0][1] + 0.5]);
+    expect(events(sim, 'pilgrim').map((e) => e.phase)).toEqual(['start', 'arrive']);
+  });
+
+  it('releasing M, moving or being hurt breaks it; an uncleared or own room is refused', () => {
+    for (const breakIt of [(p: SimPlayer) => { p.mapHeld = false; }, (p: SimPlayer) => { p.x += 0.6; }, (p: SimPlayer, sim: Simulation) => { sim.damagePlayer(p, 5); }]) {
+      const { sim, p, target } = returnSim();
+      sim.pilgrimReturn(p.id, p.requests.next, target);
+      run(sim, 10); breakIt(p, sim); run(sim, RETURN_TICKS);
+      expect(p.pilgrim).toBeNull();
+      expect(sim.roomAt(p.x, p.y)).not.toBe(target);
+    }
+    const { sim, p } = returnSim();
+    sim.pilgrimReturn(p.id, p.requests.next, g.floor.keyRoom);
+    expect(reasons(sim, p.id).at(-1)).toBe('Choose another cleared room');
+    sim.pilgrimReturn(p.id, p.requests.next, g.floor.boss);
+    expect(reasons(sim, p.id).at(-1)).toBe('Choose another cleared room');
+  });
+
+  it('no return while a countdown or fight is on', () => {
+    const { sim, p, target } = returnSim();
+    const [c, r] = g.def.rooms![g.floor.keyRoom].entry[0].cells[0];
+    p.x = c + 0.5; p.y = r + 0.5;
+    sim.step();
+    expect(sim.activeRoom).toBe(g.floor.keyRoom);
+    sim.pilgrimReturn(p.id, p.requests.next, target);
+    expect(reasons(sim, p.id).at(-1)).toBe('No return while a fight is on');
   });
 });

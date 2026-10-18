@@ -26,6 +26,8 @@ export class Input {
   releases = 0;
   /** Called on every key press (not repeats): F3, F8, Q, E and the dev keys. */
   onKey: (code: string) => void = () => {};
+  /** LMB while the full map is held (Pilgrim's Return, rogue game.md §5.5). */
+  onMapClick: () => void = () => {};
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener('keydown', this.keydown);
@@ -135,7 +137,7 @@ export class Input {
       e.preventDefault();
       return;
     }
-    if (this.mapHeld) { e.preventDefault(); return; }
+    if (this.mapHeld) { e.preventDefault(); if (e.button === 0) this.onMapClick(); return; }
     if (!this.enabled || !this.pointerLockAllowed) return;
     if (!this.pointerLocked) {
       this.requestPointerLock();

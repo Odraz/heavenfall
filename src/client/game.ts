@@ -662,6 +662,12 @@ export class Game {
     this.input = new Input(this.canvas);
     this.input.pointerLockAllowed = !this.params.bot && this.params.benchArena < 0;
     this.input.onKey = (code) => this.onKey(code);
+    // Hold M and click a cleared room to return there (rogue game.md §5.5).
+    this.input.onMapClick = () => {
+      if (this.dead || this.over || this.paused || !this.o.floor) return;
+      const room = this.mapView.roomAtCursor();
+      if (room >= 0) this.o.transport.sendCtrl({ type: 'pilgrimReturn', runId: this.o.runId, requestId: this.nextRequestId++, room });
+    };
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('visibilitychange', this.onVisibility);
 
@@ -1138,6 +1144,19 @@ export class Game {
     this.relicHud.setKey(state.keyHolder >= 0 ? this.roster.find((r) => r.id === state.keyHolder)?.name ?? `Player ${state.keyHolder}` : null);
   }
 
+  /** Pilgrim's Return (§5.5): a gold ring closing on the channeling player over 1.5 s, a chime, the target outlined. */
+  private pilgrimEvent(e: Extract<GameEvent, { type: 'pilgrim' }>, now: number): void {
+    const at = e.playerId === this.localId ? this.player.body : this.playerPose(e.playerId);
+    if (e.phase === 'start') {
+      if (at) for (let i = 0; i < 3; i++) this.vfx.ring(now, at.x, at.y, at.z + 0.05, 0xffd27a, 2.2 - i * 0.6, 0.3, 1500 - i * 300, i * 300);
+      sfx('chaliceHeal', at ? { x: at.x, y: at.y } : null, 0.6, 0, undefined, 0.8);
+      if (e.playerId === this.localId) this.mapView.returnTarget = e.room;
+    } else {
+      if (e.playerId === this.localId) this.mapView.returnTarget = -1;
+      if (e.phase === 'arrive' && at) { this.vfx.pillar(now, at.x, at.y, at.z); sfx('goldPickup', null, 0.6); }
+    }
+  }
+
   /** F with nothing to interact with: the oldest free Rite offer, else a waiting chest offer (§9.10). */
   private openPendingOffer(): void {
     const free = this.talents.offers.find((o) => o.source !== 'sundial' && o.source !== 'bargain');
@@ -1401,6 +1420,7 @@ export class Game {
         if (this.overlayView?.kind === 'relics') this.overlayView.view.setEquipped(e.relics, this.inventory?.ownedRelics, this.inventory?.pawnedRelics);
         break;
       case 'route': this.applyRoute(e.state); break;
+      case 'pilgrim': this.pilgrimEvent(e, now); break;
       case 'relicOffers':
         if (e.playerId !== this.localId) break;
         this.relicOffers = e.offers;

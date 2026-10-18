@@ -200,6 +200,9 @@ export interface SimPlayer {
   bargainCut: number;
   /** The boss room sealed before the Sundial went dark (§6.8): the Mercy deed's condition. */
   sundialQualified: boolean;
+  /** M held in the latest accepted input (§5.5), and a Pilgrim's Return channel in progress. */
+  mapHeld: boolean;
+  pilgrim: { room: number; startTick: number; x: number; y: number } | null;
   /** Each relic id's cooldown end tick: retained through death, reconnect and re-equip (§2.4 rule 7). */
   relicCd: Record<string, number>;
   /** The kill streak (game.md §10): count, last counted kill's tick, best this run, own kills and assists counted. */
@@ -982,6 +985,7 @@ export class Simulation {
       if (initial || delta <= 127) p.itemPresses[slot] = counter;
     }
     p.lastSeq = m.seq;
+    p.mapHeld = m.mapHeld;
     p.yaw = m.yaw;
     p.pitch = m.pitch;
     const qPressed = m.qPresses !== p.qPresses;
@@ -1073,7 +1077,7 @@ export class Simulation {
       .map((id) => (id && owned.includes(id) && !init.bot ? id : null)) as [string | null, string | null];
     if (equip[0] && equip[0] === equip[1]) equip[1] = null;
     const p: SimPlayer = {
-      relics: equip, ownedRelics: owned, relicCd: {}, claimedRelics: [], pawnedRelics: [], savedRelics: [equip[0], equip[1]], bargainCut: 0, sundialQualified: false, streak: 0, streakTick: 0, bestStreak: 0, streakKills: 0, assists: 0,
+      relics: equip, ownedRelics: owned, relicCd: {}, claimedRelics: [], pawnedRelics: [], savedRelics: [equip[0], equip[1]], bargainCut: 0, sundialQualified: false, mapHeld: false, pilgrim: null, streak: 0, streakTick: 0, bestStreak: 0, streakKills: 0, assists: 0,
       build: base, kit: resolveKit(init.classId, base),
       id: init.id,
       index: init.id,
@@ -1183,7 +1187,7 @@ export class Simulation {
     this.teleport(p, x, y, z);
     if (saved) {
       const old = saved.player, elapsed = (this.tick - saved.tick) / TICK_HZ;
-      Object.assign(p, old, { connected: true, x, y, z, lastSeq: -1, lastAcceptMs: this.nowMs,
+      Object.assign(p, old, { connected: true, x, y, z, lastSeq: -1, lastAcceptMs: this.nowMs, pilgrim: null, mapHeld: false,
         cdQ: Math.max(0, old.cdQ - elapsed), cdE: Math.max(0, old.cdE - elapsed),
         shield: 0, shieldCaster: null, featherUntil: 0, sealUntil: 0, speed: CLASSES[p.classId].speed, pendingItems: [false, false], invulUntil: 0, fire: 0, pendingQ: false, pendingE: false,
         dash: null, landingTick: -1, teleportId: p.teleportId,
@@ -1257,6 +1261,7 @@ export class Simulation {
     this.updateFlowFields();
     this.updateSpawning();
     this.updatePlayers();
+    this.route.updateReturns();
     this.talents.update();
     this.items.update();
     this.relics.update();
@@ -2557,6 +2562,15 @@ export class Simulation {
     this.publishInventory(p);
   }
 
+  /** Pilgrim's Return (§5.5): start a channel to a cleared room (`room` ≥ 0), or cancel it (-1). */
+  pilgrimReturn(playerId: number, requestId: number, room: unknown): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot || !Number.isInteger(room)) return;
+    if (room === -1) { this.route.cancelReturn(p, 'Return canceled'); return; }
+    const result = p.requests.execute(requestId, 'return', () => this.route.startReturn(p, room as number));
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale request; try again' }) });
+  }
+
   /** The Advocate's bargain or Sundial offer opened from its card (§6.8, §9.6). */
   advocateOffer(playerId: number, requestId: number, offer: unknown): void {
     const p = this.playerById(playerId);
@@ -2741,6 +2755,7 @@ export class Simulation {
     this.relics.ownerGone(p.id);
     this.streaks.end(p);
     this.route.playerGone(p);
+    this.route.cancelReturn(p, 'Return broken');
     this.emit('all', { type: 'playerDied', playerId: p.id });
     // Blasphemy ends when the Fallen dies (§7.2).
     if (p.classId === 'fallen') for (let k = 0; k < this.activeCount; k++) this.eTauntUntil[this.active[k]] = 0;

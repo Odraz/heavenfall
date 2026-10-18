@@ -170,6 +170,8 @@ export type GameEvent =
   | { type: 'riteOffers'; playerId: number; offers: RiteOffer[]; rites: number }
   | { type: 'relicOffers'; playerId: number; offers: RelicOfferState[]; open: number }
   | { type: 'route'; state: RouteState }
+  /** Pilgrim's Return (§5.5): a channel started (until `endTick`), was canceled, or arrived. */
+  | { type: 'pilgrim'; playerId: number; phase: 'start' | 'cancel' | 'arrive'; room: number; endTick: number }
   /** The bargain was paid: that player's max HP for the rest of the run, and the cut. */
   | { type: 'bargain'; playerId: number; maxHp: number; cut: number }
   | { type: 'victoryState'; state: VictoryState }
@@ -250,6 +252,8 @@ export type CtrlMessage =
   | { type: 'relicChoice'; runId: string; requestId: number; offerId: number; choice: string | 'pass' }
   /** Equip two relics at the Advocate (§9.6). */
   | { type: 'relics'; runId: string; requestId: number; relics: [string | null, string | null] }
+  /** Pilgrim's Return: start to a cleared room, or cancel with -1 (§5.5). */
+  | { type: 'pilgrimReturn'; runId: string; requestId: number; room: number }
   /** Open the Advocate's bargain or the Sundial's Rite offer. */
   | { type: 'advocateOffer'; runId: string; requestId: number; offer: 'bargain' | 'sundial' }
   /** A whole learned allocation and Q/E assignment from the Advocate's view (§9.5, §9.6). */

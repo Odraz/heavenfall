@@ -65,6 +65,22 @@ export class MapView {
     document.addEventListener('mousemove', this.mousemove);
   }
 
+  /** The known room under the full map's cursor, or -1. */
+  roomAtCursor(): number {
+    if (!this.floor) return -1;
+    const { x: cx, y: cy } = this.cursor, slot = 84;
+    for (const [i, r] of this.floor.rooms.entries()) {
+      if (!this.model.states[i].knowledge) continue;
+      const sx = Math.min(...r.slots.map((s) => s[0])), sy = Math.min(...r.slots.map((s) => s[1]));
+      const w = (Math.max(...r.slots.map((s) => s[0])) - sx + 1) * slot, h = (Math.max(...r.slots.map((s) => s[1])) - sy + 1) * slot;
+      if (cx >= sx * slot && cx < sx * slot + w && cy >= sy * slot && cy < sy * slot + h) return i;
+    }
+    return -1;
+  }
+
+  /** Pilgrim's Return in progress: its target room outlined gold on the full map. */
+  returnTarget = -1;
+
   setRoute(state: RouteState, keyLying: boolean): void {
     this.bells = new Set(state.bells.filter((b) => b.state === 'available').map((b) => b.room));
     this.keyLying = keyLying; this.chestOpen = !!state.chest?.open;
@@ -141,7 +157,8 @@ export class MapView {
         ctx.fillStyle = st.phase === PHASE_CLEARED ? INK.line : INK.visited; ctx.fillRect(x, y, w, h);
       }
       ctx.globalAlpha = st.knowledge === 1 ? 0.5 : 1;
-      ctx.lineWidth = ownRoom === i ? 3 : 2; ctx.strokeStyle = ownRoom === i ? INK.own : INK.line; ctx.strokeRect(x, y, w, h);
+      ctx.lineWidth = ownRoom === i || this.returnTarget === i ? 3 : 2; ctx.strokeStyle = ownRoom === i || this.returnTarget === i ? INK.own : INK.line; ctx.strokeRect(x, y, w, h);
+      if (full && this.returnTarget === i) { ctx.setLineDash([6, 4]); ctx.strokeRect(x - 4, y - 4, w + 8, h + 8); ctx.setLineDash([]); }
       ctx.globalAlpha = st.knowledge === 1 ? 0.6 : 1;
       const room = this.model.map.rooms[i], size = full ? 40 : 16;
       // The key room shows the key while it lies there; an opened Reliquary greys out (§5.2).

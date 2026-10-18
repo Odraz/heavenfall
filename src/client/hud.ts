@@ -1,5 +1,5 @@
 /** The in-game HUD and screen feedback (§10), plain DOM over the canvas. */
-import { CLASSES, GENERAL_HINTS, type ClassId } from '../data/classes';
+import { CLASSES, GENERAL_HINTS, ROUTE_HINTS, type ClassId } from '../data/classes';
 import { ITEMS } from '../data/items';
 import type { InventoryState } from '../net/messages';
 import { ITEM_ART } from './itemArt';
@@ -457,6 +457,11 @@ export class Hud {
     el('div', 'hint-section', this.hints).textContent = 'Carried';
     this.carried = el('div', 'hint-carried', this.hints);
     this.setCarried(null);
+    for (const text of ROUTE_HINTS) {
+      const line = el('div', 'hint hint-general', this.hints);
+      el('span', 'hint-icon', line);
+      el('span', 'hint-text', line).textContent = text;
+    }
     if (multiplayer) {
       for (const text of GENERAL_HINTS) {
         const line = el('div', 'hint hint-general', this.hints);

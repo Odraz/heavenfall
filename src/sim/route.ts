@@ -9,7 +9,7 @@
 import { KEY } from '../data/pickups';
 import type { WaveDef } from '../data/dungeons/types';
 import type { BellState, RouteState } from '../net/messages';
-import { PHASE_COMBAT } from '../net/protocol';
+import { PHASE_CLEARED, PHASE_COMBAT } from '../net/protocol';
 import { PLAYER_EYE, ROOM_NONE, TICK_HZ } from './constants';
 import { itemFloor } from './consumables';
 import { lineOfSight } from './los';
@@ -26,6 +26,10 @@ export const CHEST_REACH = 2.5;
 export const CHEST_HEIGHT = 0.6;
 
 export interface Spot { x: number; y: number; z: number; room: number }
+
+/** Pilgrim's Return (§5.5): the channel's length, and how far the player may drift during it. */
+export const RETURN_TICKS = Math.round(1.5 * TICK_HZ);
+const RETURN_DRIFT = 0.3;
 
 /** The Sundial goes dark at 14:00 of run time in the Pearly Gates (§6.8). */
 export const SUNDIAL_TICKS = 14 * 60 * TICK_HZ;
@@ -225,6 +229,59 @@ export class Route {
     if (this.bellWaves) this.sim.map.rooms[ai].waves = this.bellWaves;
     this.bellWaves = null;
     this.bellRoom = ROOM_NONE;
+  }
+
+  // ------------------------------------------------------------------ Pilgrim's Return (§5.5)
+
+  /** Rooms a player may return to: cleared rooms (non-combat rooms once visited, the boss room after victory), not their own. */
+  returnable(p: SimPlayer, room: number): boolean {
+    const sim = this.sim, def = sim.map.rooms[room];
+    if (!def || room === sim.roomAt(p.x, p.y) || sim.rooms[room].phase !== PHASE_CLEARED) return false;
+    return !def.boss || sim.won;
+  }
+
+  /** LMB on a cleared room with M held (§5.5): a living player in a valley starts the 1.5 s channel. */
+  startReturn(p: SimPlayer, room: number): InteractionResult {
+    const sim = this.sim;
+    if (p.bot || !p.connected || p.dead || sim.result) return { accepted: false, reason: 'Unavailable' };
+    if (!sim.floor) return { accepted: false, reason: 'No map in the fixture' };
+    if (sim.activeRoom !== ROOM_NONE) return { accepted: false, reason: 'No return while a fight is on' };
+    if (!Number.isInteger(room) || !this.returnable(p, room)) return { accepted: false, reason: 'Choose another cleared room' };
+    if (sim.commanders.carriedBy(p.id)) return { accepted: false, reason: 'Unavailable' };
+    p.pilgrim = { room, startTick: sim.tick, x: p.x, y: p.y };
+    sim.emit('all', { type: 'pilgrim', playerId: p.id, phase: 'start', room, endTick: sim.tick + RETURN_TICKS });
+    return { accepted: true, reason: `Returning to ${sim.map.rooms[room].name}…` };
+  }
+
+  /** Cancels a channel (release of M, a move, damage, a countdown anywhere, death). */
+  cancelReturn(p: SimPlayer, reason: string): void {
+    if (!p.pilgrim) return;
+    const room = p.pilgrim.room;
+    p.pilgrim = null;
+    this.sim.emit('all', { type: 'pilgrim', playerId: p.id, phase: 'cancel', room, endTick: this.sim.tick });
+    if (p.connected) this.sim.emit(p.id, { type: 'interactionResult', requestId: 0, accepted: false, reason });
+  }
+
+  /** Each tick: channels break or arrive on the target's lowest-numbered socket, the player's own cell. */
+  updateReturns(): void {
+    const sim = this.sim;
+    for (const p of sim.players) {
+      const c = p.pilgrim;
+      if (!c) continue;
+      if (!p.connected || p.dead) { this.cancelReturn(p, 'Return broken'); continue; }
+      if (sim.activeRoom !== ROOM_NONE) { this.cancelReturn(p, 'Return broken: a fight began'); continue; }
+      if (!p.mapHeld) { this.cancelReturn(p, 'Return canceled'); continue; }
+      if (Math.hypot(p.x - c.x, p.y - c.y) > RETURN_DRIFT) { this.cancelReturn(p, 'Return broken: you moved'); continue; }
+      if (p.lastHurtTick > c.startTick) { this.cancelReturn(p, 'Return broken: you were hurt'); continue; }
+      if (!this.returnable(p, c.room)) { this.cancelReturn(p, 'Return broken'); continue; }
+      if (sim.tick - c.startTick < RETURN_TICKS) continue;
+      const def = sim.map.rooms[c.room];
+      const entry = [...def.entry].sort((a, b) => a.socket - b.socket)[0];
+      const [cx, cy] = entry.cells[p.index] ?? entry.cells[0];
+      p.pilgrim = null;
+      sim.teleport(p, cx + 0.5, cy + 0.5, sim.map.floor[cy * sim.map.w + cx]);
+      sim.emit('all', { type: 'pilgrim', playerId: p.id, phase: 'arrive', room: c.room, endTick: sim.tick });
+    }
   }
 
   // ------------------------------------------------------------------ the Sundial (§6.8)

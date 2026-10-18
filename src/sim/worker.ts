@@ -221,6 +221,10 @@ function playerCtrl(playerId: number, msg: CtrlMessage): void {
     if (sim && msg.runId === runId) { sim.equipRelics(playerId, msg.requestId, msg.relics); checkpoint(true); flushEvents(); }
     return;
   }
+  if (msg.type === 'pilgrimReturn') {
+    if (sim && msg.runId === runId) { sim.pilgrimReturn(playerId, msg.requestId, msg.room); flushEvents(); }
+    return;
+  }
   if (msg.type === 'advocateOffer') {
     if (sim && msg.runId === runId) { sim.advocateOffer(playerId, msg.requestId, msg.offer); checkpoint(true); flushEvents(); }
     return;
