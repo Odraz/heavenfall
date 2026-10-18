@@ -23,6 +23,7 @@ import { ENEMY_SLOTS } from './constants';
 import { HaloLedger, HALO_WEIGHT, haloBudget, moteCap } from './economy';
 import type { Prop } from './props';
 import { scaleCount } from './party';
+import { sentenceFactor } from '../data/edicts';
 import type { Simulation, SimPlayer } from './sim';
 
 /**
@@ -125,8 +126,10 @@ export class Rewards {
     const party = this.sim.rooms[room].partySize;
     const group = isCommander(type) ? 3 : type === WATCHMAN ? 4 : type;
     const counts = [row.blessed, row.choristers, row.cherubs, row.dominions ?? 0, row.watchmen ?? 0];
-    const count = scaleCount(counts[group] ?? 0, party);
-    if (count > 0) this.eXp[slot] = (row.xp?.[group] ?? counts[group] * DEFAULT_GROUP_XP[group]) / count;
+    // The Edict of the Host's extra commander pays 60 more, shared by the scaled group (§9.1).
+    const extra = group === 3 && this.sim.edicts.includes(1) && counts[3] > 0 ? 1 : 0;
+    const count = scaleCount((counts[group] ?? 0) + extra, party);
+    if (count > 0) this.eXp[slot] = ((row.xp?.[group] ?? counts[group] * DEFAULT_GROUP_XP[group]) + extra * DEFAULT_GROUP_XP[3]) / count;
     if (!isCommander(type)) return;
     const placed = this.elitePlaced.get(room);
     if (placed) this.eGoldEntitled[slot] = placed[wave]++ < (this.eliteGold.get(room)?.[wave] ?? 0) ? 1 : 0;
@@ -239,7 +242,8 @@ export class Rewards {
 
   /** XP goes to every connected human, summed with compensation so fractional shares don't drift. */
   awardXp(amount: number): void {
-    amount *= XP_GAIN;
+    // The slice multiplier and the Sentence (§2.5), before accumulation; never rounded per kill.
+    amount *= XP_GAIN * sentenceFactor(this.sim.edicts.length);
     for (const p of this.sim.players) {
       if (!p.connected || p.bot) continue;
       const adjusted = amount - p.xpCorrection;

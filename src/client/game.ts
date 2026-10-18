@@ -147,6 +147,7 @@ import { KEY } from '../data/pickups';
 import type { RelicOfferState, RouteState } from '../net/messages';
 import type { RelicId } from '../data/relics';
 import { STREAK_NAMES } from '../sim/streaks';
+import { sentenceLabel } from '../data/edicts';
 
 const BENCH_TURN_RATE = 0.3;
 /** A move longer than this in one frame is a teleport: the weapon's sway resets (M11 §3.2, as the bob). */
@@ -1330,6 +1331,7 @@ export class Game {
       this.itemView.sync(msg.itemEffects ?? []);
       this.relicView.sync(msg.relicAreas ?? [], msg.relicShots ?? []);
       if (msg.route) this.applyRoute(msg.route);
+      if (msg.edicts) this.hud.setSentence(sentenceLabel(msg.edicts.length));
       const relics = msg.relicStates?.find((r) => r.playerId === this.localId);
       if (relics) this.relicHud.setRelics(relics.relics, relics.combo, relics.ready);
       const inventory = msg.inventories?.find(p => p.playerId === this.localId);
@@ -1833,10 +1835,12 @@ export class Game {
       result: e.result,
       timeMs: e.timeMs,
       unclaimed: e.unclaimed,
+      sentence: e.sentence ?? 0,
+      crown: e.crown ?? -1,
       players: Object.entries(e.stats)
         .map(([id, stats]) => ({ id: Number(id), stats }))
         .sort((a, b) => a.id - b.id)
-        .map(({ id, stats }) => ({ ...stats, name: this.roster.find((r) => r.id === id)?.name ?? `Player ${id}`, me: id === this.localId })),
+        .map(({ id, stats }) => ({ ...stats, id, name: this.roster.find((r) => r.id === id)?.name ?? `Player ${id}`, me: id === this.localId })),
     };
     this.hud.showResult(e.result === 'victory' ? 'Victory' : 'Defeat');
     this.hud.closeHints();

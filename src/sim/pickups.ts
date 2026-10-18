@@ -11,6 +11,8 @@ export class Pickups {
   readonly pending: PickupRecord[] = [];
   private nextId = 1;
   forfeitedCoins = 0;
+  /** Ticks before a coin or gold halo fades: 20 s, 10 s under the Edict of Poverty (game.md §2.5). */
+  currencyLifetime = CURRENCY_LIFETIME;
   discardedDrops = 0;
   exhausted = false;
   constructor(readonly map: GameMap, private changed: (p: PickupRecord) => void = () => {}) {}
@@ -27,7 +29,7 @@ export class Pickups {
   }
   /** `lifetime` is in ticks; -1 never fades. */
   drop(kind: number, room: number, x: number, y: number, tick: number, value = kind === GOLD_HALO ? GOLD_HALO_VALUE : kind === COIN ? PROP_COIN_VALUE : 0,
-    lifetime = kind <= HEAL_MOTE ? CURRENCY_LIFETIME : -1): PickupRecord | null {
+    lifetime = kind === HEAL_MOTE ? CURRENCY_LIFETIME : kind < HEAL_MOTE ? this.currencyLifetime : -1): PickupRecord | null {
     if (!Number.isInteger(kind) || kind < 0 || kind >= PICKUP_KIND_COUNT || !Number.isFinite(x) || !Number.isFinite(y) ||
       !Number.isInteger(room) || room < 0 || room >= 32 || !Number.isInteger(value) || value < 0 || value > 99) return null;
     const c = Math.floor(x), r = Math.floor(y);

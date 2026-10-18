@@ -28,6 +28,25 @@ import { initAudio, setMusic, sfx } from './audio/audio';
 import { profileLoadout, profilesScreen, saveCodeButton } from './ui/profiles';
 import { ProfileSession, openCurrentProfile, readProfile } from './profile/storage';
 import { abandonAttempt, applyProgress, stakeProfile, type ProgressState } from './profile/lifecycle';
+import { edictsControl } from './ui/edicts';
+import { cleanEdicts, edictsUnlocked } from './data/edicts';
+
+/** The Edicts row for a host or solo player (game.md §2.5): unlocked once this profile cleared the heaven; saved as the last choice. */
+function edictsRow(parent: HTMLElement, editable: boolean, onChange: (ids: number[]) => void = () => {}): ReturnType<typeof edictsControl> {
+  const profile = profileSession?.profile;
+  const unlocked = edictsUnlocked(profile?.heavens.clears[1] ?? 0, !disposable && !!profile);
+  const initial = unlocked && editable ? cleanEdicts(profile?.heavens.lastEdicts[1] ?? []) : [];
+  const control = edictsControl({ editable, unlocked, initial, onChange: (ids) => {
+    if (profileSession && editable) {
+      const next = structuredClone(profileSession.profile); next.heavens.lastEdicts[1] = ids;
+      profileSession.save(next);
+    }
+    onChange(ids);
+  } });
+  const buttons = parent.querySelector('.panel > .buttons');
+  if (buttons) buttons.before(control.el); else parent.append(control.el);
+  return control;
+}
 
 const params = parseParams(window.location.search);
 const root = document.getElementById('app')!;
@@ -136,11 +155,15 @@ function toTitle(message = ''): void {
 }
 
 function toSingleplayerSetup(name: string): void {
+  let edicts: number[] = [];
   const view = singleplayerSetupScreen({
-      onStart: (classId, dungeonId) => void startSingleplayer(name, classId, dungeonId, null),
+      onStart: (classId, dungeonId) => void startSingleplayer(name, classId, dungeonId, null, dungeonId === 'rogue' ? edicts : []),
       onBack: () => toTitle(),
     });
   if (profileSession) profileLoadout(view, profileSession);
+  const row = edictsRow(view, true, (ids) => { edicts = ids; });
+  edicts = cleanEdicts(profileSession && edictsUnlocked(profileSession.profile.heavens.clears[1] ?? 0, !disposable) ? profileSession.profile.heavens.lastEdicts[1] ?? [] : []);
+  row.set(edicts);
   show('singleplayerSetup', view);
 }
 
@@ -174,7 +197,7 @@ async function loadGameAssets(run: RunConfig, roster: RosterEntry[], localId: nu
  * A singleplayer game: from Singleplayer Setup's `Start`, or straight from the page load with `dev=1`
  * or `bench=1`. Loading builds the map and sprite atlas, then enters the game (§3).
  */
-async function startSingleplayer(name: string, classId: ClassId, dungeonId: string, seed: number | null): Promise<void> {
+async function startSingleplayer(name: string, classId: ClassId, dungeonId: string, seed: number | null, edicts: number[] = []): Promise<void> {
   if (!disposable && profileSession?.profile.run) {
     // No live solo host survives leaving/reloading its tab. Its unmatched stake is a loss.
     if (!profileSession.save(abandonAttempt(profileSession.profile), true)) { toTitle(profileSession.message); return; }
@@ -185,7 +208,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   show('loading', loading.el);
   await loading.ready;
   const run: RunConfig = {
-    ...newRunIdentity(seed ?? undefined), heaven: 1, floor: 1, edicts: 0, progressionEnabled: !disposable && !!profileSession && dungeonId === 'rogue',
+    ...newRunIdentity(seed ?? undefined), heaven: 1, floor: 1, edicts: [...edicts], progressionEnabled: !disposable && !!profileSession && dungeonId === 'rogue',
     fixture: dungeonId === 'rogue' ? null : dungeonId,
   };
   // Solo autopilot drives the human slot; half-player bots are multiplayer admissions.
@@ -397,6 +420,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
   };
 
   let lobby: LobbyView;
+  let edicts: ReturnType<typeof edictsControl> | null = null;
   /** Shows the Lobby; after a game it starts with the session's chat and the newest roster. */
   const showLobby = (inProg: boolean): void => {
     inProgress = inProg;
@@ -414,6 +438,9 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
       onLeave: () => end('', true),
     });
     if (profileSession && !inProg) profileLoadout(lobby.el, profileSession, () => s.transport.sendCtrl({ type: 'loadout', profile: profileSession!.profile }));
+    // The host sets the Edicts; everyone sees them (§2.5).
+    edicts = edictsRow(lobby.el, !!s.host && !inProg, (ids) => s.transport.sendCtrl({ type: 'edicts', edicts: ids }));
+    if (s.host && !inProg && profileSession) s.transport.sendCtrl({ type: 'edicts', edicts: cleanEdicts(profileSession.profile.heavens.lastEdicts[1] ?? []) });
     show('lobby', lobby.el);
     lobby.setChat(chat);
     if (latest) updateLobby(latest);
@@ -429,6 +456,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
     game?.setRoster(state.players);
     if (loading || results) return;
     lobby.update(state);
+    edicts?.set(state.edicts ?? []);
     if (!auto) return;
     if (state.players.find((p) => p.id === s.playerId)?.classId) {
       if (inProgress && !entered) {
@@ -593,7 +621,7 @@ document.addEventListener('click', (e) => {
   if ((e.target as Element | null)?.closest?.('button:not(:disabled)')) sfx('buttonClick');
 });
 
-if (params.benchArena >= 0 || params.dev && !params.devMenu) void startSingleplayer('Dev', params.classId, params.mapId, params.seed);
+if (params.benchArena >= 0 || params.dev && !params.devMenu) void startSingleplayer('Dev', params.classId, params.mapId, params.seed, params.devEdicts);
 // Bot auto-join skips the Title and Join screens (M8 §6.4).
 else if (params.autojoin) toJoin(validName(params.name ?? '') ?? 'Bot', params.join, true);
 else toTitle();

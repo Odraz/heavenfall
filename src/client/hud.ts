@@ -93,6 +93,7 @@ export class Hud {
   private readonly xpLevel: HTMLSpanElement;
   private readonly xpCount: HTMLSpanElement;
   private readonly xpFill: HTMLDivElement;
+  private readonly sentence: HTMLDivElement;
   private readonly itemSlots: Array<{ box: HTMLDivElement; icon: HTMLImageElement; count: HTMLDivElement }>;
   private readonly hpFill: HTMLDivElement;
   private readonly shieldFill: HTMLDivElement;
@@ -384,6 +385,9 @@ export class Hud {
     this.xpLevel = el('span', '', xpLabel);
     this.xpCount = el('span', 'xp-count', xpLabel);
     this.xpFill = el('div', 'xp-fill', el('div', 'xp-bar', this.xpLine));
+    // Under the XP bar while a Sentence is on (game.md §2.5).
+    this.sentence = el('div', 'xp-sentence', this.xpLine);
+    this.sentence.hidden = true;
     this.buff = el('div', 'buff-icon', hp);
     this.buff.hidden = true;
     const buffImg = el('img', '', this.buff);
@@ -524,6 +528,12 @@ export class Hud {
     this.xpLine.setAttribute('aria-valuenow', String(Math.round(xp.percent)));
     this.xpLine.setAttribute('aria-valuetext', `Level ${xp.level}, ${xp.max ? 'maximum' : `${xp.into} of ${xp.span} experience`}`);
   }
+  /** `Sentence 3 · XP ×1.45` under the XP bar, or hidden without a Sentence. */
+  setSentence(text: string | null): void {
+    this.sentence.hidden = text === null;
+    this.sentence.textContent = text ?? '';
+  }
+
   setItemCooldown(seconds: number): void {
     for (const slot of this.itemSlots) {
       slot.box.classList.toggle('ready', seconds <= 0);

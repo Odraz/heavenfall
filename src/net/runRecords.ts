@@ -2,6 +2,9 @@ import type { ClassId } from '../data/classes';
 import { copyInventory, emptyInventory, type Inventory, type ItemId } from '../data/items';
 import { saturatingAdd, validateProfile, type Outcome, type Profile } from '../profile/model';
 import type { Admission, ProgressState } from '../profile/lifecycle';
+import { DEED_RELIC, DEED_IDS, type DeedId } from '../data/relics';
+
+const isDeedId = (d: string): d is DeedId => (DEED_IDS as readonly string[]).includes(d);
 
 export interface RunRecord {
   profileId: string; playerId: number; classId: ClassId; admissionId: number;
@@ -12,6 +15,8 @@ export interface RunRecord {
   build: { talents: string[]; q: string; e: string };
   /** R6: chest relics claimed (saved at once), pawns (saved at victory) and the saved relic loadout. */
   claimed: string[]; pawned: string[]; savedRelics: [string | null, string | null];
+  /** Deeds done at the boss's death (§8.6), the run's best streak and its Sentence. */
+  deeds: string[]; bestStreak: number; sentence: number;
 }
 /** Host-owned records survive transport removal. Their IDs and accepted bases never come from a resume. */
 export class RunRecords {
@@ -31,7 +36,7 @@ export class RunRecords {
       runXp: 0, carried: copyInventory(profile.inventory), inventory: copyInventory(profile.inventory), wallet: 0, sold: 0,
       itemsTried: [], committed: false, connected: false, closed: false, outcome: null, revision: 0, presentAtStart: atStart,
       build: { talents: [...profile.characters[classId].talents], q: profile.characters[classId].q, e: profile.characters[classId].e },
-      claimed: [], pawned: [], savedRelics: [profile.characters[classId].relics[0], profile.characters[classId].relics[1]] };
+      claimed: [], pawned: [], savedRelics: [profile.characters[classId].relics[0], profile.characters[classId].relics[1]], deeds: [], bestStreak: 0, sentence: 0 };
     this.records.set(profile.id, r); return this.admission(r);
   }
   admission(r: RunRecord): Admission {
@@ -54,7 +59,8 @@ export class RunRecords {
       inventory: copyInventory(r.inventory), itemsTried: [...r.itemsTried], outcome: r.outcome,
       talents: [...r.build.talents], q: r.build.q, e: r.build.e,
       // Pawns become owned, and their slots saved, only with the victory settlement (§9.6, §13.5).
-      relics: r.outcome === 'victory' ? [...r.claimed, ...r.pawned] : [...r.claimed],
+      relics: r.outcome === 'victory' ? [...r.claimed, ...r.pawned, ...r.deeds.flatMap((d) => (isDeedId(d) ? [DEED_RELIC[d]] : []))] : [...r.claimed],
+      deeds: r.outcome === 'victory' ? [...r.deeds] : [], bestStreak: r.bestStreak, sentence: r.outcome === 'victory' ? r.sentence : undefined,
       equipped: r.outcome === 'victory' ? this.victoryLoadout(r) : [r.savedRelics[0], r.savedRelics[1]] };
   }
   private victoryLoadout(r: RunRecord): [string | null, string | null] {

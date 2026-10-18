@@ -60,7 +60,7 @@ it('publishes victory before exit, then saves post-win purchases in the same set
     messages.length = 0;
   };
   try {
-    send({ t: 'start', runId: 'b'.repeat(32), seed: PINNED.seed, simSeed: 1, heaven: 1, floor: 1, edicts: 0, fixture: null,
+    send({ t: 'start', runId: 'b'.repeat(32), seed: PINNED.seed, simSeed: 1, heaven: 1, floor: 1, edicts: [], fixture: null,
       progressionEnabled: true, players: [{ id: 0, name: profile.name, classId: 'fallen', profile }], god: false,
       benchArena: -1, benchBurst: false, localPlayerId: 0, startRoom: 999 });
     expect(sim).toBeUndefined();
@@ -130,7 +130,7 @@ it('rejects invalid and stale-run input before sequence/counter history and star
   vi.stubGlobal('self', ctx); await import('./worker');
   const send = (data: MainToWorker) => ctx.onmessage({ data } as MessageEvent<MainToWorker>);
   const start: Extract<MainToWorker, { t: 'start' }> = {
-    t: 'start', runId: '1'.repeat(32), seed: 1, simSeed: 2, heaven: 1, floor: 1, edicts: 0, progressionEnabled: false,
+    t: 'start', runId: '1'.repeat(32), seed: 1, simSeed: 2, heaven: 1, floor: 1, edicts: [], progressionEnabled: false,
     fixture: 'sandbox', players: [{ id: 0, name: 'Host', classId: 'fallen', bot: false }], god: true,
     benchArena: -1, benchBurst: false, localPlayerId: 0,
   };
@@ -185,7 +185,7 @@ it('reuses the worker after victory with fresh boss, entities, room state and ev
   vi.stubGlobal('self', ctx); await import('./worker');
   const send = (data: MainToWorker) => ctx.onmessage({ data } as MessageEvent<MainToWorker>);
   const start: Extract<MainToWorker, { t: 'start' }> = {
-    t: 'start', runId: '3'.repeat(32), seed: 1, simSeed: 2, heaven: 1, floor: 1, edicts: 0, progressionEnabled: false,
+    t: 'start', runId: '3'.repeat(32), seed: 1, simSeed: 2, heaven: 1, floor: 1, edicts: [], progressionEnabled: false,
     fixture: 'pearly-gates', startRoom: 3, players: [{ id: 0, name: 'Host', classId: 'fallen', bot: false }], god: true,
     benchArena: -1, benchBurst: false, localPlayerId: 0,
   };

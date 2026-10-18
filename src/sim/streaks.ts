@@ -64,7 +64,7 @@ export class Streaks {
       if (i !== killer && !(at > 0 && sim.tick + 1 - at <= ASSIST_TICKS)) continue;
       p.streak = p.streak > 0 && sim.tick - p.streakTick <= STREAK_TICKS ? p.streak + 1 : 1;
       p.streakTick = sim.tick;
-      p.bestStreak = Math.max(p.bestStreak, p.streak);
+      if (p.streak > p.bestStreak) { p.bestStreak = p.streak; p.bestStreakTick = sim.tick; }
       if (i === killer) p.streakKills++; else p.assists++;
       const tier = tierAt(p.streak);
       if (tier < 0) continue;

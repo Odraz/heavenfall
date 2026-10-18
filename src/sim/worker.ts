@@ -69,7 +69,8 @@ function checkpoint(force = false): void {
     if (r.closed) continue;
     const p = sim.players.find(p => p.id === r.playerId) ?? sim.retainedPlayers.get(r.playerId)?.player;
     if (p) { r.runXp = p.runXp; r.wallet = p.wallet; r.inventory = copyInventory(p.inventory); r.itemsTried = [...p.itemsTried]; r.build = { talents: [...p.build.talents], q: learnedSlot(p, 'Q'), e: learnedSlot(p, 'E') };
-      r.claimed = [...p.claimedRelics]; r.pawned = [...p.pawnedRelics]; r.savedRelics = [p.savedRelics[0], p.savedRelics[1]]; }
+      r.claimed = [...p.claimedRelics]; r.pawned = [...p.pawnedRelics]; r.savedRelics = [p.savedRelics[0], p.savedRelics[1]];
+      r.deeds = [...p.deedsEarned]; r.bestStreak = p.bestStreak; r.sentence = sim.edicts.length; }
     if (!r.committed || r.closed) continue;
     if (sim.won && r.outcome !== 'victory') send(r.playerId, { type: 'progress', state: records.settle(r, 'victory') });
     else if (sim.result) send(r.playerId, { type: 'progress', state: records.settle(r, sim.result) });
@@ -149,7 +150,7 @@ function start(m: Extract<MainToWorker, { t: 'start' }>): void {
   const { def, map, floor } = loadRunMap(m);
   sim = new Simulation({
     dungeon: def, map, floor, props: propDefs(floor), runId: m.runId, players: m.players, seed: m.simSeed, god: !m.progressionEnabled && m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
-    startRoom: m.startRoom, progressionEnabled: m.progressionEnabled, diagnostics: !!m.diagnostics, devBuild: m.devBuild, devRelics: m.devRelics,
+    startRoom: m.startRoom, progressionEnabled: m.progressionEnabled, diagnostics: !!m.diagnostics, devBuild: m.devBuild, devRelics: m.devRelics, edicts: m.edicts,
   });
   runId = m.runId;
   localPlayerId = m.localPlayerId;
@@ -261,6 +262,9 @@ function playerCtrl(playerId: number, msg: CtrlMessage): void {
       if (profile && lobby.setProfile(playerId, profile)) broadcastLobby();
       break;
     }
+    case 'edicts':
+      if (lobby.setEdicts(playerId, msg.edicts)) broadcastLobby();
+      break;
     case 'pickClass':
       if (lobby.phase === 'game' && records?.byPlayer(playerId)) break;
       if (lobby.pickClass(playerId, msg.classId)) broadcastLobby();

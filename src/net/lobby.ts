@@ -6,6 +6,7 @@
 import { isClassId, type ClassId } from '../data/classes';
 import type { CtrlMessage, LobbyPlayer, RejectReason, RunConfig } from './messages';
 import { newRunIdentity } from './version';
+import { cleanEdicts } from '../data/edicts';
 import type { Profile } from '../profile/model';
 
 export const MAX_PLAYERS = 4;
@@ -74,6 +75,8 @@ export class Lobby {
   private readonly readyIds = new Set<number>();
   private readonly retained = new Map<string, Member>();
   readonly progressionEnabled: boolean;
+  /** The host's Edicts for the next run (§2.5). */
+  edicts: number[] = [];
 
   constructor(o: LobbyOptions) {
     this.fixture = o.fixture;
@@ -116,7 +119,7 @@ export class Lobby {
     const players = [...this.players.values()]
       .sort((a, b) => a.id - b.id)
       .map(({ id, name, classId, bot, isHost, state }) => ({ id, name, classId, bot, isHost, inResults: state === 'results' }));
-    return { type: 'lobby', heaven: this.heaven, fixture: this.fixture, players };
+    return { type: 'lobby', heaven: this.heaven, fixture: this.fixture, players, edicts: [...this.edicts] };
   }
 
   /**
@@ -147,6 +150,14 @@ export class Lobby {
   }
 
   profile(id: number): Profile | undefined { return this.players.get(id)?.profile; }
+  /** The host's Edicts, in the Lobby only, once its profile has cleared the heaven (or the run saves nothing). */
+  setEdicts(id: number, edicts: unknown): boolean {
+    const host = this.players.get(0);
+    if (id !== 0 || this.phase !== 'lobby' || !host) return false;
+    if (this.progressionEnabled && (host.profile?.heavens.clears[this.heaven] ?? 0) < 1) return false;
+    this.edicts = cleanEdicts(edicts);
+    return true;
+  }
   setProfile(id: number, profile: Profile): boolean {
     const p = this.players.get(id);
     if (!p || p.bot || p.state !== 'lobby' || this.phase === 'loading' || p.profile && p.profile.id !== profile.id) return false;
@@ -183,7 +194,7 @@ export class Lobby {
   /** Starts Loading: returns the `start` message, or null if the lobby can't start. */
   start(nowMs: number): Extract<CtrlMessage, { type: 'start' }> | null {
     if (!this.canStart()) return null;
-    this.runConfig = { ...newRunIdentity(), heaven: this.heaven, floor: 1, edicts: 0, progressionEnabled: this.progressionEnabled, fixture: this.fixture };
+    this.runConfig = { ...newRunIdentity(), heaven: this.heaven, floor: 1, edicts: [...this.edicts], progressionEnabled: this.progressionEnabled, fixture: this.fixture };
     this.phase = 'loading';
     for (const p of this.players.values()) {
       p.state = 'loading';

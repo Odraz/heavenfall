@@ -6,7 +6,8 @@
  */
 import { button, el, PORTRAITS } from './menus';
 import { exportCode, importCode, MAX_CODE_BYTES } from '../profile/codec';
-import { createProfile, importProfile, levelForXp, type Profile } from '../profile/model';
+import { absolutionForXp, createProfile, importProfile, levelForXp, type Profile } from '../profile/model';
+import { roman } from '../data/edicts';
 import { ProfileSession } from '../profile/storage';
 import { CLASS_IDS, CLASSES, type ClassId } from '../data/classes';
 import { hasCatalog } from '../data/talents';
@@ -150,6 +151,15 @@ function openLobbyTalents(session: ProfileSession, id: ClassId, saved: () => voi
   document.body.appendChild(view.el);
 }
 
+/** The class card's level line: Absolution past level 10, the best streak and the best Sentence won (§2.5, §9.2, §10). */
+function classRecord(profile: Profile, id: ClassId): string {
+  const c = profile.characters[id], level = levelForXp(c.xp), rank = absolutionForXp(c.xp);
+  const parts = [`Level ${level}${rank > 0 ? ` · Absolution ${roman(rank)}` : ''}`];
+  if (c.bestStreak > 0) parts.push(`streak ${c.bestStreak}`);
+  if ((c.bestSentence[1] ?? 0) > 0) parts.push(`Sentence ${c.bestSentence[1]}`);
+  return parts.join(' · ');
+}
+
 /** Equipping in the Lobby (§2.2, §8.1): any owned relic on either slot, saved for that character. */
 function openLobbyRelics(session: ProfileSession, id: ClassId, saved: () => void): void {
   const c = session.profile.characters[id];
@@ -193,7 +203,7 @@ export function profileLoadout(parent: HTMLElement, session: ProfileSession, cha
   for (const id of CLASS_IDS) {
     const card = parent.querySelector<HTMLElement>(`.class-card[data-class-id="${id}"]`);
     if (!card) continue;
-    const level = el('div', 'class-level', undefined, `Level ${levelForXp(session.profile.characters[id].xp)}`); card.insertBefore(level, card.querySelector('.class-role'));
+    const level = el('div', 'class-level', undefined, classRecord(session.profile, id)); card.insertBefore(level, card.querySelector('.class-role'));
     showAssigned(card, id, session.profile);
     // One row of card buttons, so every card keeps its rows aligned (UI stability).
     const actions = el('div', 'class-actions', card);

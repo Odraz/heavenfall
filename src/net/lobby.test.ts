@@ -91,7 +91,7 @@ describe('lobby', () => {
     expect(start).toEqual({
       type: 'start',
       runId: original.runId, seed: original.seed, simSeed: original.simSeed,
-      heaven: 1, floor: 1, fixture: 'pearly-gates', edicts: 0, progressionEnabled: false,
+      heaven: 1, floor: 1, fixture: 'pearly-gates', edicts: [], progressionEnabled: false,
       players: [
         { id: 0, name: 'Host', classId: 'fallen', bot: false },
         { id: 1, name: 'B', classId: 'heretic', bot: false },
@@ -241,7 +241,7 @@ describe('lobby', () => {
     l.pickClass(1, 'binder');
     l.pickClass(2, 'heretic');
     const start = l.start(1000)!;
-    expect(start).toMatchObject({ heaven: 1, floor: 1, fixture: null, progressionEnabled: false, edicts: 0 });
+    expect(start).toMatchObject({ heaven: 1, floor: 1, fixture: null, progressionEnabled: false, edicts: [] });
     expect(start.runId).toMatch(/^[0-9a-f]{32}$/);
     for (const seed of [start.seed, start.simSeed]) expect(seed >>> 0).toBe(seed);
     expect(start.players.map((p) => [p.id, p.bot])).toEqual([[0, true], [1, true], [2, false]]);

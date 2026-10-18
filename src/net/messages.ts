@@ -19,13 +19,16 @@ export interface LobbyState {
   heaven: 1;
   fixture: string | null;
   players: LobbyPlayer[];
+  /** The host's Edicts for the next run (game.md §2.5); clients see them in the Lobby. */
+  edicts?: number[];
 }
 
 /** One R1 run: no progression or Edicts yet (rogue r01.md, R1.3). */
 export interface RunConfig extends RunIdentity {
   heaven: 1;
   floor: 1;
-  edicts: 0;
+  /** The run's Edicts (§2.5), fixed at `start`; the Sentence is their count. */
+  edicts: number[];
   progressionEnabled: boolean;
   fixture: string | null;
 }
@@ -64,6 +67,7 @@ export interface FloorSync {
   relicShots?: RelicShotState[];
   relicStates?: Array<Extract<GameEvent, { type: 'relicState' }>>;
   route?: RouteState;
+  edicts?: number[];
 }
 
 /** A relic floor area (items-relics.md §2.2): Usher's circle, the First Plea's rune or the Comb's rectangle. */
@@ -214,7 +218,9 @@ export type GameEvent =
   | { type: 'roomState'; room: number; phase: number; knowledge: number; entrySocket: number }
   | { type: 'bossCast'; phase: 'start' | 'interrupted' | 'completed' }
   /** `stats`: the players still connected at the end, by ID. */
-  | { type: 'gameOver'; result: 'victory' | 'defeat'; timeMs: number; unclaimed?: boolean; stats: Record<number, PlayerStats> };
+  | { type: 'gameOver'; result: 'victory' | 'defeat'; timeMs: number; unclaimed?: boolean; stats: Record<number, PlayerStats>;
+      /** The run's Sentence, and the streak crown: the human with the best streak (ties: the earlier to reach it), or -1. */
+      sentence?: number; crown?: number };
 
 /** One player's numbers on Results. */
 export interface PlayerStats {
@@ -230,6 +236,9 @@ export interface PlayerStats {
   /** The best kill streak of the run and the kills counted as assists (game.md §10). */
   bestStreak?: number;
   assists?: number;
+  /** Deeds done in this won run (§8.6) and relics claimed or pawned, by id. */
+  deeds?: string[];
+  relics?: string[];
 }
 
 export interface LobbyPlayer {
@@ -271,6 +280,8 @@ export type CtrlMessage =
   | { type: 'welcome'; playerId: number; lobby: LobbyState; inProgress: boolean }
   | { type: 'reject'; reason: RejectReason }
   | { type: 'pickClass'; classId: ClassId }
+  /** The host sets the next run's Edicts in the Lobby (§2.5). */
+  | { type: 'edicts'; edicts: number[] }
   /** Sent on every change, during the game too (M8 §6.2). */
   | ({ type: 'lobby' } & LobbyState)
   | ({ type: 'start'; players: Array<{ id: number; name: string; classId: ClassId; bot: boolean }> } & RunConfig)

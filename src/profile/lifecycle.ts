@@ -3,7 +3,9 @@ import type { ClassId } from '../data/classes';
 import { copyInventory, emptyInventory, isItemId, ITEMS, type Inventory, type ItemId } from '../data/items';
 import { levelForXp, saturatingAdd, validateProfile, type Outcome, type Profile } from './model';
 import { learnedError } from '../sim/build';
-import { isRelicId } from '../data/relics';
+import { DEED_IDS, isRelicId, type DeedId } from '../data/relics';
+
+const isDeedId = (d: unknown): d is DeedId => typeof d === 'string' && (DEED_IDS as readonly string[]).includes(d);
 
 export interface Admission {
   runId: string; admissionId: number; progressionEnabled: boolean;
@@ -17,6 +19,8 @@ export interface ProgressState {
   talents?: string[]; q?: string; e?: string;
   /** R6: relics this run adds to the profile (chest claims; pawns at victory) and the saved relic loadout. */
   relics?: string[]; equipped?: [string | null, string | null];
+  /** Deeds done (victory only), the run's best streak, and the Sentence the run was won under. */
+  deeds?: string[]; bestStreak?: number; sentence?: number;
 }
 /** Returns a candidate stake for a mandatory durable save; it never mutates accepted memory. */
 export function stakeProfile(current: Profile, admission: Admission): Profile {
@@ -66,6 +70,11 @@ export function applyProgress(current: Profile, state: ProgressState): Profile |
     character.talents = [...state.talents]; character.q = state.q; character.e = state.e;
   }
   p.codex.itemsTried = [...new Set([...p.codex.itemsTried, ...state.itemsTried])];
+  // Deeds, records and relics only ever grow: a settlement can't take them back (§8.6, §10, §2.5).
+  if (Array.isArray(state.deeds)) for (const d of state.deeds) if (isDeedId(d) && !p.deeds.includes(d)) p.deeds.push(d);
+  if (Number.isSafeInteger(state.bestStreak) && state.bestStreak! > character.bestStreak) character.bestStreak = state.bestStreak!;
+  if (state.outcome === 'victory' && Number.isInteger(state.sentence) && state.sentence! >= 0 && state.sentence! <= 5)
+    character.bestSentence[state.heaven] = Math.max(character.bestSentence[state.heaven] ?? 0, state.sentence!);
   // Relics are ownership, never removed by a settlement: claims add at once, pawns with the victory.
   if (Array.isArray(state.relics)) for (const id of state.relics) if (isRelicId(id) && !p.relics.includes(id)) p.relics.push(id);
   if (Array.isArray(state.equipped) && state.equipped.length === 2) {

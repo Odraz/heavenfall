@@ -12,7 +12,7 @@ import { Streaks } from './streaks';
 import { RelicOffers } from './relicOffers';
 import { Route, SOURCE_BELL_FIRST, SOURCE_CHEST } from './route';
 import { Bargain } from './bargain';
-import { isRelicId } from '../data/relics';
+import { DEED_RELIC, isRelicId, type DeedId } from '../data/relics';
 import { BASE_ABILITIES, BINDER as BINDER_NUMBERS, DEV_BUILDS, devBuildOrder, FALLEN as FALLEN_NUMBERS, talentNode } from '../data/talents';
 import { resolveKit, runBuildError, type Kit, type RunBuild } from './build';
 import { levelForXp } from '../profile/model';
@@ -200,6 +200,13 @@ export interface SimPlayer {
   bargainCut: number;
   /** The boss room sealed before the Sundial went dark (§6.8): the Mercy deed's condition. */
   sundialQualified: boolean;
+  /** Deeds (§8.6): admitted at the run's start, the heaven's clears before it, deeds done before, and those done now. */
+  presentAtStart: boolean;
+  clearsBeforeRun: number;
+  profileDeeds: string[];
+  deedsEarned: string[];
+  /** The tick the run's best streak was reached: the earlier wins a tied crown (§10). */
+  bestStreakTick: number;
   /** M held in the latest accepted input (§5.5), and a Pilgrim's Return channel in progress. */
   mapHeld: boolean;
   pilgrim: { room: number; startTick: number; x: number; y: number } | null;
@@ -506,6 +513,12 @@ export { ROOM_NONE } from './constants';
 
 /** Human quorum countdown (rogue game.md §4.3), shortened when everyone is inside. */
 const COUNTDOWN = 20;
+/** The Edict of Poverty's coin fade, 10 s (§2.5). */
+const POVERTY_LIFETIME = 300;
+/** The Edict of Swift Hymns' projectile speed (§2.5). */
+const SWIFT_HYMNS = 1.3;
+/** The Edict of the Trumpet: the inherited Gatekeeper calls its first Judgment this soon (R7 owns the authored phase move). */
+const TRUMPET_JUDGMENT_FIRST = 3;
 const COUNTDOWN_ALL_IN = 3;
 const COUNTDOWN_CANCEL = 3;
 
@@ -831,6 +844,7 @@ export class Simulation {
     this.devBuild = opts.devBuild;
     this.devRelics = this.progressionEnabled ? [] : (opts.devRelics ?? []).filter(isRelicId).slice(0, 2);
     this.edicts = [...new Set((opts.edicts ?? []).filter((e) => Number.isInteger(e) && e >= 1 && e <= 5))].sort((a, b) => a - b);
+    if (this.edicts.includes(4)) this.pickups.currencyLifetime = POVERTY_LIFETIME;
     this.random = mulberry32(opts.seed);
     this.seed = opts.seed >>> 0;
     this.rooms = this.map.rooms.map((a, i) => ({
@@ -915,7 +929,7 @@ export class Simulation {
   floorSync(runId: string): FloorSync {
     return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
       progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)),
-      kits: this.players.map((p) => this.talents.kitState(p)), talentAreas: this.talents.checkpoint(), fires: this.talents.fireCheckpoint(), itemEffects: this.items.records(), ...this.relics.sync(this.players), route: this.route.state(), victory: this.victory ? { ...this.victory.state } : null,
+      kits: this.players.map((p) => this.talents.kitState(p)), talentAreas: this.talents.checkpoint(), fires: this.talents.fireCheckpoint(), itemEffects: this.items.records(), ...this.relics.sync(this.players), route: this.route.state(), edicts: [...this.edicts], victory: this.victory ? { ...this.victory.state } : null,
       rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
       pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), commanderCasts: this.commanders.checkpoint(), watchmanAims: this.watchmen.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
   }
@@ -1077,7 +1091,8 @@ export class Simulation {
       .map((id) => (id && owned.includes(id) && !init.bot ? id : null)) as [string | null, string | null];
     if (equip[0] && equip[0] === equip[1]) equip[1] = null;
     const p: SimPlayer = {
-      relics: equip, ownedRelics: owned, relicCd: {}, claimedRelics: [], pawnedRelics: [], savedRelics: [equip[0], equip[1]], bargainCut: 0, sundialQualified: false, mapHeld: false, pilgrim: null, streak: 0, streakTick: 0, bestStreak: 0, streakKills: 0, assists: 0,
+      relics: equip, ownedRelics: owned, relicCd: {}, claimedRelics: [], pawnedRelics: [], savedRelics: [equip[0], equip[1]], bargainCut: 0, sundialQualified: false, mapHeld: false, pilgrim: null,
+      presentAtStart: true, clearsBeforeRun: init.profile?.heavens.clears[1] ?? 0, profileDeeds: [...(init.profile?.deeds ?? [])], deedsEarned: [], bestStreakTick: 0, streak: 0, streakTick: 0, bestStreak: 0, streakKills: 0, assists: 0,
       build: base, kit: resolveKit(init.classId, base),
       id: init.id,
       index: init.id,
@@ -1193,7 +1208,7 @@ export class Simulation {
         dash: null, landingTick: -1, teleportId: p.teleportId,
         revive: old.dead ? Math.max(0, old.revive - elapsed * REVIVE_DECAY) : 0 });
       this.retainedPlayers.delete(init.id);
-    } else if (!p.bot) p.wallet = this.rewards.halosCredited;
+    } else if (!p.bot) { p.wallet = this.rewards.halosCredited; p.presentAtStart = false; }
     // Everyone learns the joiner's kit; the joiner gets every kit from its floor checkpoint.
     this.talents.setBuild(p, p.build);
     if (this.rites.hasPending(p)) this.rites.publish(p);
@@ -1329,7 +1344,8 @@ export class Simulation {
       if (p.dead) {
         p.dead = false; p.hp = p.maxHp * .5; p.shield = 0; p.revive = 0; p.revivers = 0;
         if (p.connected) { this.emit('all', { type: 'playerRevived', playerId: p.id }); this.teleport(p, at.x, at.y, at.z); }
-      } else if (p.connected) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * .3);
+      } else if (p.connected && !this.edicts.includes(2)) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * .3);
+      this.settleDeeds(p);
     }
     // Victory closes every unaccepted bargain, including one viewed earlier (§9.6).
     this.relicOffers.closeBargains(); this.rites.closeBargains();
@@ -1714,7 +1730,7 @@ export class Simulation {
     this.bossCast = BOSS_CAST_NONE;
     this.bossCastTicks = 0;
     this.volleyDue = this.tick + ticks(VOLLEY_FIRST);
-    this.judgmentDue = this.tick + ticks(JUDGMENT_FIRST);
+    this.judgmentDue = this.tick + ticks(this.edicts.includes(5) ? TRUMPET_JUDGMENT_FIRST : JUDGMENT_FIRST);
     this.summonDue = this.tick + ticks(SUMMON_FIRST);
     this.bossSlot = slot;
     this.spawnAt(slot, GATEKEEPER, c, r, ai, -1);
@@ -1724,7 +1740,9 @@ export class Simulation {
   private startWave(ai: number, n: number): void {
     const st = this.rooms[ai];
     const w = this.map.rooms[ai].waves[n];
-    const counts = [scaleCount(w.blessed, st.partySize), scaleCount(w.choristers, st.partySize), scaleCount(w.cherubs, st.partySize), scaleCount(w.dominions ?? 0, st.partySize)];
+    // The Edict of the Host: a wave with a commander brings one more, before party scaling (§2.5).
+    const host = this.edicts.includes(1) && (w.dominions ?? 0) > 0 ? 1 : 0;
+    const counts = [scaleCount(w.blessed, st.partySize), scaleCount(w.choristers, st.partySize), scaleCount(w.cherubs, st.partySize), scaleCount((w.dominions ?? 0) + host, st.partySize)];
     const squad = w.squad ? scaleCount(w.squad.count, st.partySize) : 0;
     const watchmen = scaleCount(w.watchmen ?? 0, st.partySize);
     st.wave = n;
@@ -1789,6 +1807,26 @@ export class Simulation {
     if (connected.length > 0 && connected.every((p) => p.dead)) this.finish('defeat');
   }
 
+  /**
+   * The deeds at the boss's death (items-relics.md §3): only for a saved run, a record admitted at the
+   * start whose profile had already won this heaven; each deed once per profile, its relic owned at once.
+   */
+  private settleDeeds(p: SimPlayer): void {
+    if (!this.progressionEnabled || p.bot || !p.presentAtStart || p.clearsBeforeRun < 1) return;
+    const done: DeedId[] = [];
+    if (p.deaths === 0) done.push('unbroken');
+    if (p.sundialQualified) done.push('mercy');
+    if (p.bestStreak >= 200) done.push('armageddon');
+    if (this.edicts.length >= 3) done.push('sentence3');
+    for (const d of done) {
+      if (p.profileDeeds.includes(d) || p.deedsEarned.includes(d)) continue;
+      p.deedsEarned.push(d);
+      const relic = DEED_RELIC[d];
+      if (!p.ownedRelics.includes(relic)) p.ownedRelics.push(relic);
+    }
+    if (p.deedsEarned.length && p.connected) this.publishInventory(p);
+  }
+
   /** Ends the run: the host sends one last snapshot and `gameOver`, then stops simulating (§3). */
   finish(result: 'victory' | 'defeat'): void {
     if (this.result) return;
@@ -1797,9 +1835,13 @@ export class Simulation {
     for (const p of this.players) {
       if (p.connected) stats[p.id] = { kills: p.kills, damage: Math.round(p.damage), deaths: p.deaths, reviveAssists: p.reviveAssists, bestStreak: p.bestStreak, assists: p.assists,
         runXp: Math.floor(p.runXp), levelBefore: levelForXp(p.xpBase), levelAfter: levelForXp(saturatingAdd(p.xpBase, Math.floor(p.runXp))),
-        rites: p.build.rites.map((id) => talentNode(id)?.name ?? id) };
+        rites: p.build.rites.map((id) => talentNode(id)?.name ?? id), deeds: [...p.deedsEarned], relics: [...p.claimedRelics, ...p.pawnedRelics] };
     }
-    this.emit('all', { type: 'gameOver', result, timeMs: Math.round(this.victory?.state.clearTimeMs ?? this.timeMs), unclaimed: this.victory?.unclaimed ?? false, stats });
+    // The streak crown (§10): the best streak of the run, the earlier to reach it on a tie.
+    const crowned = this.players.filter((p) => p.connected && !p.bot && p.bestStreak > 0)
+      .sort((a, b) => b.bestStreak - a.bestStreak || a.bestStreakTick - b.bestStreakTick || a.id - b.id)[0];
+    this.emit('all', { type: 'gameOver', result, timeMs: Math.round(this.victory?.state.clearTimeMs ?? this.timeMs), unclaimed: this.victory?.unclaimed ?? false, stats,
+      sentence: this.edicts.length, crown: crowned?.id ?? -1 });
   }
 
   // ------------------------------------------------------------------ flow fields
@@ -2201,7 +2243,7 @@ export class Simulation {
   private nextType(batch: SpawnBatch, canSpawn?: readonly boolean[]): number {
     let best = -1;
     let bestV = Infinity;
-    const eliteCap = this.dominionAlive() >= DOMINION_ALIVE_CAP;
+    const eliteCap = this.dominionAlive() >= DOMINION_ALIVE_CAP + (this.edicts.includes(1) ? 1 : 0);
     // Put the wave's first commander in the opening arrivals, not halfway through its minions.
     const leader = SPAWN_TYPES.indexOf(DOMINION);
     if (!eliteCap && batch.counts[leader] > 0 && batch.spawned[leader] === 0 && (!canSpawn || canSpawn[leader])) return leader;
@@ -4039,7 +4081,7 @@ export class Simulation {
       const sa = Math.sin(a);
       const rx = dx * ca - dy * sa;
       const ry = dx * sa + dy * ca;
-      this.spawnProjectile(PROJ_GLOBE, ox, oy, oz, rx / len, ry / len, dz / len, VOLLEY_ORB.speed, VOLLEY_ORB.radius, VOLLEY_ORB.damage, PROJECTILE_RANGE, -1);
+      this.spawnProjectile(PROJ_GLOBE, ox, oy, oz, rx / len, ry / len, dz / len, VOLLEY_ORB.speed * (this.edicts.includes(3) ? SWIFT_HYMNS : 1), VOLLEY_ORB.radius, VOLLEY_ORB.damage, PROJECTILE_RANGE, -1);
     }
   }
 
@@ -4329,7 +4371,7 @@ export class Simulation {
     dx /= len;
     dy /= len;
     dz /= len;
-    this.spawnProjectile(c.kind, ox, oy, oz, dx, dy, dz, c.speed, c.radius, c.damage, PROJECTILE_RANGE, -1);
+    this.spawnProjectile(c.kind, ox, oy, oz, dx, dy, dz, c.speed * (c.kind === PROJ_GLOBE && this.edicts.includes(3) ? SWIFT_HYMNS : 1), c.radius, c.damage, PROJECTILE_RANGE, -1);
   }
 
   /** Candidate cells along the beam, padded for bodies/separation displacement. */

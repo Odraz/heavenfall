@@ -4,6 +4,7 @@ import { getDungeon } from './data/dungeons/index';
 import { parseJoinId } from './net/invite';
 import { DEV_BUILDS } from './data/talents';
 import { isRelicId } from './data/relics';
+import { cleanEdicts } from './data/edicts';
 
 export interface Params {
   dev: boolean;
@@ -54,6 +55,8 @@ export interface Params {
   devBuild: string | null;
   /** With dev=1: up to two relic ids owned and equipped for the run (`relics=usher,link`), never with saved progression. */
   devRelics: string[];
+  /** With dev=1: the run's Edicts (`edicts=1,3`). */
+  devEdicts: number[];
 }
 
 export type BenchView = 'turn' | 'arcade' | 'gate';
@@ -91,7 +94,7 @@ export function parseParams(search: string): Params {
     const classId: ClassId = isClassId(cls) ? cls : 'betrayer';
     const benchHudFire = q.get('hudfire') === '1';
     const benchBurst = q.get('burst') === '1';
-    return { dev: false, devMenu: false, readyHold: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0, startRoom: null, devBuild: null, devRelics: [] };
+    return { dev: false, devMenu: false, readyHold: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0, startRoom: null, devBuild: null, devRelics: [], devEdicts: [] };
   }
   // Without dev=1 (or bench=1) the page opens the menus.
   const dev = q.get('dev') === '1';
@@ -129,5 +132,6 @@ export function parseParams(search: string): Params {
     startRoom,
     devBuild: dev && q.get('build') && Object.hasOwn(DEV_BUILDS, q.get('build')!) ? q.get('build') : null,
     devRelics: dev ? (q.get('relics') ?? '').split(',').filter(isRelicId).slice(0, 2) : [],
+    devEdicts: dev ? cleanEdicts((q.get('edicts') ?? '').split(',').filter(Boolean).map(Number)) : [],
   };
 }
