@@ -281,6 +281,49 @@ body {
 }
 
 /* Hit and kill markers (M8 §3.2): four ticks on the diagonals, starting 7 px from the center. */
+/* Felt hits (R06 follow-up §9): a red arc on a ring around the crosshair, rotated toward the source. */
+.hit-arcs {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+
+.hit-arc {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 280px;
+  height: 280px;
+  border: 8px solid transparent;
+  border-top-color: var(--danger);
+  border-radius: 50%;
+  filter: drop-shadow(0 0 3px var(--danger-deep)) drop-shadow(0 0 2px #000);
+}
+
+/* Damage numbers (R06 follow-up §8): your own host-accepted damage over the enemy, readable on any background. */
+.damage-numbers {
+  position: absolute;
+  inset: 0;
+}
+
+.damage-number {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font: 700 17px/1 var(--display-font);
+  color: var(--ivory);
+  text-shadow: 0 0 2px #000, 0 1px 3px #000, 0 0 6px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+
+.damage-number.kill {
+  font-size: 23px;
+  color: var(--xp);
+}
+
 .marker {
   position: absolute;
   left: 50%;
@@ -1936,7 +1979,8 @@ div.weapon-swing {
 .volume-sliders {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  /* 4 px (was 6) so the Damage numbers row (R06 follow-up §8) fits the panel Settings replaces. */
+  gap: 4px;
   padding: 2px 4px;
 }
 
@@ -1957,7 +2001,7 @@ div.weapon-swing {
 }
 
 .settings-title {
-  margin: 0 0 6px;
+  margin: 0 0 5px;
   font: 700 36px/1 var(--display-font);
   text-align: center;
   color: var(--gold);
@@ -1977,8 +2021,8 @@ div.weapon-swing {
 .volume-row {
   display: grid;
   text-align: left;
-  /* Wide enough for "Screen shake", so every row's control starts at the same x (M12 §4.5). */
-  grid-template-columns: 96px 1fr 44px;
+  /* Wide enough for "Damage numbers" on one line, so every row's control starts at the same x (M12 §4.5). */
+  grid-template-columns: 122px 1fr 44px;
   align-items: center;
   gap: 10px;
   font-size: 14px;

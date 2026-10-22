@@ -1,6 +1,8 @@
 import { CARRIER_SWOOP } from '../data/commanders';
 import { CommanderProjection } from './commanders';
 import { CommanderView } from './commanderView';
+import { DamageNumbers, loadDamageNumbersSetting } from './damageNumbers';
+import { HitArcs, arcAngle, hurtShake } from './hitArcs';
 import { WatchmanProjection } from './watchmen';
 import { BELL_FORWARD, ROD_BELL_FORWARD, WatchmanView } from './watchmanView';
 import { WATCHMAN_MUZZLE_Z, type WatchmanAim } from '../data/watchman';
@@ -461,6 +463,8 @@ export class Game {
   private readonly watchmen: WatchmanProjection;
   private readonly watchmanView: WatchmanView;
   private readonly commanderView: CommanderView;
+  private readonly damageNumbers: DamageNumbers;
+  private readonly hitArcs: HitArcs;
   private readonly rewardShafts: RewardShafts;
   private readonly dominion: DominionProjection;
   private readonly dominionView = new DominionView();
@@ -483,6 +487,8 @@ export class Game {
   private fireAcc = 0;
   /** Local timer for movement abilities (§9.3): performance.now() when it's ready again. */
   private localEReadyAt = 0;
+  /** The host's cooldown has started for the last local E press: from then on it rules (close-quarters refunds shorten it). */
+  private eAcked = true;
   private allyTargetId = ALLY_NONE;
   /** With no ally target, an ally in the aim but out of range, for the grey chevron. */
   private allyOutOfRange = ALLY_NONE;
@@ -625,6 +631,8 @@ export class Game {
     this.particles = new Particles([o.atlas.frames.feather, o.atlas.frames.spark, o.atlas.frames.ember], this.pieceFloor);
     this.rotations = Object.fromEntries(ROTATED_SPRITES.map((n) => [n, [0, 1, 2, 3].map((r) => o.atlas.frames[`${n}-r${r}`]) as unknown as Rotations]));
     this.hud = new Hud(o.root, this.classId, !o.singleplayer);
+    this.damageNumbers = new DamageNumbers(this.hud.root);
+    this.hitArcs = new HitArcs(this.hud.root);
     this.hud.onChatSend = (text) => o.onChat?.(text);
     this.hud.setHp(this.maxHp, 0, this.maxHp);
     this.hud.setRemaining(null);
@@ -818,6 +826,7 @@ export class Game {
       p.startCharge();
       this.ePresses = (this.ePresses + 1) & 0xff;
       this.localEReadyAt = now + (GATEBREAKER.maxTime + GATEBREAKER.cooldown) * 1000;
+      this.eAcked = false;
       this.chargeHeld = true;
       return;
     }
@@ -847,6 +856,7 @@ export class Game {
     p.startDash(dx, dy);
     this.ePresses = (this.ePresses + 1) & 0xff;
     this.localEReadyAt = now + def.cooldown * 1000;
+    this.eAcked = false;
     // The dagger cuts across the view for the dash's 200 ms (M12 §5.7), its sound with the slash.
     this.slashAt = now;
     debugState.slashAt = now;
@@ -862,6 +872,7 @@ export class Game {
     this.leapAlly = ally;
     this.ePresses = (this.ePresses + 1) & 0xff;
     this.localEReadyAt = now + ABILITIES.fallen.E.cooldown * 1000;
+    this.eAcked = false;
   }
 
   /**
@@ -1554,6 +1565,15 @@ export class Game {
       case 'bursts':
         this.burstMemory.remember(e.list, now, (slot, id) => this.distToPlayer(slot, id));
         break;
+      case 'damage':
+        if (loadDamageNumbersSetting()) this.damageNumbers.add(e.hits, now);
+        break;
+      case 'hurt': {
+        // Felt hits (R06 follow-up §9): an arc toward the source, and a flinch scaled by the damage.
+        const largest = this.hitArcs.add(e.hits, now, this.maxHp);
+        if (largest > 0 && !this.dead) this.shake.add(now, hurtShake(largest, this.maxHp));
+        break;
+      }
       case 'dashCut':
         // Others' Shadowstep streaks after the render delay; the own one was drawn when its dash ended (M12 §5.7).
         if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.dashStreak(t, e.x0, e.y0, e.z0, e.x1, e.y1, e.z1) });
@@ -2120,7 +2140,8 @@ export class Game {
     const ms = me ? (slot === 'Q' ? me.cdQ : me.cdE) : 0;
     // The frame timestamp can be slightly earlier than the snapshot's arrival time.
     let cd = Math.max(0, ms - Math.max(0, now - this.snaps.newestArrival)) / 1000;
-    if (slot === 'E' && ABILITIES[this.classId].E.movement && (this.classId !== 'betrayer' || this.talents.ability(this.localId, 'E') === 'shadowstep')) cd = Math.max(cd, (this.localEReadyAt - now) / 1000);
+    if (slot === 'E' && ms > 0) this.eAcked = true;
+    if (slot === 'E' && !this.eAcked && ABILITIES[this.classId].E.movement && (this.classId !== 'betrayer' || this.talents.ability(this.localId, 'E') === 'shadowstep')) cd = Math.max(cd, (this.localEReadyAt - now) / 1000);
     return Math.max(0, cd);
   }
 
@@ -2811,6 +2832,11 @@ export class Game {
     this.scene.render();
     this.placeChevron(now);
     this.placeSoulMarkers(now);
+    this.damageNumbers.update(now, (x, y, z) => this.project(x, y, z));
+    this.hitArcs.update(now, (x, y) => {
+      const v = this.projScratch.set(x, this.scene.camera.position.y, y).applyMatrix4(this.scene.camera.matrixWorldInverse);
+      return arcAngle(v.x, v.z);
+    });
     this.updateReviveHum(now);
 
     // Low HP (M12 §6.2): the heartbeat and the crimson edge.

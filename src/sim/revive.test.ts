@@ -206,8 +206,9 @@ describe('souls and reviving (M8 §4)', () => {
     expect(dead.dead).toBe(false);
     expect(dead.hp).toBe(75);
     expect(dead.revive).toBe(0);
-    expect(sim.events).toContainEqual({ to: 'all', tick: RISE_TICKS, revision: 2, event: { type: 'playerRevived', playerId: 1 } });
-    expect(sim.events).toContainEqual({ to: 1, tick: RISE_TICKS, revision: 3, event: expect.objectContaining({ type: 'teleport', x: 10.5, y: 3.5, z: 0 }) });
+    // Revision 2 is the lethal hit's `hurt` (R06 follow-up §9).
+    expect(sim.events).toContainEqual({ to: 'all', tick: RISE_TICKS, revision: 3, event: { type: 'playerRevived', playerId: 1 } });
+    expect(sim.events).toContainEqual({ to: 1, tick: RISE_TICKS, revision: 4, event: expect.objectContaining({ type: 'teleport', x: 10.5, y: 3.5, z: 0 }) });
     sim.damagePlayer(dead, 50);
     expect(dead.hp).toBe(75);
     for (let i = 0; i < 61; i++) sim.step();

@@ -122,6 +122,18 @@ export const PHASE_CLEARED = 2;
 export const PHASE_COUNTDOWN = 3;
 
 /** Enemy `flags` bits. */
+/** At most this many enemies per `damage` event (R06 follow-up §8); the largest hits first. */
+export const DAMAGE_HITS_MAX = 24;
+/** Numbers per hit in a `damage` event: slot, x, y, z, amount, killed. */
+export const DAMAGE_STRIDE = 6;
+/** Numbers per hit in a `hurt` event (R06 follow-up §9 option 1): x, y of the source, amount, kind. */
+export const HURT_STRIDE = 4;
+/** At most this many hits per `hurt` event; the largest first. */
+export const HURT_HITS_MAX = 6;
+/** A hurt's kind: struck up close, shot from range, or world damage with no direction (fire, Judgment). */
+export const HURT_MELEE = 0, HURT_RANGED = 1, HURT_WORLD = 2;
+export type HurtKind = typeof HURT_MELEE | typeof HURT_RANGED | typeof HURT_WORLD;
+
 export const FLAG_HURT = 1;
 /** Stunned by Blasphemy (M12 §5.3); the bit was Kiss of Betrayal's mark until M9. */
 export const FLAG_STUNNED = 2;

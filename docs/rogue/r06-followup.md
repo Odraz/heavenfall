@@ -1,6 +1,6 @@
 # R06 play-feedback iteration — 2026-10-22
 
-Status: **in implementation**. Decisions A–D approved 2026-10-22. Based on `160e014` on `rogue`. Source: your R06 solo playtest remarks (2026-10-22). This iteration fixes what the playtest found; it does not advance R07.
+Status: **implemented and verified, awaiting-human-play**. Decisions A–D approved 2026-10-22. Based on `160e014` on `rogue`; stages 1–2 in `b2679ec`, stage 3 in the commit after it. Source: your R06 solo playtest remarks (2026-10-22). This iteration fixes what the playtest found; it does not advance R07.
 
 ## 1. Talent screen
 
@@ -23,7 +23,7 @@ The Q/E ability bug: the shared `.button:hover` rule swaps in the hover border i
 | Class · tree | Pair | Together |
 |---|---|---|
 | Betrayer · A | Glancing Silver + Behind His Back (both Silver Bullet) | Independent already: the bullet glances once and loses half on taunted enemies. |
-| Heretic · C | The Altar + Scapegoat (both censer clouds) | The three small clouds all follow the nearest player at the impact. |
+| Heretic · C | The Altar + Scapegoat (both censer clouds) | The middle cloud is the Altar's worn cloud and follows the nearest player at the impact; the two small side clouds stay where the censer broke. |
 | Binder · B | Whirl + The Long Flail (both Scourge) | The full-circle swing reaches 4 m. |
 
 No other same-tree conflicts exist (all 84 nodes checked). **Decided (A):** cross-tree conflicts stay (e.g. the Fallen's Heave vs Fire and Brimstone); the tooltip names the conflicting talent.
@@ -86,6 +86,47 @@ Ploughshares' furrow is drawn as a plain opaque orange bar. It will use the same
 **Recommendation:** **1 + 3 + 5**. Feedback first, so you can tell what is happening. Pincer arrivals stop the straight-line retreat with a telegraphed, dodgeable threat instead of a hidden penalty. Close-quarters ability charge rewards going in with more of the game's best moments. Keep 6 in reserve if kiting still wins after a playtest; 2 and 4 are tuning knobs for later.
 
 **Decided (D):** 1 + 3 + 5, with 6 kept in reserve.
+
+## What was built
+
+Everything above is implemented as written, with these specifics:
+
+- **Talents:** tiles are built once and updated in place (`src/ui/talents.ts`); a click flashes the tile. Lock reasons are worded by `lockReason`: missing lower talents, a named cross-tree conflict ("Can't combine with The Nail: both change the Silver Bullet."), capstone, kill-triggered limit, no points left. `augmentsConflict` in `src/sim/build.ts` is the one conflict rule (different trees only), used by learning, Rite displacement and Rite offers. 71 rules were reworded.
+- **Relics:** `RelicDef.text`/`ComboDef.text` replace trigger/rule/numbers; a combo shows its second relic's cooldown. The hint window's *Relics* section appears while a relic is equipped.
+- **Shop:** the per-player `sold` mask is removed from the simulation, run records and the inventory message; a retried request still never charges twice.
+- **Shot volumes:** `EnemyDef.shot` (radius, base below the feet, top) per type, measured from each atlas's main pose; used by host hitscan, the Silver Bullet's stop point, the crosshair, censers and reflected shots, client hit markers and bots. The Carrier's is 1.25 m wide from 2.1 m below its feet point to 2.5 m above; the Dominion's 0.85 m, the Cantor's 0.7 m, the Cherub's 0.6 m.
+- **Carrier:** `CARRIER_TELL` = 21 ticks; the old 0.2 s in-flight tracking is gone, since the tell now tracks. The chevrons (`src/client/commanderView.ts`) span the 2.25 m grab reach either side, march toward the target during the tell, flash on lock and show the rest of the lane during the flight.
+- **Furrow:** Ploughshares' strip lights its floor cells in the class `FireView` (`src/client/furrow.ts`).
+- **Damage numbers:** the host tallies each human's credited damage per enemy per tick and sends one `damage` event to that player only (at most 24 enemies, largest first). Numbers merge per enemy within 0.15 s, get a small fixed screen offset per enemy so a packed crowd stays legible, and kills are gold and larger. *Damage numbers* toggle in Settings; the Settings rows are 2 px closer and the label column wider, so the panel keeps its size.
+- **Felt hits:** `damagePlayer` takes the source point and kind; each hurt human gets one `hurt` event per tick. A red arc on a ring around the crosshair points at the source through the camera's own transform (0.9 s, ranged 1.4 s); a flinch of 0.4–1.2° scales with the hit. The existing red edge, HP shake and hurt sound stay.
+- **Pincer arrivals** (`src/sim/pincer.ts`): retreating means at least 2.5 m/s over the last second, away from the centroid of enemies within 12 m. In horde rooms (focus or secondary) from the second wave, up to a third of each wave's Blessed use the nearest spawn point 8–30 m ahead within ±45°, never within 8 m of a player. A point inside the usual 15 m gets a 2 s spawn warning first (the warning's duration is now a parameter); until then the Blessed is placed as usual.
+- **Close-quarters charge:** each credited kill within 5 m refunds 0.25 s of Q and E cooldown from a 2 s-per-second budget. The client now lets the host's E cooldown rule once it has started for a press, so a refunded Falling Star or Shadowstep is usable at once.
+- Protocol 15 → **16**, rules 26 → **27**. Docs updated: game.md (shop, same-tree rule), items-relics.md (prices), rooms.md §6.3 (tell, shot volume), the four class catalogs (a note on card wording and the Fallen's numbers).
+
+## Verification
+
+All on Windows with the D3D11 Playwright configuration. No benchmark was run (none requested).
+
+- **Unit suite:** `npx vitest run --pool=threads --exclude '**/*perf.test.ts'`: **1,608 passed in 126 files** (final run). New coverage: same-tree compositions for every class and the three pairs in the sim, lock reasons and the rule-wording check, relic sentences and hints, unlimited purchases and prices, the Fallen's numbers, shot volumes against each atlas, the Carrier tell/lock/interrupt and its chevrons, furrow cells, damage and hurt events (per player, merged, capped; bots and world damage excluded), number merging and spread, hit-arc angles in camera space, pincer heading and point choice plus a horde-room integration test with its non-horde control, the close-quarters budget.
+- **Timing checks, each run alone:** `npx vitest run --pool=threads --reporter=verbose src/sim/perf.test.ts`: **3.272 ms/tick**; the same for `src/sim/hazards.perf.test.ts`: **4.852 ms/tick**. Limits unchanged at 8 ms. One combined run during stage 1, with the game running in the browser pane, missed the ordinary limit; rerun alone it passed (3.314 ms). That combined run is not claimed as a pass.
+- `npm run typecheck` and `npm run build`: passed. `git diff --check`: passed.
+- **End-to-end:** `npx playwright test --config playwright.hardware.config.ts e2e/menus.spec.ts e2e/profiles.spec.ts e2e/singleplayer.spec.ts e2e/multiplayer.spec.ts e2e/commanders.spec.ts e2e/rogue-floor.spec.ts e2e/rogue-pressure.spec.ts e2e/talents.spec.ts e2e/classTalents.spec.ts e2e/dungeonChoices.spec.ts`: **41 of 42 passed** (20.3 min, including the 10-minute solo autopilot run and real PeerJS multiplayer). The failure was a real regression: the Damage numbers row made title Settings 11 px taller. After the spacing fix, `e2e/profiles.spec.ts e2e/menus.spec.ts`: **9/9 passed**. Two talents checks changed: the in-run overlay clicks use `dispatchEvent` (a probe confirmed a real `elementFromPoint` hits the button and the trees end above the footer), and the out-of-points check clicks a node not also blocked by a conflict.
+- **Inspected:** the talent trees in the Lobby and in a run, a cross-tree lock tooltip, the Q/E gold frame while hovered and after a click, the Carrier's chevrons during a live tell, the furrow's flames, damage numbers over a crowd, a hit arc, and title Settings. Temporary screenshot specs were deleted afterwards.
+
+Not established by these checks: whether the Fallen now feels strong enough, whether pincers and the ability charge make standing in the crowd more fun than backing away, and whether the Carrier now feels fair. Those are your play calls.
+
+## Play this iteration
+
+Run `npm run dev`.
+
+1. **Talents** (Lobby → Talents, or T in a run): hover tiles for rules and lock reasons; learn The Altar + Scapegoat (Heretic) or Whirl + The Long Flail (Binder); pick a second Q/E ability and watch the gold frame move at once.
+2. **Relics:** open the Relics view and read a card; equip two and press H in a run.
+3. **Shop:** buy the same pedestal twice.
+4. **Fallen and the Carrier:** `/?dev=1&map=carrier&class=fallen&seed=7`, walk into the arena; shoot the Carrier where it looks hittable, watch the chevrons and step out of them.
+5. **Horde room:** play a normal run as the Fallen and back away in a horde room from its second wave: arrivals should cut you off, with a warning. Kill up close and watch Q/E come back faster. Watch the numbers, and the arcs when something hits you.
+6. **Ploughshares:** `/?dev=1&map=rogue&class=heretic&build=pyre&seed=317434499&god=1`, throw a censer at the floor.
+
+If backing away still wins, the reserve option is the slower backpedal (§9, option 6).
 
 ## Stages and verification
 

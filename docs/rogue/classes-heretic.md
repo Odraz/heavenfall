@@ -2,6 +2,8 @@
 
 **Purpose:** the Heretic Saint's three talent trees and its three new abilities for the roguelite. [game.md](game.md) §0 fixes precedence: its rules win over this catalog, [classes.md](../classes.md) supplies class identity/design intent, and [lore.md](../lore.md) supplies lore. Core §9.3–§9.4's explicit composition rules supersede the older one-effect wording. All numbers are initial values.
 
+**R06 follow-up (2026-10-22):** the in-game card wording lives in `src/data/talents.ts` and was rewritten in plain words; the Rule column below keeps the design wording. The Altar and Scapegoat now combine: the middle cloud is worn, the two side clouds stay at the impact. See [r06-followup.md](r06-followup.md) §1.
+
 **Status:** completed design baseline (2026-10-11), reviewed through solo/co-op scenarios (§6). Numbers require playtesting; the scenarios are reasoning, not measured balance results.
 
 ---

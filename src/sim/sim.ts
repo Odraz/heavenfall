@@ -82,7 +82,13 @@ import {
 import type { FloorSync, GameEvent, InventoryState, PlayerStats } from '../net/messages';
 import {
   ALLY_NONE,
+  DAMAGE_HITS_MAX,
   encodeSnapshot,
+  HURT_HITS_MAX,
+  HURT_MELEE,
+  HURT_RANGED,
+  HURT_WORLD,
+  type HurtKind,
   FLAG_HURT,
   FLAG_ROOTED,
   FLAG_SILENCED,
@@ -119,6 +125,7 @@ import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } fr
 import { directStepAllowed, FlowField, UNREACHABLE } from './flowfield';
 import { DryNavigation, FIRE_ENEMY_DAMAGE, FIRE_PLAYER_DAMAGE, Hazards } from './hazards';
 import { SpawnWarnings } from './spawnWarnings';
+import { CROWD_RADIUS, PINCER_FROM_WAVE, PINCER_SHARE, PINCER_WARNING_TICKS, PositionHistory, pincerPoint, retreatHeading, type Retreat } from './pincer';
 import { lineOfSight, raycastTerrain } from './los';
 import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
@@ -298,6 +305,9 @@ export interface SimPlayer {
   /** Seconds of cooldown remaining. */
   cdQ: number;
   cdE: number;
+  /** Close-quarters charge (R06 follow-up §9): seconds of refund left in its per-second budget, and when it was last topped up. */
+  closeCharge: number;
+  closeChargeTick: number;
   /** Tick of the last hit that did damage after invulnerability (for regeneration). */
   lastDamageTick: number;
   /** Tick of the last `damagePlayer` hit that removed HP or shield; unlike `lastDamageTick`, revive and respawn don't set it (M12 §2.3). */
@@ -343,6 +353,8 @@ interface DashRecord {
 interface SpawnBatch {
   counts: number[];
   spawned: number[];
+  /** Blessed placed as pincer arrivals (R06 follow-up §9). */
+  pincered?: number;
   /** Wave index, or -1 for benchmark top-ups and summons. */
   wave: number;
 }
@@ -409,6 +421,10 @@ export const PROJ_GLOBE = 1;
 export const PROJ_ARROW = 2;
 const MAX_PROJECTILES = 400;
 const PROJECTILE_RANGE = 60;
+
+const round1 = (v: number): number => Math.round(v * 10) / 10;
+/** Close-quarters charge (R06 follow-up §9 option 5): range in meters, refund per kill and the per-second budget in seconds. */
+export const CLOSE_CHARGE = { range: 5, refund: 0.25, budget: 2 };
 
 /** Enemy type order for spawning ties: Blessed, Choristers, Cherubs. */
 const SPAWN_TYPES = [BLESSED, CHORISTER, CHERUB, DOMINION];
@@ -697,6 +713,10 @@ export class Simulation {
   private readonly eForceTick = new Int32Array(ENEMY_SLOTS).fill(-1);
   /** This tick's burst deaths: [slot, angle (+360 if heavy), playerId, …], sent as one `bursts` event. */
   private readonly tickBursts: number[] = [];
+  /** This tick's credited damage per human player index, then per enemy slot: [amount, killed] (R06 follow-up §8). */
+  private readonly tickDamage = new Map<number, Map<number, [number, number]>>();
+  /** This tick's accepted hits on each human, by player index: [source x, y, amount, kind] (R06 follow-up §9). */
+  private readonly tickHurt = new Map<number, number[][]>();
   // Casts and melee (§7.1).
   /** 1 while winding up a cast. */
   readonly eCast = new Uint8Array(ENEMY_SLOTS);
@@ -778,6 +798,11 @@ export class Simulation {
   readonly hazards: Hazards;
   readonly dryNavigation: DryNavigation;
   readonly spawnWarnings: SpawnWarnings;
+  /** Each living player's last second of positions, for pincer arrivals (R06 follow-up §9). */
+  readonly positions = new PositionHistory();
+  /** A room's pincer point waiting out its warning. */
+  private readonly pincerPending = new Map<number, number>();
+  private retreatCache: { tick: number; room: number; list: Retreat[] } | null = null;
   private readonly floorSpawnPoints = new Map<string, { room: number; c: number; r: number; budget: number }>();
   private readonly spawnBlockedSince = new Map<string, number>();
   private readonly spawnFloorCells = new Map<number, Uint32Array>();
@@ -1142,6 +1167,8 @@ export class Simulation {
       revivers: 0,
       soulTick: 0,
       cdQ: 0,
+      closeCharge: CLOSE_CHARGE.budget,
+      closeChargeTick: 0,
       cdE: 0,
       lastDamageTick: this.tick,
       lastHurtTick: -ENGAGED_HIT_TICKS,
@@ -1266,6 +1293,7 @@ export class Simulation {
     if (this.result) return;
     this.tick++;
     this.nowMs = nowMs ?? this.tick * TICK_MS;
+    this.positions.sample(this.players.filter((p) => this.livingTargetable(p)));
     this.streaks.update();
     this.route.update();
     this.checkRoomStarts();
@@ -1304,6 +1332,7 @@ export class Simulation {
     this.updateSpawnWarnings();
     if (this.benchBurst && this.tick % BENCH_BURST_TICKS === 0) this.benchBurstHit();
     this.flushBursts();
+    this.flushDamage();
   }
 
   /** The benchmark's bursts (M12 §10): 40 damage, credited to player 0, to the 20 Blessed nearest a point 8 m ahead of it. */
@@ -1326,6 +1355,29 @@ export class Simulation {
     if (this.tickBursts.length === 0) return;
     this.emit('all', { type: 'bursts', list: this.tickBursts.slice() });
     this.tickBursts.length = 0;
+  }
+
+  /**
+   * Sends each human their own damage of this tick as one `damage` event (R06 follow-up §8): the
+   * DAMAGE_HITS_MAX largest per-enemy totals, positioned above the enemy as the host has it now.
+   */
+  flushDamage(): void {
+    for (const [index, hits] of this.tickDamage) {
+      const p = this.slots[index];
+      if (!p?.connected) continue;
+      const list: number[] = [];
+      for (const [slot, [amount, killed]] of [...hits].sort((a, b) => b[1][0] - a[1][0]).slice(0, DAMAGE_HITS_MAX)) {
+        const top = ENEMIES[this.eType[slot]].shot.top;
+        list.push(slot, round1(this.eX[slot]), round1(this.eY[slot]), round1(this.eZ[slot] + top + 0.3), round1(amount), killed);
+      }
+      this.emit(p.id, { type: 'damage', hits: list });
+    }
+    this.tickDamage.clear();
+    for (const [index, hits] of this.tickHurt) {
+      const p = this.slots[index];
+      if (p?.connected) this.emit(p.id, { type: 'hurt', hits: hits.sort((a, b) => b[2] - a[2]).slice(0, HURT_HITS_MAX).flat() });
+    }
+    this.tickHurt.clear();
   }
 
   /** Victory: when the Gatekeeper dies, every remaining enemy bursts without kill credit (§8.2). */
@@ -2078,9 +2130,12 @@ export class Simulation {
 
   private placeQueued(ai: number): void {
     const st = this.rooms[ai];
-    if (st.queue.length === 0) return;
+    if (st.queue.length === 0) { this.pincerPending.delete(ai); return; }
     const points = this.map.roomSpawnPoints[ai];
     const np = points.length;
+    // A pincer warning stays shown while it waits, between placement attempts too.
+    const pending = this.pincerPending.get(ai);
+    if (pending !== undefined) { const [c, r] = points[pending]; this.spawnWarnings.permit(ai, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c], this.tick, undefined, 'pincer', PINCER_WARNING_TICKS); }
     // Preferred markers stay distant. Exhaustion falls back to a one-second warning,
     // with the three-metre body clearance rechecked on every tick and placement.
     const paced = st.director !== null;
@@ -2121,6 +2176,9 @@ export class Simulation {
       const affinity = (type === CHORISTER || type === CANTOR) ? def.chorister : type === DOMINION ? def.dominion : undefined;
       const preferred = affinity?.filter((i) => eligible[i] && st.budgets[i] >= 1);
       if (preferred?.length && !warned.get(type)) found = preferred[Math.floor(this.random() * preferred.length)];
+      const pincer = found < 0 && type === BLESSED && paced && batch.wave >= PINCER_FROM_WAVE && (def.focus === 'horde' || def.secondary === 'horde') &&
+        (batch.pincered ?? 0) < Math.floor(batch.counts[0] * PINCER_SHARE);
+      if (pincer) { found = this.pincerSpawn(ai, points, st.budgets); if (found >= 0) batch.pincered = (batch.pincered ?? 0) + 1; }
       for (let k = 0; k < np; k++) {
         if (found >= 0) break;
         const i = (st.rr + k) % np;
@@ -2213,6 +2271,53 @@ export class Simulation {
       const tag = tags.find((t) => t.index === index);
       return !tag || tag.only.some((id) => (id === 'chorister' ? type === CHORISTER || type === CANTOR : type === DOMINION));
     });
+  }
+
+  /**
+   * A pincer arrival's spawn point now (R06 follow-up §9), or -1: ahead of a player retreating from the
+   * crowd, at least SPAWN_ELIGIBLE_DIST from everyone. A point nearer than the far distance is used only
+   * after its 2 s warning; until then this Blessed is placed as usual.
+   */
+  private pincerSpawn(ai: number, points: Array<[number, number]>, budgets: Float64Array): number {
+    const allowed = this.spawnEligibility(ai, points, BLESSED);
+    const safe = new Uint8Array(points.length), far = new Uint8Array(points.length);
+    this.markEligible(points, SPAWN_ELIGIBLE_DIST, safe, allowed);
+    this.markEligible(points, this.map.rooms[ai].shape === '1x1' ? 10 : SPAWN_FAR_DIST, far, allowed);
+    let i = this.pincerPending.get(ai) ?? -1;
+    if (i >= 0 && !safe[i]) {
+      const [c, r] = points[i];
+      this.spawnWarnings.cancel(ai, c + 0.5, r + 0.5, 'pincer');
+      this.pincerPending.delete(ai); i = -1;
+    }
+    if (i < 0) i = pincerPoint(points, (k) => !!safe[k] && budgets[k] >= 1, this.retreats(ai));
+    if (i < 0 || budgets[i] < 1) return -1;
+    const [c, r] = points[i];
+    if (!far[i] && !this.spawnWarnings.permit(ai, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c], this.tick, undefined, 'pincer', PINCER_WARNING_TICKS)) {
+      this.pincerPending.set(ai, i);
+      return -1;
+    }
+    this.pincerPending.delete(ai);
+    return i;
+  }
+
+  /** The living players in room `ai` retreating from the crowd this tick, once per tick. */
+  private retreats(ai: number): Retreat[] {
+    if (this.retreatCache?.tick === this.tick && this.retreatCache.room === ai) return this.retreatCache.list;
+    const list: Retreat[] = [], r2 = CROWD_RADIUS * CROWD_RADIUS;
+    for (const p of this.players) {
+      if (!this.livingTargetable(p) || this.roomAt(p.x, p.y) !== ai) continue;
+      const from = this.positions.secondAgo(p.id);
+      if (!from) continue;
+      let sx = 0, sy = 0, n = 0;
+      for (let k = 0; k < this.activeCount; k++) {
+        const s = this.active[k], dx = this.eX[s] - p.x, dy = this.eY[s] - p.y;
+        if (this.eRoom[s] === ai && dx * dx + dy * dy <= r2) { sx += this.eX[s]; sy += this.eY[s]; n++; }
+      }
+      const h = retreatHeading(from, p, n ? { x: sx / n, y: sy / n } : null);
+      if (h) list.push({ x: p.x, y: p.y, hx: h[0], hy: h[1] });
+    }
+    this.retreatCache = { tick: this.tick, room: ai, list };
+    return list;
   }
 
   /** Marks the spawn points farther than `dist` from every living player; returns whether any is. */
@@ -2456,10 +2561,18 @@ export class Simulation {
       if (this.judgmentDamage >= JUDGMENT_INTERRUPT * bossMultiplier(this.bossParty, this.bossSolo) - 1e-9) this.interruptJudgment();
     }
     const shooter = source >= 0 ? this.slots[source] : undefined;
-    if (shooter) { shooter.damage += Math.min(amount, this.eHp[slot]); this.streaks.touch(slot, source); }
-    this.commanders.damaged(slot, Math.min(amount, this.eHp[slot]));
+    const applied = Math.min(amount, this.eHp[slot]);
+    if (shooter) { shooter.damage += applied; this.streaks.touch(slot, source); }
+    this.commanders.damaged(slot, applied);
     this.eHp[slot] -= amount;
     this.eHurtTick[slot] = this.tick;
+    if (shooter && !shooter.bot) {
+      let own = this.tickDamage.get(source);
+      if (!own) { own = new Map(); this.tickDamage.set(source, own); }
+      const hit = own.get(slot) ?? [0, 0];
+      hit[0] += applied; if (this.eHp[slot] <= 0) hit[1] = 1;
+      own.set(slot, hit);
+    }
     // 5. Death and kill credit.
     if (this.eHp[slot] <= 0) {
       // Relic triggers read the victim's states as they were before this killing damage (§2.4 rule 1).
@@ -2469,6 +2582,7 @@ export class Simulation {
       this.rewards.enemyKilled(slot);
       if (shooter) {
         shooter.kills++;
+        this.closeQuarters(shooter, slot);
         this.noteBurst(slot, shooter, fromX, fromY);
       } else if (worldBurst) this.noteBurst(slot, null, fromX, fromY);
       this.removeEnemy(slot);
@@ -2478,6 +2592,20 @@ export class Simulation {
 
 
 
+
+  /**
+   * Close-quarters charge (R06 follow-up §9 option 5): a kill within 5 m of its credited player takes
+   * 0.25 s off that player's Q and E cooldowns, at most 2 s per second.
+   */
+  private closeQuarters(p: SimPlayer, slot: number): void {
+    if (p.dead || Math.hypot(this.eX[slot] - p.x, this.eY[slot] - p.y) > CLOSE_CHARGE.range) return;
+    p.closeCharge = Math.min(CLOSE_CHARGE.budget, p.closeCharge + (this.tick - p.closeChargeTick) * TICK_DT * CLOSE_CHARGE.budget);
+    p.closeChargeTick = this.tick;
+    if (p.closeCharge < CLOSE_CHARGE.refund - 1e-9) return;
+    p.closeCharge -= CLOSE_CHARGE.refund;
+    p.cdQ = Math.max(0, p.cdQ - CLOSE_CHARGE.refund);
+    p.cdE = Math.max(0, p.cdE - CLOSE_CHARGE.refund);
+  }
 
   /** An enemy's §4.11 states now, for a relic kill trigger. */
   private victimStates(s: number): VictimStates {
@@ -2701,7 +2829,7 @@ export class Simulation {
       if (!this.livingTargetable(q) || this.talents.ignoresWorld(q) || this.roomAt(q.x, q.y) !== p.room ||
         distToCylinder(p.x, p.y, z, q.x, q.y, q.z, PLAYER_RADIUS, PLAYER_HEIGHT) > 4 ||
         !lineOfSight(this.map, p.x, p.y, z, q.x, q.y, q.z + PLAYER_HEIGHT / 2)) continue;
-      this.damagePlayer(q, PROP_BLAST_PLAYER_DAMAGE);
+      this.damagePlayer(q, PROP_BLAST_PLAYER_DAMAGE, { x: p.x, y: p.y, kind: HURT_RANGED });
     }
     this.props.area(p.x, p.y, z, 4, this.tick, 'world', (q) => q.room === p.room);
   }
@@ -2712,7 +2840,11 @@ export class Simulation {
   }
 
   /** A hit on a player; returns the HP and shield it removed. */
-  damagePlayer(p: SimPlayer, amount: number): number {
+  /**
+   * Damage to a player; returns what it removed. `from` is where it came from and how (R06 follow-up §9):
+   * the hurt player is told, to draw a hit arc toward it; without one it has no direction.
+   */
+  damagePlayer(p: SimPlayer, amount: number, from?: { x: number; y: number; kind: HurtKind }): number {
     if (p.dead || !p.connected) return 0;
     // 2. Brimstone Hide.
     if (p.classId === 'fallen') amount *= 0.6;
@@ -2734,6 +2866,11 @@ export class Simulation {
     // Intensity (M12 §2.3): the shield absorbed plus the HP lost, counted down to 0 only.
     this.activeDirector()?.hurt(p.index, absorbed + Math.min(amount, p.hp), p.maxHp);
     const removed = absorbed + Math.min(amount, p.hp);
+    if (!p.bot && removed > 0) {
+      const list = this.tickHurt.get(p.index) ?? [];
+      list.push([round1(from?.x ?? p.x), round1(from?.y ?? p.y), round1(removed), from?.kind ?? HURT_WORLD]);
+      this.tickHurt.set(p.index, list);
+    }
     p.hp -= amount;
     // 5. Death.
     if (p.hp <= 0) this.killPlayer(p);
@@ -3170,7 +3307,7 @@ export class Simulation {
         if (distToCylinder(x, y, z, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) > GLOBE_BLAST + 1e-9) continue;
         if (!lineOfSight(this.map, lx, ly, lz, p.x, p.y, p.z + PLAYER_HEIGHT / 2)) continue;
       }
-      this.damagePlayer(p, damage);
+      this.damagePlayer(p, damage, { x: x - this.pDx[slot] * 4, y: y - this.pDy[slot] * 4, kind: HURT_RANGED });
     }
     this.emit('all', { type: 'globeShatter', x, y, z, by: -1 });
   }
@@ -3744,7 +3881,7 @@ export class Simulation {
       if (owner >= 0) this.explodeCenser(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT, hitSlot);
       else if (this.pKind[slot] === PROJ_GLOBE) this.shatterGlobe(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT, this.slots[hitSlot]!);
       else {
-        this.damagePlayer(this.slots[hitSlot]!, this.pDamage[slot]);
+        this.damagePlayer(this.slots[hitSlot]!, this.pDamage[slot], { x: x - dx * 4, y: y - dy * 4, kind: HURT_RANGED });
         this.removeProjectile(slot);
       }
       return;
@@ -4313,7 +4450,7 @@ export class Simulation {
     this.eMeleeNext[slot] -= TICK_DT;
     if (this.eMeleeNext[slot] <= 1e-9) {
       // Red Iron answers an accepted melee hit the Fallen survives (classes-fallen.md `a.1a`).
-      if (this.damagePlayer(p!, dominion ? DOMINION_MELEE_DAMAGE : MELEE_DAMAGE) > 0 && p!.classId === 'fallen') this.talents.fallen.meleeStruck(p!, slot);
+      if (this.damagePlayer(p!, dominion ? DOMINION_MELEE_DAMAGE : MELEE_DAMAGE, { x: this.eX[slot], y: this.eY[slot], kind: HURT_MELEE }) > 0 && p!.classId === 'fallen') this.talents.fallen.meleeStruck(p!, slot);
       this.eMeleeNext[slot] += MELEE_INTERVAL;
     }
     if (this.eState[slot] !== ST_FALLING) this.eState[slot] = ST_ATTACKING;

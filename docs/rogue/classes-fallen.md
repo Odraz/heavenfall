@@ -2,6 +2,8 @@
 
 **Purpose:** the Fallen's three talent trees and its three new abilities for the roguelite. [game.md](game.md) §0 fixes precedence: its rules win over this catalog, [classes.md](../classes.md) supplies class identity/design intent, and [lore.md](../lore.md) supplies lore. Core §9.3–§9.4's explicit composition rules supersede the older one-effect wording. All numbers are initial values.
 
+**R06 follow-up (2026-10-22):** the in-game card wording lives in `src/data/talents.ts` and was rewritten in plain words; the Rule column below keeps the design wording. Changed numbers: close shotgun pellets **25** (was 20), slug **100** (was 60), Red Iron **25** (was 10), Underfoot **30** (was 20), Wrath of Dis every **60** damage taken (was 100). See [r06-followup.md](r06-followup.md) §1, §4.
+
 **Status:** completed design baseline (2026-10-11), reviewed through solo/co-op scenarios. Numbers are playtest baselines; scenario claims describe intended play, not measured results.
 
 ---

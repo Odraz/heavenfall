@@ -1,11 +1,12 @@
 /**
  * The Master, Music and SFX sliders on Title and the Pause overlay, in a Settings view (M8 §9.3), with
- * the Screen shake toggle (M12 §4.5) and the Recorded SFX toggle.
+ * the Screen shake toggle (M12 §4.5), the Damage numbers toggle (R06 follow-up §8) and the Recorded SFX toggle.
  */
 import { audio, sfx } from '../audio/audio';
 import { loadRecordedSetting, saveRecordedSetting } from '../audio/recorded';
 import { loadVolume, saveVolume, VOLUME_KEYS, VOLUME_LABELS, volumeText, type VolumeKey } from '../audio/volume';
 import { loadShakeSetting, saveShakeSetting } from '../client/shake';
+import { loadDamageNumbersSetting, saveDamageNumbersSetting } from '../client/damageNumbers';
 
 function setVolume(k: VolumeKey, v: number): void {
   const a = audio();
@@ -48,28 +49,38 @@ export function volumeSliders(parent: HTMLElement): HTMLDivElement {
   return box;
 }
 
-/** The Screen shake toggle (M12 §4.5): on by default, saved at once; each shake reads it when it starts. */
-export function shakeToggle(parent: HTMLElement): HTMLLabelElement {
+/** An On/Off setting row, saved at once. */
+function onOffToggle(parent: HTMLElement, label: string, inputName: string, load: () => boolean, save: (on: boolean) => void): HTMLLabelElement {
   const row = document.createElement('label');
   row.className = 'volume-row toggle-row';
   const name = document.createElement('span');
   name.className = 'volume-label';
-  name.textContent = 'Screen shake';
+  name.textContent = label;
   const input = document.createElement('input');
   input.type = 'checkbox';
-  input.name = 'screen-shake';
-  input.checked = loadShakeSetting();
+  input.name = inputName;
+  input.checked = load();
   const value = document.createElement('span');
   value.className = 'volume-value';
   value.textContent = input.checked ? 'On' : 'Off';
   input.addEventListener('change', () => {
-    saveShakeSetting(input.checked);
+    save(input.checked);
     value.textContent = input.checked ? 'On' : 'Off';
     sfx('buttonClick');
   });
   row.append(name, input, value);
   parent.appendChild(row);
   return row;
+}
+
+/** The Screen shake toggle (M12 §4.5): on by default, saved at once; each shake reads it when it starts. */
+export function shakeToggle(parent: HTMLElement): HTMLLabelElement {
+  return onOffToggle(parent, 'Screen shake', 'screen-shake', loadShakeSetting, saveShakeSetting);
+}
+
+/** The Damage numbers toggle (R06 follow-up §8): on by default; off, new numbers stop appearing. */
+export function damageNumbersToggle(parent: HTMLElement): HTMLLabelElement {
+  return onOffToggle(parent, 'Damage numbers', 'damage-numbers', loadDamageNumbersSetting, saveDamageNumbersSetting);
 }
 
 /**
@@ -130,6 +141,7 @@ export function settingsButton(panel: HTMLElement, buttons: HTMLElement, onProfi
   view.appendChild(title);
   const sliders = volumeSliders(view);
   shakeToggle(sliders);
+  damageNumbersToggle(sliders);
   const syncRecorded = recordedToggle(sliders);
   // One bottom row, so adding Profile doesn't make the view taller than the panel it replaces.
   const actions = document.createElement('div');

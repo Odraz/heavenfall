@@ -30,6 +30,7 @@ import { circleOverlapsCell } from './movement';
 import { lineOfSight, raycastTerrain } from './los';
 import type { GameMap } from './map';
 import type { Simulation, SimPlayer } from './sim';
+import { HURT_MELEE, HURT_RANGED } from '../net/protocol';
 
 /** The Cantor targets visible players within this range; the Carrier within CARRIER_SIGHT. */
 const CANTOR_SIGHT = 25;
@@ -340,7 +341,7 @@ export class Commanders {
       const visible = (x: number, y: number, z: number, h: number) => lineOfSight(sim.map, b.x, b.y, b.z, x, y, z + h / 2);
       for (const p of sim.players) {
         if (!sim.livingTargetable(p) || sim.roomAt(p.x, p.y) !== cast.room) continue;
-        if (beamHits(b, p.x, p.y, p.z, PLAYER_HEIGHT, PLAYER_RADIUS) && visible(p.x, p.y, p.z, PLAYER_HEIGHT)) sim.damagePlayer(p, BEAM_PLAYER_DAMAGE);
+        if (beamHits(b, p.x, p.y, p.z, PLAYER_HEIGHT, PLAYER_RADIUS) && visible(p.x, p.y, p.z, PLAYER_HEIGHT)) sim.damagePlayer(p, BEAM_PLAYER_DAMAGE, { x: cast.x, y: cast.y, kind: HURT_RANGED });
       }
       for (const slot of sim.commanderBeamCandidates(b)) {
         // Only the crowd (Blessed, Choristers and Cherubs) takes beam damage.
@@ -561,7 +562,7 @@ export class Commanders {
     sim.eZ[slot] = z + PLAYER_HEIGHT;
     cast.yaw = Math.atan2(dy, dx);
     sim.eState[slot] = ST_ATTACKING;
-    if ((sim.tick - cast.phaseTick) % CARRIER_DAMAGE_INTERVAL === 0) sim.damagePlayer(p, CARRIER_DAMAGE);
+    if ((sim.tick - cast.phaseTick) % CARRIER_DAMAGE_INTERVAL === 0) sim.damagePlayer(p, CARRIER_DAMAGE, { x: cast.x, y: cast.y, kind: HURT_MELEE });
     const arrived = climb === 1 && distance <= DROP_REACH && sim.tick - cast.phaseTick >= CARRIER_MIN_HOLD;
     if (p.dead || sim.tick >= cast.endTick || arrived) this.cancel(slot);
   }

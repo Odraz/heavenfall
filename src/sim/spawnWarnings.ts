@@ -5,12 +5,13 @@ export class SpawnWarnings {
   private nextId = 1;
   exhausted = 0;
   constructor(private readonly emit: (phase: 'start' | 'cancel', warning: SpawnWarning) => void) {}
-  permit(room: number, x: number, y: number, z: number, tick: number, firstReady?: () => void, context = 'spawn'): boolean {
+  /** `ticks`: how long the warning shows before the point is ready (a pincer arrival's is longer). */
+  permit(room: number, x: number, y: number, z: number, tick: number, firstReady?: () => void, context = 'spawn', ticks = SPAWN_WARNING_TICKS): boolean {
     const key = `${context}:${room}:${x}:${y}`;
     let e = this.points.get(key);
     if (!e) {
-      if (this.points.size >= SPAWN_WARNING_CAP || this.nextId > 0xffffffff || tick + SPAWN_WARNING_TICKS > 0xffffffff) { this.exhausted++; return false; }
-      e = { warning: { id: this.nextId++, room, x, y, z, startTick: tick, readyTick: tick + SPAWN_WARNING_TICKS }, touched: tick, readyUsed: false };
+      if (this.points.size >= SPAWN_WARNING_CAP || this.nextId > 0xffffffff || tick + ticks > 0xffffffff) { this.exhausted++; return false; }
+      e = { warning: { id: this.nextId++, room, x, y, z, startTick: tick, readyTick: tick + ticks }, touched: tick, readyUsed: false };
       this.points.set(key, e); this.emit('start', { ...e.warning });
     }
     e.touched = tick;

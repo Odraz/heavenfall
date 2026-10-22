@@ -14,6 +14,7 @@ import {
 import { ENEMY_SLOTS, PLAYER_HEIGHT, TICK_DT } from './constants';
 import { lineOfSight, raycastTerrain } from './los';
 import type { Simulation, SimPlayer } from './sim';
+import { HURT_RANGED } from '../net/protocol';
 
 export class Watchmen {
   /** Aiming Watchmen and those that fired in the last 0.5 s, by slot. */
@@ -181,6 +182,6 @@ export class Watchmen {
     sim.eCastCd[slot] = WATCHMAN_RELOAD_TICKS * TICK_DT;
     sim.eState[slot] = ST_ATTACKING;
     // An ordinary hostile hit: shields absorb it, invulnerability ignores it, Fallen mitigation applies.
-    if (hit) sim.damagePlayer(p, WATCHMAN_DAMAGE);
+    if (hit) sim.damagePlayer(p, WATCHMAN_DAMAGE, { x: sim.eX[slot], y: sim.eY[slot], kind: HURT_RANGED });
   }
 }

@@ -30,6 +30,7 @@ import { dominionLeapClear } from './dominionLeap';
 import { lineOfSight } from './los';
 import { groundHeight } from './movement';
 import type { Simulation } from './sim';
+import { HURT_MELEE } from '../net/protocol';
 
 /** What the simulation reports about a Dominion each tick. */
 interface CastState {
@@ -296,7 +297,7 @@ export class DominionBehavior {
       const dx = p.x - x;
       const dy = p.y - y;
       const distance = Math.hypot(dx, dy);
-      sim.damagePlayer(p, Math.round(dominionFalloff(DOMINION_PLAYER_DAMAGE, distance)));
+      sim.damagePlayer(p, Math.round(dominionFalloff(DOMINION_PLAYER_DAMAGE, distance)), { x, y, kind: HURT_MELEE });
       if (immune || p.dead) continue;
       // Reuse the acknowledged host correction: stale pre-impact positions cannot undo the launch.
       const speed = dominionFalloff(DOMINION_LAUNCH_SPEED, distance);

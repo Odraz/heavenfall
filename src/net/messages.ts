@@ -211,6 +211,13 @@ export type GameEvent =
   | { type: 'shroudBurst'; playerId: number; x: number; y: number; z: number }
   /** Burst deaths this tick (M12 §4.1): `[slot, angle, playerId, …]`, the angle in degrees, + 360 if heavy. */
   | { type: 'bursts'; list: number[] }
+  /**
+   * Damage numbers (R06 follow-up §8), to the credited player only: this tick's accepted damage per enemy,
+   * `DAMAGE_STRIDE` numbers each: slot, x, y, z (above the drawn head), amount, 1 if it killed.
+   */
+  | { type: 'damage'; hits: number[] }
+  /** Felt hits (R06 follow-up §9 option 1), to the hurt player only: `HURT_STRIDE` numbers each: source x, y, amount, kind. */
+  | { type: 'hurt'; hits: number[] }
   /** Shadowstep cut through its path (M12 §5.7): the path's first and last points. */
   | { type: 'dashCut'; playerId: number; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number }
   /** A globe shattered (M12 follow-up §1.3): `by` is the player who shot it down, or −1 when it broke on its own. */
