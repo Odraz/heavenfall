@@ -66,6 +66,12 @@ export class HostSession {
     return this.net?.stats ?? null;
   }
 
+  /** One line per connected client: its player, round trip and route (the host's F3). */
+  linkLines(): string[] {
+    if (!this.net) return [];
+    return this.net.links().map(({ conn, link }) => `P${this.connPlayer.get(conn) ?? '?'} ${link.text()}`);
+  }
+
   /** Dev keys K and J: removes every enemy, or every Blessed (`blessedOnly`, screenshots). */
   killAll(blessedOnly = false): void {
     this.post({ t: 'killAll', blessedOnly });

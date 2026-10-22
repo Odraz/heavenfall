@@ -14,6 +14,32 @@ interface Stored {
 
 const KEEP = 12;
 
+/**
+ * The snapshot clock (netcode stage, 2026-10-22). Each complete snapshot gives a sample of
+ * `tick - now × 30 / 1000`; the clock follows their running average instead of jumping to each one,
+ * so a late or early snapshot no longer moves the drawn world backwards or forwards. The clock never
+ * runs backwards: it corrects by at most CLOCK_SLEW of its own rate.
+ */
+/** Weight of a new sample in the clock's average. */
+const CLOCK_GAIN = 0.1;
+/** The clock speeds up or slows down by at most this fraction to catch its average. */
+const CLOCK_SLEW = 0.1;
+/** Ticks: an error this large (a stall, a resumed pause) is taken at once rather than slewed. */
+const CLOCK_SNAP = 10;
+/** Weight of a new sample in the jitter average. */
+const JITTER_GAIN = 0.1;
+/** Extra render delay per tick of average jitter, beyond the first JITTER_FREE ticks, up to EXTRA_DELAY_MAX. */
+const JITTER_DELAY = 2;
+const JITTER_FREE = 0.25;
+const EXTRA_DELAY_MAX = 3;
+
+/** What the screen shows: the snapshot tick at or before the render tick, the gap to the next, and how far between. */
+export interface View {
+  tick: number;
+  gap: number;
+  frac: number;
+}
+
 export interface InterpolatedEnemies {
   count: number;
   slot: Uint16Array;
@@ -78,10 +104,27 @@ export class SnapshotBuffer {
   readonly playersOut: InterpolatedPlayer[] = [];
 
   constructor(
-    /** Render delay in ticks: 1.5 on the host, 4.5 on remote clients. */
-    readonly delayTicks: number,
+    /** The least render delay in ticks: 1.5 on the host, 4.5 on remote clients. */
+    readonly baseDelayTicks: number,
     private runId: string,
   ) { this.reset(runId); }
+
+  /** The snapshot clock: its average offset `tick - now × 30 / 1000`, NaN before the first sample. */
+  private offset = NaN;
+  /** The clock's tick at `clockAt` (performance.now()). */
+  private clockTick = 0;
+  private clockAt = 0;
+  /** Average absolute deviation of the samples from the offset, in ticks. */
+  jitterTicks = 0;
+  /** The extra render delay the jitter asks for, in ticks; it moves slowly. */
+  private extraDelay = 0;
+  /** What the screen showed at the latest `interpolate`, for lag compensation. */
+  readonly view: View = { tick: -1, gap: 0, frac: 0 };
+
+  /** Render delay in ticks: the base delay plus what the measured jitter asks for. */
+  get delayTicks(): number {
+    return this.baseDelayTicks + this.extraDelay;
+  }
 
   /** A new run may restart ticks at zero; none of the old interpolation state survives. */
   reset(runId: string): void {
@@ -91,6 +134,9 @@ export class SnapshotBuffer {
     this.enemyCountsByTick.clear();
     this.out.count = this.projOut.count = 0;
     this.playersOut.length = 0;
+    this.offset = NaN;
+    this.jitterTicks = this.extraDelay = 0;
+    this.view.tick = -1;
   }
 
   get newest(): Snapshot | null {
@@ -116,6 +162,7 @@ export class SnapshotBuffer {
     const projIndex = new Int16Array(PROJECTILE_SLOTS).fill(-1);
     for (let i = 0; i < snap.projectileCount; i++) projIndex[snap.projSlot[i]] = i;
     const prev = this.newest;
+    this.sample(snap.tick, now);
     this.ring.push({ snap, arrival: now, slotIndex, projIndex });
     if (this.ring.length > KEEP) this.ring.shift();
     this.enemyCountsByTick.set(snap.tick, snap.enemyCount);
@@ -129,12 +176,44 @@ export class SnapshotBuffer {
   /** Moves every arrival time later by `ms`, so time spent with the simulation paused doesn't count. */
   shiftArrivals(ms: number): void {
     for (const r of this.ring) r.arrival += ms;
+    const ticks = (ms / 1000) * TICK_HZ;
+    this.offset -= ticks;
+    this.clockTick -= ticks;
   }
 
-  /** The client's estimate of the current tick (§9.4). */
+  /** A complete snapshot of `tick` became available at `now`: a sample for the clock and the jitter. */
+  private sample(tick: number, now: number): void {
+    const s = tick - (now / 1000) * TICK_HZ;
+    if (Number.isNaN(this.offset) || Math.abs(s - this.offset) > CLOCK_SNAP) {
+      this.offset = s;
+      this.clockTick = tick;
+      this.clockAt = now;
+      return;
+    }
+    const err = s - this.offset;
+    this.jitterTicks += (Math.abs(err) - this.jitterTicks) * JITTER_GAIN;
+    this.offset += err * CLOCK_GAIN;
+    const want = Math.min(EXTRA_DELAY_MAX, Math.max(0, (this.jitterTicks - JITTER_FREE) * JITTER_DELAY));
+    this.extraDelay += (want - this.extraDelay) * JITTER_GAIN;
+  }
+
+  /**
+   * The client's estimate of the current tick (§9.4): the snapshot clock. It runs at the local clock's
+   * rate, corrected toward the samples' average by at most CLOCK_SLEW, so it never runs backwards. A
+   * `now` before the latest one is answered without moving the clock.
+   */
   estimatedTick(now: number): number {
-    const n = this.ring[this.ring.length - 1];
-    return n ? n.snap.tick + ((now - n.arrival) / 1000) * TICK_HZ : 0;
+    if (Number.isNaN(this.offset)) return 0;
+    const dt = ((now - this.clockAt) / 1000) * TICK_HZ;
+    if (dt <= 0) return this.clockTick + dt;
+    const target = (now / 1000) * TICK_HZ + this.offset;
+    let next = this.clockTick + dt;
+    const err = target - next;
+    if (Math.abs(err) > CLOCK_SNAP) next = target;
+    else next += Math.max(-CLOCK_SLEW * dt, Math.min(CLOCK_SLEW * dt, err));
+    this.clockTick = next;
+    this.clockAt = now;
+    return next;
   }
 
   /** The snapshots around the render tick and the interpolation fraction between them. */
@@ -168,6 +247,9 @@ export class SnapshotBuffer {
     if (!pr) return out;
     const { A, B, f } = pr;
     const a = A.snap;
+    this.view.tick = a.tick;
+    this.view.gap = B ? B.snap.tick - a.tick : 0;
+    this.view.frac = B ? f : 0;
     for (let i = 0; i < a.enemyCount; i++) {
       const slot = a.enemySlot[i];
       let x = a.enemyX[i];

@@ -10,6 +10,8 @@ export class Input {
   rightHeld = false;
   /** The right button was pressed after the left. */
   private rightLast = false;
+  /** Mouse presses (left, right) since the last `takePresses`, for click latching. */
+  private readonly presses: [number, number] = [0, 0];
   /** Accumulated mouse movement since the last read, in pixels. */
   private mouseDx = 0;
   private mouseDy = 0;
@@ -69,6 +71,7 @@ export class Input {
     this.leftHeld = false;
     this.rightHeld = false;
     this.rightLast = false;
+    this.presses[0] = this.presses[1] = 0;
     this.jumpQueued = false;
   };
 
@@ -82,6 +85,13 @@ export class Input {
       forward: (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0),
       right: (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0),
     };
+  }
+
+  /** The left and right presses since the last call; a press shorter than a frame still counts. */
+  takePresses(): [number, number] {
+    const r: [number, number] = [this.presses[0], this.presses[1]];
+    this.presses[0] = this.presses[1] = 0;
+    return r;
   }
 
   takeMouse(): { dx: number; dy: number } {
@@ -146,9 +156,11 @@ export class Input {
     if (e.button === 0) {
       this.leftHeld = true;
       this.rightLast = false;
+      this.presses[0]++;
     } else if (e.button === 2) {
       this.rightHeld = true;
       this.rightLast = true;
+      this.presses[1]++;
     }
   };
 

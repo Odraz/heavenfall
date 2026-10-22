@@ -130,21 +130,28 @@ describe('input protocol', () => {
     expect(d.pitch).toBeCloseTo(-0.5, 6);
     expect(d).toEqual(m);
     expect(Array.from(new Uint8Array(buf, 30, 16))).toEqual([1, 35, 69, 103, 137, 171, 205, 239, 0, 17, 34, 51, 68, 85, 102, 119]);
-    expect(Array.from(new Uint8Array(buf, 46))).toEqual([255, 3, 7]);
+    expect(Array.from(new Uint8Array(buf, 46, 3))).toEqual([255, 3, 7]);
+    // No view yet: the tick is all ones.
+    expect(Array.from(new Uint8Array(buf, 51, 4))).toEqual([255, 255, 255, 255]);
+    // Mouse press counters wrap; the view tick, gap and fraction round-trip (frac to 1/255).
+    const v = decodeInput(encodeInput({ ...m, leftPresses: 257, rightPresses: 255, viewTick: 123456, viewGap: 3, viewFrac: 0.5 }), m.runId)!;
+    expect(v).toMatchObject({ leftPresses: 1, rightPresses: 255, viewTick: 123456, viewGap: 3 });
+    expect(v.viewFrac).toBeCloseTo(0.5, 2);
+    expect(decodeInput(encodeInput({ ...m, viewTick: 0, viewGap: 999, viewFrac: 7 }), m.runId)).toMatchObject({ viewTick: 0, viewGap: 255, viewFrac: 1 });
     // Counters wrap.
     expect(decodeInput(encodeInput({ ...m, qPresses: 256, item1Presses: 256 }), m.runId)).toMatchObject({ qPresses: 0, item1Presses: 0 });
     // The `fire` bits (M9 §10): left, right, right pressed last.
     for (const fire of [0, FIRE_LEFT, FIRE_RIGHT, FIRE_LEFT | FIRE_RIGHT, FIRE_LEFT | FIRE_RIGHT | FIRE_RIGHT_LAST]) {
       expect(decodeInput(encodeInput({ ...m, fire }), m.runId)!.fire).toBe(fire);
     }
-    expect(buf.byteLength).toBe(49);
+    expect(buf.byteLength).toBe(57);
   });
 
   const valid: InputMsg = { ...INPUT_DEFAULTS, runId: header.runId, seq: 1, x: 4.5, y: 4.5, z: 0,
     yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 };
 
   it('rejects wrong lengths and another run', () => {
-    for (const length of [0, 30, 48, 50, 100]) expect(decodeInput(new ArrayBuffer(length), valid.runId)).toBeNull();
+    for (const length of [0, 30, 49, 56, 58, 100]) expect(decodeInput(new ArrayBuffer(length), valid.runId)).toBeNull();
     expect(decodeInput(encodeInput(valid), 'f'.repeat(32))).toBeNull();
   });
 

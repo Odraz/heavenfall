@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BLESSED, CHORISTER, GATEKEEPER } from '../data/enemies';
 import { SECONDARIES, SHOTGUN_CLOSE_DAMAGE, WEAPONS } from '../data/weapons';
 import { estimateSilverBullet } from '../sim/combat';
-import { Flinches, HIT_FLINCH, KILL_FLINCH, ladderRate, MAX_FLINCHES, PredictedKills, predictHit, predictPellets, predictSilverBullet, SHOTGUN_FAR_DAMAGE, type PelletTarget } from './killPredict';
+import { CONFIRM_MS, Flinches, HIT_FLINCH, KILL_FLINCH, KillConfirmations, ladderRate, MAX_FLINCHES, PredictedKills, predictHit, predictPellets, predictSilverBullet, SHOTGUN_FAR_DAMAGE, type PelletTarget } from './killPredict';
 
 describe('predicted kills (M12 §4.4)', () => {
   it('a revolver hit on a Blessed predicts a burst', () => {
@@ -110,5 +110,23 @@ describe('flinches (M12 §4.4)', () => {
     f.add(5, 100, 1, 0, KILL_FLINCH);
     expect(f.count).toBe(MAX_FLINCHES);
     expect(f.at(5, 250)!.kind).toBe(KILL_FLINCH);
+  });
+});
+
+describe('kill marker confirmations (netcode stage)', () => {
+  it('confirms a predicted kill whose enemy leaves the snapshots, and misses one still there after 1.5 s', () => {
+    const c = new KillConfirmations();
+    const present = new Set([1, 2]);
+    c.add(1, 0);
+    c.add(2, 0);
+    c.add(2, 100);
+    expect(c.predicted).toBe(2);
+    present.delete(1);
+    c.update(200, (s) => present.has(s));
+    expect([c.confirmed, c.missed]).toEqual([1, 0]);
+    c.update(100 + CONFIRM_MS, (s) => present.has(s));
+    expect(c.missed).toBe(0);
+    c.update(101 + CONFIRM_MS, (s) => present.has(s));
+    expect([c.confirmed, c.missed]).toEqual([1, 1]);
   });
 });

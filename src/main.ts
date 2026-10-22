@@ -307,7 +307,7 @@ function toJoin(name: string, prefillId: string | null = null, auto = false): vo
     if (joining) return;
     joining = true;
     view.setStatus('Connecting…', true);
-    joinGame(gameId, name, password, () => left, params.bot, profileSession?.profile).then(
+    joinGame(gameId, name, password, () => left, params.bot, profileSession?.profile, params.netLag).then(
       (j) =>
         enterLobby(
           { transport: j.transport, playerId: j.playerId, host: null, client: j.transport, gameId, net: j.transport.stats },
@@ -524,6 +524,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
       roster,
       singleplayer: false,
       net: s.net,
+      link: s.client?.link ?? null,
       onResults: showGameResults,
       onLeave: () => end('', true),
       onChat: (text) => s.transport.sendCtrl({ type: 'chat', text }),

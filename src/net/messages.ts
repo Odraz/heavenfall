@@ -301,5 +301,7 @@ export type CtrlMessage =
   | { type: 'chat'; text: string; playerId?: number }
   | { type: 'go' }
   | { type: 'event'; runId: string; tick: number; revision: number; event: GameEvent }
-  | { type: 'ping' }
+  /** `t`: the sender's performance.now(), echoed by a `pong` to measure the round trip. */
+  | { type: 'ping'; t?: number }
+  | { type: 'pong'; t: number }
   | { type: 'leave' };

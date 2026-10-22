@@ -125,6 +125,8 @@ import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } fr
 import { directStepAllowed, FlowField, UNREACHABLE } from './flowfield';
 import { DryNavigation, FIRE_ENEMY_DAMAGE, FIRE_PLAYER_DAMAGE, Hazards } from './hazards';
 import { SpawnWarnings } from './spawnWarnings';
+import { EnemyHistory, NO_VIEW, type ViewTick } from './lagComp';
+import { latchBits, latchClear, latchFired, latchPress, newFireLatch, pressDelta, type FireLatch } from './fireLatch';
 import { CROWD_RADIUS, PINCER_FROM_WAVE, PINCER_SHARE, PINCER_WARNING_TICKS, PositionHistory, pincerPoint, retreatHeading, type Retreat } from './pincer';
 import { lineOfSight, raycastTerrain } from './los';
 import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
@@ -327,6 +329,13 @@ export interface SimPlayer {
   speedCheckSkipUntil: number;
   /** -1 awaits the launch correction's first acknowledged input; otherwise a bounded host deadline. */
   launchUntilMs: number;
+  /** The mouse press counters of the latest accepted input (click latching). */
+  leftPresses: number;
+  rightPresses: number;
+  /** Presses waiting for their shot (click latching). */
+  fireLatch: FireLatch;
+  /** What the player's screen showed with its latest accepted input (lag compensation). */
+  view: ViewTick;
 }
 
 /**
@@ -800,6 +809,8 @@ export class Simulation {
   readonly spawnWarnings: SpawnWarnings;
   /** Each living player's last second of positions, for pincer arrivals (R06 follow-up §9). */
   readonly positions = new PositionHistory();
+  /** The enemies' positions of the last ticks, for lag compensation. */
+  readonly enemyHistory = new EnemyHistory();
   /** A room's pincer point waiting out its warning. */
   private readonly pincerPending = new Map<number, number>();
   private retreatCache: { tick: number; room: number; list: Retreat[] } | null = null;
@@ -1022,6 +1033,14 @@ export class Simulation {
       if (!initial && delta >= 1 && delta <= 127 && !p.dead) p.pendingItems[slot] = true;
       if (initial || delta <= 127) p.itemPresses[slot] = counter;
     }
+    // Each mouse press fires once, even if it was released before this input (click latching).
+    if (!initial && !p.dead) {
+      if (pressDelta(m.leftPresses, p.leftPresses)) latchPress(p.fireLatch, 0, this.tick);
+      if (pressDelta(m.rightPresses, p.rightPresses)) latchPress(p.fireLatch, 1, this.tick);
+    }
+    p.leftPresses = m.leftPresses;
+    p.rightPresses = m.rightPresses;
+    p.view = m.viewTick >= 0 ? { tick: m.viewTick, gap: m.viewGap, frac: m.viewFrac } : NO_VIEW;
     p.lastSeq = m.seq;
     p.mapHeld = m.mapHeld;
     p.yaw = m.yaw;
@@ -1179,6 +1198,10 @@ export class Simulation {
       teleportId: 0,
       speedCheckSkipUntil: 0,
       launchUntilMs: 0,
+      leftPresses: 0,
+      rightPresses: 0,
+      fireLatch: newFireLatch(),
+      view: NO_VIEW,
     };
     const character = init.profile?.characters[init.classId];
     this.talents.setBuild(p, this.talents.initialBuild(p, character && { talents: character.talents, q: character.q, e: character.e }, this.devBuild), false);
@@ -1231,7 +1254,7 @@ export class Simulation {
       Object.assign(p, old, { connected: true, x, y, z, lastSeq: -1, lastAcceptMs: this.nowMs, pilgrim: null, mapHeld: false,
         cdQ: Math.max(0, old.cdQ - elapsed), cdE: Math.max(0, old.cdE - elapsed),
         shield: 0, shieldCaster: null, featherUntil: 0, sealUntil: 0, speed: CLASSES[p.classId].speed, pendingItems: [false, false], invulUntil: 0, fire: 0, pendingQ: false, pendingE: false,
-        dash: null, landingTick: -1, teleportId: p.teleportId,
+        dash: null, landingTick: -1, teleportId: p.teleportId, fireLatch: newFireLatch(), view: NO_VIEW,
         revive: old.dead ? Math.max(0, old.revive - elapsed * REVIVE_DECAY) : 0 });
       this.retainedPlayers.delete(init.id);
     } else if (!p.bot) { p.wallet = this.rewards.halosCredited; p.presentAtStart = false; }
@@ -1333,6 +1356,7 @@ export class Simulation {
     if (this.benchBurst && this.tick % BENCH_BURST_TICKS === 0) this.benchBurstHit();
     this.flushBursts();
     this.flushDamage();
+    this.enemyHistory.record(this.tick, this.active, this.activeCount, this.eX, this.eY, this.eZ);
   }
 
   /** The benchmark's bursts (M12 §10): 40 damage, credited to player 0, to the 20 Blessed nearest a point 8 m ahead of it. */
@@ -3078,6 +3102,7 @@ export class Simulation {
   /** A grab cancels queued actions and unfinished movement attacks without executing them. */
   cancelPlayerActions(p: SimPlayer): void {
     p.fire = 0; p.pendingQ = p.pendingE = false;
+    latchClear(p.fireLatch);
     p.pendingItems[0] = p.pendingItems[1] = false;
     p.dash = null; p.landingTick = -1;
   }
@@ -3094,6 +3119,7 @@ export class Simulation {
       if (!p.dead && this.solo) this.regenerate(p);
       if (p.dead || carried) {
         p.fireTimer = Math.max(0, p.fireTimer - TICK_DT);
+        latchClear(p.fireLatch);
         continue;
       }
       if (p.landingTick >= 0 && this.tick >= p.landingTick) {
@@ -3118,9 +3144,12 @@ export class Simulation {
    * adds its own interval; the timer counts down twice as fast in a Field of Blood.
    */
   private updateWeapon(p: SimPlayer): void {
-    const slot = chooseAttack(p.classId, p.fire, this.sacramentTarget(p) !== undefined);
+    const slot = chooseAttack(p.classId, p.fire | latchBits(p.fireLatch, this.tick), this.sacramentTarget(p) !== undefined);
     if (slot !== ATTACK_NONE && p.fireTimer <= 1e-6) {
-      this.fireWeapon(p, slot);
+      latchFired(p.fireLatch, slot);
+      // Resolved against the enemies where this player's screen drew them (lag compensation).
+      this.enemyHistory.rewind(p.view, this.active, this.activeCount, this.eX, this.eY, this.eZ);
+      try { this.fireWeapon(p, slot); } finally { this.enemyHistory.restore(this.eX, this.eY, this.eZ); }
       if (slot === ATTACK_PRIMARY) p.shots++;
       else p.shots2++;
       // Whirl slows the Scourge to 1.2 s between swings (classes-binder.md `b.1a`).

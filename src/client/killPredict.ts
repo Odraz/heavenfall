@@ -197,3 +197,32 @@ export class Flinches {
     return null;
   }
 }
+
+/** A predicted kill not gone from the snapshots after this long counts as missed. */
+export const CONFIRM_MS = 1500;
+
+/**
+ * How many of the shooter's predicted kills the host confirmed (netcode stage, 2026-10-22): a kill is
+ * confirmed when its enemy slot leaves the snapshots within CONFIRM_MS, and missed otherwise. Shown on
+ * F3 and read by the lag test: the share of kill markers that came true is how shooting feels.
+ */
+export class KillConfirmations {
+  private readonly pending = new Map<number, number>();
+  predicted = 0;
+  confirmed = 0;
+  missed = 0;
+
+  /** A predicted kill of `slot` at `now`; a second one on the same slot only restarts its wait. */
+  add(slot: number, now: number): void {
+    if (!this.pending.has(slot)) this.predicted++;
+    this.pending.set(slot, now);
+  }
+
+  /** Settles the predictions: `present` tells whether a slot is still in the newest snapshot. */
+  update(now: number, present: (slot: number) => boolean): void {
+    for (const [slot, at] of this.pending) {
+      if (!present(slot)) { this.confirmed++; this.pending.delete(slot); }
+      else if (now - at > CONFIRM_MS) { this.missed++; this.pending.delete(slot); }
+    }
+  }
+}

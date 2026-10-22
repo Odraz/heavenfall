@@ -9,6 +9,8 @@ import { jsonBytes, NetStats } from './netStats';
 import { FLUSH_MS, LOADING_PEER_TIMEOUT_MS, PEER_OPTIONS, PEER_TIMEOUT_MS, PING_MS, STALL_MS } from './peerConfig';
 import type { Transport } from './transport';
 import { SnapshotReceiver } from './snapshotCodec';
+import { LagLine, type NetLag } from './lagSim';
+import { LinkQuality } from './linkQuality';
 import type { Profile } from '../profile/model';
 
 /** `Join` fails if there's no `welcome` within this long (§3). */
@@ -40,6 +42,8 @@ function isCtrl(data: unknown): data is CtrlMessage {
 
 export class PeerTransport implements Transport {
   readonly stats = new NetStats();
+  /** The round trip to the host and the route (F3). */
+  readonly link = new LinkQuality();
   onSnapshot: (buf: ArrayBuffer) => void = () => {};
   /** Called once; only a reliable `leave` confirms host exit. Loss/timeout preserves a recoverable stake. */
   onHostLeft: (explicit: boolean) => void = () => {};
@@ -53,36 +57,59 @@ export class PeerTransport implements Transport {
   /** Between `start` and `go`: the host may be loading too, so a longer silence is allowed. */
   loading = false;
   private readonly snapshots = new SnapshotReceiver((raw) => this.onSnapshot(raw));
+  /** A simulated bad connection (`lag=`, `jitter=`, `loss=`), each way; null on a real one. */
+  private readonly lagOut: LagLine | null;
+  private readonly lagIn: LagLine | null;
 
   constructor(
     private readonly peer: Peer,
     private readonly ctrl: DataConnection,
     private readonly snap: DataConnection,
+    lag: NetLag | null = null,
   ) {
+    this.lagOut = lag && new LagLine(lag);
+    this.lagIn = lag && new LagLine(lag);
     ctrl.on('data', (data) => {
-      if (this.closed || !isCtrl(data)) return;
-      const now = performance.now();
-      this.lastHeard = now;
-      this.stats.received(jsonBytes(data), now);
-      if (data.type === 'ping') return;
-      if (data.type === 'leave') {
-        this.hostLeft(true);
-        return;
-      }
-      if (this.ctrlHandler) this.ctrlHandler(data);
-      else this.queued.push(data);
+      if (this.lagIn) this.lagIn.ordered(() => this.receiveCtrl(data));
+      else this.receiveCtrl(data);
     });
     snap.on('data', (data) => {
-      if (this.closed || !(data instanceof ArrayBuffer)) return;
-      const now = performance.now();
-      this.lastHeard = now;
-      this.stats.received(data.byteLength, now);
-      this.snapshots.offer(data);
+      if (this.lagIn) this.lagIn.unordered(() => this.receiveSnap(data));
+      else this.receiveSnap(data);
     });
     for (const dc of [ctrl, snap]) {
       dc.on('close', () => this.hostLeft());
       dc.on('error', () => {});
     }
+  }
+
+  private receiveCtrl(data: unknown): void {
+    if (this.closed || !isCtrl(data)) return;
+    const now = performance.now();
+    this.lastHeard = now;
+    this.stats.received(jsonBytes(data), now);
+    if (data.type === 'ping') {
+      if (typeof data.t === 'number') this.sendCtrl({ type: 'pong', t: data.t });
+      return;
+    }
+    if (data.type === 'pong') {
+      this.link.pong(data.t, now);
+      return;
+    }
+    if (data.type === 'leave') {
+      this.hostLeft(true);
+      return;
+    }
+    if (this.ctrlHandler) this.ctrlHandler(data);
+    else this.queued.push(data);
+  }
+
+  private receiveSnap(data: unknown): void {
+    if (this.closed || !(data instanceof ArrayBuffer)) return;
+    const now = performance.now();
+    this.lastHeard = now;
+    this.stats.received(data.byteLength, now);
+    this.snapshots.offer(data);
   }
 
   get onCtrl(): (msg: CtrlMessage) => void {
@@ -112,7 +139,10 @@ export class PeerTransport implements Transport {
       if (now - this.lastBeat > STALL_MS) this.lastHeard = Math.max(this.lastHeard, now);
       this.lastBeat = now;
       if (now - this.lastHeard > (this.loading ? LOADING_PEER_TIMEOUT_MS : PEER_TIMEOUT_MS)) this.hostLeft();
-      else this.sendCtrl({ type: 'ping' });
+      else {
+        this.sendCtrl({ type: 'ping', t: now });
+        void this.link.probe(this.snap.peerConnection);
+      }
     }, PING_MS);
   }
 
@@ -124,20 +154,23 @@ export class PeerTransport implements Transport {
 
   sendInput(buf: ArrayBuffer): void {
     if (this.closed || !this.snap.open) return;
-    this.snap.send(buf);
     this.stats.sent(buf.byteLength);
+    if (this.lagOut) this.lagOut.unordered(() => { if (!this.closed && this.snap.open) this.snap.send(buf); });
+    else this.snap.send(buf);
   }
 
   sendCtrl(msg: CtrlMessage): void {
     if (this.closed || !this.ctrl.open) return;
-    this.ctrl.send(msg);
     this.stats.sent(jsonBytes(msg));
+    if (this.lagOut) this.lagOut.ordered(() => { if (this.ctrl.open) this.ctrl.send(msg); });
+    else this.ctrl.send(msg);
   }
 
   /** Closes the connection; messages already sent (such as `leave`) go out first. */
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.lagIn?.close();
     this.snapshots.close();
     clearInterval(this.pingTimer);
     this.queued.length = 0;
@@ -151,7 +184,7 @@ export class PeerTransport implements Transport {
  * `welcome` once both channels are open. Rejects with a `JoinError` carrying the Join screen's text.
  * `cancelled` stops the attempt (the player pressed `Back`).
  */
-export function joinGame(gameId: string, name: string, password: string, cancelled: () => boolean = () => false, bot = false, profile?: Profile): Promise<Joined> {
+export function joinGame(gameId: string, name: string, password: string, cancelled: () => boolean = () => false, bot = false, profile?: Profile, lag: NetLag | null = null): Promise<Joined> {
   return new Promise((resolve, reject) => {
     const peer = new Peer(PEER_OPTIONS);
     let settled = false;
@@ -188,7 +221,7 @@ export function joinGame(gameId: string, name: string, password: string, cancell
       const host = hostPeerId(gameId);
       ctrl = peer.connect(host, { label: 'ctrl', reliable: true, serialization: 'json' });
       snap = peer.connect(host, { label: 'snap', reliable: false, serialization: 'raw' });
-      transport = new PeerTransport(peer, ctrl, snap);
+      transport = new PeerTransport(peer, ctrl, snap, lag);
       transport.onHostLeft = () => fail('Connection failed');
       // Until `welcome`, `ctrl` answers the hello; afterwards the transport's handler takes over.
       transport.onCtrl = (msg) => {

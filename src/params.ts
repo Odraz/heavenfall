@@ -5,6 +5,7 @@ import { parseJoinId } from './net/invite';
 import { DEV_BUILDS } from './data/talents';
 import { isRelicId } from './data/relics';
 import { cleanEdicts } from './data/edicts';
+import { parseNetLag, type NetLag } from './net/lagSim';
 
 export interface Params {
   dev: boolean;
@@ -57,6 +58,8 @@ export interface Params {
   devRelics: string[];
   /** With dev=1: the run's Edicts (`edicts=1,3`). */
   devEdicts: number[];
+  /** A simulated bad connection for a joining client (`lag=ms&jitter=ms&loss=%`), or null. */
+  netLag: NetLag | null;
 }
 
 export type BenchView = 'turn' | 'arcade' | 'gate';
@@ -94,7 +97,7 @@ export function parseParams(search: string): Params {
     const classId: ClassId = isClassId(cls) ? cls : 'betrayer';
     const benchHudFire = q.get('hudfire') === '1';
     const benchBurst = q.get('burst') === '1';
-    return { dev: false, devMenu: false, readyHold: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0, startRoom: null, devBuild: null, devRelics: [], devEdicts: [] };
+    return { dev: false, devMenu: false, readyHold: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0, startRoom: null, devBuild: null, devRelics: [], devEdicts: [], netLag: null };
   }
   // Without dev=1 (or bench=1) the page opens the menus.
   const dev = q.get('dev') === '1';
@@ -133,5 +136,6 @@ export function parseParams(search: string): Params {
     devBuild: dev && q.get('build') && Object.hasOwn(DEV_BUILDS, q.get('build')!) ? q.get('build') : null,
     devRelics: dev ? (q.get('relics') ?? '').split(',').filter(isRelicId).slice(0, 2) : [],
     devEdicts: dev ? cleanEdicts((q.get('edicts') ?? '').split(',').filter(Boolean).map(Number)) : [],
+    netLag: parseNetLag(q),
   };
 }

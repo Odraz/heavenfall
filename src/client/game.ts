@@ -45,6 +45,7 @@ import {
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
+import type { LinkQuality } from '../net/linkQuality';
 import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_STUNNED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
@@ -92,7 +93,8 @@ import {
   type BurstInfo,
   type Tier,
 } from './burstDeaths';
-import { Flinches, HIT_FLINCH, KILL_FLINCH, PredictedKills, predictHit, predictPellets, predictSilverBullet, type PelletTarget, type Predicted } from './killPredict';
+import { latchBits, latchClear, latchFired, latchPress, newFireLatch } from '../sim/fireLatch';
+import { Flinches, HIT_FLINCH, KILL_FLINCH, KillConfirmations, PredictedKills, predictHit, predictPellets, predictSilverBullet, type PelletTarget, type Predicted } from './killPredict';
 import { BurstPops, MassKills } from './massKill';
 import { dominionShake, massKillShake, Shake, SHAKE_BLASPHEMY, SHAKE_LANDING, SHAKE_SHROUD, SHROUD_SHAKE_RANGE } from './shake';
 import { LIGHTMAP_TEXELS } from '../render/lightmap';
@@ -342,6 +344,8 @@ export interface GameOptions {
   singleplayer: boolean;
   /** Payload bytes over PeerJS, in multiplayer (§2.5). */
   net: NetStats | null;
+  /** A client's round trip to the host and its route (F3); null on the host and in single player. */
+  link?: LinkQuality | null;
   /** Called 3 s after the result, when the Results screen should appear. */
   onResults: (data: ResultsData) => void;
   /** Called when the player clicks `Leave game`, after `leave` was sent. */
@@ -436,6 +440,12 @@ export class Game {
   private attack: AttackSlot = ATTACK_NONE;
   /** Cosmetic fire timer, shared by both attacks and run locally at 30 Hz (M9 §2.2). */
   private fireTimer = 0;
+  /** Mouse press counters sent to the host, and the presses waiting for their shot (click latching). */
+  private leftPresses = 0;
+  private rightPresses = 0;
+  private readonly latch = newFireLatch();
+  /** Ticks of the cosmetic fire timer so far: the latch's clock. */
+  private fireTick = 0;
   /** The view's yaw and pitch last frame, for the weapon's sway (M11 §3.2). */
   private swayYaw = 0;
   private swayPitch = 0;
@@ -538,6 +548,8 @@ export class Game {
   private readonly rotations: Record<string, Rotations>;
   /** Your kills, at once (M12 §4.4), and the screen shake (§4.5). */
   private readonly predicted = new PredictedKills();
+  /** The share of predicted kills the host confirmed (F3, the lag test). */
+  private readonly confirmations = new KillConfirmations();
   private readonly flinches = new Flinches();
   private readonly shake = new Shake();
   private wasLeaping = false;
@@ -780,6 +792,7 @@ export class Game {
   /** Discard predictions canceled by the host's grab correction. */
   private cancelCarriedActions(): void {
     this.fire = 0;
+    latchClear(this.latch);
     this.starAim.reset(); this.starPreview = null; this.aimPreview = null; this.chargeHeld = false;
     this.wasLeaping = this.wasDashing = false;
     this.dashFrom = null;
@@ -1320,6 +1333,11 @@ export class Game {
         mapHeld: this.input.mapHeld,
         qHeld: !p.carried && this.input.enabled && !this.input.typing && this.input.isDown('KeyQ'),
         eHeld: !p.carried && this.input.enabled && !this.input.typing && this.input.isDown('KeyE'),
+        leftPresses: this.leftPresses,
+        rightPresses: this.rightPresses,
+        viewTick: this.snaps.view.tick,
+        viewGap: this.snaps.view.gap,
+        viewFrac: this.snaps.view.frac,
       }),
     );
   }
@@ -2391,6 +2409,7 @@ export class Game {
   private predictedHit(now: number, slot: number, dx: number, dy: number, r: Predicted): void {
     this.flinches.add(slot, now, dx, dy, r ? KILL_FLINCH : HIT_FLINCH);
     if (!r) return;
+    this.confirmations.add(slot, now);
     this.sounds.kill(this.predicted.kill(now));
     if (r === 2) this.hud.burst(now);
     else this.hud.kill(now);
@@ -2571,6 +2590,9 @@ export class Game {
     let my = 0;
     let wantJump = false;
     let fire = 0;
+    // Mouse presses this frame; only a living player's own input keeps them (click latching).
+    const presses = this.input.takePresses();
+    let pressesKept = false;
     this.starPreview = null;
     if (this.over || this.paused || this.dead || this.bot || this.bench) {
       this.starAim.reset();
@@ -2649,7 +2671,11 @@ export class Game {
       [mx, my] = wasdDirection(p.yaw, axes.forward, axes.right);
       wantJump = this.input.jumpQueued || this.input.isDown('Space');
       fire = this.input.fireBits();
+      // A right press while aiming Falling Star or Rain of Fire cancels the aim instead of firing.
+      const aiming = this.starAim.aiming;
       if (this.classId === 'fallen') fire = this.updateStarAim(now, fire);
+      if (this.classId === 'fallen' && (aiming || this.starAim.rightBlocked)) presses[1] = 0;
+      pressesKept = true;
     } else {
       // Dead: the camera can only rotate.
       const { dx, dy } = this.input.takeMouse();
@@ -2660,6 +2686,14 @@ export class Game {
     this.fire = this.dead || this.over || p.carried || this.input.mapHeld ? 0 : fire;
     // Neither attack fires during Shadowstep's slash; held buttons resume afterwards (M12 §5.7).
     if (now - this.slashAt < SHADOWSTEP_TIME * 1000) this.fire = 0;
+    if (pressesKept && !this.dead && !this.over && !p.carried && !this.input.mapHeld && now - this.slashAt >= SHADOWSTEP_TIME * 1000) {
+      for (const b of [0, 1] as const) {
+        if (!presses[b]) continue;
+        if (b === 0) this.leftPresses = (this.leftPresses + presses[b]) & 0xff;
+        else this.rightPresses = (this.rightPresses + presses[b]) & 0xff;
+        latchPress(this.latch, b, this.fireTick);
+      }
+    } else if (this.dead || this.over || p.carried) latchClear(this.latch);
     const bx = p.body.x;
     const by = p.body.y;
     // Wading (M12 §3.1): the ground enemies of the newest snapshot pressing against the player slow
@@ -2695,13 +2729,17 @@ export class Game {
     this.fireAcc = Math.min(this.fireAcc + dt, 5 * TICK_DT);
     while (this.fireAcc >= TICK_DT) {
       this.fireAcc -= TICK_DT;
-      if (this.attack !== ATTACK_NONE && this.fireTimer <= 1e-6) {
-        this.cosmeticShot(now, this.attack, ents, enemyZ);
+      this.fireTick++;
+      // A latched press fires like a held button, as on the host (click latching).
+      const attack = chooseAttack(this.classId, this.fire | latchBits(this.latch, this.fireTick), this.allyTargetId !== ALLY_NONE);
+      if (attack !== ATTACK_NONE && this.fireTimer <= 1e-6) {
+        latchFired(this.latch, attack);
+        this.cosmeticShot(now, attack, ents, enemyZ);
         // Whirl swings every 1.2 s (classes-binder.md `b.1a`).
-        this.fireTimer += this.classId === 'binder' && this.attack === ATTACK_SECONDARY && this.talents.ownHas('binder.b.1a') ? BINDER.whirlInterval : attackDef(this.classId, this.attack).interval;
+        this.fireTimer += this.classId === 'binder' && attack === ATTACK_SECONDARY && this.talents.ownHas('binder.b.1a') ? BINDER.whirlInterval : attackDef(this.classId, attack).interval;
       }
       this.fireTimer -= TICK_DT * this.localFireRate();
-      if (this.attack === ATTACK_NONE && this.fireTimer < 0) this.fireTimer = 0;
+      if (attack === ATTACK_NONE && this.fireTimer < 0) this.fireTimer = 0;
     }
 
     // Input to the host at 30 Hz.
@@ -2869,6 +2907,17 @@ export class Game {
     debugState.carrierChecks = this.o.host?.carrierChecks ?? [];
     debugState.netInKBps = this.o.net ? this.o.net.inKBps(now) : 0;
     debugState.netOutKBps = this.o.net ? this.o.net.outKBps(now) : 0;
+    const link = this.o.link ?? null;
+    debugState.link = {
+      rttMs: link?.rttMs ?? null,
+      route: link?.route ?? null,
+      delayMs: this.snaps.delayTicks * TICK_MS,
+      jitterMs: this.snaps.jitterTicks * TICK_MS,
+      lines: link ? [link.text()] : this.o.host?.linkLines() ?? [],
+    };
+    const c = this.confirmations;
+    c.update(now, (slot) => this.snaps.hasEnemy(slot));
+    debugState.killMarkers = { predicted: c.predicted, confirmed: c.confirmed, missed: c.missed };
     // Read-only own pose also supports the normal-menu multiplayer prop/catch-up fixture.
     Object.assign(debugState.self, { x: b.x, y: b.y, z: b.z, yaw: p.yaw, pitch: p.pitch });
     if (this.params.dev) {

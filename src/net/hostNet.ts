@@ -9,6 +9,7 @@ import type { CtrlMessage } from './messages';
 import { jsonBytes, NetStats } from './netStats';
 import { FLUSH_MS, PEER_OPTIONS, PEER_TIMEOUT_MS, SNAP_BUFFER_LIMIT, STALL_MS } from './peerConfig';
 import { SnapshotSender } from './snapshotCodec';
+import { LinkQuality } from './linkQuality';
 
 /** How long the host waits for the signaling server to confirm a game ID. */
 const REGISTER_TIMEOUT_MS = 10000;
@@ -25,6 +26,8 @@ interface Remote {
   lastHeard: number;
   closed: boolean;
   sender?: SnapshotSender;
+  /** The round trip to this client and the route (F3). */
+  link: LinkQuality;
 }
 
 /** Thrown when the game can't be created: `Couldn't reach the matchmaking server` (§3). */
@@ -116,7 +119,7 @@ export class HostNet {
     }
     let r = [...this.remotes.values()].find((q) => q.peer === dc.peer && !q.closed);
     if (!r) {
-      r = { conn: this.nextConn++, peer: dc.peer, ctrl: null, snap: null, lastHeard: performance.now(), closed: false };
+      r = { conn: this.nextConn++, peer: dc.peer, ctrl: null, snap: null, lastHeard: performance.now(), closed: false, link: new LinkQuality() };
       this.remotes.set(r.conn, r);
     }
     const remote = r;
@@ -145,7 +148,14 @@ export class HostNet {
     if (typeof data !== 'object' || data === null || typeof (data as { type?: unknown }).type !== 'string') return;
     this.stats.received(jsonBytes(data), now);
     const msg = data as CtrlMessage;
-    if (msg.type === 'ping') return;
+    if (msg.type === 'ping') {
+      if (typeof msg.t === 'number') this.sendCtrl(r.conn, { type: 'pong', t: msg.t });
+      return;
+    }
+    if (msg.type === 'pong') {
+      r.link.pong(msg.t, now);
+      return;
+    }
     this.onCtrl(r.conn, msg);
   }
 
@@ -214,8 +224,14 @@ export class HostNet {
         this.lose(r);
         continue;
       }
-      this.sendCtrl(r.conn, { type: 'ping' });
+      this.sendCtrl(r.conn, { type: 'ping', t: now });
+      void r.link.probe(r.snap?.peerConnection);
     }
+  }
+
+  /** Each open connection's round trip and route, for the host's F3 overlay. */
+  links(): Array<{ conn: number; link: LinkQuality }> {
+    return [...this.remotes.values()].filter((r) => !r.closed).map((r) => ({ conn: r.conn, link: r.link }));
   }
 
   /**

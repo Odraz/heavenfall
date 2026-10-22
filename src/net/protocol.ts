@@ -22,7 +22,7 @@ function readRunId(v: DataView, offset: number): string {
 
 // ---------------------------------------------------------------- input
 
-export const INPUT_BYTES = 49;
+export const INPUT_BYTES = 57;
 export const ALLY_NONE = 255;
 
 export interface InputMsg {
@@ -48,6 +48,13 @@ export interface InputMsg {
   /** Held state has no cast consumer until R4. */
   qHeld: boolean;
   eHeld: boolean;
+  /** Running mouse press counters, wrapping at 256: each press fires once (click latching). */
+  leftPresses: number;
+  rightPresses: number;
+  /** What the screen showed (lag compensation): snapshot tick, -1 for none; ticks to the next, 0..255; 0..1 between. */
+  viewTick: number;
+  viewGap: number;
+  viewFrac: number;
 }
 
 export function encodeInput(m: InputMsg): ArrayBuffer {
@@ -68,6 +75,11 @@ export function encodeInput(m: InputMsg): ArrayBuffer {
   v.setUint8(46, m.item1Presses & 0xff);
   v.setUint8(47, m.item2Presses & 0xff);
   v.setUint8(48, (m.mapHeld ? 1 : 0) | (m.qHeld ? 2 : 0) | (m.eHeld ? 4 : 0));
+  v.setUint8(49, m.leftPresses & 0xff);
+  v.setUint8(50, m.rightPresses & 0xff);
+  v.setUint32(51, m.viewTick < 0 ? 0xffffffff : m.viewTick >>> 0, true);
+  v.setUint8(55, Math.max(0, Math.min(255, m.viewGap | 0)));
+  v.setUint8(56, Math.round(Math.max(0, Math.min(1, m.viewFrac)) * 255));
   return buf;
 }
 
@@ -98,6 +110,11 @@ export function decodeInput(buf: ArrayBuffer, expectedRunId: string): InputMsg |
     mapHeld: (flags & 1) !== 0,
     qHeld: (flags & 2) !== 0,
     eHeld: (flags & 4) !== 0,
+    leftPresses: v.getUint8(49),
+    rightPresses: v.getUint8(50),
+    viewTick: v.getUint32(51, true) === 0xffffffff ? -1 : v.getUint32(51, true),
+    viewGap: v.getUint8(55),
+    viewFrac: v.getUint8(56) / 255,
   };
 }
 
