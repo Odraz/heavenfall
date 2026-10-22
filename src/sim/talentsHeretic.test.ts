@@ -302,6 +302,25 @@ describe('Tree C: Martyrdom', () => {
     expect(sim.clouds.every((c) => c.radius === HERETIC.scapegoatRadius)).toBe(true);
   });
 
+  it('The Altar with Scapegoat: the middle cloud follows the player, the two side clouds stay', () => {
+    const sim = setup(['heretic', 'fallen']);
+    const [h, f] = sim.players;
+    kit(sim, h, ['c.1a', 'c.1b', 'c.2a', 'c.2b']);
+    const s = enemyAt(sim, CANTOR, 20.5, 10.5);
+    put(sim, f, 21.5, 11.5);
+    censerAt(sim, h, s);
+    expect(sim.clouds).toHaveLength(3);
+    const worn = sim.clouds.filter((c) => c.wearer === f);
+    expect(worn).toHaveLength(1);
+    const sides = sim.clouds.filter((c) => !c.wearer);
+    expect(sides.map((c) => c.y).sort((a, b) => a - b)).toEqual([7.5, 13.5]);
+    expect(sides.every((c) => c.radius === HERETIC.scapegoatRadius)).toBe(true);
+    const before = sides.map((c) => c.x);
+    f.x = 25.5; sim.step();
+    expect(worn[0].x).toBeCloseTo(25.5, 5);
+    expect(sides.map((c) => c.x)).toEqual(before);
+  });
+
   it('Cloud of Witnesses: a 5 m incense cloud on the aimed ally for 6 s, one per caster, cooldown 16 s', () => {
     const sim = setup(['heretic', 'fallen']);
     const [h, f] = sim.players;

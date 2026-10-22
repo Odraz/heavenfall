@@ -113,7 +113,7 @@ import {
   TICK_MS,
   WALL_TOP,
 } from './constants';
-import { aimDir, burstAngle, burstTier, rayCylinder, silverBulletHits } from './combat';
+import { aimDir, burstAngle, burstTier, rayCylinder, rayEnemy, silverBulletHits } from './combat';
 import { Director, ENGAGED_HIT_TICKS, ENGAGED_RADIUS, KILL_NEAR_RADIUS, type DirectorInfo } from './director';
 import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } from './field';
 import { directStepAllowed, FlowField, UNREACHABLE } from './flowfield';
@@ -222,7 +222,6 @@ export interface SimPlayer {
   build: RunBuild;
   kit: Kit;
   offerKey: string;
-  sold: number;
   xpBase: number;
   requests: ScopedRequests<InteractionResult>;
   inventory: Inventory;
@@ -1104,7 +1103,7 @@ export class Simulation {
       hp: cls.hp,
       wallet: 0,
       offerKey: init.profile?.id ?? `disposable:${this.nextOfferKey++}`,
-      sold: 0, xpBase: init.profile?.characters[init.classId].xp ?? 0, requests: new ScopedRequests(),
+      xpBase: init.profile?.characters[init.classId].xp ?? 0, requests: new ScopedRequests(),
       inventory: init.bot ? emptyInventory() : copyInventory(init.profile?.inventory ?? emptyInventory()),
       runXp: 0, xpCorrection: 0, itemsTried: init.bot ? [] : (init.profile?.codex.itemsTried ?? []).filter(isItemId),
       itemReadyTick: 0,
@@ -2494,7 +2493,7 @@ export class Simulation {
   }
 
   inventoryState(p: SimPlayer): InventoryState {
-    return { playerId: p.id, inventory: copyInventory(p.inventory), wallet: p.wallet, sold: p.sold, chart: this.rewards.chartRevealed,
+    return { playerId: p.id, inventory: copyInventory(p.inventory), wallet: p.wallet, chart: this.rewards.chartRevealed,
       ownedRelics: [...p.ownedRelics], pawnedRelics: [...p.pawnedRelics], maxHp: p.maxHp, bargainOpen: this.bargain.available(p),
       nextRequestId: p.requests.next, itemReadyTick: p.itemReadyTick, featherUntil: p.featherUntil, sealUntil: p.sealUntil, itemsTried: [...p.itemsTried], xp: saturatingAdd(p.xpBase, Math.floor(p.runXp)), runXp: Math.floor(p.runXp) };
   }
@@ -3092,10 +3091,9 @@ export class Simulation {
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, p.classId === 'heretic'), p);
   }
 
-  /** Distance along a ray to where it enters an enemy's cylinder. */
+  /** Distance along a ray to where it enters an enemy's shot volume. */
   private rayT(slot: number, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number): number {
-    const def = ENEMIES[this.eType[slot]];
-    return rayCylinder(ox, oy, oz, dx, dy, dz, this.eX[slot], this.eY[slot], this.eZ[slot], def.radius, def.height);
+    return rayEnemy(ox, oy, oz, dx, dy, dz, this.eType[slot], this.eX[slot], this.eY[slot], this.eZ[slot]);
   }
 
   /** Adds to `out` the souls (not the shooter's) that a ray passes through before `stop` (M8 §4.2). */
@@ -3303,8 +3301,7 @@ export class Simulation {
     const hits: Array<[number, number]> = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
-      const def = ENEMIES[this.eType[s]];
-      const t = rayCylinder(ox, oy, oz, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height);
+      const t = rayEnemy(ox, oy, oz, dx, dy, dz, this.eType[s], this.eX[s], this.eY[s], this.eZ[s]);
       if (t > stop) continue;
       if (hits.length < maxHits) {
         hits.push([t, s]);
@@ -3330,8 +3327,7 @@ export class Simulation {
     const hit = this.rayEnemies(ex, ey, ez, dx, dy, dz, stop, 1);
     if (hit.length === 0) return { t: stop, slot: -1 };
     const s = hit[0];
-    const def = ENEMIES[this.eType[s]];
-    return { t: rayCylinder(ex, ey, ez, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height), slot: s };
+    return { t: rayEnemy(ex, ey, ez, dx, dy, dz, this.eType[s], this.eX[s], this.eY[s], this.eZ[s]), slot: s };
   }
 
   private abilityEvent(p: SimPlayer, slot: 'Q' | 'E', x: number, y: number, z: number, targets: number[] = []): void {
@@ -3694,8 +3690,8 @@ export class Simulation {
         const s = this.active[k];
         // The Long Chain: the censer flies through Blessed (classes-heretic.md `a.3b`).
         if (this.talents.heretic.passesBlessed(thrower, this.eType[s])) continue;
-        const def = ENEMIES[this.eType[s]];
-        const t = rayCylinder(x, y, z, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s] - pr, def.radius + pr, def.height + 2 * pr);
+        const shot = ENEMIES[this.eType[s]].shot;
+        const t = rayCylinder(x, y, z, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s] + shot.base - pr, shot.radius + pr, shot.top - shot.base + 2 * pr);
         if (t <= terrainT && t < hitT) {
           hitT = t;
           hitSlot = s;
@@ -3782,8 +3778,8 @@ export class Simulation {
     const stop = Math.min(raycastTerrain(this.map, x, y, z, dx, dy, dz, length), this.items.roomBound(x, y, dx, dy, length, this.pRoom[slot]));
     let victim = -1, hit = stop;
     for (let k = 0; k < this.activeCount; k++) {
-      const s = this.active[k], d = ENEMIES[this.eType[s]], radius = this.pRadius[slot];
-      const t = rayCylinder(x, y, z, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s] - radius, d.radius + radius, d.height + 2 * radius);
+      const s = this.active[k], shot = ENEMIES[this.eType[s]].shot, radius = this.pRadius[slot];
+      const t = rayCylinder(x, y, z, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s] + shot.base - radius, shot.radius + radius, shot.top - shot.base + 2 * radius);
       if (t >= 0 && t <= hit) { hit = t; victim = s; }
     }
     const owner = this.pReflectOwner.get(slot);

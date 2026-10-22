@@ -242,9 +242,9 @@ describe('combat (§5.3, §5.4, §6)', () => {
     const p = sim.players[0];
     put(sim, p, 1.5, 3.5);
     const a = enemyAt(sim, BLESSED, 10.5, 3.5);
-    // Blessed are 1.6 m tall: a flat ray at eye height (1.6 m) passes just over... at 1.65 m it misses.
-    expect(sim.rayEnemies(p.x, p.y, 1.65, 1, 0, 0, 60, 1)).toEqual([]);
-    expect(sim.rayEnemies(p.x, p.y, 1.55, 1, 0, 0, 60, 1)).toEqual([a]);
+    // A Blessed is drawn 1.75 m tall, and shots test that drawn volume (R06 follow-up §5): over it they miss.
+    expect(sim.rayEnemies(p.x, p.y, 1.8, 1, 0, 0, 60, 1)).toEqual([]);
+    expect(sim.rayEnemies(p.x, p.y, 1.7, 1, 0, 0, 60, 1)).toEqual([a]);
     // A Cherub hovers 4 m up: missed by a flat shot, hit by one aimed up at it.
     const c = enemyAt(sim, CHERUB, 15.5, 3.5);
     sim.removeEnemy(a);
@@ -520,9 +520,9 @@ describe('balance (M8 §8)', () => {
     expect(sim.eHp[g]).toBe(29000 - 100);
   });
 
-  it('the shotgun fires 8 pellets every 0.9 s, ±11°: 20 within 6 m, 10 beyond (M12 §5.1)', () => {
+  it('the shotgun fires 8 pellets every 0.9 s, ±11°: 25 within 6 m (R06 follow-up §4), 10 beyond (M12 §5.1)', () => {
     expect(WEAPONS.fallen).toMatchObject({ pellets: 8, damage: 10, interval: 0.9 });
     expect(WEAPONS.fallen.spreadYaw).toBeCloseTo((11 * Math.PI) / 180, 12);
-    expect(SHOTGUN_CLOSE_DAMAGE).toBe(20);
+    expect(SHOTGUN_CLOSE_DAMAGE).toBe(25);
   });
 });

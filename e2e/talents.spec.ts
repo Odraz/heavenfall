@@ -27,8 +27,11 @@ test('a build learned in the Lobby is saved and enters the run', async ({ page }
   await panel.getByRole('button', { name: 'The Nail', exact: true }).click();
   await panel.getByRole('button', { name: 'Glancing Silver', exact: true }).click();
   // A third point isn't there: the view says so instead of learning it.
+  await panel.getByRole('button', { name: 'Judecca', exact: true }).click();
+  await expect(panel.locator('.talent-message')).toHaveText('No talent points left.');
+  // A cross-tree conflict names the talent it conflicts with (R06 follow-up §1).
   await panel.getByRole('button', { name: 'Recoil', exact: true }).click();
-  await expect(panel.locator('.talent-message')).toHaveText('Not enough talent points');
+  await expect(panel.locator('.talent-message')).toHaveText("Can't combine with The Nail: both change the Silver Bullet.");
   await panel.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(panel.locator('.talent-message')).toHaveText('Saved');
   await panel.getByRole('button', { name: 'Close', exact: true }).click();
@@ -53,15 +56,17 @@ test('a build learned in the Lobby is saved and enters the run', async ({ page }
   await expect(view.locator('.talent-points')).toHaveText('2 / 2 points');
   await expect(view.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled();
   await expect(view.locator('.talent-message')).toHaveText('Assign Q and E here outside combat. Learn talents in the Lobby or with the Advocate.');
-  // Every node shows its icon.
+  // Every node is an icon tile; names are in the tooltips, and only Reset all resets (R06 follow-up §1).
   expect(await view.locator('.talent-node img.talent-icon').count()).toBe(21);
-  await expect(view.locator('.talent-reset')).toHaveCount(3);
-  await expect(view.locator('.talent-reset').first()).toBeHidden();
+  await expect(view.locator('.talent-node-name')).toHaveCount(0);
+  await expect(view.locator('.talent-reset')).toHaveCount(0);
   await expect(view.getByRole('button', { name: 'Glancing Silver', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await view.getByRole('button', { name: 'The Nail', exact: true }).click();
   await expect(view.getByRole('button', { name: 'The Nail', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await view.getByRole('button', { name: 'Recoil', exact: true }).hover();
   await expect(page.locator('.tooltip')).toContainText('Recoil');
+  await expect(page.locator('.tooltip')).toContainText("Can't combine with The Nail: both change the Silver Bullet.");
+  await expect(page.locator('.tooltip')).not.toContainText('Delivery');
   const held = await page.evaluate(() => window.__heavenfall.lastSnapshotTick);
   await page.waitForTimeout(600);
   expect(await page.evaluate(() => window.__heavenfall.lastSnapshotTick)).toBe(held);
@@ -133,16 +138,17 @@ test('a respec under a Rite: a reset may break its gate until the points are pla
   await page.keyboard.press('KeyT');
   const panel = page.locator('.talent-panel');
   const apply = panel.getByRole('button', { name: 'Apply', exact: true });
-  await panel.getByRole('button', { name: 'Reset The Long Watch', exact: true }).click();
+  // Clicks in the in-run overlay are dispatched: Playwright misreads its hit target there (a real click lands).
+  await panel.getByRole('button', { name: 'Glancing Silver', exact: true }).dispatchEvent('click');
   await expect(panel.locator('.talent-message')).toHaveText('Your Rite The Informer needs 1 lower A talent');
   await expect(apply).toBeDisabled();
   // The points still go elsewhere while the gate is open, and Apply waits for it.
-  await panel.getByRole('button', { name: 'Through the Throng', exact: true }).click();
+  await panel.getByRole('button', { name: 'Through the Throng', exact: true }).dispatchEvent('click');
   await expect(panel.getByRole('button', { name: 'Through the Throng', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(apply).toBeDisabled();
-  await panel.getByRole('button', { name: 'Judecca', exact: true }).click();
+  await panel.getByRole('button', { name: 'Judecca', exact: true }).dispatchEvent('click');
   await expect(panel.locator('.talent-message')).toHaveText('');
-  await apply.click();
+  await apply.dispatchEvent('click');
   await expect(panel.locator('.talent-message')).toHaveText('Your build is set');
   await expect(panel.getByRole('button', { name: 'Glancing Silver', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await expect(panel.getByRole('button', { name: 'The Informer', exact: true })).toHaveClass(/\brite\b/);

@@ -55,6 +55,14 @@ function targetKeys(n: TalentNode): string[] {
   return [];
 }
 
+/**
+ * Two augments that can't be held together: the same channel on an intersecting input, from different
+ * trees. Nodes of one tree always combine (R06 follow-up §1); each such pair has a defined composition.
+ */
+export function augmentsConflict(a: TalentNode, b: TalentNode): boolean {
+  return a.kind === 'augment' && b.kind === 'augment' && a.tree !== b.tree && a.channel === b.channel && targetKeys(a).some((k) => targetKeys(b).includes(k));
+}
+
 /** The resolved named input of a node under this assignment, or null when it doesn't apply now. */
 function resolvedKey(n: TalentNode, q: string, e: string): string | null {
   if (n.input === 'LMB' || n.input === 'RMB') return n.input;
@@ -93,7 +101,7 @@ export function resolveKit(classId: ClassId, build: RunBuild): Kit {
   const suppressed = new Map<string, string>();
   for (const [id, channel] of live) {
     if (!channel || !rites.has(id)) continue;
-    for (const [other, c] of live) if (other !== id && c === channel && !rites.has(other)) suppressed.set(other, id);
+    for (const [other, c] of live) if (other !== id && c === channel && !rites.has(other) && talentNode(other)?.tree !== talentNode(id)?.tree) suppressed.set(other, id);
   }
   const active = new Set([...live.keys()].filter((id) => !suppressed.has(id)));
   return { classId, q: build.q, e: build.e, owned, active, suppressed, dormant };
@@ -123,8 +131,7 @@ export function learnedError(classId: ClassId, build: LearnedBuild, level: numbe
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
       const a = nodes[i], b = nodes[j];
-      if (a.kind !== 'augment' || b.kind !== 'augment' || a.channel !== b.channel) continue;
-      if (targetKeys(a).some((k) => targetKeys(b).includes(k))) return `${a.name} and ${b.name} change the same thing`;
+      if (augmentsConflict(a, b)) return `${a.name} and ${b.name} change the same thing`;
     }
   }
   const slotError = assignmentError(classId, build.q, build.e, ids);
@@ -181,7 +188,7 @@ export function runBuildError(classId: ClassId, build: RunBuild, level: number |
   const riteNodes = rites.map((id) => talentNode(id)!);
   for (let i = 0; i < riteNodes.length; i++) for (let j = i + 1; j < riteNodes.length; j++) {
     const a = riteNodes[i], b = riteNodes[j];
-    if (a.kind === 'augment' && b.kind === 'augment' && a.channel === b.channel && targetKeys(a).some((k) => targetKeys(b).includes(k))) return 'Two Rites change the same thing';
+    if (augmentsConflict(a, b)) return 'Two Rites change the same thing';
   }
   const slotError = assignmentError(classId, build.q, build.e, owned);
   if (slotError) return slotError;
@@ -344,7 +351,7 @@ export function checkRite(classId: ClassId, build: RunBuild, ctx: SourceContext,
     const key = `${resolvedKey(n, build.q, build.e)}:${n.channel}`;
     for (const o of now.active) {
       const m = talentNode(o)!;
-      if (m.kind !== 'augment' || `${resolvedKey(m, build.q, build.e)}:${m.channel}` !== key) continue;
+      if (m.kind !== 'augment' || m.tree === n.tree || `${resolvedKey(m, build.q, build.e)}:${m.channel}` !== key) continue;
       if (build.rites.includes(o)) return fail(`A Rite already changes that: ${m.name}`);
       surrenders = o;
     }

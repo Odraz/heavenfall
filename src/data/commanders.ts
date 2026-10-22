@@ -36,7 +36,12 @@ export const CARRIER_SWOOP = 30, CARRIER_RECOVERY = 45, CARRIER_COOLDOWN = 240;
 export const CARRIER_GRAB_RADIUS = 2.25, CARRIER_FLY_THROUGH = 12, CARRIER_MIN_HOLD = 90;
 /** The multiplayer carry limit, 3.5 s; solo carries end at CARRIER_MIN_HOLD (rooms.md §6.3). */
 export const CARRIER_PARTY_HOLD = 105;
-export const CARRIER_MIN_FLIGHT = 24, CARRIER_TRACK_TICKS = 6, CARRIER_FLIGHT_HEIGHT = 6;
+export const CARRIER_MIN_FLIGHT = 24, CARRIER_FLIGHT_HEIGHT = 6;
+/**
+ * The Carrier's tell (R06 follow-up §6): 0.7 s holding still while gold chevrons on the floor follow its
+ * target; then the lane locks and the flight runs exactly along it.
+ */
+export const CARRIER_TELL = 21;
 export const CARRIER_DAMAGE = 10, CARRIER_DAMAGE_INTERVAL = 15;
 export const COMMANDER_PHASES = ['idle', 'tell', 'active', 'carry', 'recover'] as const;
 export function turnToward(yaw: number, target: number, limit: number): number {

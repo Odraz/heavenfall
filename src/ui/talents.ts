@@ -2,28 +2,45 @@
  * The Talents view (rogue game.md §9.4–§9.6) and the Rite offer (§9.10). One draft editor serves the
  * Lobby, the Advocate in the Confessional and development runs; the host (or the profile check in the
  * Lobby) validates the whole result. The panels keep a fixed size and a reserved message line, so
- * nothing moves when a node is clicked (UI stability).
+ * nothing moves when a node is clicked (UI stability). Nodes are icon tiles built once and updated in
+ * place; names and rules live in their tooltips (R06 follow-up §1).
  */
 import { button, el } from './menus';
 import { attachTooltip } from './tooltip';
 import type { ClassId } from '../data/classes';
 import { ALT_ABILITIES, TALENT_NODES, TREES, talentNode, type TreeId, type TalentNode } from '../data/talents';
-import { abilityDef, pointsFor, removeLearned, resolveKit, runBuildError, slotChoices, type LearnedBuild, type RunBuild } from '../sim/build';
+import { SECONDARIES, WEAPONS } from '../data/weapons';
+import { TIER_GATE, abilityDef, augmentsConflict, pointsFor, removeLearned, resolveKit, runBuildError, slotChoices, type LearnedBuild } from '../sim/build';
 import { hasSprite, spriteUrl } from '../render/atlas';
 import type { RiteCard, RiteOffer } from '../net/messages';
 
 const TREE_IDS: readonly TreeId[] = ['a', 'b', 'c'];
-const INPUT_NAMES: Record<string, string> = { LMB: 'Revolver', RMB: 'Silver Bullet', Q: 'Q ability', E: 'E ability', passive: 'Passive', movement: 'Movement' };
 
-/** What a node changes, for its tooltip: the input and channel, a kill trigger, a state it reads. */
-export function nodeDetail(n: TalentNode): string {
-  const parts = [n.rule];
-  if (n.kind === 'augment') parts.push(`${INPUT_NAMES[n.input]} · ${n.channel === 'delivery' ? 'Delivery (shape)' : 'Payload (effect)'}: one of each per input.`);
-  if (n.kind === 'ability') parts.push(`An alternative for ${n.teaches!.slot}; assign it below.`);
-  if (n.kind === 'capstone') parts.push('Capstone: one per character.');
-  if (n.discharge) parts.push('Kill-triggered: at most two in a build.');
-  if (n.reads) parts.push(`Needs ${n.reads} enemies to do anything.`);
-  return parts.join(' ');
+/** What a node changes, named for its class: the weapon, or the Q/E ability it shapes. */
+function inputName(n: TalentNode): string {
+  if (n.input === 'LMB') return WEAPONS[n.classId].name;
+  if (n.input === 'RMB') return SECONDARIES[n.classId].name;
+  if ((n.input === 'Q' || n.input === 'E') && n.targets?.length) return abilityDef(n.classId, n.input, n.targets[0]).name;
+  return 'same thing';
+}
+
+/**
+ * Why a node can't be learned now, in plain words (R06 follow-up §1): the tier gate, a conflicting
+ * talent from another tree (named), or the build check's own reason. Null when it can be learned.
+ */
+export function lockReason(n: TalentNode, learned: readonly string[], error: string | null): string | null {
+  if (!error) return null;
+  const lower = learned.filter((id) => { const o = talentNode(id); return o && o.tree === n.tree && o.tier < n.tier; }).length;
+  const missing = TIER_GATE[n.tier] - lower;
+  if (missing > 0) return `Learn ${missing} more talent${missing === 1 ? '' : 's'} lower in this tree first.`;
+  for (const id of learned) {
+    const o = talentNode(id);
+    if (o && augmentsConflict(n, o)) return `Can't combine with ${o.name}: both change the ${inputName(n)}.`;
+  }
+  if (error === 'Only one capstone') return 'You already hold a capstone.';
+  if (error === 'At most two kill-triggered talents') return 'You already hold two talents that trigger on kills.';
+  if (error === 'Not enough talent points') return 'No talent points left.';
+  return `${error}.`;
 }
 
 /**
@@ -41,6 +58,13 @@ function iconImage(n: TalentNode, parent: HTMLElement): void {
   if (!icon) return;
   const img = el('img', 'talent-icon', parent);
   img.src = spriteUrl(icon); img.alt = '';
+}
+
+/** A short press flash on a clicked tile, so a click answers at once (R06 follow-up §1). */
+function flash(b: HTMLElement): void {
+  b.classList.remove('pressed');
+  void b.offsetWidth;
+  b.classList.add('pressed');
 }
 
 export interface TalentPanelOptions {
@@ -82,7 +106,7 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
   const nodes = TALENT_NODES[o.classId];
 
   const fixedTalents = o.readOnly || o.slotsOnly;
-  // A step of the draft may leave a Rite without its gate (a tree reset) and learn it back; Apply needs the whole check.
+  // A step of the draft may leave a Rite without its gate (a reset) and learn it back; Apply needs the whole check.
   const check = (b: LearnedBuild): string | null => runBuildError(o.classId, { ...b, rites }, o.level);
   const stepCheck = (b: LearnedBuild): string | null => runBuildError(o.classId, { ...b, rites }, o.level, true);
   const toggle = (n: TalentNode): void => {
@@ -95,60 +119,94 @@ export function talentPanel(o: TalentPanelOptions): TalentPanel {
     } else {
       const next = { ...draft, talents: [...draft.talents, n.id] };
       const error = stepCheck(next);
-      if (error) { message.textContent = error; return; }
+      if (error) { message.textContent = lockReason(n, draft.talents, error) ?? error; return; }
       draft = next; message.textContent = '';
     }
     draw();
+  };
+
+  /** A node's tooltip in the current draft: its rule, then only the notes that apply now. */
+  const nodeText = (n: TalentNode): string => {
+    const kit = resolveKit(o.classId, { ...draft, rites });
+    const learned = draft.talents.includes(n.id), rite = rites.includes(n.id);
+    const lines = [n.rule];
+    if (rite) lines.push('Held as a Rite this run.');
+    if (kit.dormant.includes(n.id)) lines.push('Dormant: its ability is not assigned.');
+    if (kit.suppressed.has(n.id)) lines.push(`Suppressed this run by the Rite ${talentNode(kit.suppressed.get(n.id)!)?.name}.`);
+    if (!learned && !rite) {
+      const reason = lockReason(n, draft.talents, stepCheck({ ...draft, talents: [...draft.talents, n.id] }));
+      if (reason) lines.push(reason);
+    }
+    return lines.join('\n');
+  };
+
+  // Built once: a click updates the tiles in place, so the hovered tile stays the same element.
+  const tiles = new Map<string, HTMLButtonElement>();
+  for (const t of TREE_IDS) {
+    const info = TREES[o.classId]?.[t];
+    const col = el('div', 'talent-tree', trees);
+    const name = el('div', 'talent-tree-name', col, info?.name ?? t.toUpperCase());
+    if (info) attachTooltip(name, info.name, info.domain);
+    for (const tier of [1, 2, 3, 4] as const) {
+      const row = el('div', 'talent-tier', col);
+      for (const n of nodes.filter((x) => x.tree === t && x.tier === tier)) {
+        const b = button('', row, () => { if (!fixedTalents) flash(b); toggle(n); }, `talent-node${fixedTalents ? ' view' : ''}`);
+        iconImage(n, b);
+        if (!talentIcon(n)) el('span', 'talent-node-name', b, n.name);
+        b.dataset.node = n.id;
+        b.setAttribute('aria-label', n.name);
+        attachTooltip(b, n.name, () => nodeText(n));
+        tiles.set(n.id, b);
+      }
+    }
+  }
+
+  // Q and E rows are rebuilt only when the choices change (learning an ability node); a pick updates in place.
+  let slotKeys = '';
+  const slotButtons: Array<{ slot: 'Q' | 'E'; id: string; b: HTMLButtonElement }> = [];
+  const drawSlots = (): void => {
+    const choices = (['Q', 'E'] as const).map((slot) => slotChoices(o.classId, slot, [...draft.talents, ...rites]));
+    const keys = JSON.stringify(choices);
+    if (keys !== slotKeys) {
+      slotKeys = keys;
+      slots.replaceChildren();
+      slotButtons.length = 0;
+      (['Q', 'E'] as const).forEach((slot, i) => {
+        const row = el('div', 'talent-slot-row', slots);
+        el('div', 'talent-slot-key', row, slot);
+        for (const id of choices[i]) {
+          const def = abilityDef(o.classId, slot, id);
+          const b = button('', row, () => {
+            if (o.readOnly) return;
+            flash(b);
+            draft = slot === 'Q' ? { ...draft, q: id } : { ...draft, e: id };
+            message.textContent = hint; draw();
+          }, `talent-ability${o.readOnly ? ' view' : ''}`);
+          const icon = el('img', '', b); icon.src = spriteUrl(def.icon); icon.alt = '';
+          el('span', '', b, def.name);
+          attachTooltip(b, def.name, def.description);
+          slotButtons.push({ slot, id, b });
+        }
+      });
+    }
+    for (const { slot, id, b } of slotButtons) b.setAttribute('aria-pressed', String((slot === 'Q' ? draft.q : draft.e) === id));
   };
 
   const draw = (): void => {
     const used = draft.talents.length, cap = o.level === null ? null : pointsFor(o.level);
     points.textContent = cap === null ? `${used} points · free (development)` : `${used} / ${cap} points`;
     const kit = resolveKit(o.classId, { ...draft, rites });
-    trees.replaceChildren();
-    for (const t of TREE_IDS) {
-      const info = TREES[o.classId]?.[t];
-      const col = el('div', 'talent-tree', trees);
-      el('div', 'talent-tree-name', col, info?.name ?? t.toUpperCase());
-      el('div', 'talent-tree-domain', col, info?.domain ?? '');
-      for (const tier of [1, 2, 3, 4] as const) {
-        const row = el('div', 'talent-tier', col);
-        for (const n of nodes.filter((x) => x.tree === t && x.tier === tier)) {
-          const learned = draft.talents.includes(n.id), rite = rites.includes(n.id);
-          const open = !learned && !rite && stepCheck({ ...draft, talents: [...draft.talents, n.id] }) === null;
-          const state = rite ? 'rite' : learned ? 'learned' : open ? 'open' : 'locked';
-          const b = button('', row, () => toggle(n), `talent-node ${fixedTalents ? 'view ' : ''}${state}${kit.dormant.includes(n.id) ? ' dormant' : ''}${kit.suppressed.has(n.id) ? ' suppressed' : ''}`);
-          iconImage(n, b);
-          el('span', 'talent-node-name', b, n.name);
-          b.dataset.node = n.id;
-          b.setAttribute('aria-pressed', String(learned || rite));
-          const notes = [rite ? 'Held as a Rite this run.' : '', kit.dormant.includes(n.id) ? 'Dormant: its ability is not assigned.' : '',
-            kit.suppressed.has(n.id) ? `Suppressed this run by the Rite ${talentNode(kit.suppressed.get(n.id)!)?.name}.` : ''].filter(Boolean).join(' ');
-          attachTooltip(b, n.name, `${nodeDetail(n)}${notes ? ` ${notes}` : ''}`);
-        }
-      }
-      const reset = button(`Reset ${info?.name ?? t}`, col, () => {
-        let b: RunBuild = { ...draft, rites };
-        for (const id of draft.talents) if (talentNode(id)?.tree === t && b.talents.includes(id)) b = removeLearned(o.classId, b, id);
-        draft = { talents: [...b.talents], q: b.q, e: b.e }; message.textContent = ''; draw();
-      }, 'small secondary talent-reset');
-      // Hidden, not removed, so the trees keep the editor's size.
-      if (fixedTalents) { reset.disabled = true; reset.classList.add('talent-unused'); }
+    for (const n of nodes) {
+      const b = tiles.get(n.id)!;
+      const learned = draft.talents.includes(n.id), rite = rites.includes(n.id);
+      const open = !learned && !rite && stepCheck({ ...draft, talents: [...draft.talents, n.id] }) === null;
+      b.classList.remove('rite', 'learned', 'open', 'locked');
+      b.classList.add(rite ? 'rite' : learned ? 'learned' : open ? 'open' : 'locked');
+      b.classList.toggle('dormant', kit.dormant.includes(n.id));
+      b.classList.toggle('suppressed', kit.suppressed.has(n.id));
+      b.setAttribute('aria-pressed', String(learned || rite));
     }
-    slots.replaceChildren();
-    for (const slot of ['Q', 'E'] as const) {
-      const row = el('div', 'talent-slot-row', slots);
-      el('div', 'talent-slot-key', row, slot);
-      for (const id of slotChoices(o.classId, slot, [...draft.talents, ...rites])) {
-        const def = abilityDef(o.classId, slot, id), current = (slot === 'Q' ? draft.q : draft.e) === id;
-        const b = button('', row, () => { if (o.readOnly) return; draft = slot === 'Q' ? { ...draft, q: id } : { ...draft, e: id }; message.textContent = hint; draw(); }, 'talent-ability');
-        b.setAttribute('aria-pressed', String(current));
-        if (o.readOnly) b.classList.add('view');
-        const icon = el('img', '', b); icon.src = spriteUrl(def.icon); icon.alt = '';
-        el('span', '', b, def.name);
-        attachTooltip(b, def.name, def.description);
-      }
-    }
+    drawSlots();
     if (!apply) return;
     const dirty = JSON.stringify(draft) !== JSON.stringify(accepted), error = check(draft);
     apply.disabled = !dirty || error !== null;

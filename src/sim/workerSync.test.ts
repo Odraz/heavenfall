@@ -77,7 +77,7 @@ it('publishes victory before exit, then saves post-win purchases in the same set
     const p = live.players[0], at = stairPoints(live.map, live.floor!.boss)[1];
     Object.assign(p, { x: at.x, y: at.y + 1, z: at.z, yaw: -Math.PI / 2, pitch: Math.atan2(-.6, 1) });
     send({ t: 'ctrl', playerId: 0, msg: { type: 'interact', runId: live.runId, requestId: 1, sourceId: 5 } }); apply();
-    expect(p.sold).toBe(1); expect(saved.inventory).toEqual(p.inventory); expect(saved.inventory[0]).not.toBeNull();
+    expect(p.wallet).toBeLessThan(500); expect(saved.inventory).toEqual(p.inventory); expect(saved.inventory[0]).not.toBeNull();
     const after = structuredClone(saved), wallet = p.wallet;
     send({ t: 'ctrl', playerId: 0, msg: { type: 'interact', runId: live.runId, requestId: 1, sourceId: 5 } }); apply();
     expect(p.wallet).toBe(wallet); expect(saved.stats).toEqual(after.stats); expect(saved.heavens.clears[1]).toBe(1);

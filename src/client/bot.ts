@@ -5,7 +5,7 @@ import { beamSegment } from '../sim/commanders';
 import type { ClassId } from '../data/classes';
 import { ENEMIES } from '../data/enemies';
 import { FIRE_LEFT, FIRE_RIGHT, SCOURGE_HALF_ARC, SECONDARIES, WEAPONS } from '../data/weapons';
-import { aimDir, rayCylinder } from '../sim/combat';
+import { aimDir, rayEnemy } from '../sim/combat';
 import { PHASE_COMBAT, PHASE_COUNTDOWN } from '../net/protocol';
 import { PLAYER_EYE, PLAYER_HEIGHT, PLAYER_RADIUS } from '../sim/constants';
 import { FlowField, UNREACHABLE } from '../sim/flowfield';
@@ -373,8 +373,7 @@ export class Bot {
           const stop = raycastTerrain(v.map, ex, ey, ez, dx, dy, dz, SECONDARIES.betrayer.range);
           let n = 0;
           for (const e of v.enemies) {
-            const def = ENEMIES[e.type];
-            if (rayCylinder(ex, ey, ez, dx, dy, dz, e.x, e.y, e.z, def.radius, def.height) <= stop) n++;
+            if (rayEnemy(ex, ey, ez, dx, dy, dz, e.type, e.x, e.y, e.z) <= stop) n++;
           }
           this.lineFull = n > BULLET_MIN;
         }

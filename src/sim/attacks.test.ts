@@ -138,13 +138,13 @@ describe('the shared fire timer (M9 §2.2)', () => {
 describe('attacks (M9 §2.3)', () => {
   it('have the new intervals', () => {
     expect(WEAPONS.betrayer).toMatchObject({ interval: 0.3, damage: 60, maxHits: 1, range: 60 });
-    expect(SECONDARIES.fallen).toMatchObject({ interval: 0.85, damage: 60, maxHits: 1, range: 50 });
+    expect(SECONDARIES.fallen).toMatchObject({ interval: 0.85, damage: 100, maxHits: 1, range: 50 });
     expect(SECONDARIES.heretic).toMatchObject({ interval: 0.5, damage: 15, range: 40 });
     expect(SECONDARIES.binder).toMatchObject({ interval: 0.8, damage: 25, maxHits: Infinity, range: 3 });
     expect(SECONDARIES.betrayer).toMatchObject({ interval: 1.5, damage: 200, range: 60 });
   });
 
-  it('the slug deals 60 to the first enemy only, up to 50 m', () => {
+  it('the slug deals 100 to the first enemy only, up to 50 m', () => {
     const sim = makeSim(room(70, 5), ['fallen']);
     const p = sim.players[0];
     aimLevel(sim, p, 1.5, 2.5);

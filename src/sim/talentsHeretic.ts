@@ -169,8 +169,8 @@ export class HereticTalents {
 
   /**
    * A censer broke (after its direct hit): Irons in the Fire pins a pooled survivor; then the LMB Payload
-   * makes its area: Ploughshares' furrow, Scapegoat's three clouds, The Altar's worn cloud, or the base
-   * 3 m cloud. (dx, dy) is the censer's horizontal heading at release.
+   * makes its area: Ploughshares' furrow, Scapegoat's three clouds, The Altar's worn cloud (with Scapegoat,
+   * the middle one), or the base 3 m cloud. (dx, dy) is the censer's horizontal heading at release.
    */
   censerBroke(p: SimPlayer, x: number, y: number, z: number, direct: number, dx: number, dy: number, root: Root): void {
     const sim = this.sim;
@@ -188,33 +188,33 @@ export class HereticTalents {
       this.addCloud({ x: bx, y: by, z: floor, x1: ax, y1: ay, owner: p, from: sim.tick, until, furrow: true, root });
       return;
     }
-    if (this.has(p, H.SCAPEGOAT)) {
-      const yaw = Math.atan2(uy, ux);
-      this.addCloud({ x, y, z, owner: p, from: sim.tick, until, radius: HERETIC.scapegoatRadius, root });
-      for (const side of [1, -1]) {
-        const [sx, sy] = walkDestination(sim.map, x, y, yaw + side * Math.PI / 2, HERETIC.scapegoatSide);
-        // A blocked side's cloud is omitted, never stacked at the center.
-        if (Math.hypot(sx - x, sy - y) < HERETIC.scapegoatSide - 0.3) continue;
-        this.addCloud({ x: sx, y: sy, z, owner: p, from: sim.tick, until, radius: HERETIC.scapegoatRadius, root });
-      }
-      return;
-    }
+    // The Altar and Scapegoat combine (one tree, R06 follow-up §1): the middle cloud is worn, the sides stay.
+    const scapegoat = this.has(p, H.SCAPEGOAT);
+    let wearer: SimPlayer | undefined;
+    const room = sim.roomAt(x, y);
     if (this.has(p, H.ALTAR)) {
-      const room = sim.roomAt(x, y);
-      let wearer: SimPlayer | undefined, best = Infinity;
+      let best = Infinity;
       for (const o of sim.players) {
         if (!sim.livingTargetable(o) || sim.roomAt(o.x, o.y) !== room) continue;
         const d = distToCylinder(x, y, z, o.x, o.y, o.z, 0.4, PLAYER_HEIGHT);
         if (d <= HERETIC.altarReach && d < best) { best = d; wearer = o; }
       }
-      if (wearer) {
-        for (const c of [...sim.clouds]) if (c.altar && c.owner === p && c.wearer === wearer) this.removeCloud(c, 'replaced');
-        this.addCloud({ x: wearer.x, y: wearer.y, z: wearer.z + 0.9, owner: p, from: sim.tick, until, root, altar: true,
-          wearer, wearerRoom: room, wearerTeleport: wearer.teleportId });
-        return;
-      }
     }
-    this.addCloud({ x, y, z, owner: p, from: sim.tick, until, root });
+    if (wearer) {
+      for (const c of [...sim.clouds]) if (c.altar && c.owner === p && c.wearer === wearer) this.removeCloud(c, 'replaced');
+      this.addCloud({ x: wearer.x, y: wearer.y, z: wearer.z + 0.9, owner: p, from: sim.tick, until, root, altar: true,
+        wearer, wearerRoom: room, wearerTeleport: wearer.teleportId });
+    } else {
+      this.addCloud({ x, y, z, owner: p, from: sim.tick, until, ...(scapegoat ? { radius: HERETIC.scapegoatRadius } : {}), root });
+    }
+    if (!scapegoat) return;
+    const yaw = Math.atan2(uy, ux);
+    for (const side of [1, -1]) {
+      const [sx, sy] = walkDestination(sim.map, x, y, yaw + side * Math.PI / 2, HERETIC.scapegoatSide);
+      // A blocked side's cloud is omitted, never stacked at the center.
+      if (Math.hypot(sx - x, sy - y) < HERETIC.scapegoatSide - 0.3) continue;
+      this.addCloud({ x: sx, y: sy, z, owner: p, from: sim.tick, until, radius: HERETIC.scapegoatRadius, root });
+    }
   }
 
   private floorUnder(x: number, y: number, z: number): number {

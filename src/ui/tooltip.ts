@@ -25,8 +25,11 @@ function hide(): void {
   if (tip) tip.hidden = true;
 }
 
-/** Shows `name` and `description` above `target` while the pointer is over it. */
-export function attachTooltip(target: HTMLElement, name: string, description: string): void {
+/**
+ * Shows `name` and `description` above `target` while the pointer is over it. A function is read when
+ * the tooltip opens, so a view that updates in place shows the current text.
+ */
+export function attachTooltip(target: HTMLElement, name: string, description: string | (() => string)): void {
   target.addEventListener('pointerenter', () => {
     clearTimeout(timer);
     timer = window.setTimeout(() => {
@@ -38,7 +41,7 @@ export function attachTooltip(target: HTMLElement, name: string, description: st
       title.textContent = name;
       const text = document.createElement('div');
       text.className = 'tooltip-text';
-      text.textContent = description;
+      text.textContent = typeof description === 'function' ? description() : description;
       t.append(title, text);
       t.hidden = false;
       // Centered above the item, kept on screen.

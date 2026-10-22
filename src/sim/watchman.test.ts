@@ -23,7 +23,7 @@ const living = (sim: Simulation) => Array.from(sim.active.subarray(0, sim.active
 
 describe('Watchman composition (rooms.md §6.4)', () => {
   it('has the specified body and stats', () => {
-    expect(ENEMIES[WATCHMAN]).toEqual({ hp: 80, radius: 0.35, height: 1.8, speed: 3.5, flying: false, draw: 1.15 });
+    expect(ENEMIES[WATCHMAN]).toEqual({ hp: 80, radius: 0.35, height: 1.8, speed: 3.5, flying: false, draw: 1.15, shot: { radius: 0.35, base: 0, top: 2.5 } });
   });
   for (const [party, focus, cap] of [[1, 'horde', 2], [1, 'ranged', 3], [4, 'horde', 5], [4, 'ranged', 7]] as const) {
     it(`caps living Watchmen at ${cap} for ${party} player(s) in a ${focus} room and keeps the wave open while they wait`, () => {

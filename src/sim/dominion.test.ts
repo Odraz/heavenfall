@@ -327,7 +327,7 @@ describe('Dominion authored group scaling and reservations', () => {
     expect(waveCounts({ share: 1, mix: { blessed: 1 }, elites: 2 }, 400)).toEqual({ blessed: 280, choristers: 0, cherubs: 0, dominions: 2 });
     expect(waveCounts({ share: 1, mix: { blessed: 1 } }, 400)).toEqual({ blessed: 400, choristers: 0, cherubs: 0 });
     expect(waveSize({ blessed: 10, choristers: 0, cherubs: 0, dominions: 3 }, 1)).toBe(6);
-    expect(ENEMIES[DOMINION]).toEqual({ hp: 1500, radius: 0.45, height: 3.2, speed: 3.5, flying: false, draw: 1.9 });
+    expect(ENEMIES[DOMINION]).toEqual({ hp: 1500, radius: 0.45, height: 3.2, speed: 3.5, flying: false, draw: 1.9, shot: { radius: 0.85, base: 0, top: 3.3 } });
   });
   it('scales HP per rounded group, reserves first elites and does not stall fodder behind the alive cap', () => {
     // A 72-halo room reserves gold for floor(72 / 24) = 3 of its 4 elites.

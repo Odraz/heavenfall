@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buyItem } from './shop';
+import { CHART_PRICE, buyItem } from './shop';
 import { ScopedRequests } from '../net/requests';
 import { ITEMS, type Inventory } from '../data/items';
 import { generateFloor } from '../gen';
@@ -52,8 +52,8 @@ describe('R3 shop transactions', () => {
     expect(sim.rewards.chartRevealed).toBe(true); expect(p.wallet).toBe(10); expect(p.inventory).toEqual(before);
     expect(sim.pickups.live.some(p => p.kind === 13)).toBe(false);
   });
-  it('cannot charge a full inventory or sold stock, stacks matching slots first, and retries never charge again', () => {
-    const p = { wallet: 1000, inventory: [{ item: 'balm', count: 3 }, { item: 'seal', count: 2 }] as Inventory, sold: 0 };
+  it('cannot charge a full inventory, stacks matching slots first, and retries never charge again', () => {
+    const p = { wallet: 1000, inventory: [{ item: 'balm', count: 3 }, { item: 'seal', count: 2 }] as Inventory };
     expect(buyItem(p, ['feather'], 0).accepted).toBe(false); expect(p.wallet).toBe(1000);
     p.inventory[1] = { item: 'balm', count: 1 };
     const requests = new ScopedRequests();
@@ -61,7 +61,14 @@ describe('R3 shop transactions', () => {
     expect(requests.execute(1, 'shop:0', () => { throw Error('reapplied'); })).toBe(result);
     expect(requests.execute(1, 'shop:1', () => { throw Error('wrong scope'); })).toBeNull();
     expect(p.inventory[1]?.count).toBe(2); expect(p.wallet).toBe(1000 - ITEMS.balm.price);
-    expect(buyItem(p, ['balm'], 0).accepted).toBe(false);
+    // The pedestal never sells out (R06 follow-up §3): a new purchase fills the stack to its cap, then stops.
+    expect(buyItem(p, ['balm'], 0).accepted).toBe(true); expect(p.inventory[1]?.count).toBe(3);
+    expect(buyItem(p, ['balm'], 0)).toEqual({ accepted: false, reason: 'Inventory full' });
+    expect(p.wallet).toBe(1000 - 2 * ITEMS.balm.price);
+  });
+  it('prices items at half the R03 prices; the Chart stays 120', () => {
+    expect(Object.fromEntries(Object.entries(ITEMS).map(([id, d]) => [id, d.price]))).toEqual({ balm: 50, seal: 60, feather: 60, mirror: 90, venom: 80, frost: 70, chain: 80, plume: 90 });
+    expect(CHART_PRICE).toBe(120);
   });
   it('keeps old replay IDs rejected after eviction and never wraps exhausted IDs', () => {
     const ids = new ScopedRequests<number>(); for (let i = 1; i <= 70; i++) ids.execute(i, 's', () => i);
@@ -73,14 +80,17 @@ describe('R3 shop transactions', () => {
     const sim = new Simulation({ dungeon: g.def, floor: g.floor, seed: 1, startRoom: g.floor.pardoner,
       players: [{ id: 0, name: 'A', classId: 'fallen' }, { id: 1, name: 'B', classId: 'heretic' }] });
     const [a, b] = sim.players; a.wallet = b.wallet = 1000;
-    sim.interact(0, 1, 0); expect(a.sold).toBe(0); expect(a.wallet).toBe(1000);
+    sim.interact(0, 1, 0); expect(a.wallet).toBe(1000);
     const stand = (index: number) => {
       const [x, y] = g.def.rooms[g.floor.pardoner].points!.pedestals![index];
       Object.assign(a, { x: x + .5, y: y + 1.5, z: g.map.floor[y * g.map.w + x], yaw: -Math.PI / 2, pitch: Math.atan2(-.6, 1) });
     };
     stand(0); sim.interact(0, 2, 0); sim.interact(0, 2, 0);
-    expect(a.sold).toBe(1); expect(b.sold).toBe(0); expect(a.wallet).toBe(1000 - ITEMS[g.floor.stock[0]].price);
-    stand(4); const wallet = a.wallet; sim.interact(0, 3, 4); sim.interact(0, 4, 4);
+    const price = ITEMS[g.floor.stock[0]].price;
+    expect(a.wallet).toBe(1000 - price); expect(b.wallet).toBe(1000);
+    // A new request buys the same pedestal again; the replayed one above charged once.
+    sim.interact(0, 3, 0); expect(a.wallet).toBe(1000 - 2 * price);
+    stand(4); const wallet = a.wallet; sim.interact(0, 4, 4); sim.interact(0, 5, 4);
     expect(a.wallet).toBe(wallet - 120); expect(sim.rewards.chartRevealed).toBe(true);
     expect(sim.rooms.every(r => r.knowledge > 0)).toBe(true);
   });

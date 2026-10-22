@@ -22,11 +22,11 @@ function burstsBySlot(sim: Simulation): Map<number, [number, number]> {
 const hold = (sim: Simulation, s: number) => (sim.eStunUntil[s] = 1e9);
 
 describe('the shotgun (M12 §5.1)', () => {
-  it('20 per pellet within 6 m and 10 beyond, ±11°, 0.9 s', () => {
+  it('25 per pellet within 6 m and 10 beyond, ±11°, 0.9 s', () => {
     expect(WEAPONS.fallen).toMatchObject({ interval: 0.9, damage: 10, pellets: 8 });
     expect(WEAPONS.fallen.spreadYaw).toBeCloseTo((11 * Math.PI) / 180, 12);
     for (const [dist, perPellet] of [
-      [5, 20],
+      [5, 25],
       [8, 10],
     ]) {
       const sim = makeSim(room(30, 11), ['fallen']);

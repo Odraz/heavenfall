@@ -40,7 +40,8 @@ export const WEAPONS: Record<ClassId, WeaponDef> = {
 
 /** Secondary attacks, right mouse (M9 §2.3). */
 export const SECONDARIES: Record<ClassId, WeaponDef> = {
-  fallen: { name: 'Brimstone Slug', description: "One heavy slug for a single enemy out of the shotgun's reach.", kind: 'hitscan', interval: 0.85, pellets: 1, damage: 60, spreadYaw: 0, spreadPitch: 0, range: 50, maxHits: 1, slow: 0 },
+  // The slug: 60 → 100 in the R06 follow-up §4.
+  fallen: { name: 'Brimstone Slug', description: "One heavy slug for a single enemy out of the shotgun's reach.", kind: 'hitscan', interval: 0.85, pellets: 1, damage: 100, spreadYaw: 0, spreadPitch: 0, range: 50, maxHits: 1, slow: 0 },
   heretic: { name: 'Sacrament', description: "Hold on the ally you aim at to heal them, or on a fallen ally's soul to revive them.", kind: 'sacrament', interval: 0.5, pellets: 1, damage: 15, spreadYaw: 0, spreadPitch: 0, range: 40, maxHits: 1, slow: 0 },
   binder: { name: 'Scourge', description: 'Swing your chain through every enemy in front of you, slowing them.', kind: 'scourge', interval: 0.8, pellets: 1, damage: 25, spreadYaw: 0, spreadPitch: 0, range: 3, maxHits: Infinity, slow: 1 },
   betrayer: { name: 'Silver Bullet', description: "A slow shot whose damage tears through every enemy in a line until it's spent.", kind: 'silverBullet', interval: 1.5, pellets: 1, damage: 200, spreadYaw: 0, spreadPitch: 0, range: 60, maxHits: Infinity, slow: 0 },
@@ -139,8 +140,8 @@ export const KNOCKBACK_TIME = 0.2;
 /** The shotgun knocks back survivors within 6 m of the Fallen by 2 m, once per shot (M9 §3.1). */
 export const SHOTGUN_KNOCKBACK_DIST = 2;
 export const SHOTGUN_KNOCKBACK_RANGE = 6;
-/** A pellet deals this within that 6 m (M12 §5.1), the weapon's `damage` beyond. */
-export const SHOTGUN_CLOSE_DAMAGE = 20;
+/** A pellet deals this within that 6 m (M12 §5.1; 20 → 25 in the R06 follow-up §4), the weapon's `damage` beyond. */
+export const SHOTGUN_CLOSE_DAMAGE = 25;
 export const COMMUNION_RADIUS = 15;
 export const COMMUNION_HEAL = 120;
 export const SHROUD_AMOUNT = 150;

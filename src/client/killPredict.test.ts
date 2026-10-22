@@ -35,7 +35,7 @@ describe('predicted kills (M12 §4.4)', () => {
 
   it('a pellet within 6 m predicts a burst; beyond 6 m it predicts nothing (M12 §5.1)', () => {
     const at = (close: boolean): PelletTarget[] => [{ i: 0, t: 5, type: BLESSED, rooted: false, close }];
-    expect(SHOTGUN_CLOSE_DAMAGE).toBe(20);
+    expect(SHOTGUN_CLOSE_DAMAGE).toBe(25);
     expect(SHOTGUN_FAR_DAMAGE).toBe(10);
     expect(predictPellets([at(true)], SHOTGUN_FAR_DAMAGE, 1, 'shotgun')[0][0].result).toBe(2);
     expect(predictPellets([at(false)], SHOTGUN_FAR_DAMAGE, 1, 'shotgun')[0][0].result).toBe(0);

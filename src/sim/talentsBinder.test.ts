@@ -197,6 +197,16 @@ describe('Tree B: Breaker of Giants', () => {
     expect(sim.eHp[s]).toBe(hp - 25);
   });
 
+  it('Whirl with The Long Flail: the full circle reaches 4 m (one tree combines)', () => {
+    const sim = setup();
+    const p = sim.players[0];
+    kit(sim, p, ['b.1a', 'b.1b', 'b.2a', 'b.2b', 'b.3b']);
+    put(sim, p, 20.5, 10.5);
+    const behind = enemyAt(sim, CANTOR, 17.1, 10.5), hp = sim.eHp[behind];
+    sim.fireWeapon(p, ATTACK_SECONDARY);
+    expect(sim.eHp[behind]).toBe(hp - 25);
+  });
+
   it('The Chains Shatter: a bound kill rings 20 into those within 2 m, once per action', () => {
     const sim = setup();
     const p = sim.players[0];

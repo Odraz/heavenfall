@@ -1687,6 +1687,7 @@ div.weapon-swing {
 .tooltip-text {
   font-size: 14px;
   line-height: 1.35;
+  white-space: pre-line;
 }
 
 .dungeon-picker {
@@ -2506,55 +2507,53 @@ div.weapon-swing {
 .talent-tree-name {
   font: 700 18px/1.1 var(--display-font);
   color: var(--ivory);
+  text-align: center;
+  cursor: help;
 }
 
-.talent-tree-domain {
-  min-height: 2.4em;
-  font-size: 13px;
-  color: var(--parchment-dim);
-}
-
+/* Icon tiles (R06 follow-up §1): two per tier, the capstone alone, centered; names live in the tooltips. */
 .talent-tier {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  min-height: 54px;
-}
-
-.talent-tier:last-of-type {
-  grid-template-columns: 1fr;
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+  min-height: 60px;
 }
 
 .talent-node {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 54px;
-  padding: 4px 6px;
-  font: 600 13px/1.15 var(--display-font);
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  font: 600 11px/1.1 var(--display-font);
   color: var(--parchment-faint);
   text-align: center;
   background: var(--well-deep);
-  border: 2px solid var(--well);
+  border: 3px solid var(--well);
   cursor: pointer;
 }
 
+/* The shared button hover paints a border image; tiles keep their state frame and only brighten. */
+.talent-node:hover,
+.talent-ability:hover {
+  border-image: none;
+}
+
+/* Open: a plain parchment frame; learned: gold with a glow, so the two never look alike. */
 .talent-node.open {
-  color: var(--ivory);
-  border-color: var(--rim-deep);
+  border-color: rgba(185, 172, 151, 0.55);
 }
 
 .talent-node.learned {
-  color: var(--soot);
-  background: var(--gold);
-  border-color: var(--rim-gold);
+  border-color: var(--xp);
+  box-shadow: 0 0 0 1px var(--rim-deep), 0 0 12px 2px rgba(243, 198, 75, 0.7);
 }
 
 .talent-node.rite {
-  color: var(--soot);
-  background: var(--sky);
-  border-color: var(--ivory);
+  border-color: var(--sky);
+  box-shadow: 0 0 8px 1px rgba(207, 226, 243, 0.5);
 }
 
 .talent-node.dormant,
@@ -2567,21 +2566,54 @@ div.weapon-swing {
   cursor: not-allowed;
 }
 
-/* Talent icons (B11): a fixed square beside the name, so the node keeps its size with or without one. */
-.talent-icon {
-  flex: none;
-  width: 42px;
-  height: 42px;
-  border: 1px solid var(--rim-deep);
+.talent-node:not(.view):not(.locked):hover {
+  filter: brightness(1.2);
 }
 
-.talent-node-name {
-  flex: 1;
-  min-width: 0;
+.talent-node.open:hover {
+  border-color: var(--ivory);
+}
+
+/* Talent icons (B11) fill the tile. */
+.talent-icon {
+  flex: none;
+  width: 54px;
+  height: 54px;
+}
+
+.talent-node .talent-icon {
+  display: block;
+}
+
+.talent-node.open .talent-icon {
+  filter: brightness(0.85);
 }
 
 .talent-node.locked .talent-icon {
-  filter: grayscale(0.8) brightness(0.6);
+  filter: grayscale(0.85) brightness(0.5);
+}
+
+/* Only when an icon is missing. */
+.talent-node-name {
+  padding: 2px;
+}
+
+/* A click answers at once with a short press, before any reply. */
+.talent-node.pressed,
+.talent-ability.pressed {
+  animation: talent-press 160ms ease-out;
+}
+
+@keyframes talent-press {
+  0% {
+    transform: scale(0.9);
+    filter: brightness(1.5);
+  }
+
+  100% {
+    transform: scale(1);
+    filter: none;
+  }
 }
 
 .rite-head {
@@ -2593,11 +2625,7 @@ div.weapon-swing {
 .rite-head .talent-icon {
   width: 64px;
   height: 64px;
-  border-color: var(--rim-gold);
-}
-
-.talent-reset {
-  margin-top: auto;
+  border: 1px solid var(--rim-gold);
 }
 
 .talent-slots {
@@ -2629,9 +2657,17 @@ div.weapon-swing {
   cursor: pointer;
 }
 
-.talent-ability[aria-pressed='true'] {
+.talent-ability:not(.view):hover {
   color: var(--ivory);
-  border-color: var(--rim-gold);
+  border-color: var(--rim-deep);
+}
+
+/* The assigned ability keeps its gold frame while hovered. */
+.talent-ability[aria-pressed='true'],
+.talent-ability[aria-pressed='true']:hover {
+  color: var(--ivory);
+  border-color: var(--gold);
+  box-shadow: 0 0 8px 1px rgba(243, 198, 75, 0.45);
 }
 
 .talent-ability img {
@@ -2739,10 +2775,6 @@ div.weapon-swing {
 .talent-node.view,
 .talent-ability.view {
   cursor: help;
-}
-
-.talent-unused {
-  visibility: hidden;
 }
 
 /* ------------------------------------------------------------------ R6 relics and streaks */
@@ -2986,23 +3018,22 @@ div.weapon-swing {
   color: var(--ivory);
 }
 
-.relic-card-trigger {
-  font: 600 13px/1.3 var(--display-font);
-  color: var(--gold);
-}
-
 .relic-card-rule {
   font: 14px/1.35 'Segoe UI', system-ui, sans-serif;
 }
 
-.relic-card-numbers,
-.relic-card-flavor {
-  font: 12px/1.35 'Segoe UI', system-ui, sans-serif;
-  color: var(--parchment-faint);
+.relic-card-cooldown {
+  font: 600 12px/1.35 'Segoe UI', system-ui, sans-serif;
+  color: var(--parchment-dim);
 }
 
+/* The flavor is set apart from the rule (R06 follow-up §2). */
 .relic-card-flavor {
-  font-style: italic;
+  margin-top: 6px;
+  padding-top: 6px;
+  font: italic 12px/1.35 'Segoe UI', system-ui, sans-serif;
+  color: var(--parchment-faint);
+  border-top: 1px solid var(--well);
 }
 
 .relic-card-note {

@@ -2,8 +2,8 @@
 import { CLASSES, GENERAL_HINTS, type ClassId } from '../data/classes';
 import { ITEMS } from '../data/items';
 import type { InventoryState } from '../net/messages';
-import { ITEM_ART } from './itemArt';
-import { carriedHints, hpTier, newItemSlots, xpProgress } from './hudModel';
+import { ITEM_ART, RELIC_ART } from './itemArt';
+import { carriedHints, hpTier, newItemSlots, relicHints, xpProgress } from './hudModel';
 import { ABILITIES, WEAPONS } from '../data/weapons';
 import { mouseGlyph } from '../ui/mouseGlyph';
 import { CHAT_MAX } from '../net/lobby';
@@ -152,6 +152,9 @@ export class Hud {
   private readonly hints: HTMLDivElement;
   /** The hint window's Carried lines (audit batch 3). */
   private readonly carried: HTMLDivElement;
+  /** The hint window's Relics section, present only while a relic is equipped (R06 follow-up §2). */
+  private readonly relicSection: HTMLDivElement;
+  private relicKey = '';
   private lastInventory: InventoryState['inventory'] | null = null;
   /**
    * The bottom-left column (M9 §6.4), from the bottom up: the own frame, the party frames, the chat.
@@ -461,6 +464,7 @@ export class Hud {
     el('div', 'hint-section', this.hints).textContent = 'Carried';
     this.carried = el('div', 'hint-carried', this.hints);
     this.setCarried(null);
+    this.relicSection = el('div', 'hint-relics', this.hints);
     if (multiplayer) {
       for (const text of GENERAL_HINTS) {
         const line = el('div', 'hint hint-general', this.hints);
@@ -550,6 +554,23 @@ export class Hud {
       const line = el('div', 'hint hint-general', this.carried);
       el('span', 'hint-icon', line);
       el('span', 'hint-text', line).textContent = 'Nothing carried. Buy items from the Pardoner or pick them up.';
+    }
+  }
+
+  /** What the equipped relics do, under Carried; nothing while none is equipped. */
+  setRelicHints(equipped: readonly (string | null)[]): void {
+    const lines = relicHints(equipped), key = lines.map((h) => h.text).join('|');
+    if (key === this.relicKey) return;
+    this.relicKey = key;
+    this.relicSection.replaceChildren();
+    if (!lines.length) return;
+    el('div', 'hint-section', this.relicSection).textContent = 'Relics';
+    for (const h of lines) {
+      const line = el('div', 'hint', this.relicSection);
+      const icon = el('img', 'hint-icon', line);
+      icon.src = RELIC_ART[h.relic];
+      icon.alt = '';
+      el('span', 'hint-text', line).textContent = h.text;
     }
   }
 

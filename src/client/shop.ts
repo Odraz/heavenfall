@@ -80,7 +80,7 @@ export class ShopView {
   }
   update(state: InventoryState): void {
     this.cards.forEach((c, i) => {
-      c.visible = i === SOURCE_CHART ? !state.chart : (state.sold & (1 << stockIndex(i))) === 0;
+      c.visible = i !== SOURCE_CHART || !state.chart;
     });
   }
   target(p: { x: number; y: number; z: number }, yaw: number, pitch: number, reach = 4): number {
@@ -95,8 +95,7 @@ export class ShopView {
   label(index: number, state: InventoryState | null): string {
     if (!this.floor || index < 0) return '';
     const stock = stockIndex(index);
-    const sold = index === SOURCE_CHART ? state?.chart : !!((state?.sold ?? 0) & (1 << stock));
-    if (sold) return 'Sold';
+    if (index === SOURCE_CHART && state?.chart) return 'Sold';
     if (index === SOURCE_CHART) return `Pardoner’s Chart · ${CHART_PRICE} halos · F within 2 m`;
     const item = ITEMS[this.floor.stock[stock]];
     const fresh = state && !state.itemsTried.includes(this.floor.stock[stock]) ? 'New · ' : '';

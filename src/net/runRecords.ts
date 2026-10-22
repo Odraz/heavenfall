@@ -9,7 +9,7 @@ const isDeedId = (d: string): d is DeedId => (DEED_IDS as readonly string[]).inc
 export interface RunRecord {
   profileId: string; playerId: number; classId: ClassId; admissionId: number;
   xpBase: number; runXp: number; carried: Inventory; inventory: Inventory;
-  wallet: number; sold: number; itemsTried: ItemId[]; committed: boolean; connected: boolean;
+  wallet: number; itemsTried: ItemId[]; committed: boolean; connected: boolean;
   closed: boolean; outcome: Outcome | null; revision: number; presentAtStart: boolean;
   /** The learned build to save (§13.2): Advocate edits change it; Rites never enter it. */
   build: { talents: string[]; q: string; e: string };
@@ -33,7 +33,7 @@ export class RunRecords {
     if (this.records.size >= 256 || this.nextAdmission > 0xffffffff || [...this.records.values()].some(r => !r.closed && (r.playerId === playerId || r.classId === classId))) throw new Error('Run slot reserved');
     if (profile.run) throw new Error('Recover the previous run first');
     const r: RunRecord = { profileId: profile.id, playerId, classId, admissionId: this.nextAdmission++, xpBase: profile.characters[classId].xp,
-      runXp: 0, carried: copyInventory(profile.inventory), inventory: copyInventory(profile.inventory), wallet: 0, sold: 0,
+      runXp: 0, carried: copyInventory(profile.inventory), inventory: copyInventory(profile.inventory), wallet: 0,
       itemsTried: [], committed: false, connected: false, closed: false, outcome: null, revision: 0, presentAtStart: atStart,
       build: { talents: [...profile.characters[classId].talents], q: profile.characters[classId].q, e: profile.characters[classId].e },
       claimed: [], pawned: [], savedRelics: [profile.characters[classId].relics[0], profile.characters[classId].relics[1]], deeds: [], bestStreak: 0, sentence: 0 };

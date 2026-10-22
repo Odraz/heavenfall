@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { carriedHints, hpTier, newItemSlots, xpProgress } from './hudModel';
+import { carriedHints, hpTier, newItemSlots, xpProgress, relicHints } from './hudModel';
+import { COMBOS, RELICS } from '../data/relics';
 import { xpForLevel } from '../profile/model';
 
 describe('HUD model', () => {
@@ -35,5 +36,21 @@ describe('HUD model', () => {
     expect(newItemSlots([{ item: 'balm', count: 1 }, null], [{ item: 'balm', count: 2 }, null], [])).toEqual([]);
     expect(newItemSlots([null, null], [null, { item: 'seal', count: 1 }], ['seal'])).toEqual([]);
     expect(newItemSlots([{ item: 'balm', count: 1 }, null], [{ item: 'venom', count: 1 }, { item: 'frost', count: 1 }], [])).toEqual([0, 1]);
+  });
+});
+
+describe('relic hints (R06 follow-up §2)', () => {
+  it('states each equipped relic in one sentence with its cooldown', () => {
+    expect(relicHints(['comb', null])).toEqual([{ relic: 'comb', text: `Comb of the Host: ${RELICS.comb.text} Cooldown 5 s.` }]);
+    expect(relicHints([null, null])).toEqual([]);
+  });
+  it('shows the combo in place of the relic it replaces', () => {
+    const lines = relicHints(['wheel', 'comb']);
+    expect(lines[0].text).toBe(`Wheel of Review → Harrow of the Host: ${COMBOS.harrow.text} Cooldown 3 s.`);
+    expect(lines[1].text).toBe(`Comb of the Host: ${RELICS.comb.text} Cooldown 5 s.`);
+  });
+  it('writes every relic and combo as one "When …" sentence', () => {
+    for (const r of Object.values(RELICS)) expect(r.text, r.id).toMatch(/^When .+\.$/);
+    for (const c of Object.values(COMBOS)) expect(c.text, c.id).toMatch(/^When .+\.$/);
   });
 });

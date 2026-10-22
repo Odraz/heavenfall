@@ -48,6 +48,15 @@ export function rayCylinder(
   return best;
 }
 
+/**
+ * Distance along a ray to an enemy's shot volume (R06 follow-up §5): the cylinder matching its drawn
+ * sprite, with its feet at (x, y, z). Shots, hit markers and bots use this; movement uses the body.
+ */
+export function rayEnemy(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, type: number, x: number, y: number, z: number): number {
+  const s = ENEMIES[type].shot;
+  return rayCylinder(ox, oy, oz, dx, dy, dz, x, y, z + s.base, s.radius, s.top - s.base);
+}
+
 /** A burst death's force thresholds, in multiples of the type's max HP (M12 §4.1). */
 export const BURST_LIGHT = 2;
 export const BURST_HEAVY = 4;

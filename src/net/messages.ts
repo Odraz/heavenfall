@@ -89,7 +89,7 @@ export interface FireState { playerId: number; cells: number[]; ends: number[] }
 
 export interface InventoryState {
 
-  playerId: number; inventory: Inventory; wallet: number; sold: number; chart: boolean;
+  playerId: number; inventory: Inventory; wallet: number; chart: boolean;
   /** R6: owned and pawned relics, max HP after the bargain, and whether the bargain is still open. */
   ownedRelics?: string[]; pawnedRelics?: string[]; maxHp?: number; bargainOpen?: boolean;
   nextRequestId: number; itemReadyTick: number; xp: number; runXp: number;

@@ -49,9 +49,10 @@ describe('learned legality', () => {
   it('allows one capstone', () => {
     expect(learnedError('betrayer', b(ids('a.1b a.2a a.2b a.3a a.1a a.cap b.1a b.1b b.2a')), 10)).toBeNull();
   });
-  it('refuses two learned augments in the same channel, even across trees', () => {
-    expect(learnedError('betrayer', b(ids('a.1a a.1b a.2a a.2b a.3b')), 10)).toMatch(/same thing/);
-    expect(learnedError('betrayer', b(ids('b.1b c.1a')), 10)).toMatch(/same thing/);
+  it('refuses two learned augments in the same channel from different trees; one tree always combines', () => {
+    // Glancing Silver and Behind His Back are both Silver Bullet Delivery in tree A: they combine (R06 follow-up §1).
+    expect(learnedError('betrayer', b(ids('a.1a a.1b a.2a a.2b a.3b')), 10)).toBeNull();
+    expect(learnedError('betrayer', b(ids('b.1b c.1a')), 10)).toMatch(/Recoil and The Nail change the same thing/);
     // Delivery and Payload on the RMB compose.
     expect(learnedError('betrayer', b(ids('a.1a c.1a')), 10)).toBeNull();
   });

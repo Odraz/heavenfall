@@ -1,6 +1,7 @@
 /** Pure HUD presentation rules, shared by the own frame, party frames and Profile (audit batch 2). */
 import { levelForXp, xpForLevel } from '../profile/model';
 import { ITEMS, type Inventory, type ItemId } from '../data/items';
+import { RELICS, effectName, effectText, isRelicId, relicEffect, type RelicId } from '../data/relics';
 
 export type HpTier = 'ok' | 'warn' | 'low';
 
@@ -37,6 +38,23 @@ export function carriedHints(inventory: Inventory): CarriedHint[] {
     const rule = ITEMS[stack.item].rule;
     lines.push({ slot: (i + 1) as 1 | 2, item: stack.item, text: `${i + 1} · ${ITEMS[stack.item].name} ×${stack.count}: ${rule.charAt(0).toLowerCase()}${rule.slice(1)}` });
   });
+  return lines;
+}
+
+export interface RelicHint { relic: RelicId; text: string }
+
+/**
+ * The hint window's Relics lines (R06 follow-up §2): each equipped relic's name and sentence with its
+ * cooldown; with a combo, the replaced relic shows the combo's sentence instead.
+ */
+export function relicHints(equipped: readonly (string | null)[]): RelicHint[] {
+  const lines: RelicHint[] = [];
+  for (const id of equipped) {
+    if (!isRelicId(id)) continue;
+    const effect = relicEffect(id, equipped), { text, cooldown } = effectText(effect);
+    const name = effect === id ? RELICS[id].name : `${RELICS[id].name} → ${effectName(effect)}`;
+    lines.push({ relic: id, text: `${name}: ${text} Cooldown ${cooldown} s.` });
+  }
   return lines;
 }
 

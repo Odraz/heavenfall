@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BLESSED, CANTOR, CARRIER, CHERUB, CHORISTER, DOMINION, ENEMIES } from '../data/enemies';
-import { CANTOR_TELL, CANTOR_BEAM, CANTOR_COOLDOWN, CANTOR_BEAM_TURN_SPEED, CARRIER_MIN_HOLD, CARRIER_SWOOP, CARRIER_FLY_THROUGH, CARRIER_TRACK_TICKS, hymnalReduction, turnToward, validCommanderCasts } from '../data/commanders';
+import { CANTOR_TELL, CANTOR_BEAM, CANTOR_COOLDOWN, CANTOR_BEAM_TURN_SPEED, CARRIER_MIN_HOLD, CARRIER_SWOOP, CARRIER_FLY_THROUGH, CARRIER_TELL, hymnalReduction, turnToward, validCommanderCasts } from '../data/commanders';
 import { newRunIdentity } from '../net/version';
 import { DUNGEONS } from '../data/dungeons';
 import { Simulation } from './sim';
@@ -23,10 +23,12 @@ function fixture(type = CANTOR, party = 1, classId: ClassId = 'betrayer', diagno
   return { sim, slot, p: sim.players[0], c: sim.commanders.active.get(slot)! };
 }
 function advance(sim: Simulation, slot: number, ticks: number) { for (let i = 0; i < ticks; i++) { sim.tick++; sim.commanders.update(slot); } }
+/** Starts a Carrier's rush and plays its tell through, so the flight begins on the next update (R06 follow-up §6). */
+function rushNow(sim: Simulation, slot: number) { sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot); expect(sim.commanders.active.get(slot)?.phase).toBe('tell'); advance(sim, slot, CARRIER_TELL); }
 function crowd(sim: Simulation, x = 25, y = 9, count = 8) { for (let i = 0; i < count; i++) sim.placeEnemy(BLESSED, x + i % 2, y + Math.floor(i / 2) % 2, 0); }
 function grab(party = 1, classId: ClassId = 'betrayer') {
   const f = fixture(CARRIER, party, classId); crowd(f.sim); f.sim.commanders.readyAt[f.slot] = 0;
-  f.sim.commanders.update(f.slot); expect(f.c.phase).toBe('active');
+  rushNow(f.sim, f.slot); expect(f.c.phase).toBe('active');
   for (let i = 0; i < CARRIER_SWOOP && f.c.phase === 'active'; i++) advance(f.sim, f.slot, 1);
   expect(f.c.phase).toBe('carry'); return f;
 }
@@ -106,8 +108,28 @@ describe('Lectern Cantor authority', () => {
 });
 
 describe('Stray-Carrier authority', () => {
-  it('interrupts a rush at the rescue threshold, counted fresh for each rush', () => {
+  it('tells for 0.7 s while its lane follows the target, then locks the lane and flies along it (R06 follow-up §6)', () => {
     const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    expect(c.phase).toBe('tell'); expect(c.endTick - c.phaseTick).toBe(CARRIER_TELL);
+    const x = sim.eX[slot], y = sim.eY[slot];
+    p.y += 3; advance(sim, slot, 5);
+    expect([c.targetX, c.targetY]).toEqual([p.x, p.y]);
+    expect([sim.eX[slot], sim.eY[slot]]).toEqual([x, y]);
+    advance(sim, slot, CARRIER_TELL - 5);
+    expect(c.phase).toBe('active'); const lane = [c.targetX, c.targetY];
+    expect(lane).toEqual([p.x, p.y]);
+    // After the lock a sidestep out of the 2.25 m grab reach evades; the lane does not follow.
+    p.y += 4; advance(sim, slot, CARRIER_SWOOP);
+    expect([c.targetX, c.targetY]).toEqual(lane); expect(c.phase).toBe('recover'); expect(p.hp).toBe(120);
+  });
+  it('a fifth of its HP in damage during the tell stops the rush before it flies', () => {
+    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    sim.damageEnemy(slot, sim.eHp[slot] * 0.2, p.index);
+    expect(c.phase).toBe('recover'); advance(sim, slot, CARRIER_TELL + CARRIER_SWOOP);
+    expect(sim.commanders.carriedBy(p.id)).toBeUndefined();
+  });
+  it('interrupts a rush at the rescue threshold, counted fresh for each rush', () => {
+    const { sim, slot, p, c } = fixture(CARRIER); rushNow(sim, slot);
     const threshold = sim.eHp[slot] * 0.2;
     sim.damageEnemy(slot, 0, p.index); sim.damageEnemy(slot, threshold - 1, p.index); expect(c.phase).toBe('active');
     sim.damageEnemy(slot, 1, p.index); expect(c.phase).toBe('recover');
@@ -115,15 +137,15 @@ describe('Stray-Carrier authority', () => {
     advance(sim, slot, CARRIER_SWOOP); expect(sim.commanders.carriedBy(p.id)).toBeUndefined();
   });
   it('one shot no longer stops a rush, but the rescue threshold does', () => {
-    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    const { sim, slot, p, c } = fixture(CARRIER); rushNow(sim, slot);
     aimAt(sim, p, slot); p.fire = 1; sim.step();
     expect(p.shots).toBe(1); expect(sim.eHp[slot]).toBe(940); expect(c.phase).not.toBe('recover');
-    const { sim: other, slot: rusher, p: q, c: cast } = fixture(CARRIER); other.commanders.readyAt[rusher] = 0; other.commanders.update(rusher);
+    const { sim: other, slot: rusher, p: q, c: cast } = fixture(CARRIER); rushNow(other, rusher);
     other.damageEnemy(rusher, other.eHp[rusher] * 0.2, q.index); expect(cast.phase).toBe('recover');
     advance(other, rusher, CARRIER_SWOOP); expect(other.commanders.carriedBy(q.id)).toBeUndefined();
   });
   it('damage taken during a rush does not count toward the carry rescue that follows', () => {
-    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    const { sim, slot, p, c } = fixture(CARRIER); rushNow(sim, slot);
     sim.damageEnemy(slot, sim.eHp[slot] * 0.2 - 1, p.index);
     for (let i = 0; i < CARRIER_SWOOP && c.phase === 'active'; i++) advance(sim, slot, 1);
     expect(c.phase).toBe('carry');
@@ -156,7 +178,7 @@ describe('Stray-Carrier authority', () => {
     p.fire = 1; sim.step(); expect(p.shots).toBe(1);
   });
   it('cancels queued attacks and unfinished movement attacks at the instant of capture', () => {
-    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    const { sim, slot, p, c } = fixture(CARRIER); rushNow(sim, slot);
     p.fire = 3; p.pendingQ = p.pendingE = true; p.pendingItems = [true, true]; p.landingTick = 100;
     p.dash = { pressSeq: 1, pts: [p.x, p.y, p.z], done: 1, acceptTick: -1, full: false, cut: new Set() };
     for (let i = 0; i < CARRIER_SWOOP && c.phase === 'active'; i++) advance(sim, slot, 1);
@@ -174,21 +196,22 @@ describe('Stray-Carrier authority', () => {
     expect(sim.events.some(e => e.event.type === 'itemUsed')).toBe(false);
   });
   it('rushes a visible player even beside a teammate and with no nearby crowd', () => {
-    const { sim, slot, c } = fixture(CARRIER, 2); sim.commanders.readyAt[slot] = 0;
-    sim.commanders.update(slot); expect(c.phase).toBe('active'); expect(c.targetId).toBe(0);
+    const { sim, slot, c } = fixture(CARRIER, 2);
+    rushNow(sim, slot); expect(c.phase).toBe('active'); expect(c.targetId).toBe(0);
     advance(sim, slot, 30); expect(c.phase).toBe('carry');
     sim.removeEnemy(slot); expect(sim.commanders.diagnostics()).toEqual([]);
   });
   it('records Carrier decision reasons only for the dev overlay (audit E3)', () => {
     const quiet = fixture(CARRIER);
-    quiet.sim.commanders.readyAt[quiet.slot] = 0;
-    quiet.sim.commanders.update(quiet.slot);
+    rushNow(quiet.sim, quiet.slot);
     expect(quiet.c.phase).toBe('active');
     expect(quiet.sim.commanders.diagnostics()).toEqual([]);
     const dev = fixture(CARRIER, 1, 'betrayer', true);
     expect(dev.sim.commanders.diagnostics()).toEqual([expect.objectContaining({ slot: dev.slot, phase: 'idle', reason: 'initial delay' })]);
     dev.sim.commanders.readyAt[dev.slot] = 0;
     dev.sim.commanders.update(dev.slot);
+    expect(dev.sim.commanders.diagnostics()).toEqual([expect.objectContaining({ slot: dev.slot, targetId: 0, reason: 'telling' })]);
+    advance(dev.sim, dev.slot, CARRIER_TELL);
     expect(dev.c.phase).toBe('active');
     expect(dev.sim.commanders.diagnostics()).toEqual([expect.objectContaining({ slot: dev.slot, phase: 'active', targetId: 0, reason: 'rushing' })]);
   });
@@ -245,29 +268,29 @@ describe('Stray-Carrier authority', () => {
     throw new Error('Carrier stayed at arrow range instead of grabbing the solo target');
   });
   it('rushes without a mark and misses a sidestep without dealing grab damage', () => {
-    const { sim, slot, p, c } = fixture(CARRIER); crowd(sim); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
-    advance(sim, slot, CARRIER_TRACK_TICKS); const x = c.targetX; p.y += 4;
-    advance(sim, slot, CARRIER_SWOOP - CARRIER_TRACK_TICKS); expect(c.targetX).toBe(x); expect(c.phase).toBe('recover'); expect(p.hp).toBe(120);
+    const { sim, slot, p, c } = fixture(CARRIER); crowd(sim); rushNow(sim, slot);
+    advance(sim, slot, 6); const x = c.targetX; p.y += 4;
+    advance(sim, slot, CARRIER_SWOOP - 6); expect(c.targetX).toBe(x); expect(c.phase).toBe('recover'); expect(p.hp).toBe(120);
     expect(sim.eX[slot]).toBeGreaterThanOrEqual(x + Math.cos(c.yaw) * CARRIER_FLY_THROUGH);
     expect(sim.eZ[slot]).toBeGreaterThanOrEqual(6);
     expect(sim.commanders.readyAt[slot]).toBe(sim.tick + 240);
   });
   it('grabs a modest sidestep while passing the player, before the flight ends', () => {
-    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    const { sim, slot, p, c } = fixture(CARRIER); rushNow(sim, slot);
     p.y += 2;
     for (let i = 0; i < CARRIER_SWOOP && c.phase === 'active'; i++) advance(sim, slot, 1);
-    expect(c.phase).toBe('carry'); expect(sim.tick).toBeLessThan(CARRIER_SWOOP);
+    expect(c.phase).toBe('carry'); expect(sim.tick).toBeLessThan(CARRIER_TELL + CARRIER_SWOOP);
     expect(p.hp).toBe(120);
   });
   it('grabs a player who crosses the flight before its old endpoint check', () => {
-    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    const { sim, slot, p, c } = fixture(CARRIER); rushNow(sim, slot);
     put(sim, p, 15, 10);
     advance(sim, slot, 10);
-    expect(c.phase).toBe('carry'); expect(sim.tick).toBeLessThan(CARRIER_SWOOP);
+    expect(c.phase).toBe('carry'); expect(sim.tick).toBeLessThan(CARRIER_TELL + CARRIER_SWOOP);
   });
   it('dives past an invulnerable player and curves back up to flight height through full simulation ticks', () => {
     const { sim, slot, p, c } = fixture(CARRIER); p.invulUntil = 9999;
-    sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    rushNow(sim, slot);
     const startZ = sim.eZ[slot], heights: number[] = [];
     for (let i = 0; i < CARRIER_SWOOP; i++) { sim.step(); heights.push(sim.eZ[slot]); }
     const low = Math.min(...heights), bottom = heights.indexOf(low);
@@ -279,10 +302,10 @@ describe('Stray-Carrier authority', () => {
     expect(sim.eZ[slot]).toBeGreaterThanOrEqual(6);
   });
   it('stops a missed flight before a newly closed wall', () => {
-    const { sim, slot, p, c } = fixture(CARRIER); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
-    advance(sim, slot, CARRIER_TRACK_TICKS); p.y += 4;
+    const { sim, slot, p, c } = fixture(CARRIER); rushNow(sim, slot);
+    advance(sim, slot, 6); p.y += 4;
     for (let y = 1; y < 32; y++) sim.map.solid[y * sim.map.w + 23] = 1;
-    advance(sim, slot, CARRIER_SWOOP - CARRIER_TRACK_TICKS);
+    advance(sim, slot, CARRIER_SWOOP - 6);
     expect(c.phase).toBe('recover'); expect(sim.eX[slot]).toBeLessThanOrEqual(22);
     const x = sim.eX[slot]; advance(sim, slot, 30);
     expect(sim.eX[slot]).toBe(x); expect(sim.eZ[slot]).toBeGreaterThanOrEqual(6);
@@ -290,13 +313,13 @@ describe('Stray-Carrier authority', () => {
   });
   for (const distance of [3, 10, 19]) for (const speed of [6, 9, 11]) it(`catches straight retreat at ${speed} m/s from ${distance} m during full ticks`, () => {
     const { sim, slot, p, c } = fixture(CARRIER); put(sim, p, 10 + distance, 10);
-    sim.refreshFields(); sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    sim.refreshFields(); rushNow(sim, slot);
     for (let i = 0; i < CARRIER_SWOOP && c.phase === 'active'; i++) { p.x += speed / 30; sim.step(); }
     expect(c.phase).toBe('carry'); expect(p.dead).toBe(false);
   });
   for (const party of [1, 2]) it(`holds above a nearby horde for three seconds with periodic damage (party ${party})`, () => {
     const { sim, slot, p, c } = fixture(CARRIER, party); crowd(sim, p.x, p.y);
-    sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    rushNow(sim, slot);
     for (let i = 0; i < CARRIER_SWOOP && c.phase === 'active'; i++) advance(sim, slot, 1);
     expect(c.phase).toBe('carry'); const hp = p.hp, id = p.teleportId;
     advance(sim, slot, CARRIER_MIN_HOLD - 1);
@@ -314,7 +337,7 @@ describe('Stray-Carrier authority', () => {
   });
   it('climbs to six metres above ground when it grabs a jumping victim', () => {
     const { sim, slot, p, c } = fixture(CARRIER); p.z = 1; crowd(sim);
-    sim.commanders.readyAt[slot] = 0; sim.commanders.update(slot);
+    rushNow(sim, slot);
     advance(sim, slot, 30); expect(c.phase).toBe('carry');
     advance(sim, slot, 15); expect(p.z).toBeCloseTo(6);
   });

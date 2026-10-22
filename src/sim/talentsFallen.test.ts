@@ -44,16 +44,17 @@ describe('the base kit stays the base kit', () => {
 });
 
 describe('Tree A: The Walls of Dis', () => {
-  it('Red Iron: a melee blow the Fallen survives sparks 10 back into its striker', () => {
+  it('Red Iron: a melee blow the Fallen survives sparks 25 back into its striker', () => {
     for (const has of [false, true]) {
       const [sim, p] = setup();
       kit(sim, p, has ? ['a.1a'] : []);
       put(sim, p, 10.5, 10.5);
       const s = enemyAt(sim, BLESSED, 11.3, 10.5);
+      sim.eHp[s] = 100;
       sim.eTarget[s] = p.index;
       for (let i = 0; i < 8; i++) sim.updateMelee(s);
       expect(p.hp).toBeLessThan(p.maxHp);
-      expect(sim.eHp[s]).toBe(has ? 20 - FALLEN.redIron : 20);
+      expect(sim.eHp[s]).toBe(has ? 100 - FALLEN.redIron : 100);
     }
   });
 
@@ -123,18 +124,20 @@ describe('Tree A: The Walls of Dis', () => {
     expect(sim.eHp[free]).toBe(60);
   });
 
-  it('Wrath of Dis: 100 survived after the Hide erupts for 40 within 4 m, keeping the remainder', () => {
+  it('Wrath of Dis: 60 survived after the Hide erupts for 40 within 4 m, keeping the remainder', () => {
     const [sim, p] = setup();
     kit(sim, p, ['a.1a', 'a.1b', 'a.2a', 'a.2b', 'a.3b', 'a.cap']);
     put(sim, p, 10.5, 10.5);
     const near = enemyAt(sim, CHORISTER, 13, 10.5), far = enemyAt(sim, CHORISTER, 16, 10.5);
-    sim.damagePlayer(p, 100);
+    expect(FALLEN.wrathEvery).toBe(60);
+    // The Hide takes 40% off: 50 lands as 30, then 55 as 33, crossing 60 with 3 left over.
+    sim.damagePlayer(p, 50);
     expect(sim.eHp[near]).toBe(60);
-    sim.damagePlayer(p, 75);
+    sim.damagePlayer(p, 55);
     expect(sim.eHp[near]).toBe(60 - FALLEN.wrathDamage);
     expect(sim.eHp[far]).toBe(60);
-    expect(sim.talents.fallen.wrath.get(p.id)).toBeCloseTo(5, 5);
-    expect(events(sim, 'meter').at(-1)).toMatchObject({ kind: 'wrath', value: 5 });
+    expect(sim.talents.fallen.wrath.get(p.id)).toBeCloseTo(3, 5);
+    expect(events(sim, 'meter').at(-1)).toMatchObject({ kind: 'wrath', value: 3 });
   });
 });
 

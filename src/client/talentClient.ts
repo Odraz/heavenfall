@@ -15,6 +15,7 @@ import type { InterpolatedEnemies } from './snapshots';
 import { INFORMER, THROUGH_THE_THRONG } from '../sim/talents';
 import type { GameMap } from '../sim/map';
 import { FireView } from './fireView';
+import { furrowCells } from './furrow';
 import { debugState } from '../debug';
 import type { IncenseClouds } from '../render/incense';
 import { FLAG_ROOTED, FLAG_SLOWED } from '../net/protocol';
@@ -42,6 +43,9 @@ const CLAY = 0xb5452c;
 const CHAIN = 0xd8401c;
 
 interface Drawn { area: TalentArea; obj: THREE.Object3D; arrived: number }
+
+/** The FireView owner key of a furrow: negative, so it never meets a player's own fire. */
+const furrowKey = (areaId: number): number => -1 - areaId;
 
 export class TalentClient {
   readonly group = new THREE.Group();
@@ -118,11 +122,12 @@ export class TalentClient {
 
   sync(msg: FloorSync, now: number): void {
     if (msg.kits) for (const k of msg.kits) this.kits.set(k.playerId, k);
+    // Fire first: the areas then add their furrows' burning cells on top.
+    if (msg.fires || msg.talentAreas) this.fire.sync(msg.fires, msg.tick);
     if (msg.talentAreas) {
       for (const id of [...this.drawn.keys()]) this.remove(id);
       for (const a of msg.talentAreas) this.add(a, now);
     }
-    if (msg.fires || msg.talentAreas) this.fire.sync(msg.fires, msg.tick);
   }
 
   /** A host event; returns true when it was a talent event. */
@@ -290,6 +295,10 @@ export class TalentClient {
     } else obj = this.r5Area(a);
     this.group.add(obj);
     this.drawn.set(a.id, { area: a, obj, arrived: now });
+    if (a.kind === 'furrow') {
+      const cells = furrowCells(a, this.d.map);
+      this.fire.apply(furrowKey(a.id), cells, cells.map(() => a.endTick), this.d.tick());
+    }
     if (a.kind === 'cloud') {
       // The incense puffs: for its remaining life, following its wearer while worn.
       const left = Math.max(0.2, (a.endTick - this.d.tick()) / 30);
@@ -329,9 +338,10 @@ export class TalentClient {
         flat(new THREE.CircleGeometry(a.x1, 28), 0xa58cff, 0.35);
         flat(new THREE.RingGeometry(a.x1 - 0.1, a.x1, 28), 0xd8ccff, 0.7, 0.06);
         break;
-      case 'boundary': case 'furrow':
-        line(a.x, a.y, a.z, a.x1, a.y1, a.z1, a.kind === 'boundary' ? CHAIN : 0xff5a1c, a.kind === 'boundary' ? 0.18 : 1.5);
+      case 'boundary':
+        line(a.x, a.y, a.z, a.x1, a.y1, a.z1, CHAIN, 0.18);
         break;
+      // Ploughshares' furrow burns with the class floor fire's flames (R06 follow-up §7), drawn by the FireView.
       case 'bread':
         flat(new THREE.RingGeometry(a.x1 - 0.12, a.x1, 48), 0x5ee65e, 0.5);
         break;
@@ -350,6 +360,7 @@ export class TalentClient {
     const d = this.drawn.get(id);
     if (!d) return;
     if (d.area.kind === 'cloud') this.d.incense.removeId(id);
+    if (d.area.kind === 'furrow') this.fire.cells.delete(furrowKey(id));
     this.group.remove(d.obj);
     d.obj.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
     this.drawn.delete(id);

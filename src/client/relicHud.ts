@@ -66,7 +66,7 @@ export class RelicHud {
       if (id) {
         s.icon.src = RELIC_ART[id];
         const effect = relicEffect(id, relics);
-        s.box.title = effect === id ? `${RELICS[id].name}: ${RELICS[id].rule}` : `${RELICS[id].name} → ${effectName(effect)}: ${COMBOS[effect as ComboId].rule}`;
+        s.box.title = effect === id ? `${RELICS[id].name}: ${RELICS[id].text}` : `${RELICS[id].name} → ${effectName(effect)}: ${COMBOS[effect as ComboId].text}`;
         s.box.setAttribute('aria-label', `Relic ${i + 1}: ${s.box.title}`);
       } else { s.box.title = 'No relic'; s.box.setAttribute('aria-label', `Relic ${i + 1}: empty`); }
     });

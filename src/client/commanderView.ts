@@ -1,8 +1,38 @@
 import * as THREE from 'three';
-import { COMMANDER_RECORD_CAP, type CommanderCast } from '../data/commanders';
+import { CARRIER_FLY_THROUGH, CARRIER_GRAB_RADIUS, CARRIER_MIN_FLIGHT, CARRIER_SWOOP, COMMANDER_RECORD_CAP, type CommanderCast } from '../data/commanders';
 import type { GameMap } from '../sim/map';
 import { beamSegment } from '../sim/commanders';
 import { Ribbon } from '../render/vfx';
+
+/** Chevrons along a Carrier's lane: one every 2 m, at most this many per record (a 32 m flight). */
+const CHEVRON_SPACING = 2;
+const CHEVRONS = 17;
+/** The lane flashes white-gold for this many ticks when it locks (R06 follow-up §6). */
+const LOCK_FLASH = 8;
+
+/**
+ * A floor chevron pointing along +x, as wide as the Carrier's grab reach: standing outside the
+ * chevrons is outside the grab.
+ */
+function chevronGeometry(): THREE.BufferGeometry {
+  const d = 0.7, w = CARRIER_GRAB_RADIUS, k = 0.55;
+  const shape = new THREE.Shape([new THREE.Vector2(d, 0), new THREE.Vector2(-d, w), new THREE.Vector2(-d - k, w),
+    new THREE.Vector2(d - k, 0), new THREE.Vector2(-d - k, -w), new THREE.Vector2(-d, -w)]);
+  const geo = new THREE.ShapeGeometry(shape);
+  geo.rotateX(-Math.PI / 2);
+  return geo;
+}
+
+/**
+ * Where a Carrier's lane chevrons stand (R06 follow-up §6): from the Carrier along its facing, to the
+ * target and on past it as far as the flight goes, marching toward the target as ticks pass. Pure, for tests.
+ */
+export function chevronPoints(c: Pick<CommanderCast, 'x' | 'y' | 'yaw' | 'targetX' | 'targetY'>, tick: number): Array<[number, number]> {
+  const length = Math.max(CARRIER_MIN_FLIGHT, Math.hypot(c.targetX - c.x, c.targetY - c.y) + CARRIER_FLY_THROUGH);
+  const shift = (tick * 0.2) % CHEVRON_SPACING, out: Array<[number, number]> = [];
+  for (let s = 1 + shift; s <= length && out.length < CHEVRONS; s += CHEVRON_SPACING) out.push([c.x + Math.cos(c.yaw) * s, c.y + Math.sin(c.yaw) * s]);
+  return out;
+}
 
 /** Reusable meshes: host yaw/pitch drive the ray; local geometry only clips its visible length. */
 export class CommanderView {
@@ -19,6 +49,8 @@ export class CommanderView {
   private readonly flareMat: THREE.SpriteMaterial;
   private readonly knotMat: THREE.SpriteMaterial;
   private readonly pool;
+  private readonly chevron = chevronGeometry();
+  private readonly lanes: Array<{ material: THREE.MeshBasicMaterial; marks: THREE.Mesh[] }>;
   /**
    * The damaging beam reads at play distance (audit batch 3): a wide soft glow around the 1 m gold
    * body, a white-hot core, flares at the open book and where the beam stops, and a bright knot that
@@ -43,11 +75,41 @@ export class CommanderView {
       const ward = new THREE.Mesh(this.wardGeometry, this.wardMaterial); ward.name = 'cantor-frontal-ward';
       this.group.add(marker, ring, glow.mesh, ray.mesh, core.mesh, ward, origin, impact, knot); return { marker, ring, ray, core, glow, ward, origin, impact, knot };
     });
+    this.lanes = Array.from({ length: COMMANDER_RECORD_CAP }, () => {
+      const material = new THREE.MeshBasicMaterial({ color: 0xffc547, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, fog: false });
+      const marks = Array.from({ length: CHEVRONS }, () => {
+        const m = new THREE.Mesh(this.chevron, material); m.name = 'carrier-chevron'; m.renderOrder = 3; m.visible = false;
+        this.group.add(m); return m;
+      });
+      return { material, marks };
+    });
+  }
+
+  /**
+   * A Carrier's lane (R06 follow-up §6): gold chevrons marching toward its target through the tell,
+   * brightening as it nears; a white-gold flash as the lane locks; the rest of the lane while it flies.
+   */
+  private lane(i: number, c: CommanderCast | undefined, map: GameMap, tick: number): void {
+    const lane = this.lanes[i];
+    for (const m of lane.marks) m.visible = false;
+    if (!c || c.kind !== 'carry' || (c.phase !== 'tell' && c.phase !== 'active')) return;
+    const age = tick - c.phaseTick, progress = Math.max(0, Math.min(1, age / Math.max(1, c.endTick - c.phaseTick)));
+    const locked = c.phase === 'active';
+    if (locked && age >= CARRIER_SWOOP) return;
+    lane.material.color.setHex(locked && age < LOCK_FLASH ? 0xfff4d0 : 0xffc547);
+    lane.material.opacity = locked ? Math.max(0.2, 0.9 - age / 40) : 0.35 + 0.5 * progress;
+    chevronPoints(c, locked ? 0 : tick).forEach(([x, y], k) => {
+      const f = map.floor[Math.floor(y) * map.w + Math.floor(x)];
+      if (!Number.isFinite(f)) return;
+      const m = lane.marks[k];
+      m.visible = true; m.position.set(x, f + 0.07, y); m.rotation.y = -c.yaw;
+    });
   }
   update(casts: readonly CommanderCast[], map: GameMap, tick: number, camera: THREE.Vector3): void {
     for (let i = 0; i < this.pool.length; i++) {
       const v = this.pool[i], c = casts[i]; v.ward.visible = v.marker.visible = v.ring.visible = v.ray.mesh.visible = v.core.mesh.visible = false;
       v.glow.mesh.visible = v.origin.visible = v.impact.visible = v.knot.visible = false;
+      this.lane(i, c, map, tick);
       if (!c || c.phase === 'idle' || c.phase === 'recover') continue;
       if (c.kind === 'beam') {
         v.ward.visible = true; v.ward.position.set(c.x, c.z + 1.5, c.y);
@@ -85,5 +147,6 @@ export class CommanderView {
     this.beamGlow.dispose(); this.flareMat.dispose(); this.knotMat.dispose();
     this.ring.dispose(); this.cloth.dispose(); this.gold.dispose(); this.white.dispose(); this.beamGold.dispose(); this.beamCore.dispose();
     this.wardGeometry.dispose(); this.wardMaterial.dispose();
+    this.chevron.dispose(); for (const l of this.lanes) l.material.dispose();
   }
 }

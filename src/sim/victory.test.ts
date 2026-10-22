@@ -75,7 +75,7 @@ it('secures disconnected inventory and accepts a post-win purchase revision with
   expect(saved[1].inventory[0]).toEqual({ item: 'seal', count: 1 }); expect(saved[1].characters.heretic.xp).toBe(0); expect(saved[1].stats.wins).toBe(1);
   const p = sim.players[0], at = stairPoints(sim.map, g.floor.boss)[1];
   Object.assign(p, { x: at.x, y: at.y + 1, z: at.z, yaw: -Math.PI / 2, pitch: Math.atan2(-.6, 1) });
-  sim.interact(0, 1, 5); expect(p.sold).toBe(1); const wallet = p.wallet; sim.interact(0, 1, 5); expect(p.wallet).toBe(wallet);
+  const before = p.wallet; sim.interact(0, 1, 5); expect(p.wallet).toBeLessThan(before); const wallet = p.wallet; sim.interact(0, 1, 5); expect(p.wallet).toBe(wallet);
   const r = records.byPlayer(0)!; r.inventory = structuredClone(p.inventory); const revision = records.state(r);
   saved[0] = applyProgress(saved[0], revision)!; expect(applyProgress(saved[0], revision)).toBeNull();
   expect(saved[0].stats.wins).toBe(1); expect(saved[0].heavens.clears[1]).toBe(1); expect(saved[0].characters.fallen.xp).toBe(1500 * XP_GAIN);

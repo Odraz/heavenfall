@@ -19,7 +19,7 @@ import {
   CARRIER_PARTY_HOLD,
   CARRIER_RECOVERY,
   CARRIER_SWOOP,
-  CARRIER_TRACK_TICKS,
+  CARRIER_TELL,
   COMMANDER_RECORD_CAP,
   turnToward,
   type CarrierCheck,
@@ -211,7 +211,7 @@ export class Commanders {
   /** Rush and carry share one rule: a fifth of the Carrier's HP in accepted damage stops it (audit batch 4). */
   damaged(slot: number, amount: number): void {
     const cast = this.active.get(slot);
-    if (!cast || amount <= 0 || cast.kind !== 'carry' || cast.phase !== 'active' && cast.phase !== 'carry') return;
+    if (!cast || amount <= 0 || cast.kind !== 'carry' || cast.phase !== 'tell' && cast.phase !== 'active' && cast.phase !== 'carry') return;
     this.rescueDamage[slot] += amount;
     if (this.rescueDamage[slot] >= this.rescueThreshold[slot] - 1e-6) this.cancel(slot);
   }
@@ -432,12 +432,13 @@ export class Commanders {
       this.cancel(slot);
       return true;
     }
-    if (cast.phase === 'active') this.rush(cast, p);
+    if (cast.phase === 'tell') this.tell(cast, p);
+    else if (cast.phase === 'active') this.rush(cast, p);
     else if (cast.phase === 'carry') this.carry(cast, p);
     return true;
   }
 
-  /** Starts a rush at the nearest visible player whose swoop path is clear. */
+  /** Starts a tell at the nearest visible player whose swoop path is clear (R06 follow-up §6). */
   private tryRush(cast: CommanderCast): void {
     const sim = this.sim;
     const slot = cast.slot;
@@ -447,31 +448,47 @@ export class Commanders {
     this.note(slot, { tick: sim.tick, targetId: p?.id ?? -1, distance: p ? Math.hypot(p.x - cast.x, p.y - cast.y) : 0,
       nearbyBlessed: 0, crowdCount: 0, reason: p ? 'swoop path blocked' : 'no visible target in range' });
     if (!p || !carryPathClear(sim.map, cast.room, cast.x, cast.y, cast.z, p.x, p.y, p.z + 2)) return;
-    this.start(cast, p, CARRIER_SWOOP);
+    this.start(cast, p, CARRIER_TELL);
     // A refused start (exhausted cast IDs) leaves the Carrier idle.
     if (cast.targetId !== p.id || cast.phaseTick !== sim.tick) return;
-    cast.phase = 'active';
     cast.yaw = Math.atan2(p.y - cast.y, p.x - cast.x);
+    this.rescueDamage[slot] = 0;
+    this.note(slot, { reason: 'telling' });
+  }
+
+  /**
+   * The tell: the Carrier holds still, facing its target, and the lane (to the target and on past it)
+   * follows them. When it ends the lane locks where the target stands and the flight starts.
+   */
+  private tell(cast: CommanderCast, p: SimPlayer): void {
+    const sim = this.sim;
+    const slot = cast.slot;
+    sim.eState[slot] = ST_WINDUP;
+    cast.yaw = Math.atan2(p.y - cast.y, p.x - cast.x);
+    cast.targetX = p.x;
+    cast.targetY = p.y;
+    cast.targetZ = p.z;
+    if (sim.tick < cast.endTick) return;
+    if (!carryPathClear(sim.map, cast.room, cast.x, cast.y, cast.z, p.x, p.y, p.z + 2)) {
+      this.note(slot, { reason: 'swoop path blocked' });
+      this.cancel(slot);
+      return;
+    }
+    cast.phase = 'active';
+    cast.phaseTick = sim.tick;
+    cast.endTick = sim.tick + CARRIER_SWOOP;
     cast.dropX = p.x;
     cast.dropY = p.y;
-    this.rescueDamage[slot] = 0;
     this.origins.set(slot, { x: cast.x, y: cast.y, z: cast.z });
     this.note(slot, { reason: 'rushing' });
   }
 
-  /** Brief acquisition, then a committed flight: backing away is caught, a late sidestep can evade. */
+  /** A committed flight along the locked lane: backing away is caught, a sidestep out of the lane evades. */
   private rush(cast: CommanderCast, p: SimPlayer): void {
     const sim = this.sim;
     const slot = cast.slot;
     const origin = this.origins.get(slot)!;
     const f = Math.min(1, (sim.tick - cast.phaseTick) / CARRIER_SWOOP);
-    if (sim.tick - cast.phaseTick <= CARRIER_TRACK_TICKS) {
-      cast.yaw = turnToward(cast.yaw, Math.atan2(p.y - origin.y, p.x - origin.x), Math.PI / 30);
-      const reach = Math.hypot(p.x - origin.x, p.y - origin.y);
-      cast.targetX = origin.x + Math.cos(cast.yaw) * reach;
-      cast.targetY = origin.y + Math.sin(cast.yaw) * reach;
-      cast.targetZ = p.z;
-    }
     const distance = Math.hypot(cast.targetX - origin.x, cast.targetY - origin.y);
     const length = Math.max(CARRIER_MIN_FLIGHT, distance + CARRIER_FLY_THROUGH);
     const travel = length * f;

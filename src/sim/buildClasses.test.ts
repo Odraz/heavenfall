@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ClassId } from '../data/classes';
 import { ALT_ABILITIES, BASE_ABILITIES, BINDER_NODES, DEV_BUILDS, FALLEN_NODES, HERETIC_NODES, TALENT_NODES, devBuildOrder, talentNode, type TalentNode } from '../data/talents';
-import { checkRite, learnedError, producedStates, resolveKit, runBuildError, type RunBuild, type SourceContext } from './build';
+import { augmentsConflict, checkRite, learnedError, producedStates, resolveKit, runBuildError, type RunBuild, type SourceContext } from './build';
 
 const alone: SourceContext = { allies: [], items: [], areas: new Set(), hazard: false };
 /** A full party with every other class's base kit, a hazard, survivors and flyers on the floor. */
@@ -147,9 +147,9 @@ describe('the Fallen on the resolver', () => {
 });
 
 describe('the Heretic Saint on the resolver', () => {
-  it('excludes the LMB payloads and Communion payloads from each other, with the Long Chain compatible', () => {
+  it('excludes the cross-tree LMB payloads and Communion payloads, with the Long Chain compatible', () => {
     expect(learnedError('heretic', build('heretic', 'b.1a c.1a c.1b c.2a'), null)).toMatch(/same thing/);
-    expect(learnedError('heretic', build('heretic', 'c.1a c.2a c.2b'), null)).toMatch(/same thing/);
+    expect(learnedError('heretic', build('heretic', 'c.1a c.2a c.2b'), null)).toBeNull();
     expect(learnedError('heretic', build('heretic', 'a.1b b.1a b.2b'), null)).toMatch(/same thing/);
     expect(learnedError('heretic', build('heretic', 'a.1a a.1b a.2b a.3b b.1a'), null)).toBeNull();
   });
@@ -187,8 +187,8 @@ describe('the Heretic Saint on the resolver', () => {
 });
 
 describe('the Binder on the resolver', () => {
-  it('keeps the RMB geometries and Discord payloads exclusive; the Delivery Cast Down beside the capstone', () => {
-    expect(learnedError('binder', build('binder', 'b.1a b.1b b.3b b.2a b.2b'), null)).toMatch(/same thing/);
+  it('keeps the cross-tree RMB geometries and Discord payloads exclusive; the Delivery Cast Down beside the capstone', () => {
+    expect(learnedError('binder', build('binder', 'b.1a b.1b b.3b b.2a b.2b'), null)).toBeNull();
     expect(learnedError('binder', build('binder', 'b.1a c.1a c.2b'), null)).toMatch(/same thing/);
     expect(learnedError('binder', build('binder', 'b.1a b.2a c.1a c.1b c.2a c.3b'), null)).toMatch(/same thing/);
     expect(learnedError('binder', build('binder', 'a.1a a.1b a.2b a.3a a.3b a.cap'), null)).toBeNull();
@@ -245,5 +245,29 @@ describe('quick builds by class', () => {
   });
   it('name a talent the catalog knows', () => {
     for (const d of Object.values(DEV_BUILDS)) for (const t of d.talents) expect(talentNode(t), t).toBeDefined();
+  });
+});
+
+describe('one tree always combines (R06 follow-up §1)', () => {
+  it('no two nodes of one tree conflict, in any class', () => {
+    for (const classId of ['fallen', 'heretic', 'binder', 'betrayer'] as const) {
+      const nodes = TALENT_NODES[classId];
+      for (const a of nodes) for (const b of nodes) if (a !== b && a.tree === b.tree) expect(augmentsConflict(a, b), `${a.id} ${b.id}`).toBe(false);
+    }
+  });
+  it('learns the three former same-tree pairs together', () => {
+    expect(learnedError('heretic', build('heretic', 'c.1a c.1b c.2a c.2b'), null)).toBeNull();
+    expect(learnedError('binder', build('binder', 'b.1a b.1b b.2a b.2b b.3b'), null)).toBeNull();
+    expect(learnedError('betrayer', build('betrayer', 'a.1a a.1b a.2a a.2b a.3b'), null)).toBeNull();
+  });
+  it('still refuses a cross-tree pair, naming both', () => {
+    expect(learnedError('binder', build('binder', 'b.1a c.1a c.2b'), null)).toBe('Whirl and The Whip change the same thing');
+    expect(learnedError('heretic', build('heretic', 'b.1a c.1a c.1b c.2b'), null)).toBe('Ploughshares and Scapegoat change the same thing');
+  });
+  it("a Rite displaces only a learned augment from another tree", () => {
+    const kit = resolveKit('heretic', { ...build('heretic', 'c.1a c.1b c.2b'), rites: ['heretic.c.2a'] });
+    expect(kit.suppressed.size).toBe(0);
+    const cross = resolveKit('heretic', { ...build('heretic', 'b.1a'), rites: ['heretic.c.2a'] });
+    expect(cross.suppressed.get('heretic.b.1a')).toBe('heretic.c.2a');
   });
 });

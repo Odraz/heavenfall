@@ -5,7 +5,7 @@
  * or equipping never moves the panel (UI stability).
  */
 import { button, el } from './menus';
-import { COMBOS, COMBO_IDS, RELICS, RELIC_IDS, activeCombo, relicEffect, type ComboId, type RelicId } from '../data/relics';
+import { COMBOS, COMBO_IDS, RELICS, RELIC_IDS, activeCombo, effectText, relicEffect, type ComboId, type RelicId } from '../data/relics';
 import { RELIC_ART } from '../client/itemArt';
 import { attachTooltip } from './tooltip';
 import type { RelicOfferState } from '../net/messages';
@@ -34,14 +34,16 @@ export interface RelicPanel {
   setEquipped(equipped: [string | null, string | null], owned?: readonly string[], pawned?: readonly string[]): void;
 }
 
-/** One relic's card text: rarity, trigger, effect, numbers, the combo it belongs to and its flavor. */
+/**
+ * One relic's card (R06 follow-up §2): a small rarity label, the name, one sentence saying when and what,
+ * the cooldown on its own line, a dormancy note if any, then the flavor set apart.
+ */
 export function relicCard(id: RelicId, parent: HTMLElement, note: string | null): void {
   const r = RELICS[id];
   el('div', `relic-card-rarity ${r.rarity}`, parent, `${RARITY_NAMES[r.rarity]} relic${r.source === 'chest' ? '' : ' · from a deed'}`);
   el('div', 'relic-card-name', parent, r.name);
-  el('div', 'relic-card-trigger', parent, `${r.trigger}:`);
-  el('div', 'relic-card-rule', parent, r.rule);
-  el('div', 'relic-card-numbers', parent, r.numbers);
+  el('div', 'relic-card-rule', parent, r.text);
+  el('div', 'relic-card-cooldown', parent, `Cooldown ${r.cooldown} s`);
   if (note) el('div', 'relic-card-note', parent, note);
   el('div', 'relic-card-flavor', parent, r.flavor);
 }
@@ -113,8 +115,9 @@ export function relicPanel(o: RelicPanelOptions): RelicPanel {
       const row = el('div', `relic-combo-row${a && b ? '' : ' undiscovered'}${combo?.id === id ? ' active' : ''}`, combos);
       if (a && b) {
         el('span', 'relic-combo-name', row, c.name);
-        el('span', 'relic-combo-rule', row, `${RELICS[c.a].name} + ${RELICS[c.b].name}: ${c.rule} Gives up ${c.lost}.`);
-        attachTooltip(row, c.name, `${c.numbers}. ${c.flavor}`);
+        el('span', 'relic-combo-rule', row, `${RELICS[c.a].name} + ${RELICS[c.b].name}: ${c.text} Gives up ${c.lost}.`);
+        attachTooltip(row, c.name, `Cooldown ${effectText(c.id).cooldown} s
+${c.flavor}`);
       } else if (a || b) el('span', 'relic-combo-rule', row, `Combo: ??? (${RELICS[a ? c.a : c.b].name} with a relic you haven't found)`);
       else el('span', 'relic-combo-rule', row, 'Combo: ???');
     }
@@ -179,11 +182,11 @@ export function relicOfferOverlay(o: { onTake: (offerId: number, id: string) => 
         const head = el('div', 'rite-head', c);
         const img = el('img', 'talent-icon', head); img.src = RELIC_ART[id]; img.alt = '';
         const text = el('div', '', head);
-        el('div', 'rite-tree', text, `${RARITY_NAMES[r.rarity]} · ${r.trigger}`);
+        el('div', 'rite-tree', text, `${RARITY_NAMES[r.rarity]} relic`);
         el('div', 'rite-name', text, r.name);
-        el('div', 'rite-rule', c, r.rule);
+        el('div', 'rite-rule', c, r.text);
         const notes = el('div', 'rite-notes', c);
-        el('div', '', notes, r.numbers);
+        el('div', '', notes, `Cooldown ${r.cooldown} s`);
         if (card.note) el('div', '', notes, `${card.note} · For another build or character`);
         const combo = COMBOS[r.combo];
         el('div', '', notes, `Combo with ${RELICS[combo.a === id ? combo.b : combo.a].name}: ${combo.name}`);

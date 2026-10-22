@@ -46,7 +46,7 @@ import type { NetStats } from '../net/netStats';
 import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_STUNNED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
-import { aimDir, estimateSilverBullet, rayCylinder } from '../sim/combat';
+import { aimDir, estimateSilverBullet, rayCylinder, rayEnemy } from '../sim/combat';
 import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, PROJECTILE_SLOTS, TICK_DT, TICK_MS } from '../sim/constants';
 import { raycastTerrain } from '../sim/los';
 import { applyLeaves, leafOpen, overVoid, type GameMap } from '../sim/map';
@@ -946,7 +946,8 @@ export class Game {
    */
   private scourgeShape(now: number, playerId: number, x: number, y: number, z: number, yaw: number): void {
     const has = (id: string) => this.talents.kits.get(playerId)?.active.includes(id) ?? false;
-    if (has('binder.b.1a')) { this.vfx.ring(now, x, y, z + 0.9, 0xff6a2a, 0.6, 3, 260); return; }
+    // Whirl with The Long Flail reaches 4 m all round (R06 follow-up §1).
+    if (has('binder.b.1a')) { this.vfx.ring(now, x, y, z + 0.9, 0xff6a2a, 0.6, has('binder.b.3b') ? BINDER.flail : 3, 260); return; }
     if (has('binder.c.2b')) {
       const pts: Array<[number, number, number]> = [[x, y, z + 0.9], [x + Math.cos(yaw) * BINDER.whipLength, y + Math.sin(yaw) * BINDER.whipLength, z + 0.9]];
       this.vfx.beam(now, pts, 0xff6a2a, 0.12, 240); this.vfx.beam(now, pts, 0xfff0c0, 0.04, 240);
@@ -1338,7 +1339,7 @@ export class Game {
       if (msg.route) this.applyRoute(msg.route);
       if (msg.edicts) { this.hud.setSentence(sentenceLabel(msg.edicts.length)); debugState.sentence = msg.edicts.length; }
       const relics = msg.relicStates?.find((r) => r.playerId === this.localId);
-      if (relics) { this.relicHud.setRelics(relics.relics, relics.combo, relics.ready); debugState.relics = { equipped: [relics.relics[0], relics.relics[1]], combo: relics.combo }; }
+      if (relics) { this.relicHud.setRelics(relics.relics, relics.combo, relics.ready); this.hud.setRelicHints(relics.relics); debugState.relics = { equipped: [relics.relics[0], relics.relics[1]], combo: relics.combo }; }
       const inventory = msg.inventories?.find(p => p.playerId === this.localId);
       if (inventory) this.setInventory(inventory);
       this.dominion.sync(msg);
@@ -1427,6 +1428,7 @@ export class Game {
       case 'relicState':
         if (e.playerId !== this.localId) break;
         this.relicHud.setRelics(e.relics, e.combo, e.ready);
+        this.hud.setRelicHints(e.relics);
         debugState.relics = { equipped: [e.relics[0], e.relics[1]], combo: e.combo };
         if (this.overlayView?.kind === 'relics') this.overlayView.view.setEquipped(e.relics, this.inventory?.ownedRelics, this.inventory?.pawnedRelics);
         break;
@@ -2288,7 +2290,7 @@ export class Game {
       const ts: PelletTarget[] = [];
       for (let i = 0; i < ents.count; i++) {
         const def = ENEMIES[ents.type[i]];
-        const t = rayCylinder(ex, ey, ez, dx, dy, dz, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height);
+        const t = rayEnemy(ex, ey, ez, dx, dy, dz, ents.type[i], ents.x[i], ents.y[i], enemyZ[i]);
         if (t > stop) continue;
         const close = shotgun && distToCylinder(ex, ey, p.body.z + PLAYER_HEIGHT / 2, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height) <= SHOTGUN_KNOCKBACK_RANGE;
         ts.push({ i, t, type: ents.type[i], rooted: (ents.flags[i] & FLAG_ROOTED) !== 0, close });
