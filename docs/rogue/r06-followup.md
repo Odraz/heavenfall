@@ -128,6 +128,8 @@ Run `npm run dev`.
 
 If backing away still wins, the reserve option is the slower backpedal (§9, option 6).
 
+**Later (2026-10-22):** a milder option 6 is in on request: backpedal factor 0.8 → 0.7. The Fallen and Binder now back away at 4.2 m/s (Blessed 4), the Heretic at 5.6, the Betrayer at 6.3. Below 0.67 the Blessed would catch a backing Fallen.
+
 ## Stages and verification
 
 1. Talent screen (§1), then relics (§2) and shop (§3).

@@ -416,7 +416,7 @@ it('leads accepted running movement, shortens unsafe leads, and forgets stopped/
 it('applies the same backward speed factor to the host movement bound', () => {
   const { sim } = fixture(room(80, 25)), p = sim.players[0]; put(sim, p, 35.5, 10.5);
   sim.applyInput(p.id, { ...INPUT_DEFAULTS, seq: 1, x: 1, y: p.y, z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 }, 1000);
-  expect(35.5 - p.x).toBeCloseTo(1.2 * p.speed * 0.8 + 0.5);
+  expect(35.5 - p.x).toBeCloseTo(1.2 * p.speed * 0.7 + 0.5);
 });
 
 for (const turn of [false, true]) it(`a ${turn ? 'turning' : 'straight'} runner ${turn ? 'escapes' : 'is hit by'} the locked predictive flying slam`, () => {

@@ -24,7 +24,7 @@ test('controls: right mouse fires the secondary, left pressed after it the prima
   await page.mouse.up({ button: 'right' });
 });
 
-test('native backward movement is twenty percent slower than forward movement', async ({ page }) => {
+test('native backward movement is thirty percent slower than forward movement', async ({ page }) => {
   await page.goto('/?dev=1&map=dominion&class=fallen&god=1&seed=7');
   await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.lastSnapshotTick > 0);
   await page.locator('.game-canvas').click({ position: { x: 300, y: 160 } });
@@ -34,13 +34,17 @@ test('native backward movement is twenty percent slower than forward movement', 
     expect(await page.evaluate(() => { window.__heavenfallTeleport!(14.5, 2.5); return window.__heavenfall.self; })).toMatchObject({ x: 14.5, y: 2.5 });
     await page.keyboard.down(key);
     await page.waitForFunction(() => Math.abs(window.__heavenfall.self.x - 14.5) > 0.3);
+    // Speed per game time: the game moves at most a 50 ms step per frame (MAX_FRAME_DT), and headless
+    // Chromium drops to 10-15 fps now and then, so each frame counts as the step the game took, by the
+    // same frame clock.
     const measured = await page.evaluate(() => new Promise<number>((resolve) => {
-      const start = performance.now(), from = { ...window.__heavenfall.self };
-      const sample = () => {
-        const elapsed = performance.now() - start;
-        if (elapsed < 400) { requestAnimationFrame(sample); return; }
-        const to = window.__heavenfall.self;
-        resolve(Math.hypot(to.x - from.x, to.y - from.y) / (elapsed / 1000));
+      let at = -1, from = { ...window.__heavenfall.self }, dist = 0, time = 0;
+      const sample = (now: number) => {
+        const to = { ...window.__heavenfall.self };
+        if (at >= 0) { dist += Math.hypot(to.x - from.x, to.y - from.y); time += Math.min(now - at, 50); }
+        at = now; from = to;
+        if (time < 400) { requestAnimationFrame(sample); return; }
+        resolve(dist / (time / 1000));
       }; requestAnimationFrame(sample);
     }));
     await page.keyboard.up(key);
@@ -48,5 +52,5 @@ test('native backward movement is twenty percent slower than forward movement', 
   };
   const forward = await speed('KeyW'), backward = await speed('KeyS');
   expect(forward).toBeGreaterThan(5.7); expect(forward).toBeLessThan(6.3);
-  expect(backward / forward).toBeGreaterThan(0.76); expect(backward / forward).toBeLessThan(0.84);
+  expect(backward / forward).toBeGreaterThan(0.66); expect(backward / forward).toBeLessThan(0.74);
 });

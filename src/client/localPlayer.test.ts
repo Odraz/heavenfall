@@ -33,10 +33,10 @@ for (const speed of [6, 8, 9]) it(`slows ordinary backward movement at speed ${s
   };
   expect(travel(1, 0)).toBeCloseTo(speed);
   expect(travel(0, 1)).toBeCloseTo(speed);
-  expect(travel(-1, 0)).toBeCloseTo(speed * 0.8);
-  expect(travel(0, -1, Math.PI / 2)).toBeCloseTo(speed * 0.8);
-  expect(travel(-1, 0, 0, 0.55, true)).toBeCloseTo(speed * 0.8 * 0.55);
-  expect(travel(-Math.SQRT1_2, Math.SQRT1_2)).toBeCloseTo(speed * (1 - 0.2 * Math.SQRT1_2));
+  expect(travel(-1, 0)).toBeCloseTo(speed * 0.7);
+  expect(travel(0, -1, Math.PI / 2)).toBeCloseTo(speed * 0.7);
+  expect(travel(-1, 0, 0, 0.55, true)).toBeCloseTo(speed * 0.7 * 0.55);
+  expect(travel(-Math.SQRT1_2, Math.SQRT1_2)).toBeCloseTo(speed * (1 - 0.3 * Math.SQRT1_2));
   const dash = new LocalPlayer(25, 25, 0, speed); dash.startDash(-1, 0);
   for (let i = 0; i < 4; i++) dash.update(map, 0.05, -1, 0, false);
   expect(dash.body.x).toBeCloseTo(17);
