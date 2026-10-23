@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { BLESSED } from '../data/enemies';
 import { FIRE_LEFT, FIRE_RIGHT, WEAPONS } from '../data/weapons';
 import { decodeInput, encodeInput, type InputMsg } from '../net/protocol';
-import { nextShot, queueShots, SHOT_EARLY_TICKS, SHOT_QUEUE, SHOT_WAIT_TICKS, type ClientShot } from './fireLatch';
+import { nextShot, queueShots, SHOT_EARLY_TICKS, SHOT_QUEUE, SHOT_WAIT_TICKS, shotsDone, type ClientShot } from './fireLatch';
 import { NO_VIEW } from './lagComp';
 import type { SimPlayer, Simulation } from './sim';
 import { aimAt, enemyAt, INPUT_DEFAULTS, makeSim, put, room } from './testutil/sims';
@@ -145,14 +145,26 @@ describe('client-timed shots on the host (netcode stage 2)', () => {
 });
 
 describe('the shot queue', () => {
-  const shot = (tick: number): ClientShot => ({ button: 0, yaw: 0, pitch: 0, view: NO_VIEW, tick });
+  const shot = (tick: number, index = 0): ClientShot => ({ button: 0, yaw: 0, pitch: 0, view: NO_VIEW, tick, index });
 
   it('keeps at most SHOT_QUEUE shots, the newest', () => {
     const q: ClientShot[] = [];
-    queueShots(q, 5, shot(10));
+    queueShots(q, 5, shot(10), 5);
     expect(q).toHaveLength(SHOT_QUEUE);
-    queueShots(q, 1, shot(11));
+    queueShots(q, 1, shot(11), 6);
     expect(q.map((s) => s.tick)).toEqual([10, 10, 11]);
+  });
+
+  it("numbers each shot by the screen's counter, wrapping at 256, and reports the resolved counter (netcode stage 3)", () => {
+    const q: ClientShot[] = [];
+    expect(shotsDone(q, 254)).toBe(254);
+    queueShots(q, 3, shot(10), 1);
+    expect(q.map((s) => s.index)).toEqual([255, 0, 1]);
+    expect(shotsDone(q, 1)).toBe(254);
+    q.shift();
+    expect(shotsDone(q, 1)).toBe(255);
+    q.length = 0;
+    expect(shotsDone(q, 1)).toBe(1);
   });
 
   it('drops shots that waited longer than SHOT_WAIT_TICKS', () => {

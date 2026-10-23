@@ -80,7 +80,7 @@ export class FallenTalents {
 
   /**
    * The Brimstone Shotgun (M9 §3.1, M12 §5.1) with Through the Ranks (Delivery), then Heave or Fire and
-   * Brimstone (Payload) in place of the survivor shove. Same random draws per pellet as the base.
+   * Brimstone (Payload) in place of the survivor shove. Same spread draws per pellet as the base.
    */
   shotgun(p: SimPlayer): void {
     const sim = this.sim, w = WEAPONS.fallen;
@@ -94,8 +94,8 @@ export class FallenTalents {
     };
     const tracers: number[] = [];
     for (let i = 0; i < w.pellets; i++) {
-      const yaw = p.yaw + (sim.random() * 2 - 1) * w.spreadYaw;
-      const pitch = p.pitch + (sim.random() * 2 - 1) * w.spreadPitch;
+      const yaw = p.yaw + sim.spreadDraw(p, i, 0) * w.spreadYaw;
+      const pitch = p.pitch + sim.spreadDraw(p, i, 1) * w.spreadPitch;
       const [dx, dy, dz] = aimDir(yaw, pitch);
       const hits = sim.rayEnemies(ex, ey, ez, dx, dy, dz, w.range, ranks ? 2 : 1);
       let stop = raycastTerrain(sim.map, ex, ey, ez, dx, dy, dz, w.range);

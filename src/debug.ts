@@ -62,6 +62,8 @@ export interface DebugState {
   /** ...and every Watchman's accepted feet in that snapshot. */
   watchmanBodies: Array<{ slot: number; incarnation: number; x: number; y: number; z: number }>;
   carrierChecks: CarrierCheck[];
+  /** The host's count of each player's weapon kills (netcode stage 3); empty on a guest. */
+  weaponKills: Record<number, number>;
   dominion: { rendered: Array<{ slot: number; type: number; z: number; floor: number }>; actors: Array<{ slot: number; incarnation: number; x: number; y: number; z: number }>; casts: Array<{ slot: number; incarnation: number; castId: number; startTick: number; impactTick: number; room: number; x: number; y: number; z: number; leap?: DominionLeap }>; starts: number; startedCastIds: number[]; strikes: number; cancels: number };
   seed: number | null;
   simSeed: number | null;
@@ -148,6 +150,7 @@ export const debugState: DebugState = {
   watchmen: [],
   watchmanBodies: [],
   carrierChecks: [],
+  weaponKills: {},
   dominion: { rendered: [], actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
   seed: null,
   simSeed: null,
@@ -205,6 +208,7 @@ export function resetGameDebug(): void {
   watchmen: [],
   watchmanBodies: [],
     carrierChecks: [],
+    weaponKills: {},
     dominion: { rendered: [], actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
     seed: null,
     simSeed: null,

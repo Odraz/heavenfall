@@ -132,9 +132,12 @@ export function decodeInput(buf: ArrayBuffer, expectedRunId: string): InputMsg |
 /** Run-scoped header, repeated in every part (rogue r01.md, R1.6); bytes 69–70 count the Watchman aims (protocol 13). */
 export const HEADER_BYTES = 71;
 export const DOMINION_CAST_BYTES = 44;
-/** The MVP's 28 bytes plus `revive` and `shots` (M8 §10), `shots2` and `beam` (M9 §10). */
-export const PLAYER_BYTES = 40;
-export const ENEMY_BYTES = 14;
+/** The MVP's 28 bytes plus `revive` and `shots` (M8 §10), `shots2` and `beam` (M9 §10), `shotsDone` (netcode stage 3). */
+export const PLAYER_BYTES = 41;
+/** Netcode stage 3 added the enemy's HP (2 bytes), for the shooter's kill prediction. */
+export const ENEMY_BYTES = 16;
+/** An enemy HP above this is sent as it. */
+export const HP_WIRE_MAX = 0xffff;
 export const PROJECTILE_BYTES = 9;
 export const PICKUP_BYTES = 9;
 export const MAX_SNAPSHOT_BYTES = 16000;
@@ -211,6 +214,12 @@ export interface SnapshotPlayer {
   shots2: number;
   /** The ally being healed by Sacrament, 255 for none (M9 §2.5). */
   beam: number;
+  /**
+   * The player's own shot counter (client-timed shots, wrapping at 256) up to which the host has fired
+   * or dropped every shot: the shooter's predicted damage of later shots isn't in this snapshot yet
+   * (netcode stage 3).
+   */
+  shotsDone: number;
   wallet: number;
   carrySlot?: number;
   teleportId?: number;
@@ -230,6 +239,8 @@ export interface SnapshotEntities {
   enemyFlags: Uint8Array;
   enemyZ: Float32Array;
   enemyIncarnation: Uint32Array;
+  /** HP left, sent rounded up (netcode stage 3). */
+  enemyHp: Float32Array;
   projectileCount: number;
   projSlot: Uint16Array;
   projKind: Uint8Array;
@@ -344,6 +355,7 @@ export function encodeSnapshot(
       v.setUint8(o + 31, p.beam & 0xff);
       v.setUint32(o + 32, p.wallet, true);
       v.setInt16(o + 36, p.carrySlot ?? -1, true); v.setUint16(o + 38, p.teleportId ?? 0, true);
+      v.setUint8(o + 40, p.shotsDone & 0xff);
       o += PLAYER_BYTES;
     }
     for (let i = 0; i < nc; i++) {
@@ -364,6 +376,7 @@ export function encodeSnapshot(
       v.setUint8(o + 7, e.enemyFlags[i]);
       v.setUint16(o + 8, pos16(e.enemyZ[i]), true);
       v.setUint32(o + 10, e.enemyIncarnation[i], true);
+      v.setUint16(o + 14, Math.max(0, Math.min(HP_WIRE_MAX, Math.ceil(e.enemyHp[i] - 1e-6))), true);
       o += ENEMY_BYTES;
     }
     for (let i = p0; i < p0 + np; i++) {
@@ -411,6 +424,8 @@ export interface Snapshot extends SnapshotHeader {
   enemyFlags: Uint8Array;
   enemyZ: Float32Array;
   enemyIncarnation: Uint32Array;
+  /** HP left, rounded up; HP_WIRE_MAX for that much or more. */
+  enemyHp: Uint16Array;
   projectileCount: number;
   projSlot: Uint16Array;
   projKind: Uint8Array;
@@ -481,6 +496,7 @@ export function decodeSnapshot(buf: ArrayBuffer, expectedRunId?: string): Snapsh
     enemyFlags: new Uint8Array(ne),
     enemyZ: new Float32Array(ne),
     enemyIncarnation: new Uint32Array(ne),
+    enemyHp: new Uint16Array(ne),
     projectileCount: np,
     projSlot: new Uint16Array(np),
     projKind: new Uint8Array(np),
@@ -512,6 +528,7 @@ export function decodeSnapshot(buf: ArrayBuffer, expectedRunId?: string): Snapsh
       beam: v.getUint8(o + 31),
       wallet: v.getUint32(o + 32, true),
       carrySlot: v.getInt16(o + 36, true), teleportId: v.getUint16(o + 38, true),
+      shotsDone: v.getUint8(o + 40),
     });
     o += PLAYER_BYTES;
   }
@@ -538,6 +555,7 @@ export function decodeSnapshot(buf: ArrayBuffer, expectedRunId?: string): Snapsh
     s.enemyFlags[i] = v.getUint8(o + 7);
     s.enemyZ[i] = v.getUint16(o + 8, true) / POS_SCALE;
     s.enemyIncarnation[i] = v.getUint32(o + 10, true);
+    s.enemyHp[i] = v.getUint16(o + 14, true);
     if (s.enemySlot[i] >= ENEMY_SLOTS || s.enemyIncarnation[i] === 0 || s.enemyType[i] >= ENEMIES.length || s.enemyState[i] > 4 || (s.enemyFlags[i] & ~63) !== 0) return null;
     o += ENEMY_BYTES;
   }
@@ -580,6 +598,7 @@ function concatParts(parts: Snapshot[]): Snapshot {
     enemyFlags: new Uint8Array(ne),
     enemyZ: new Float32Array(ne),
     enemyIncarnation: new Uint32Array(ne),
+    enemyHp: new Uint16Array(ne),
     projectileCount: np,
     projSlot: new Uint16Array(np),
     projKind: new Uint8Array(np),
@@ -598,6 +617,7 @@ function concatParts(parts: Snapshot[]): Snapshot {
     s.enemyFlags.set(p.enemyFlags, eo);
     s.enemyZ.set(p.enemyZ, eo);
     s.enemyIncarnation.set(p.enemyIncarnation, eo);
+    s.enemyHp.set(p.enemyHp, eo);
     eo += p.enemyCount;
     s.projSlot.set(p.projSlot, po);
     s.projKind.set(p.projKind, po);

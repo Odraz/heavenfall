@@ -1,5 +1,5 @@
 /** Ray and swept-segment tests against vertical cylinders (§5.3, §5.4). Shared by the host and the client's cosmetic rays. */
-import { ENEMIES, GATEKEEPER } from '../data/enemies';
+import { ENEMIES } from '../data/enemies';
 
 /**
  * Distance along a ray (unit direction) to where it enters a vertical cylinder with its feet at
@@ -102,7 +102,7 @@ export interface BulletTarget {
  * what's left, a rooted (or, with Behind His Back, taunted) one costing half its HP; the bullet stops
  * when nothing is left, at an enemy it can't kill, or at the Gatekeeper. Returns the damage to deal to
  * each (before the Bound step), what each cost the bullet, and whether it stopped at the last one.
- * Shared by the host and the client's tracer estimate.
+ * Shared by the host and the shooter's prediction (from the snapshot's HP since netcode stage 3).
  */
 export function silverBulletHits(
   targets: readonly BulletTarget[],
@@ -124,19 +124,3 @@ export function silverBulletHits(
   return { hits, stopped: false };
 }
 
-/**
- * The client's estimate of the Silver Bullet (M9 §5.1): snapshots carry no enemy HP, so each enemy
- * along the line, nearest first, is taken at its type's full HP, doubled for the rooted flag. Returns
- * how many of them it reaches, whether it stops at the last, and what the bullet still carried on
- * reaching each (M12 §4.4).
- */
-export function estimateSilverBullet(
-  line: ReadonlyArray<{ type: number; rooted: boolean }>,
-  damage: number,
-): { reached: number; stopped: boolean; carried: number[] } {
-  const r = silverBulletHits(
-    line.map((e, i) => ({ s: i, hp: ENEMIES[e.type].hp, rooted: e.rooted, boss: e.type === GATEKEEPER })),
-    damage,
-  );
-  return { reached: r.hits.length, stopped: r.stopped, carried: r.hits.map((h) => h.carried) };
-}

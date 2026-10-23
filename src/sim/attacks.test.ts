@@ -15,8 +15,8 @@ import {
   WEAPONS,
   type AttackSlot,
 } from '../data/weapons';
-import { decodeSnapshot } from '../net/protocol';
-import { estimateSilverBullet } from './combat';
+import { decodeSnapshot, FLAG_ROOTED } from '../net/protocol';
+import { silverBulletHits } from './combat';
 import type { Simulation, SimPlayer } from './sim';
 import { TICK_HZ } from './constants';
 import { REVIVE_DECAY } from './souls';
@@ -262,15 +262,29 @@ describe('the Silver Bullet (M9 §2.4, M12 §5.6: carries 200)', () => {
     expect(back.revive).toBe(0);
   });
 
-  it("the client's estimate (full HP by type, ×2 for the rooted flag) stops where the host's does with unhurt enemies", () => {
+  it("the shooter's prediction from the snapshot's HP and rooted flags stops where the host's does, hurt enemies too (netcode stage 3)", () => {
     const types = [BLESSED, CHORISTER, BLESSED, CHERUB, CHORISTER, BLESSED, BLESSED, CHORISTER, BLESSED, BLESSED, CHORISTER, BLESSED, CHORISTER, BLESSED];
     const bound = (i: number) => i % 3 === 1;
-    // The Cherub is put at ground level, so the level ray crosses it like the others.
-    const { sim, slots } = fire(types, bound);
-    const reachedOnHost = slots.filter((s) => sim.eHp[s] !== [20, 60, 30][sim.eType[s]] || !sim.eAlive[s]).length;
-    const est = estimateSilverBullet(types.map((type, i) => ({ type, rooted: bound(i) })), 200);
-    expect(est.reached).toBe(reachedOnHost);
-    expect(est.stopped).toBe(true);
+    const sim = makeSim(room(80, 4), ['betrayer']);
+    const slots = line(sim, types, bound);
+    // Earlier hits: two Choristers and a Blessed are hurt, so full HP by type would stop elsewhere.
+    for (const [k, amount] of [[1, 35], [4, 41], [5, 7]] as const) sim.eHp[slots[k]] -= amount;
+    const snap = decodeSnapshot(sim.encodeFor(0)[0])!;
+    const ofSlot = (s: number) => snap.enemySlot.indexOf(s);
+    const predicted = silverBulletHits(slots.map((s) => {
+      const i = ofSlot(s);
+      return { s, hp: snap.enemyHp[i], rooted: (snap.enemyFlags[i] & FLAG_ROOTED) !== 0, boss: false };
+    }), 200);
+    aimLevel(sim, sim.players[0], 1.5, 2.5);
+    sim.fireWeapon(sim.players[0], ATTACK_SECONDARY);
+    const reachedOnHost = slots.filter((s) => !sim.eAlive[s] || sim.eHp[s] < snap.enemyHp[ofSlot(s)] - 1e-6).length;
+    expect(predicted.hits.length).toBe(reachedOnHost);
+    expect(predicted.stopped).toBe(true);
+    // Every enemy the prediction kills dies on the host.
+    for (const h of predicted.hits) {
+      const i = ofSlot(h.s), dealt = h.amount * ((snap.enemyFlags[i] & FLAG_ROOTED) !== 0 ? 2 : 1);
+      expect(sim.eAlive[h.s] === 1, `slot ${h.s}`).toBe(dealt < snap.enemyHp[i] - 1e-9);
+    }
   });
 });
 

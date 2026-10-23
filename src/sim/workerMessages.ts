@@ -49,7 +49,7 @@ export type WorkerToMain =
    * All parts of one tick's snapshot for one player, and that tick's simulation time. The local
    * player's also carry the director's state (M12 §2.3), null when no combat arena is in combat.
    */
-  | { t: 'snap'; to: number; bufs: ArrayBuffer[]; simMs: number; director?: DirectorInfo | null; carrierChecks?: CarrierCheck[] }
+  | { t: 'snap'; to: number; bufs: ArrayBuffer[]; simMs: number; director?: DirectorInfo | null; carrierChecks?: CarrierCheck[]; weaponKills?: Record<number, number> }
   | { t: 'ctrl'; to: number | 'all'; msg: CtrlMessage }
   /** A `ctrl` message to a connection that has no player (the `reject` of a `hello`). */
   | { t: 'connCtrl'; conn: number; msg: CtrlMessage }
@@ -63,7 +63,10 @@ export type WorkerToMain =
    */
   | { t: 'heartbeat'; loading: number[] };
 
-/** The `snap` message for the host's own player: it also carries the director's state (M12 §2.3). */
-export function localSnap(sim: Pick<Simulation, 'directorInfo' | 'commanders'>, to: number, bufs: ArrayBuffer[], simMs: number): WorkerToMain {
-  return { t: 'snap', to, bufs, simMs, director: sim.directorInfo(), carrierChecks: sim.commanders.diagnostics() };
+/**
+ * The `snap` message for the host's own player: it also carries the director's state (M12 §2.3) and
+ * each player's weapon kills (netcode stage 3).
+ */
+export function localSnap(sim: Pick<Simulation, 'directorInfo' | 'commanders' | 'weaponKills'>, to: number, bufs: ArrayBuffer[], simMs: number): WorkerToMain {
+  return { t: 'snap', to, bufs, simMs, director: sim.directorInfo(), carrierChecks: sim.commanders.diagnostics(), weaponKills: sim.weaponKills() };
 }

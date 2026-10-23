@@ -159,6 +159,16 @@ export class SnapshotBuffer {
     return i >= 0 ? r.snap.enemyIncarnation[i] : -1;
   }
 
+  /**
+   * The HP the newest complete snapshot gives the enemy in a slot (netcode stage 3), or 0 if that
+   * incarnation isn't in it: the host has it dead.
+   */
+  hpOf(slot: number, incarnation: number): number {
+    const r = this.ring[this.ring.length - 1];
+    const i = r ? r.slotIndex[slot] : -1;
+    return i >= 0 && r.snap.enemyIncarnation[i] === incarnation ? r.snap.enemyHp[i] : 0;
+  }
+
   addPart(buf: ArrayBuffer, now: number): void {
     const part = decodeSnapshot(buf, this.runId);
     if (!part) return;

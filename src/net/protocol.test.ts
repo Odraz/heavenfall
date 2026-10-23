@@ -71,6 +71,7 @@ function players(n: number): SnapshotPlayer[] {
     shots2: (100 + i * 50) & 0xff,
     // Player 1 is being healed by player 2's Sacrament (M9 §10).
     beam: i === 2 ? 1 : 255,
+    shotsDone: (7 + i * 100) & 0xff,
     wallet: i * 999, carrySlot: -1, teleportId: 0,
   }));
 }
@@ -85,6 +86,7 @@ function entities(ne: number, np: number, nk = 0): SnapshotEntities {
     enemyFlags: new Uint8Array(ne),
     enemyZ: new Float32Array(ne),
     enemyIncarnation: new Uint32Array(ne),
+    enemyHp: new Float32Array(ne),
     projectileCount: np,
     projSlot: new Uint16Array(np),
     projKind: new Uint8Array(np),
@@ -105,6 +107,7 @@ function entities(ne: number, np: number, nk = 0): SnapshotEntities {
     e.enemyFlags[i] = i % 64;
     e.enemyZ[i] = i / 64;
     e.enemyIncarnation[i] = 70000 + i;
+    e.enemyHp[i] = i * 1.25 + 0.1;
   }
   for (let i = 0; i < np; i++) {
     e.projSlot[i] = i;
@@ -221,9 +224,19 @@ describe('snapshot protocol', () => {
     expect(s.enemyType[50]).toBe(2);
     expect(s.enemyState[50]).toBe(0);
     expect(s.enemyFlags[50]).toBe(50);
+    // HP rounded up (netcode stage 3): 62.6 reads 63.
+    expect(s.enemyHp[50]).toBe(63);
+    expect(s.enemyHp[0]).toBe(1);
     expect(s.projKind[5]).toBe(2);
     expect(s.projX[5]).toBe(5 + 5 / 64);
     expect(s.projZ[5]).toBe(15.984375);
+  });
+
+  it('sends whole HP, at least 0 and at most 65 535, and whole numbers exactly (netcode stage 3)', () => {
+    const e = entities(4, 0);
+    e.enemyHp.set([20, 0, -3, 1e6]);
+    const s = decodeSnapshot(encodeSnapshot(header, players(1), e)[0])!;
+    expect(Array.from(s.enemyHp)).toEqual([20, 0, 0, 65535]);
   });
 
   it('reserves the full pickup pool in part zero and fits all maximum entities in two parts', () => {
@@ -463,7 +476,7 @@ describe('R2 Dominion snapshot control metadata', () => {
   it('reserves three 44-byte records in part zero at maximum capacity, even when their enemies are in part one', () => {
     const e = casting(), packets = encodeSnapshot(header, players(4), e);
     expect(packets).toHaveLength(2); expect(packets.every((p) => p.byteLength <= 16000)).toBe(true);
-    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (71 + 4 * 40) + 1500 * 14 + 400 * 9 + 160 * 9 + 3 * 44);
+    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (HEADER_BYTES + 4 * PLAYER_BYTES) + 1500 * ENEMY_BYTES + 400 * 9 + 160 * 9 + 3 * 44);
     const zero = decodeSnapshot(packets[0])!, one = decodeSnapshot(packets[1])!;
     expect(zero.dominionCasts).toEqual(e.dominionCasts); expect(one.dominionCasts).toEqual([]);
     expect(one.totalDominionCasts).toBe(3); expect(zero.enemySlot.includes(e.dominionCasts![0].slot)).toBe(false);

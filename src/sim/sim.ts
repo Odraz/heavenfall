@@ -129,7 +129,8 @@ import { DryNavigation, FIRE_ENEMY_DAMAGE, FIRE_PLAYER_DAMAGE, Hazards } from '.
 import { SpawnWarnings } from './spawnWarnings';
 import { EnemyHistory, NO_VIEW, viewLag, type ViewTick } from './lagComp';
 import { lateStretch, stretchHit, type LateShot } from './lateShots';
-import { HELD_FIRE, latchBits, latchClear, latchFired, latchPress, newFireLatch, nextShot, pressDelta, queueShots, SHOT_EARLY_TICKS, type ClientShot, type FireLatch } from './fireLatch';
+import { shotSpread } from './shotSpread';
+import { HELD_FIRE, latchBits, latchClear, latchFired, latchPress, newFireLatch, nextShot, pressDelta, queueShots, SHOT_EARLY_TICKS, shotsDone, type ClientShot, type FireLatch } from './fireLatch';
 import { CROWD_RADIUS, PINCER_FROM_WAVE, PINCER_SHARE, PINCER_WARNING_TICKS, PositionHistory, pincerPoint, retreatHeading, type Retreat } from './pincer';
 import { lineOfSight, raycastTerrain } from './los';
 import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
@@ -345,6 +346,10 @@ export interface SimPlayer {
   shotsSeen: number;
   /** Shots the player's screen fired, waiting for the fire timer. */
   shotQueue: ClientShot[];
+  /** The client-timed shot being fired now (its counter), -1 otherwise: its pellets scatter as on the shooter's screen. */
+  shotIndex: number;
+  /** Kills by the player's own weapon hits, left or right button: host diagnostics for the lag test (netcode stage 3). */
+  weaponKills: number;
 }
 
 /**
@@ -856,6 +861,7 @@ export class Simulation {
     enemyFlags: new Uint8Array(ENEMY_SLOTS),
     enemyZ: new Float32Array(ENEMY_SLOTS),
     enemyIncarnation: new Uint32Array(ENEMY_SLOTS),
+    enemyHp: new Float32Array(ENEMY_SLOTS),
     projectileCount: 0,
     projSlot: new Uint16Array(MAX_PROJECTILES),
     projKind: new Uint8Array(MAX_PROJECTILES),
@@ -1119,7 +1125,7 @@ export class Simulation {
     p.fire = m.fire;
     p.allyTargetId = m.allyTargetId;
     // Each with the aim and view of this input, sent in the frame the shot was fired.
-    if (newShots) queueShots(p.shotQueue, newShots, { button: m.shotButton === 1 ? 1 : 0, yaw: m.yaw, pitch: m.pitch, view: p.view, tick: this.tick });
+    if (newShots) queueShots(p.shotQueue, newShots, { button: m.shotButton === 1 ? 1 : 0, yaw: m.yaw, pitch: m.pitch, view: p.view, tick: this.tick }, m.shots);
     // Any increase of a press counter is one press (§9.3).
     if (qPressed) p.pendingQ = true;
     if (ePressed) {
@@ -1221,6 +1227,8 @@ export class Simulation {
       clientShots: false,
       shotsSeen: 0,
       shotQueue: [],
+      shotIndex: -1,
+      weaponKills: 0,
       view: NO_VIEW,
     };
     const character = init.profile?.characters[init.classId];
@@ -1274,7 +1282,7 @@ export class Simulation {
       Object.assign(p, old, { connected: true, x, y, z, lastSeq: -1, lastAcceptMs: this.nowMs, pilgrim: null, mapHeld: false,
         cdQ: Math.max(0, old.cdQ - elapsed), cdE: Math.max(0, old.cdE - elapsed),
         shield: 0, shieldCaster: null, featherUntil: 0, sealUntil: 0, speed: CLASSES[p.classId].speed, pendingItems: [false, false], invulUntil: 0, fire: 0, pendingQ: false, pendingE: false,
-        dash: null, landingTick: -1, teleportId: p.teleportId, fireLatch: newFireLatch(), view: NO_VIEW, shotQueue: [],
+        dash: null, landingTick: -1, teleportId: p.teleportId, fireLatch: newFireLatch(), view: NO_VIEW, shotQueue: [], shotIndex: -1,
         revive: old.dead ? Math.max(0, old.revive - elapsed * REVIVE_DECAY) : 0 });
       this.retainedPlayers.delete(init.id);
     } else if (!p.bot) { p.wallet = this.rewards.halosCredited; p.presentAtStart = false; }
@@ -2612,7 +2620,8 @@ export class Simulation {
     this.commanders.damaged(slot, applied);
     this.eHp[slot] -= amount;
     this.eHurtTick[slot] = this.tick;
-    if (shooter && !shooter.bot) {
+    // A client-timed shot's own hits already showed their numbers on the shooter's screen (netcode stage 3).
+    if (shooter && !shooter.bot && !(origin && shooter.shotIndex >= 0)) {
       let own = this.tickDamage.get(source);
       if (!own) { own = new Map(); this.tickDamage.set(source, own); }
       const hit = own.get(slot) ?? [0, 0];
@@ -2628,6 +2637,7 @@ export class Simulation {
       this.rewards.enemyKilled(slot);
       if (shooter) {
         shooter.kills++;
+        if (origin === 'LMB' || origin === 'RMB') shooter.weaponKills++;
         this.closeQuarters(shooter, slot);
         this.noteBurst(slot, shooter, fromX, fromY);
       } else if (worldBurst) this.noteBurst(slot, null, fromX, fromY);
@@ -3198,7 +3208,8 @@ export class Simulation {
         p.yaw = shot.yaw;
         p.pitch = shot.pitch;
         p.view = shot.view;
-        try { this.shoot(p, slot); } finally { p.yaw = yaw; p.pitch = pitch; p.view = view; }
+        p.shotIndex = shot.index;
+        try { this.shoot(p, slot); } finally { p.yaw = yaw; p.pitch = pitch; p.view = view; p.shotIndex = -1; }
       }
     }
     p.fireTimer -= TICK_DT * this.fireRate(p);
@@ -3295,8 +3306,8 @@ export class Simulation {
     // pull hit: all pellets together count one hit per soul (M8 §4.2).
     const souls = new Set<SimPlayer>();
     for (let i = 0; i < w.pellets; i++) {
-      const yaw = w.spreadYaw > 0 ? p.yaw + (this.random() * 2 - 1) * w.spreadYaw : p.yaw;
-      const pitch = w.spreadPitch > 0 ? p.pitch + (this.random() * 2 - 1) * w.spreadPitch : p.pitch;
+      const yaw = w.spreadYaw > 0 ? p.yaw + this.spreadDraw(p, i, 0) * w.spreadYaw : p.yaw;
+      const pitch = w.spreadPitch > 0 ? p.pitch + this.spreadDraw(p, i, 1) * w.spreadPitch : p.pitch;
       const [dx, dy, dz] = aimDir(yaw, pitch);
       const hits = this.rayEnemies(ex, ey, ez, dx, dy, dz, w.range, w.maxHits);
       // Where the ray stops: the terrain or its range, or the last enemy it can pierce.
@@ -3311,6 +3322,14 @@ export class Simulation {
       }
     }
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, p.classId === 'heretic'), p);
+  }
+
+  /**
+   * A pellet's spread draw on `axis` (0 yaw, 1 pitch), in [-1, 1): a client-timed shot's is the one the
+   * shooter's screen drew (netcode stage 3); a shot of the host's own timer draws the random stream.
+   */
+  spreadDraw(p: SimPlayer, pellet: number, axis: 0 | 1): number {
+    return p.shotIndex >= 0 ? shotSpread(p.id, p.shotIndex, pellet, axis) : this.random() * 2 - 1;
   }
 
   /** Distance along a ray to where it enters an enemy's shot volume. */
@@ -3465,6 +3484,13 @@ export class Simulation {
   }
 
   // ------------------------------------------------------------------ souls (M8 §4)
+
+  /** Each connected player's weapon kills, for the host's diagnostics (netcode stage 3). */
+  weaponKills(): Record<number, number> {
+    const out: Record<number, number> = {};
+    for (const p of this.players) if (p.connected) out[p.id] = p.weaponKills;
+    return out;
+  }
 
   /** A dead, connected player has a soul. */
   private hasSoul(p: SimPlayer): boolean {
@@ -4802,6 +4828,7 @@ export class Simulation {
       e.enemyY[k] = this.eY[s];
       e.enemyZ[k] = this.eZ[s];
       e.enemyIncarnation[k] = this.eIncarnation[s];
+      e.enemyHp[k] = this.eHp[s];
       e.enemyTypeState[k] = (this.eType[s] & 0x0f) | (this.eState[s] << 4);
       let f = 0;
       if (this.isRooted(s)) f |= FLAG_ROOTED;
@@ -4867,6 +4894,7 @@ export class Simulation {
         shots: p.shots & 0xff,
         shots2: p.shots2 & 0xff,
         beam: this.tick < p.beamUntil ? p.beamId : ALLY_NONE,
+        shotsDone: shotsDone(p.shotQueue, p.shotsSeen),
         wallet: p.wallet,
         carrySlot: this.commanders.carriedBy(p.id)?.slot ?? -1, teleportId: p.teleportId,
       });

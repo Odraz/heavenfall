@@ -24,6 +24,8 @@ export class HostSession {
   /** The director's state from the latest local snapshot (M12 §2.3). */
   director: DirectorInfo | null = null;
   carrierChecks: CarrierCheck[] = [];
+  /** Each player's kills by their own weapon hits, from the latest local snapshot (netcode stage 3). */
+  weaponKills: Record<number, number> = {};
   /** Called with each tick's simulation time (ms). */
   onTickMs: (ms: number) => void = () => {};
 
@@ -138,6 +140,7 @@ export class HostSession {
           this.onTickMs(m.simMs);
           this.director = m.director ?? null;
           this.carrierChecks = m.carrierChecks ?? [];
+          this.weaponKills = m.weaponKills ?? {};
           for (const buf of m.bufs) this.local.deliverSnapshot(buf);
         } else {
           // Forwarding is driven by worker messages, so it keeps full rate in a background tab (§2.2).

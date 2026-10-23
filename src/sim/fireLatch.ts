@@ -58,6 +58,8 @@ export interface ClientShot {
   view: ViewTick;
   /** The host tick it arrived at. */
   tick: number;
+  /** The shooter's own counter for this shot, wrapping at 256: it seeds the shot's spread (netcode stage 3). */
+  index: number;
 }
 
 /** The input's `shotButton` for a client that sends no shots: the host fires its held buttons itself. */
@@ -69,12 +71,23 @@ export const SHOT_WAIT_TICKS = 9;
 /** A shot may fire this many ticks before the fire timer is ready, so network jitter doesn't hold it back. */
 export const SHOT_EARLY_TICKS = 2;
 
-/** Queues `count` shots of the same aim and view (one input can carry several after a slow frame). */
-export function queueShots(queue: ClientShot[], count: number, shot: ClientShot): void {
+/**
+ * Queues `count` shots of the same aim and view (one input can carry several after a slow frame);
+ * `last` is the input's shot counter, the index of the newest of them.
+ */
+export function queueShots(queue: ClientShot[], count: number, shot: Omit<ClientShot, 'index'>, last: number): void {
   for (let k = 0; k < count; k++) {
-    queue.push({ ...shot });
+    queue.push({ ...shot, index: (last - count + 1 + k) & 0xff });
     if (queue.length > SHOT_QUEUE) queue.shift();
   }
+}
+
+/**
+ * The shot counter up to which every shot the host has seen has been fired or dropped (netcode stage
+ * 3): the one before the oldest waiting shot, or the newest seen when none waits.
+ */
+export function shotsDone(queue: readonly ClientShot[], seen: number): number {
+  return queue.length ? (queue[0].index - 1) & 0xff : seen & 0xff;
 }
 
 /** The next shot to fire at `tick`, after dropping the ones that waited too long. */

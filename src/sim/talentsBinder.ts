@@ -121,8 +121,8 @@ export class BinderTalents {
   chainGun(p: SimPlayer): void {
     const sim = this.sim, w = WEAPONS.binder, root = this.t.root(p, 'LMB');
     const ex = p.x, ey = p.y, ez = p.z + PLAYER_EYE;
-    const yaw = w.spreadYaw > 0 ? p.yaw + (sim.random() * 2 - 1) * w.spreadYaw : p.yaw;
-    const pitch = w.spreadPitch > 0 ? p.pitch + (sim.random() * 2 - 1) * w.spreadPitch : p.pitch;
+    const yaw = w.spreadYaw > 0 ? p.yaw + sim.spreadDraw(p, 0, 0) * w.spreadYaw : p.yaw;
+    const pitch = w.spreadPitch > 0 ? p.pitch + sim.spreadDraw(p, 0, 1) * w.spreadPitch : p.pitch;
     const [dx, dy, dz] = aimDir(yaw, pitch);
     const max = this.has(p, B.BARBED) ? 2 : w.maxHits;
     const hits = sim.rayEnemies(ex, ey, ez, dx, dy, dz, w.range, max);

@@ -1,8 +1,63 @@
 # Netcode stage report: smooth co-op shooting
 
-Status: **implemented, awaiting the human multiplayer session**, 2026-10-22, on `rogue` from `fd437e4`; stage 2 (below) from `f7f477d`. Done before R07 at Tomas's request ("multiplayer is the highest priority"), after the audit of the same day. Tomas delegated every networking decision.
+Status: **implemented, awaiting the human multiplayer session**, 2026-10-22, on `rogue` from `fd437e4`; stage 2 (below) from `f7f477d`; stage 3 (2026-10-23) from `bff1ece`. Done before R07 at Tomas's request ("multiplayer is the highest priority"), after the audit of the same day. Tomas delegated every networking decision.
 
-**Versions:** protocol 16 → 17 → **18** (the input message grew from 49 to 57, then 59 bytes), rules unchanged at 27. Builds with different versions cannot join each other, so **everyone must load the same build** for the session.
+**Versions:** protocol 16 → 17 → 18 → **19** (the input message grew from 49 to 57, then 59 bytes; stage 3 grew each snapshot enemy from 14 to 16 bytes and each player from 40 to 41), rules unchanged at 27. Builds with different versions cannot join each other, so **everyone must load the same build** for the session.
+
+## Stage 3: every weapon kill at once
+
+An audit on 2026-10-23 found that stage 2's instant kills covered only part of the shooting. The shooter's screen didn't know any enemy's HP, so it predicted a kill only when **one hit killed an enemy at full HP**. Every other kill waited for the host: about a round trip plus the render delay, 0.3 s at a 100 ms ping. Stage 2's lag test used only the Betrayer, whose revolver one-shots the basic enemies, so it didn't show this.
+
+### What was still wrong
+
+1. **Most kills of three classes still came late.** The Binder's Chain Gun never predicted a kill: 12 damage can't kill a 20-HP Blessed from full HP. The Fallen's shotgun beyond 6 m never did either: each pellet was judged alone, so two 10-damage pellets didn't add up to a kill. A Watchman needed two revolver shots, so its kill wasn't predicted. Neither was any enemy that a teammate, fire or an earlier shot had hurt.
+2. **Pellets were scattered twice.** The shooter's screen and the host each picked their own random spread. The Fallen's tracers and hit markers showed pellets the host never fired; the Binder's did too at range.
+3. **Your damage numbers waited for the host.** They came in the host's `damage` event, a round trip after the shot.
+
+### What changed, as players feel it
+
+| # | Change | Effect in play |
+|---|---|---|
+| 1 | **Enemy HP in the snapshots.** Each enemy record carries its HP, rounded up. Each player record carries `shotsDone`: the counter up to which the host has fired (or dropped) that player's shots. | The shooter's screen knows how hurt every enemy is. |
+| 2 | **Your own damage, until the host has it.** The screen remembers the damage each of its shots dealt. Until a snapshot's `shotsDone` covers the shot, that damage is subtracted from the snapshot's HP. Pellets of one shot add up, rooted enemies take double, and the Cantor's hymnal cuts damage from its front as on the host. The Silver Bullet uses the host's own line rule with the real HP. | Every weapon kill shows at once: the second Chain Gun bullet, two far pellets, a hurt Watchman, an enemy a friend already wounded. |
+| 3 | **Shared pellet spread.** A client-timed shot's pellets scatter by the shooter's id and the shot's counter (`fmix32`), on both sides. Held-fire shots keep the simulation's random stream. | The tracers you see are the pellets the host fires. |
+| 4 | **Your damage numbers at once.** Each predicted hit shows its number when you fire. The host leaves those hits out of your `damage` event, which keeps everything else: talent and relic procs, fire, incense. | Numbers pop on the shot, and none shows twice. |
+| 5 | **Lag test for three classes.** `e2e/lag.spec.ts` runs a Betrayer, a Fallen and a Binder guest. It now also requires at least 80% of the guest's **weapon kills** (a host diagnostic that counts left- and right-button kills) to be ones the guest's screen showed at once. | Measures what friends feel, for the classes that were missed. |
+
+**Traffic.** At a full 1,500-enemy crowd the raw snapshot grows by 3 KB (2 bytes per enemy). The transport compresses each record field as a column, and the HP of unhurt enemies repeats, so on the wire the increase is small; the compressed crest test still holds the upload limit (below).
+
+### Evidence
+
+**The lag test** ([e2e/lag.spec.ts](../../e2e/lag.spec.ts)): a bot guest over real PeerJS with 160 ms of lag, ±25 ms jitter and 2% loss, as in stage 2.
+
+| Guest | Weapon kills shown at once | Predicted kills that reappeared | Kills in all (with Q/E) |
+|---|---|---|---|
+| Betrayer | **75 of 79** (95%) | 0 | 85 |
+| Fallen | **62 of 62** (100%) | 0 | 119 |
+| Binder | **123 of 125** (98%) | 0 | 125 |
+
+Before this stage, by construction: none of the Binder's Chain Gun kills, none of the Fallen's kills beyond 6 m, and no kill of a hurt enemy could show at once. The first run of the new test, before the weapon-kill diagnostic, counted every kill: the Fallen guest showed 69 of 162. Its other kills came from its Q and E (Blasphemy, Falling Star), which aren't shots (below).
+
+**Unit tests:** [shotAgreement.test.ts](../../src/sim/shotAgreement.test.ts) checks the host's hits against the shooter's prediction. For five shot counters, a client-timed shotgun shot into a crowd, some of it hurt, leaves exactly the HP the prediction computed; so do four Chain Gun bullets. The same shot lands identically under two simulation seeds, and a held-fire shot doesn't. It also covers `shotsDone` through firing, waiting, dropping and death; the damage event without a client-timed shot's hits and with a held-fire shot's; and the weapon-kill diagnostic. [killPredict.test.ts](../../src/client/killPredict.test.ts) covers HP-based kills and bursts, the factors, pellets that add up and pass a kill, Barbed Rounds, the Silver Bullet through hurt and bound enemies, and the damage ledger (resolve, wrap at 256, expiry). Also: the Silver Bullet test in [attacks.test.ts](../../src/sim/attacks.test.ts) (prediction from the snapshot's HP against hurt enemies), the HP lookup in [snapshots.test.ts](../../src/client/snapshots.test.ts), and HP and `shotsDone` in [protocol.test.ts](../../src/net/protocol.test.ts).
+
+### Not done, and why
+
+- **Ability kills still wait for the host.** Falling Star's landing, Blasphemy, Chains, Discord, Ring and the rest resolve on the host, so their kills show a round trip later. In the lag test about half the Fallen bot's kills were its Q and E. Predicting them means simulating each ability on the screen: a stage of its own if the session asks for it.
+- **The Heretic's censer** flies as a host projectile against the host's present enemies, and its incense kills over time. Its kills still come from the snapshots.
+- **Talent extras not modeled on the screen:** Through the Ranks' second close enemy, The Halt and the Lame's pass-through, and the Scourge's Whirl, Long Flail and Whip shapes. Their extra kills come from the snapshots. Talent and relic proc damage (sparks, clay, combos) also shows its numbers from the host event.
+
+### Checks (stage 3)
+
+| Command | Result |
+|---|---|
+| `npx tsc --noEmit -p .` | clean |
+| `npx vitest run` | **136 files, 1,690 tests passed** |
+| `npx vitest run src/sim/perf.test.ts src/sim/hazards.perf.test.ts src/sim/bench.test.ts --no-file-parallelism` | 5/5 passed, thresholds unchanged |
+| `npm run build` | built |
+| `npx playwright test --config playwright.hardware.config.ts e2e/lag.spec.ts --workers=1` | **3/3 passed** (the table above) |
+| The stage 1 regression set (same 15 files) plus `e2e/r02-checkpoint.spec.ts` | **56 passed, 20 failed** (28.6 min). All 15 files of the usual set passed, including four-client multiplayer, the compressed crest snapshots at the upload limit, the Dominion and commander late entries, and the solo autopilot floor (which stalled intermittently in stage 2). The 20 failures are r02-checkpoint's Gate B links, and they predate this stage: the test pins floor hash `029559b5`, while `src/gen/pinned.ts` has been `806a102c` since rules 23. Its PeerJS late-entry test passed. The lag tests in this run: Betrayer 79 of 84 weapon kills at once, Fallen 65 (of 64*), Binder 118 of 134; 1–2 predicted kills reappeared each. |
+
+\* *Kill markers confirmed* counts a predicted kill whose enemy left the snapshots within 1.5 s. When the Fallen's Falling Star or Blasphemy finishes an enemy the shotgun was predicted to kill, the marker is confirmed but the kill isn't a weapon kill, so the share can pass 100%.
 
 ## Stage 2: the shot you saw is the shot the host fires
 
@@ -122,7 +177,7 @@ Result: **53/53 passed** (22.5 min), including four-client multiplayer with late
 
 ## For the session
 
-- **Everyone loads the same build** (protocol 18).
+- **Everyone loads the same build** (protocol 19).
 - **The host is whoever has the best upload**, ideally wired, with no streaming or screen sharing while playing. Full crowds need about 2.1 Mbit/s of upload for three friends.
 - **Press F3 as host:** each friend's ping and route. `relay` means their network forced the TURN relay. Check the Metered account's monthly quota beforehand: about 300 MB per relayed player per hour.
 - **Ask a friend to press F3** if shooting feels off. *Reappeared* is the number to watch: predicted kills the host didn't agree with. More than about one in ten of the confirmed count means something other than lag is disagreeing, which is worth a note in the playtest log, with the class and weapon.

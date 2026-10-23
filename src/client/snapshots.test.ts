@@ -116,3 +116,19 @@ it('tells the incarnation of the enemy in a slot of the newest snapshot (predict
   expect(b.incarnationOf(slot)).toBe(sim.eIncarnation[slot]);
   expect(b.incarnationOf(slot + 1)).toBe(-1);
 });
+
+it("tells the HP of the newest snapshot's enemy, rounded up, and 0 for one the host has dead (netcode stage 3)", () => {
+  const sim = makeSim(room(10, 10), ['fallen']);
+  const slot = enemyAt(sim, BLESSED, 5.5, 5.5);
+  const b = new SnapshotBuffer(4.5, sim.runId);
+  const inc = sim.eIncarnation[slot];
+  expect(b.hpOf(slot, inc)).toBe(0);
+  sim.eHp[slot] = 12.5;
+  b.addPart(sim.encodeFor(0)[0], 1000);
+  expect(b.hpOf(slot, inc)).toBe(13);
+  expect(b.hpOf(slot, inc + 1)).toBe(0);
+  sim.tick += 3;
+  sim.damageEnemy(slot, 20, -1);
+  b.addPart(sim.encodeFor(0)[0], 1100);
+  expect(b.hpOf(slot, inc)).toBe(0);
+});
