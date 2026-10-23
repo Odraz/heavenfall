@@ -9,7 +9,7 @@
  * creation tick and every 15 ticks); fire, furrows and Pitch pulse an enemy as soon as its budget allows.
  * Every cloud and furrow is a root of the button that made it, so Kindling collects its kills once.
  */
-import { BLESSED, ENEMIES, GATEKEEPER } from '../data/enemies';
+import { BLESSED, ENEMIES, isBossBody } from '../data/enemies';
 import { HEAL_MOTE } from '../data/pickups';
 import { BREAD, HERETIC, TRIAL, WITNESSES } from '../data/talents';
 import { CLOUD_DAMAGE, CLOUD_MAX, CLOUD_PULSE_TICKS, CLOUD_RADIUS, CLOUD_TIME, SECONDARIES } from '../data/weapons';
@@ -174,7 +174,7 @@ export class HereticTalents {
    */
   censerBroke(p: SimPlayer, x: number, y: number, z: number, direct: number, dx: number, dy: number, root: Root): void {
     const sim = this.sim;
-    if (direct >= 0 && sim.eAlive[direct] && this.has(p, H.IRONS) && sim.ePooled[direct] && !ENEMIES[sim.eType[direct]].flying && sim.eType[direct] !== GATEKEEPER) {
+    if (direct >= 0 && sim.eAlive[direct] && this.has(p, H.IRONS) && sim.ePooled[direct] && !ENEMIES[sim.eType[direct]].flying && !isBossBody(sim.eType[direct])) {
       sim.root(direct, HERETIC.ironsBind);
       this.t.fx(p, 'irons', [sim.eX[direct], sim.eY[direct], sim.eZ[direct]]);
     }
@@ -284,7 +284,7 @@ export class HereticTalents {
       const cast = this.t.launches.newCast(), launched: number[] = [], cz = p.z + PLAYER_HEIGHT / 2, targets: number[] = [];
       for (let k = 0; k < sim.activeCount; k++) {
         const s = sim.active[k], def = ENEMIES[sim.eType[s]];
-        if (def.flying || sim.eType[s] === GATEKEEPER) continue;
+        if (def.flying || isBossBody(sim.eType[s])) continue;
         if (distToCylinder(p.x, p.y, cz, sim.eX[s], sim.eY[s], sim.eZ[s], def.radius, def.height) > HERETIC.exorcismRadius) continue;
         targets.push(s);
       }
@@ -336,7 +336,7 @@ export class HereticTalents {
     const cz = z + PLAYER_HEIGHT / 2, room = sim.roomAt(x, y), bound: number[] = [];
     for (let k = 0; k < sim.activeCount; k++) {
       const s = sim.active[k], def = ENEMIES[sim.eType[s]];
-      if (def.flying || sim.eType[s] === GATEKEEPER) continue;
+      if (def.flying || isBossBody(sim.eType[s])) continue;
       if (distToCylinder(x, y, cz, sim.eX[s], sim.eY[s], sim.eZ[s], def.radius, def.height) > HERETIC.stakeRadius) continue;
       if (sim.roomAt(sim.eX[s], sim.eY[s]) !== room || !lineOfSight(sim.map, x, y, cz, sim.eX[s], sim.eY[s], sim.eZ[s] + def.height / 2)) continue;
       bound.push(s);
@@ -499,7 +499,7 @@ export class HereticTalents {
   died(s: number, source: number, primary: boolean): void {
     const sim = this.sim;
     // Boss summons (wave -1 while the Gatekeeper lives) and the boss itself supply no harvest.
-    if (primary && source >= 0 && sim.eType[s] !== GATEKEEPER && !(sim.bossSlot >= 0 && sim.eWave[s] === -1)) this.harvest(s);
+    if (primary && source >= 0 && !isBossBody(sim.eType[s]) && !(sim.bossSlot >= 0 && sim.eWave[s] === -1)) this.harvest(s);
     if (source < 0) return;
     for (const p of sim.players) {
       if (!this.has(p, H.SIXTH)) continue;
@@ -573,7 +573,7 @@ export class HereticTalents {
       const hits: Array<[number, Root | null]> = [];
       for (let k = 0; k < sim.activeCount; k++) {
         const s = sim.active[k];
-        if (sim.eType[s] === GATEKEEPER) continue;
+        if (isBossBody(sim.eType[s])) continue;
         const cell = fire?.at(sim.eX[s], sim.eY[s], sim.eZ[s]);
         const furrow = cell ? undefined : furrows.find((c) => this.onFurrow(c, s));
         const onFire = !!cell || !!furrow;
@@ -593,7 +593,7 @@ export class HereticTalents {
       if (common) {
         for (let k = 0; k < sim.activeCount; k++) {
           const s = sim.active[k];
-          if (ENEMIES[sim.eType[s]].flying || sim.eType[s] === GATEKEEPER || !sim.ePooled[s] || !this.censed(s, p)) continue;
+          if (ENEMIES[sim.eType[s]].flying || isBossBody(sim.eType[s]) || !sim.ePooled[s] || !this.censed(s, p)) continue;
           sim.slow(s, HERETIC.commonSlow);
         }
       }

@@ -8,7 +8,7 @@
  * shared root: each own bind records its cast, ordinary end and six-second ceiling (cast start + 6 s);
  * transfers and Sunk in the Lake keep the original cast's ceiling and never restart it.
  */
-import { CHERUB_CLIMB, ENEMIES, GATEKEEPER } from '../data/enemies';
+import { CHERUB_CLIMB, ENEMIES, isBossBody } from '../data/enemies';
 import { BINDER, BOUNDARY, RING, WELL } from '../data/talents';
 import { CHAINS_ROOT, SCOURGE_HALF_ARC, SECONDARIES, WEAPONS } from '../data/weapons';
 import type { TalentArea } from '../net/messages';
@@ -88,7 +88,7 @@ export class BinderTalents {
   /** An own instant bind: roots for `seconds` and records the source (cast, start and six-second ceiling). */
   bind(p: SimPlayer, s: number, seconds: number, cast: number, start = this.sim.tick): void {
     const sim = this.sim;
-    if (!sim.eAlive[s] || sim.eType[s] === GATEKEEPER) return;
+    if (!sim.eAlive[s] || isBossBody(sim.eType[s])) return;
     sim.root(s, seconds);
     this.record(p, s, sim.tick + ticks(seconds), cast, start);
   }
@@ -222,7 +222,7 @@ export class BinderTalents {
       let best = -1, bestD = Infinity;
       for (let k = 0; k < sim.activeCount; k++) {
         const o = sim.active[k];
-        if (taken.has(o) || sim.isRooted(o) || ENEMIES[sim.eType[o]].flying || sim.eType[o] === GATEKEEPER) continue;
+        if (taken.has(o) || sim.isRooted(o) || ENEMIES[sim.eType[o]].flying || isBossBody(sim.eType[o])) continue;
         const ox = sim.eX[o] - sim.eX[s], oy = sim.eY[o] - sim.eY[s], d = Math.hypot(ox, oy);
         if (d > BINDER.processionBehind || d < 1e-6 || (ox * bx + oy * by) / d < Math.cos(BINDER.processionCone)) continue;
         if (!lineOfSight(sim.map, sim.eX[s], sim.eY[s], sim.eZ[s] + 0.8, sim.eX[o], sim.eY[o], sim.eZ[o] + 0.8)) continue;
@@ -247,7 +247,7 @@ export class BinderTalents {
       const cast = this.newCast(), cz = p.z + PLAYER_HEIGHT / 2, targets: number[] = [];
       for (let k = 0; k < sim.activeCount; k++) {
         const s = sim.active[k], def = ENEMIES[sim.eType[s]];
-        if (sim.eType[s] === GATEKEEPER) continue;
+        if (isBossBody(sim.eType[s])) continue;
         if (distToCylinder(p.x, p.y, cz, sim.eX[s], sim.eY[s], sim.eZ[s], def.radius, def.height) > RING.radius) continue;
         if (!lineOfSight(sim.map, p.x, p.y, cz, sim.eX[s], sim.eY[s], sim.eZ[s] + def.height / 2)) continue;
         targets.push(s);
@@ -315,7 +315,7 @@ export class BinderTalents {
       const cast = this.t.launches.newCast(), launched: number[] = [];
       for (const s of targets) {
         const def = ENEMIES[sim.eType[s]];
-        if (sim.eType[s] === GATEKEEPER || sim.isRooted(s)) continue;
+        if (isBossBody(sim.eType[s]) || sim.isRooted(s)) continue;
         if (distToCylinder(ex, ey, ez, sim.eX[s], sim.eY[s], sim.eZ[s], def.radius, def.height) > BINDER.voiceRange) continue;
         if (def.flying) sim.knockAway(s, p.x, p.y, BINDER.voice, 0.4);
         else if (this.t.launches.launchFrom(s, p.x, p.y, BINDER.voice, p, 'qe', cast)) launched.push(s);
@@ -336,7 +336,7 @@ export class BinderTalents {
       this.t.fx(p, 'hymn', broken);
     }
     if (this.has(p, B.WIND)) {
-      for (const s of targets) if (sim.eType[s] !== GATEKEEPER) this.winds.push({ s, inc: sim.eIncarnation[s], tick: sim.tick + ticks(silence), room: sim.roomAt(sim.eX[s], sim.eY[s]), by: p });
+      for (const s of targets) if (!isBossBody(sim.eType[s])) this.winds.push({ s, inc: sim.eIncarnation[s], tick: sim.tick + ticks(silence), room: sim.roomAt(sim.eX[s], sim.eY[s]), by: p });
     }
   }
 
@@ -360,7 +360,7 @@ export class BinderTalents {
         let best = -1, bestD = Infinity;
         for (let k = 0; k < sim.activeCount; k++) {
           const s = sim.active[k];
-          if (used.has(s) || sim.isRooted(s) || sim.eType[s] === GATEKEEPER || sim.roomAt(sim.eX[s], sim.eY[s]) !== v.room) continue;
+          if (used.has(s) || sim.isRooted(s) || isBossBody(sim.eType[s]) || sim.roomAt(sim.eX[s], sim.eY[s]) !== v.room) continue;
           const d = Math.hypot(sim.eX[s] - v.x, sim.eY[s] - v.y, sim.eZ[s] - v.z);
           if (d > BINDER.holdsRange || d > bestD || (d === bestD && s > best)) continue;
           if (!lineOfSight(sim.map, v.x, v.y, v.z + 0.8, sim.eX[s], sim.eY[s], sim.eZ[s] + ENEMIES[sim.eType[s]].height / 2)) continue;
@@ -502,7 +502,7 @@ export class BinderTalents {
     for (let k = 0; k < sim.activeCount; k++) {
       const s = sim.active[k], def = ENEMIES[sim.eType[s]];
       if (def.flying && !this.grounded(s)) continue;
-      if (sim.eType[s] === GATEKEEPER) continue;
+      if (isBossBody(sim.eType[s])) continue;
       const dx = a.x - sim.eX[s], dy = a.y - sim.eY[s], d = Math.hypot(dx, dy);
       if (d > a.x1 || !this.feetOn(s, a.z, 2)) continue;
       if (!lineOfSight(sim.map, a.x, a.y, a.z + 0.5, sim.eX[s], sim.eY[s], sim.eZ[s] + 0.5)) continue;
@@ -517,7 +517,7 @@ export class BinderTalents {
     const sim = this.sim;
     for (let k = 0; k < sim.activeCount; k++) {
       const s = sim.active[k];
-      if (sim.eType[s] === GATEKEEPER || Math.hypot(sim.eX[s] - a.x, sim.eY[s] - a.y) > a.x1 + ENEMIES[sim.eType[s]].radius) continue;
+      if (isBossBody(sim.eType[s]) || Math.hypot(sim.eX[s] - a.x, sim.eY[s] - a.y) > a.x1 + ENEMIES[sim.eType[s]].radius) continue;
       if (!this.feetOn(s, a.z, 0.3)) continue;
       sim.ePooled[s] = 1;
       sim.slow(s, 2 / TICK_HZ);
@@ -530,7 +530,7 @@ export class BinderTalents {
     const bound: number[] = [];
     for (let k = 0; k < sim.activeCount; k++) {
       const s = sim.active[k], def = ENEMIES[sim.eType[s]];
-      if ((def.flying && !this.grounded(s)) || sim.eType[s] === GATEKEEPER) continue;
+      if ((def.flying && !this.grounded(s)) || isBossBody(sim.eType[s])) continue;
       const { d2, t } = segmentClosest(sim.eX[s], sim.eY[s], a.x, a.y, a.x1, a.y1);
       const reach = def.radius + BOUNDARY.margin;
       if (d2 > reach * reach || !this.feetOn(s, a.z + (a.z1 - a.z) * t, BOUNDARY.feet)) continue;

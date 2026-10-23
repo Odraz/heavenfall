@@ -1,7 +1,7 @@
 /** R03 item authority (rogue game.md §7). A flight owns its area reservation from acceptance to expiry. */
 import { BALM_HEAL_FRACTION, CHAIN_BIND_SECONDS, FEATHER_SPEED, ITEMS, PLUME_DAMAGE, SEAL_SHIELD, VENOM_DAMAGE, storeItem, type ItemId } from '../data/items';
 import { CLASSES } from '../data/classes';
-import { ENEMIES, GATEKEEPER } from '../data/enemies';
+import { ENEMIES, isBossBody } from '../data/enemies';
 import { aimDir, rayCylinder } from './combat';
 import { distToCylinder } from './movement';
 import { overVoid } from './map';
@@ -308,7 +308,7 @@ export class Consumables {
       for (const e of areas) {
         if (!this.covers(e, s)) continue;
         sim.ePooled[s] = 1;
-        if (e.item === 'frost' && sim.eType[s] !== GATEKEEPER) this.slowed[s] = 1;
+        if (e.item === 'frost' && !isBossBody(sim.eType[s])) this.slowed[s] = 1;
         if (!apply) continue;
         if (e.item === 'venom' && (!venom || newerPool(e, venom))) venom = e;
         if ((e.item === 'chain' || e.item === 'plume') && !e.attempted.has(sim.eIncarnation[s])) {

@@ -9,7 +9,7 @@
  * then A Third of the Stars' crash, merged per cast. A body that died in flight still crashes at its last
  * accepted point but is never read again by slot (its incarnation is checked).
  */
-import { ENEMIES, GATEKEEPER } from '../data/enemies';
+import { ENEMIES, isBossBody } from '../data/enemies';
 import { TICK_HZ } from './constants';
 import type { Simulation, SimPlayer } from './sim';
 
@@ -54,7 +54,7 @@ export class Launches {
    */
   launch(s: number, dx: number, dy: number, dist: number, owner: SimPlayer | null, kind: LaunchKind, cast: number): boolean {
     const sim = this.sim;
-    if (!sim.eAlive[s] || sim.eType[s] === GATEKEEPER || sim.isRooted(s) || Math.hypot(dx, dy) < 1e-9) return false;
+    if (!sim.eAlive[s] || isBossBody(sim.eType[s]) || sim.isRooted(s) || Math.hypot(dx, dy) < 1e-9) return false;
     sim.knockback(s, dx, dy, dist, LAUNCH_SECONDS);
     sim.commanders.cancel(s); sim.watchmen.cancel(s); sim.dominions.cancel(s, sim.tick);
     // A flyer is knocked back and never lands.

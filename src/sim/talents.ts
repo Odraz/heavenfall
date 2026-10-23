@@ -9,7 +9,7 @@
  * says and never start another bundle. A root dispatches each active kill-discharge node once, at its
  * first tick with kills.
  */
-import { ENEMIES, GATEKEEPER, CHERUB, CHORISTER, BLESSED, WATCHMAN } from '../data/enemies';
+import { ENEMIES, GATEKEEPER, CHERUB, CHORISTER, BLESSED, WATCHMAN, isBossBody } from '../data/enemies';
 import { DEV_BUILDS, JUDAS, TALENT, WAY_BACK, WIRE } from '../data/talents';
 import { SECONDARIES, WEAPONS, MOVEMENT_GRACE, SHADOWSTEP_CUT_DAMAGE, SHADOWSTEP_CUT_REACH } from '../data/weapons';
 import type { KitState, TalentArea, TalentFxKind } from '../net/messages';
@@ -198,7 +198,7 @@ export class Talents {
     const sim = this.sim;
     for (let k = 0; k < sim.activeCount; k++) {
       const s = sim.active[k];
-      if (!boss && sim.eType[s] === GATEKEEPER) continue;
+      if (!boss && isBossBody(sim.eType[s])) continue;
       const def = ENEMIES[sim.eType[s]];
       if (distToCylinder(x, y, z, sim.eX[s], sim.eY[s], sim.eZ[s], def.radius, def.height) > r) continue;
       if (sim.roomAt(sim.eX[s], sim.eY[s]) !== room) continue;
@@ -447,7 +447,7 @@ export class Talents {
       this.primary(root, s, SHADOWSTEP_CUT_DAMAGE, SHADOWSTEP_CUT_DAMAGE, sim.eX[s] - ux, sim.eY[s] - uy, false);
       return;
     }
-    if (sim.isRooted(s) || sim.eType[s] === GATEKEEPER) return;
+    if (sim.isRooted(s) || isBossBody(sim.eType[s])) return;
     const side = ux * (sim.eY[s] - y0) - uy * (sim.eX[s] - x0) >= 0 ? 1 : -1;
     sim.knockback(s, -uy * side, ux * side, TALENT.sheepThrow, TALENT.airborne);
     if (!ENEMIES[sim.eType[s]].flying && sim.eGrounded[s]) { sim.eVz[s] = GRAVITY * TALENT.airborne / 2; sim.eGrounded[s] = 0; }
@@ -611,7 +611,7 @@ export class Talents {
   /** Ground enemies whose feet are near a height, excluding flyers and the Gatekeeper. */
   private ground(s: number): boolean {
     const sim = this.sim;
-    return sim.eType[s] !== GATEKEEPER && !ENEMIES[sim.eType[s]].flying && sim.eGrounded[s] === 1;
+    return !isBossBody(sim.eType[s]) && !ENEMIES[sim.eType[s]].flying && sim.eGrounded[s] === 1;
   }
 
   private wire(a: TalentArea): void {

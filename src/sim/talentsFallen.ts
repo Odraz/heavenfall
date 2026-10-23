@@ -4,7 +4,7 @@
  * the three alternatives (Gatebreaker, Rain of Fire, Cast Out). The base kit without nodes takes exactly
  * the base paths: the same pellets, random draws, damage, shove and events.
  */
-import { BLESSED, ENEMIES, GATEKEEPER } from '../data/enemies';
+import { BLESSED, ENEMIES, isBossBody } from '../data/enemies';
 import { CAST_OUT, FALLEN, GATEBREAKER, RAIN } from '../data/talents';
 import {
   KNOCKBACK_TIME, MOVEMENT_GRACE, SECONDARIES, SHOTGUN_CLOSE_DAMAGE, SHOTGUN_KNOCKBACK_DIST, SHOTGUN_KNOCKBACK_RANGE, WEAPONS,
@@ -240,7 +240,7 @@ export class FallenTalents {
     const launched: number[] = [];
     for (const s of targets) {
       this.t.primary(root, s, CAST_OUT.damage, CAST_OUT.damage, p.x, p.y);
-      if (!sim.eAlive[s] || sim.eType[s] === GATEKEEPER) continue;
+      if (!sim.eAlive[s] || isBossBody(sim.eType[s])) continue;
       if (this.t.launches.launchFrom(s, p.x, p.y, CAST_OUT.throw, p, 'qe', cast)) launched.push(s);
     }
     this.t.finish(root);
@@ -330,7 +330,7 @@ export class FallenTalents {
     for (const [s, sign] of band) {
       c.side.add(s);
       this.t.primary(c.root, s, GATEBREAKER.sideDamage, GATEBREAKER.sideDamage, sim.eX[s] + uy * sign, sim.eY[s] - ux * sign);
-      if (sim.eAlive[s] && sim.eType[s] !== GATEKEEPER && this.t.launches.launch(s, -uy * sign, ux * sign, GATEBREAKER.fling, p, 'qe', c.cast)) c.launched.push(s);
+      if (sim.eAlive[s] && !isBossBody(sim.eType[s]) && this.t.launches.launch(s, -uy * sign, ux * sign, GATEBREAKER.fling, p, 'qe', c.cast)) c.launched.push(s);
     }
     this.t.finish(c.root);
   }
@@ -413,7 +413,7 @@ export class FallenTalents {
     const pts: number[] = [];
     for (let k = 0; k < sim.activeCount; k++) {
       const s = sim.active[k], def = ENEMIES[sim.eType[s]];
-      if (def.flying || sim.eType[s] === GATEKEEPER || sim.isRooted(s) || Math.abs(sim.eZ[s] - p.z) > 1.5) continue;
+      if (def.flying || isBossBody(sim.eType[s]) || sim.isRooted(s) || Math.abs(sim.eZ[s] - p.z) > 1.5) continue;
       const bx = sim.eX[s] - p.x, by = sim.eY[s] - p.y, d = Math.hypot(bx, by);
       if (d > PLAYER_RADIUS + def.radius + 0.45 || d < 1e-6 || (bx * mx + by * my) / d < cosMax) continue;
       const key = sim.eIncarnation[s], at = this.shoved.get(key);
@@ -431,7 +431,7 @@ export class FallenTalents {
     const sim = this.sim, hits: number[] = [];
     for (let k = 0; k < sim.activeCount; k++) {
       const s = sim.active[k], def = ENEMIES[sim.eType[s]];
-      if (def.flying || sim.eType[s] === GATEKEEPER || !this.t.slowed(s) || Math.abs(sim.eZ[s] - p.z) > 1.5) continue;
+      if (def.flying || isBossBody(sim.eType[s]) || !this.t.slowed(s) || Math.abs(sim.eZ[s] - p.z) > 1.5) continue;
       const reach = sim.eType[s] === BLESSED ? 1.2 : PLAYER_RADIUS + def.radius + 0.45;
       if (Math.hypot(sim.eX[s] - p.x, sim.eY[s] - p.y) > reach) continue;
       const key = sim.eIncarnation[s], at = this.trampled.get(key);
@@ -463,7 +463,7 @@ export class FallenTalents {
       const hits: number[] = [];
       for (let k = 0; k < sim.activeCount; k++) {
         const s = sim.active[k];
-        if (sim.eType[s] === GATEKEEPER) continue;
+        if (isBossBody(sim.eType[s])) continue;
         const inFire = !!fire?.at(sim.eX[s], sim.eY[s], sim.eZ[s]);
         if (inFire) {
           sim.ePooled[s] = 1;
@@ -555,7 +555,7 @@ export class FallenTalents {
     const targets: number[] = [];
     for (let k = 0; k < sim.activeCount; k++) {
       const s = sim.active[k];
-      if (s === l.slot || done.has(sim.eIncarnation[s]) || sim.eType[s] === GATEKEEPER) continue;
+      if (s === l.slot || done.has(sim.eIncarnation[s]) || isBossBody(sim.eType[s])) continue;
       const def = ENEMIES[sim.eType[s]];
       if (Math.hypot(sim.eX[s] - l.x, sim.eY[s] - l.y) > FALLEN.crash + def.radius || Math.abs(sim.eZ[s] - l.z) > 1.5) continue;
       if (sim.roomAt(sim.eX[s], sim.eY[s]) !== l.room) continue;

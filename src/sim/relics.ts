@@ -11,7 +11,7 @@
  * four; relic projectiles are at most four per owner. Death, leaving and unequipping remove the owner's
  * outgoing relic effects; a cleared room removes those in it.
  */
-import { ENEMIES, GATEKEEPER } from '../data/enemies';
+import { ENEMIES, isBossBody } from '../data/enemies';
 import { activeCombo, effectName, RELIC, RELIC_IDS, RELICS, relicEffect, type ComboId, type RelicId } from '../data/relics';
 import type { ItemId } from '../data/items';
 import type { FloorSync, RelicAreaState, RelicShotState } from '../net/messages';
@@ -233,7 +233,7 @@ export class Relics {
   /** A ground enemy whose feet stand within 1 m of a floor height, in that room (floor effects, §1.1). */
   private grounded(s: number, z: number, room: number): boolean {
     const sim = this.sim, def = ENEMIES[sim.eType[s]];
-    if (sim.eType[s] === GATEKEEPER || sim.roomAt(sim.eX[s], sim.eY[s]) !== room) return false;
+    if (isBossBody(sim.eType[s]) || sim.roomAt(sim.eX[s], sim.eY[s]) !== room) return false;
     if (def.flying && sim.eGrounded[s] !== 1) return false;
     return Math.abs(sim.eZ[s] - z) <= 1;
   }
@@ -389,7 +389,7 @@ export class Relics {
   private expulsion(p: SimPlayer): 'done' | 'skip' {
     const sim = this.sim, room = sim.roomAt(p.x, p.y);
     const target = this.volume(p.x, p.y, p.z + PLAYER_EYE, room, RELIC.expulsionRange, 1,
-      (s) => sim.eTauntUntil[s] > sim.tick && !ENEMIES[sim.eType[s]].flying && sim.eType[s] !== GATEKEEPER)[0];
+      (s) => sim.eTauntUntil[s] > sim.tick && !ENEMIES[sim.eType[s]].flying && !isBossBody(sim.eType[s]))[0];
     if (target === undefined) return 'skip';
     return this.launchRing(p, 'expulsion', { x: sim.eX[target], y: sim.eY[target], z: sim.eZ[target], room }, RELIC.launchRing);
   }

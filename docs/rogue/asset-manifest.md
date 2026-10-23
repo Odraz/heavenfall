@@ -58,9 +58,9 @@ Execution record from R0 ([r00.md](r00.md) stage 3), maintained by the AI from R
 | reliquary-chest-open | sprite | yes | R6 | integrated | `assets/art-src/reliquary-chest-open.png` | `assets/items/reliquary-chest-open.png` | Reliquary open | — | — | — | B5; aligned with the closed chest; see art-prompts.md 2026-10-14 receipt; original archived locally; 512 px cutout by `scripts/cutout.py` (R06, 2026-10-18), seen in game; human acceptance pending |
 | judgment-bell | sprite | yes | R6 | integrated | `assets/art-src/judgment-bell.png` | `assets/items/judgment-bell.png` | Bell of Judgment; chain and shaft coded | — | — | — | B5; fallback: coded bell glyph; see art-prompts.md 2026-10-14 receipt; original archived locally; 512 px cutout by `scripts/cutout.py` (R06, 2026-10-18), seen in game; human acceptance pending |
 | sundial | sprite | yes | R6 | integrated | `assets/art-src/sundial.png` | `assets/items/sundial.png` | HUD icon under minimap; Confessional prop | — | — | — | B5; fallback: coded gnomon glyph; see art-prompts.md 2026-10-14 receipt; original archived locally; 256 px cutout by `scripts/cutout.py` (R06, 2026-10-18), seen in game; human acceptance pending |
-| watcher-open | sprite | yes | R7 | requested | — | — | Gatekeeper's Watchers | — | — | — | B6; rims, tethers coded; fallback: coded eye glyph |
-| watcher-closed | sprite | yes | R7 | requested | — | — | Gatekeeper's Watchers | — | — | — | B6 |
-| judgment-seal | sprite | yes | R7 | requested | — | — | Judgment Seal on a held player | — | — | — | B6; fallback: coded lock glyph |
+| watcher-open | sprite | yes | R7 | requested | — | — | Gatekeeper's Watchers | — | — | — | B6; rims, tethers coded; fallback: coded eye glyph, in use since R7 (`src/client/gatekeeperView.ts`) |
+| watcher-closed | sprite | yes | R7 | requested | — | — | Gatekeeper's Watchers | — | — | — | B6; fallback: coded grey lidded eye, in use since R7 |
+| judgment-seal | sprite | yes | R7 | requested | — | — | Judgment Seal on a held player | — | — | — | B6; fallback: coded lock glyph, in use since R7 |
 | item-balm | icon | yes | R3 | integrated | `assets/art-src/item-balm.png` | `assets/items/item-balm.png` | Balm of the Rejected: pickup, pedestal, HUD slot | — | — | — | B7 redo by use (test tube pilot, magenta background); 512 px cutout by `scripts/cutout.py`; seen in the HUD and thrown in game 2026-10-15; human acceptance pending |
 | item-seal | icon | yes | R3 | integrated | `assets/art-src/item-seal.png` | `assets/items/item-seal.png` | Wax Seal of Sanctuary | — | — | — | B7 redo by use (test tube); 512 px cutout by `scripts/cutout.py`; seen in the HUD and thrown in game 2026-10-15; human acceptance pending |
 | item-feather | icon | yes | R3 | integrated | `assets/art-src/item-feather.png` | `assets/items/item-feather.png` | Pilgrim's Feather | — | — | — | B7 redo by use (test tube); 512 px cutout by `scripts/cutout.py`; seen in the HUD and thrown in game 2026-10-15; human acceptance pending |
@@ -231,16 +231,16 @@ All have a synthesized fallback (`required` = no), but a missing readable cue bl
 | judgmentBlast | sfx | no | R7 | requested | — | — | Judgment strikes | — | — | — | S7, keep 1; synth cue exists |
 | volleyWindup | sfx | no | R7 | requested | — | — | Orb Volley gathers | — | — | — | S7, keep 1; synth cue exists |
 | volleyFired | sfx | no | R7 | requested | — | — | Orb Volley released | — | — | — | S7, keep 1; synth cue exists |
-| tollTell | sfx | no | R7 | requested | — | — | Toll prepares | — | — | — | S7, keep 1 |
-| tollImpact | sfx | no | R7 | requested | — | — | Toll strikes, ring rolls out | — | — | — | S7, keep 1 |
-| tollPersonalWhoosh | sfx | no | R7 | requested | — | — | ring about to reach you | — | — | — | S7, keep 1 |
-| callTell | sfx | no | R7 | requested | — | — | Called to the Gate | — | — | — | S7, keep 1 |
-| sealBreak | sfx | no | R7 | requested | — | — | Seal breaks | — | — | — | S7, keep 1 |
+| tollTell | sfx | no | R7 | requested | — | — | Toll prepares | — | — | — | S7, keep 1; synth stand-in `tollWindup` since R7 |
+| tollImpact | sfx | no | R7 | requested | — | — | Toll strikes, ring rolls out | — | — | — | S7, keep 1; synth stand-in `tollStrike` since R7 |
+| tollPersonalWhoosh | sfx | no | R7 | requested | — | — | ring about to reach you | — | — | — | S7, keep 1; synth stand-in `ringWhoosh` since R7 |
+| callTell | sfx | no | R7 | requested | — | — | Called to the Gate | — | — | — | S7, keep 1; synth stand-in `callWindup` since R7 |
+| sealBreak | sfx | no | R7 | requested | — | — | Seal breaks | — | — | — | S7, keep 1; synth stand-in `sealBreak` since R7 |
 | callReleased | sfx | no | R7 | requested | — | — | held player set down | — | — | — | S7, keep 1 |
-| watcherOpen | sfx | no | R7 | requested | — | — | Watchers open | — | — | — | S7, keep 1 |
-| watcherBreak | sfx | no | R7 | requested | — | — | Watcher shot apart | — | — | — | S7, keep 1 |
-| hostDescend | sfx | no | R6 | requested | — | — | Host arrives; Bell's wave (R6) | — | — | — | S7, keep 1; first used by the Bell in R6 |
-| bossTransition | sfx | no | R7 | requested | — | — | 50%: trumpet lifted | — | — | — | S7, keep 1 |
+| watcherOpen | sfx | no | R7 | requested | — | — | Watchers open | — | — | — | S7, keep 1; synth stand-in `watchersOpen` since R7 |
+| watcherBreak | sfx | no | R7 | requested | — | — | Watcher shot apart | — | — | — | S7, keep 1; synth stand-in `watcherBreak` since R7 |
+| hostDescend | sfx | no | R6 | requested | — | — | Host arrives; Bell's wave (R6) | — | — | — | S7, keep 1; first used by the Bell in R6; synth stand-in `hostDescend` since R7 |
+| bossTransition | sfx | no | R7 | requested | — | — | 50%: trumpet lifted | — | — | — | S7, keep 1; synth stand-in `phaseChoirThreat` since R7 |
 | bossDefeat | sfx | no | R7 | requested | — | — | Gatekeeper falls | — | — | — | S7, keep 1 |
 | refinerFire | loop | no | R2 | requested | — | — | Refiner's Fire burning; fades at the clear | — | — | — | S8 |
 | incense | loop | no | R2 | requested | — | — | censer cloud; incense talents | — | — | — | S8 |

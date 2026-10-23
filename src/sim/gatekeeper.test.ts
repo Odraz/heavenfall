@@ -373,6 +373,28 @@ describe('the transition and the Watchers (bosses.md §3.1.2, §3.3.2)', () => {
   });
 });
 
+describe('boss parts and the crowd rules (bosses.md §3.5)', () => {
+  it('are never rooted, slowed, launched or crowded, and area damage does half', () => {
+    const sim = fight(['binder']);
+    sim.boss.phase = 2;
+    runTo(sim, start(sim) + C_WATCHERS + 61);
+    const e = sim.boss.eyes[0].slot;
+    const at = [sim.eX[e], sim.eY[e], sim.eZ[e]];
+    sim.root(e, 5);
+    sim.slow(e, 5);
+    expect(sim.isRooted(e)).toBe(false);
+    expect(sim.talents.launches.launch(e, 1, 0, 5, sim.players[0], 'qe', 1)).toBe(false);
+    expect(sim.living).toBe(0);
+    // An area hit (it has a source point) does half; a ray does full.
+    sim.damageEnemy(e, 20, 0, 20, sim.eX[e], sim.eY[e]);
+    expect(sim.eHp[e]).toBe(50);
+    sim.damageEnemy(e, 20, 0);
+    expect(sim.eHp[e]).toBe(30);
+    sim.step();
+    expect([sim.eX[e], sim.eY[e], sim.eZ[e]]).toEqual(at);
+  });
+});
+
 describe('the end (bosses.md §3.8)', () => {
   it('victory releases a held player and removes parts without credit', () => {
     const sim = fight(['binder', 'betrayer']);

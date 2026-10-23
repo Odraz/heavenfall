@@ -2,6 +2,8 @@
 
 Revision 9, 2026-10-11. The development sequence for the one-dungeon Pearly Gates slice. [game.md](game.md), its catalogs and [slice-acceptance.md](slice-acceptance.md) remain the gameplay authority; this file decides **order**, not rules.
 
+**R7 checkpoint, 2026-10-23:** the authored Gatekeeper replaces the inherited fixture: its cycle, Judgment, the Toll, Called to the Gate, the 50% transition and the Watchers, with bots, co-op setups and view-time resolution for multiplayer, awaiting your play; see the [R07 report](r07-report.md) for the per-class and co-op checklist.
+
 **R6 checkpoint, 2026-10-18:** relics and combos, the key and the Reliquary, the bargain, the Bells, the Sundial, Pilgrim's Return, deeds, Edicts and streaks are implemented and verified, awaiting your play; see the [R06 report](r06-report.md) for the routes and tradeoffs to compare.
 
 **R4 checkpoint, 2026-10-16:** the Betrayer's three trees, Rites and the Advocate are implemented and verified, awaiting your Gate C play; see the [R04 report](r04-report.md) for quick builds and the two plans.

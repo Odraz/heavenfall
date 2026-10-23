@@ -2031,7 +2031,7 @@ export class Simulation {
     const changed = this.hazards.setRoom(room);
     let avoiding = false;
     if (this.hazards.room >= 0) for (let k = 0; k < this.activeCount && !avoiding; k++) {
-      const s = this.active[k]; avoiding = !ENEMIES[this.eType[s]].flying && this.eType[s] !== GATEKEEPER && this.roomAt(this.eX[s], this.eY[s]) === this.hazards.room;
+      const s = this.active[k]; avoiding = !ENEMIES[this.eType[s]].flying && !isBossBody(this.eType[s]) && this.roomAt(this.eX[s], this.eY[s]) === this.hazards.room;
     }
     if (this.dryNavigation.setRoom(avoiding ? this.hazards.room : -1) || changed) this.invalidateFields();
   }
