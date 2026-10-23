@@ -2,7 +2,7 @@ import { XP_GAIN } from './rewards';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { MainToWorker, WorkerToMain } from './workerMessages';
 import { decodeSnapshot, encodeInput, type InputMsg } from '../net/protocol';
-import { INPUT_DEFAULTS } from './testutil/sims';
+import { INPUT_DEFAULTS, openBossGate } from './testutil/sims';
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -71,7 +71,7 @@ it('publishes victory before exit, then saves post-win purchases in the same set
     expect(sim).toBeDefined(); const live = sim!; apply(); expect(saved.stats.runs).toBe(1);
     sealNow(live, live.floor!.boss);
     live.players[0].wallet = 500;
-    live.damageEnemy(live.bossSlot, 100000, 0); vi.advanceTimersByTime(35); apply();
+    openBossGate(live); live.damageEnemy(live.bossSlot, 100000, 0); vi.advanceTimersByTime(35); apply();
     expect(live.won).toBe(true); expect(live.result).toBeNull();
     expect(saved.run).toBeNull(); expect(saved.stats.wins).toBe(1); expect(saved.characters.fallen.xp).toBe(1500 * XP_GAIN);
     const p = live.players[0], at = stairPoints(live.map, live.floor!.boss)[1];

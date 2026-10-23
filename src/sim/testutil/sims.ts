@@ -4,6 +4,12 @@ import { ENEMIES } from '../../data/enemies';
 import { Simulation, type SimOptions, type SimPlayer } from '../sim';
 import { dungeonOf } from './maps';
 
+/** Lets the next body hit finish the Gatekeeper: phase 2 with both completion episodes resolved (rogue bosses.md §3.2.1). */
+export function openBossGate(sim: Simulation): void {
+  sim.boss.phase = 2;
+  sim.boss.callResolved = sim.boss.aimResolved = true;
+}
+
 /** Run-scoped fields for standalone simulation fixtures; session tests supply their admitted ID. */
 export const INPUT_DEFAULTS = {
   runId: '00000000000000000000000000000000',

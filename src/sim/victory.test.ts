@@ -5,7 +5,7 @@ import { generateFloor } from '../gen';
 import { PINNED } from '../gen/pinned';
 import { PEARLY_POOL } from '../data/rooms/1';
 import { Simulation } from './sim';
-import { sealNow } from './testutil/sims';
+import { openBossGate, sealNow } from './testutil/sims';
 import { stairPoints } from './shop';
 import { PHASE_CLEARED, PHASE_IDLE } from '../net/protocol';
 import { createProfile } from '../profile/model';
@@ -49,7 +49,7 @@ it('latches victory once, resolves living/soul groups, preserves skipped fights,
   living.hp = 100; soul.dead = true; soul.hp = 0; absentSoul.dead = true; absentSoul.hp = 0; absentLiving.hp = 17;
   sim.removePlayer(2, true); sim.removePlayer(3, true);
   const skipped = g.floor.rooms.findIndex(r => r.kind === 'combat'); sim.rooms[skipped].phase = PHASE_IDLE;
-  sim.damageEnemy(sim.bossSlot, 100000, living.index); sim.step();
+  openBossGate(sim); sim.damageEnemy(sim.bossSlot, 100000, living.index); sim.step();
   expect(sim.won).toBe(true); expect(sim.result).toBeNull(); expect(sim.admissionClosed).toBe(true);
   expect(living.hp).toBe(220); expect(soul.hp).toBe(75); expect(absentSoul.hp).toBe(120); expect(absentLiving.hp).toBe(17);
   expect([living.runXp, soul.runXp, absentSoul.runXp, absentLiving.runXp]).toEqual([1500 * XP_GAIN, 1500 * XP_GAIN, 0, 0]);
@@ -66,7 +66,7 @@ it('secures disconnected inventory and accepts a post-win purchase revision with
   for (const r of records.records.values()) records.commit(r);
   sim.players[0].inventory = [null, { item: 'balm', count: 2 }]; sim.players[0].wallet = 500;
   sim.players[1].inventory[0] = { item: 'seal', count: 1 }; sim.removePlayer(1, true);
-  sim.damageEnemy(sim.bossSlot, 100000, 0); sim.step();
+  openBossGate(sim); sim.damageEnemy(sim.bossSlot, 100000, 0); sim.step();
   for (const r of records.records.values()) {
     const p = sim.playerById(r.playerId) ?? sim.retainedPlayers.get(r.playerId)!.player;
     r.inventory = structuredClone(p.inventory); r.runXp = p.runXp;

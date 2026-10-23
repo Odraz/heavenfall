@@ -27,7 +27,7 @@ import {
   CHERUB,
   CHERUB_HOVER,
   CHORISTER,
-  DOMINION, CANTOR, CARRIER, isCommander,
+  DOMINION, CANTOR, CARRIER, isCommander, BOSS_PART, isBossBody,
   ENEMIES,
   WATCHMAN,
   GATEKEEPER,
@@ -82,6 +82,7 @@ import {
   type AttackSlot,
 } from '../data/weapons';
 import type { FloorSync, GameEvent, InventoryState, PlayerStats } from '../net/messages';
+import type { BossHeader } from '../net/protocol';
 import {
   ALLY_NONE,
   DAMAGE_HITS_MAX,
@@ -137,7 +138,9 @@ import { lineOfSight, raycastTerrain } from './los';
 import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
-import { bossMultiplier, partyMultiplier, scaleCount, waveSize } from './party';
+import { partyMultiplier, scaleCount, waveSize } from './party';
+import { GatekeeperFight } from './gatekeeperFight';
+import { BOSS_CAST_NONE, FLAG_PART_OPENING, FLAG_PART_SEAL, PART_RESERVE } from '../data/gatekeeper';
 import { PICKUP_CAP } from '../data/pickups';
 import { PROP_HEIGHT, PROP_BLAST_PLAYER_DAMAGE, type PropDef } from '../data/props';
 import { Props, type Prop } from './props';
@@ -381,6 +384,12 @@ interface SpawnBatch {
   pincered?: number;
   /** Wave index, or -1 for benchmark top-ups and summons. */
   wave: number;
+  /** The Gatekeeper's adds (rogue bosses.md §3.4): the Host on the gate points, the seal wave on the field points. */
+  boss?: 'host' | 'seal';
+  /** Only these indices of the room's spawn points. */
+  only?: ReadonlySet<number>;
+  /** Placed evenly from `start` over `ticks`. */
+  arrive?: { start: number; ticks: number };
 }
 
 interface RoomState {
@@ -510,14 +519,8 @@ const CASTERS: Record<number, CasterDef> = {
   [CHERUB]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 18, damage: 8, radius: 0.15 },
 };
 
-// The Gatekeeper (§7.4).
+// The Gatekeeper (rogue bosses.md §3): his encounter lives in gatekeeperFight.ts.
 export const BOSS_EYE = 5;
-const VOLLEY_FIRST = 2;
-const VOLLEY_INTERVAL = 4;
-const VOLLEY_WINDUP = 0.5;
-const VOLLEY_ORBS = 8;
-const VOLLEY_SPREAD = (25 * Math.PI) / 180;
-const VOLLEY_ORB = { speed: GLOBE_SPEED, damage: 15, radius: 0.3 };
 
 // The globe (M12 follow-up §1.3).
 /** A shattering globe hurts the players within this many meters of it, in its line of sight. */
@@ -534,19 +537,9 @@ export const GLOBE_SHOT_DAMAGE = 40;
 export const GLOBE_SHOT_BLAST = 3;
 /** The shatter point is moved back along the flight this far for line of sight, out of the wall it hit. */
 const GLOBE_LOS_BACK = 0.1;
-const JUDGMENT_FIRST = 20;
-const JUDGMENT_INTERVAL = 25;
-const JUDGMENT_CAST = 3;
-/** M9 §4 (was 2 000): Field of Blood replaced Kiss as the boss multiplier, and party damage on it fell. */
-const JUDGMENT_INTERRUPT = 1300;
-const SUMMON_FIRST = 30;
-const SUMMON_INTERVAL = 30;
-const SUMMON = { blessed: 150, cherubs: 10 };
 
-/** Gatekeeper casts, as sent in snapshots (§9.4). */
-export const BOSS_CAST_NONE = 0;
-export const BOSS_CAST_VOLLEY = 1;
-export const BOSS_CAST_JUDGMENT = 2;
+/** Gatekeeper casts, as sent in snapshots (rogue bosses.md §3.5). */
+export { BOSS_CAST_CALL, BOSS_CAST_JUDGMENT, BOSS_CAST_NONE, BOSS_CAST_TOLL, BOSS_CAST_VOLLEY } from '../data/gatekeeper';
 
 export { ROOM_NONE } from './constants';
 
@@ -556,8 +549,6 @@ const COUNTDOWN = 20;
 const POVERTY_LIFETIME = 300;
 /** The Edict of Swift Hymns' projectile speed (§2.5). */
 const SWIFT_HYMNS = 1.3;
-/** The Edict of the Trumpet: the inherited Gatekeeper calls its first Judgment this soon (R7 owns the authored phase move). */
-const TRUMPET_JUDGMENT_FIRST = 3;
 const COUNTDOWN_ALL_IN = 3;
 const COUNTDOWN_CANCEL = 3;
 
@@ -578,6 +569,8 @@ const DASH_WINDOW_TICKS = 15;
 const DASH_MAX_SEGMENT = 12;
 
 const ticks = (seconds: number) => Math.round(seconds * TICK_HZ);
+/** Abilities that move their user: refused while the Call holds them (rogue bosses.md §3.5). */
+export const MOVEMENT_ABILITIES: ReadonlySet<string> = new Set(['fallingStar', 'shadowstep', 'wayBack', 'gatebreaker']);
 /** F opens the Advocate's view within this reach of its point (rogue game.md §9.6). */
 export const ADVOCATE_REACH = 2.5;
 
@@ -764,24 +757,18 @@ export class Simulation {
   /** Thrown Silver's coins fly 0.5 s before the Field starts. */
   fieldStart = 0;
 
-  // The Gatekeeper (§7.4). Timers are ticks.
+  // The Gatekeeper (rogue bosses.md §3).
   /** The living Gatekeeper's slot, or -1. */
   bossSlot = -1;
   bossMaxHp = 0;
-  /** BOSS_CAST_*: the cast in progress. */
-  bossCast = BOSS_CAST_NONE;
-  /** Ticks since the cast in progress started. */
-  bossCastTicks = 0;
-  volleyDue = 0;
-  judgmentDue = 0;
-  summonDue = 0;
-  /** Damage taken during the Judgment cast in progress (after step 1 of §5.5). */
-  private judgmentDamage = 0;
+  /** The authored encounter: its cycle, casts, parts and holds. */
+  readonly boss = new GatekeeperFight(this);
+  /** The cast in progress, BOSS_CAST_*. */
+  get bossCast(): number { return this.boss.cast?.kind ?? BOSS_CAST_NONE; }
   /** The Gatekeeper died this tick or since the last one (dev key K); the run ends in victory. */
   private bossKilled = false;
-  /** The boss arena's party size, for the Judgment interrupt threshold and summons (M8 §6.3). */
-  private bossParty = 1;
-  private bossSolo = false;
+  /** Set while a censer's direct hit resolves: it does full damage to boss parts, unlike area damage. */
+  private directPartHit = false;
 
   /** Dense list of living enemy slots. */
   readonly active = new Int32Array(ENEMY_SLOTS);
@@ -811,6 +798,8 @@ export class Simulation {
   /** Player index for player projectiles, -1 for enemy projectiles. */
   private readonly pOwner = new Int8Array(PROJECTILE_SLOTS);
   readonly pReflected = new Uint8Array(PROJECTILE_SLOTS);
+  /** The Orb Volley a globe belongs to (0: none): a volley hurts a player at most once (rogue bosses.md §3.5). */
+  readonly pVolley = new Int32Array(PROJECTILE_SLOTS);
   private readonly pHostileBudget = new Uint8Array(PROJECTILE_SLOTS);
   private readonly pOrigin = new Float64Array(PROJECTILE_SLOTS * 3);
   private readonly pRoom = new Uint8Array(PROJECTILE_SLOTS);
@@ -1094,6 +1083,18 @@ export class Simulation {
       p.lastAcceptMs = nowMs;
       return;
     }
+    // Called to the Gate (rogue bosses.md §3.5): held, the player aims, fires and uses non-movement
+    // abilities; the host moves them, and a movement ability press is refused without spending it.
+    if (this.boss.holds(p.id)) {
+      p.lastAcceptMs = nowMs;
+      p.fire = m.fire;
+      p.allyTargetId = m.allyTargetId;
+      const view: ViewTick = m.shotViewTick >= 0 ? { tick: m.shotViewTick, gap: m.shotViewGap, frac: m.shotViewFrac } : NO_VIEW;
+      if (newShots) queueShots(p.shotQueue, newShots, { button: m.shotButton === 1 ? 1 : 0, yaw: m.shotYaw, pitch: m.shotPitch, view, tick: this.tick }, m.shots);
+      if (qPressed && !MOVEMENT_ABILITIES.has(p.kit.q)) p.pendingQ = true;
+      if (ePressed && !MOVEMENT_ABILITIES.has(p.kit.e)) { p.pendingE = true; p.pendingEAlly = m.allyTargetId; }
+      return;
+    }
     let x = m.x;
     let y = m.y;
     if (p.launchUntilMs === -1) p.launchUntilMs = nowMs + DOMINION_LAUNCH_SECONDS * 1000;
@@ -1150,7 +1151,8 @@ export class Simulation {
   }
 
   /** Moves a player on the host and tells its client (§9.3). `launch` is a horizontal velocity in m/s. */
-  teleport(p: SimPlayer, x: number, y: number, z: number, launch?: { dx: number; dy: number }, carry?: boolean): void {
+  /** `hold`: the Call's hold starts, dragging toward this point (the Gatekeeper), or ends (null). */
+  teleport(p: SimPlayer, x: number, y: number, z: number, launch?: { dx: number; dy: number }, carry?: boolean, hold?: [number, number] | null): void {
     if (carry === undefined) this.commanders.releasePlayer(p.id, false);
     p.x = x;
     p.y = y;
@@ -1159,7 +1161,7 @@ export class Simulation {
     p.lastAcceptMs = this.nowMs;
     p.moveVx = p.moveVy = 0;
     p.launchUntilMs = launch ? -1 : 0;
-    this.emit(p.id, { type: 'teleport', teleportId: p.teleportId, x, y, z, ...(launch ? { launch } : {}), ...(carry !== undefined ? { carry } : {}) });
+    this.emit(p.id, { type: 'teleport', teleportId: p.teleportId, x, y, z, ...(launch ? { launch } : {}), ...(carry !== undefined ? { carry } : {}), ...(hold !== undefined ? { hold } : {}) });
   }
 
   /** Adds a player to the game in its slot, with its feet at (x, y, z). */
@@ -1454,11 +1456,14 @@ export class Simulation {
   /** Victory: when the Gatekeeper dies, every remaining enemy bursts without kill credit (§8.2). */
   private checkVictory(): void {
     if (!this.bossKilled || this.result || this.won) return;
+    // The latch cancels his casts, rings and pending hits and releases a held player safely (§3.8).
+    this.boss.end();
     while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1], true);
     // Hand-authored legacy maps keep their immediate-ending development fixture.
     if (!this.floor) { this.finish('victory'); return; }
     const at = stairPoints(this.map, this.floor.boss)[0];
     this.victory = new VictoryExit(this.tick, this.timeMs, at); this.admissionClosed = true;
+    this.emit('all', { type: 'bossPhase', phase: 0, line: 'The first trumpet is silent. Six to go.' });
     for (const p of [...this.players, ...[...this.retainedPlayers.values()].map(r => r.player)]) {
       // Pawned relics are now owned, and the run's relic slots become the saved loadout (§9.6, §13.5).
       for (const id of p.pawnedRelics) if (!p.ownedRelics.includes(id)) p.ownedRelics.push(id);
@@ -1663,7 +1668,7 @@ export class Simulation {
     const fallback = new Map<number, [number, number] | null>();
     for (let k = this.activeCount - 1; k >= 0; k--) {
       const s = this.active[k];
-      if (this.eRoom[s] !== ai || this.eType[s] === GATEKEEPER || this.leashed[s]) continue;
+      if (this.eRoom[s] !== ai || isBossBody(this.eType[s]) || this.leashed[s]) continue;
       if (this.recoveryArrivals.has(s)) continue;
       const avoids = !ENEMIES[this.eType[s]].flying && this.dryNavigation.room === ai;
       const fields = ENEMIES[this.eType[s]].flying ? this.airFields : avoids ? this.dryNavigation.fields : this.groundFields;
@@ -1847,16 +1852,9 @@ export class Simulation {
     const [c, r] = this.map.boss!;
     const slot = this.allocSlot();
     if (slot < 0) return;
-    this.bossParty = this.rooms[ai].partySize;
-    this.bossSolo = this.solo;
-    this.bossMaxHp = ENEMIES[GATEKEEPER].hp * bossMultiplier(this.bossParty, this.bossSolo);
-    this.bossCast = BOSS_CAST_NONE;
-    this.bossCastTicks = 0;
-    this.volleyDue = this.tick + ticks(VOLLEY_FIRST);
-    this.judgmentDue = this.tick + ticks(this.edicts.includes(5) ? TRUMPET_JUDGMENT_FIRST : JUDGMENT_FIRST);
-    this.summonDue = this.tick + ticks(SUMMON_FIRST);
     this.bossSlot = slot;
     this.spawnAt(slot, GATEKEEPER, c, r, ai, -1);
+    this.bossMaxHp = this.boss.seal(ai, this.rooms[ai].partySize);
     this.eHp[slot] = this.bossMaxHp;
   }
 
@@ -2083,7 +2081,7 @@ export class Simulation {
       let queued = 0;
       for (const q of st.queue) for (let t = 0; t < q.counts.length; t++) queued += q.counts[t] - q.spawned[t];
       const boss = this.bossSlot >= 0 && this.eRoom[this.bossSlot] === ai ? 1 : 0;
-      const need = MAX_LIVING_ENEMIES - this.living - boss - queued;
+      const need = MAX_LIVING_ENEMIES - (boss ? PART_RESERVE : 0) - this.living - boss - queued;
       if (need > 0) st.queue.push({ counts: [need, 0, 0], spawned: [0, 0, 0], wave: -1 });
     }
 
@@ -2185,7 +2183,7 @@ export class Simulation {
     const r2 = ENGAGED_RADIUS * ENGAGED_RADIUS;
     for (let k = 0; k < this.activeCount && left > 0; k++) {
       const s = this.active[k];
-      if (this.eType[s] === GATEKEEPER) continue;
+      if (isBossBody(this.eType[s])) continue;
       for (let i = 0; i < PLAYER_SLOTS; i++) {
         if (engaged[i]) continue;
         const p = this.slots[i]!;
@@ -2231,9 +2229,17 @@ export class Simulation {
     }
 
     while (st.queue.length > 0) {
-      if (this.activeCount >= MAX_LIVING_ENEMIES) return;
+      if (this.activeCount >= MAX_LIVING_ENEMIES - (this.bossSlot >= 0 ? PART_RESERVE : 0)) return;
       if (paced && st.pace < 1 - 1e-9) return;
       const batch = st.queue[0];
+      if (batch.boss) {
+        // At most floor(250 × mult(P)) adds alive; the Host arrives over 6 s.
+        if (this.living >= this.boss.addCap) return;
+        if (batch.arrive) {
+          const total = batch.counts.reduce((a, b) => a + b, 0), placed = batch.spawned.reduce((a, b) => a + b, 0);
+          if (placed >= Math.ceil(total * Math.min(1, (this.tick - batch.arrive.start + 1) / batch.arrive.ticks) - 1e-9)) return;
+        }
+      }
       const family = batch.wave >= 0 && batch.spawned[3] === 0 ? def.waves[batch.wave].commander : undefined;
       const preferredType = family === 'cantor' ? CANTOR : family === 'carrier' ? CARRIER : DOMINION;
       const leaderType = preferredType !== DOMINION && !this.commanders.hasFamily(preferredType, ai) ? preferredType : DOMINION;
@@ -2246,7 +2252,7 @@ export class Simulation {
       let found = -1;
       const eligible = eligibleByType[typeIndex], type = typeIndex === 3 ? leaderType : SPAWN_TYPES[typeIndex];
       const affinity = (type === CHORISTER || type === CANTOR) ? def.chorister : type === DOMINION ? def.dominion : undefined;
-      const preferred = affinity?.filter((i) => eligible[i] && st.budgets[i] >= 1);
+      const preferred = affinity?.filter((i) => eligible[i] && st.budgets[i] >= 1 && (!batch.only || batch.only.has(i)));
       if (preferred?.length && !warned.get(type)) found = preferred[Math.floor(this.random() * preferred.length)];
       const pincer = found < 0 && type === BLESSED && paced && batch.wave >= PINCER_FROM_WAVE && (def.focus === 'horde' || def.secondary === 'horde') &&
         (batch.pincered ?? 0) < Math.floor(batch.counts[0] * PINCER_SHARE);
@@ -2254,6 +2260,7 @@ export class Simulation {
       for (let k = 0; k < np; k++) {
         if (found >= 0) break;
         const i = (st.rr + k) % np;
+        if (batch.only && !batch.only.has(i)) continue;
         if (eligible[i] && st.budgets[i] >= 1) {
           if (warned.get(type)) { const [c, r] = points[i]; if (!this.spawnWarnings.permit(ai, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c], this.tick, () => { st.budgets[i] = Math.min(1, st.budgets[i]); })) continue; }
           found = i;
@@ -2473,6 +2480,59 @@ export class Simulation {
     return slot;
   }
 
+  /** A Watcher or the Seal (rogue bosses.md §3.5) at an exact point, in the slots reserved for parts. Returns its slot or -1. */
+  spawnBossPart(x: number, y: number, zBase: number, hp: number, seal: boolean): number {
+    const room = this.boss.room;
+    if (room < 0 || this.activeCount >= MAX_LIVING_ENEMIES) return -1;
+    let slot = -1;
+    if (this.freeCount > 0 && this.eFreedTick[this.freeFifo[this.freeHead]] + SLOT_REUSE_TICKS <= this.tick) {
+      slot = this.freeFifo[this.freeHead];
+      this.freeHead = (this.freeHead + 1) % ENEMY_SLOTS;
+      this.freeCount--;
+    } else if (this.nextFresh < ENEMY_SLOTS) slot = this.nextFresh++;
+    if (slot < 0) return -1;
+    this.spawnAt(slot, BOSS_PART, Math.floor(x), Math.floor(y), room, -1);
+    this.eX[slot] = this.eStartX[slot] = x;
+    this.eY[slot] = this.eStartY[slot] = y;
+    this.eZ[slot] = zBase;
+    this.eHp[slot] = hp;
+    this.eState[slot] = seal ? ST_ATTACKING : ST_IDLE;
+    return slot;
+  }
+
+  /** A Watcher tether's accepted share on the body (rogue bosses.md §3.5): no break credit, procs or kill credit; it may finish him. */
+  bossTether(amount: number): void {
+    const s = this.bossSlot;
+    if (s < 0 || amount <= 0) return;
+    this.eHp[s] -= amount;
+    this.eHurtTick[s] = this.tick;
+    if (this.eHp[s] <= 0) { this.rewards.enemyKilled(s); this.removeEnemy(s); }
+  }
+
+  /** Queues the Gatekeeper's adds: one seal wave and at most one Host batch; a new Host discards the previous one's unplaced summons. */
+  queueBossAdds(kind: 'host' | 'seal', counts: number[], arrival: number): void {
+    const room = this.boss.room, def = this.map.rooms[room], st = this.rooms[room];
+    if (!def || !st) return;
+    const markers = this.map.roomSpawnPoints[room];
+    const wanted = kind === 'host' ? def.points?.addSpawns?.gate : def.points?.addSpawns?.field;
+    const only = new Set<number>();
+    for (const [c, r] of wanted ?? []) { const i = markers.findIndex(([x, y]) => x === c && y === r); if (i >= 0) only.add(i); }
+    st.queue = st.queue.filter((b) => b.boss !== kind);
+    st.queue.push({ counts: [...counts, 0].slice(0, 4), spawned: [0, 0, 0, 0], wave: -1, boss: kind, ...(only.size ? { only } : {}), ...(arrival > 0 ? { arrive: { start: this.tick, ticks: arrival } } : {}) });
+  }
+
+  /** The 50% transition removes pending add batches without credit; living adds remain. */
+  discardBossAdds(): void {
+    const st = this.rooms[this.boss.room];
+    if (st) st.queue = st.queue.filter((b) => !b.boss);
+  }
+
+  /** The 50% transition removes every hostile projectile without credit, owed late shots included. */
+  clearHostileProjectiles(): void {
+    for (const slot of [...this.projectiles]) if (this.pOwner[slot] < 0 && !this.pReflected[slot]) this.removeProjectile(slot);
+    this.lateShots.length = 0;
+  }
+
   private spawnAt(slot: number, type: number, c: number, r: number, room: number, wave: number): void {
     if (this.nextIncarnation > 0xffffffff) throw new Error('enemy incarnation exhausted');
     if ((type === CANTOR || type === CARRIER) && this.commanders.hasFamily(type, room)) type = DOMINION;
@@ -2530,10 +2590,10 @@ export class Simulation {
     this.eMeleeNext[slot] = -1;
     this.activePos[slot] = this.activeCount;
     this.active[this.activeCount++] = slot;
-    if (type !== GATEKEEPER) this.living++;
+    if (!isBossBody(type)) this.living++;
     if (room >= 0) {
       const st = this.rooms[room];
-      if (type !== GATEKEEPER) st.alive++;
+      if (!isBossBody(type)) st.alive++;
       if (wave >= 0) st.waveAlive[wave]++;
     }
     this.watchmen.spawn(slot);
@@ -2555,23 +2615,22 @@ export class Simulation {
     const type = this.eType[slot];
     if (isCommander(type)) this.livingDominions--;
     if (type === WATCHMAN && this.eRoom[slot] >= 0) this.rooms[this.eRoom[slot]].watchAlive--;
-    const d = sweep || type === GATEKEEPER ? null : this.activeDirector();
+    const d = sweep || isBossBody(type) ? null : this.activeDirector();
     if (d) {
       for (const p of this.players) {
         if (this.livingTargetable(p) && Math.hypot(this.eX[slot] - p.x, this.eY[slot] - p.y) <= KILL_NEAR_RADIUS) d.killNear(p.index);
       }
     }
-    if (type !== GATEKEEPER) this.living--;
+    if (!isBossBody(type)) this.living--;
     const room = this.eRoom[slot];
     if (room >= 0) {
       const st = this.rooms[room];
-      if (type !== GATEKEEPER) st.alive--;
+      if (!isBossBody(type)) st.alive--;
       const wave = this.eWave[slot];
       if (wave >= 0) st.waveAlive[wave]--;
     }
     if (slot === this.bossSlot) {
       this.bossSlot = -1;
-      this.bossCast = BOSS_CAST_NONE;
       this.bossKilled = true;
     }
     const pos = this.activePos[slot];
@@ -2617,6 +2676,34 @@ export class Simulation {
       const x = area ? fromX : attacker?.x, y = area ? fromY : attacker?.y;
       if (x !== undefined && y !== undefined) { const factor = hymnalReduction(cast.yaw, x - this.eX[slot], y - this.eY[slot], area); amount *= factor; force *= factor; }
     }
+    // Boss parts (rogue bosses.md §3.5): refused while opening, half from area damage; their deaths grant nothing.
+    if (this.eType[slot] === BOSS_PART) {
+      if (this.boss.partOpening(slot)) return;
+      if (areaSource && !this.directPartHit) amount *= 0.5;
+      const shooter = source >= 0 ? this.slots[source] : undefined;
+      const applied = Math.min(amount, this.eHp[slot]);
+      if (shooter) shooter.damage += applied;
+      this.eHp[slot] -= amount;
+      this.eHurtTick[slot] = this.tick;
+      if (shooter && !(origin && shooter.shotIndex >= 0)) {
+        let own = this.tickDamage.get(source);
+        if (!own) { own = new Map(); this.tickDamage.set(source, own); }
+        const hit = own.get(slot) ?? [0, 0];
+        hit[0] += applied; if (this.eHp[slot] <= 0) hit[1] = 1;
+        own.set(slot, hit);
+      }
+      if (this.eHp[slot] <= 0) {
+        if (shooter) { let kills = this.tickKills.get(source); if (!kills) { kills = []; this.tickKills.set(source, kills); } kills.push(slot, this.eIncarnation[slot]); }
+        this.boss.partKilled(slot, shooter ? shooter.id : -1);
+        this.removeEnemy(slot, true);
+      }
+      return;
+    }
+    // The body: refused while transitioning, clamped at 50% in phase 1 and at 1 HP while the completion gate holds.
+    if (slot === this.bossSlot) {
+      amount = this.boss.bodyAmount(amount);
+      if (amount <= 0) return;
+    }
     // 1. Bound (M9 §3.6): a rooted enemy, during the pull too, takes double damage, and double force.
     if (this.isRooted(slot)) {
       amount *= BOUND_FACTOR;
@@ -2627,17 +2714,14 @@ export class Simulation {
       this.eForce[slot] = 0;
     }
     this.eForce[slot] += force;
-    // Judgment is interrupted by the boss taking 1 300 damage during it, counted after step 1.
-    if (slot === this.bossSlot && this.bossCast === BOSS_CAST_JUDGMENT) {
-      this.judgmentDamage += amount;
-      if (this.judgmentDamage >= JUDGMENT_INTERRUPT * bossMultiplier(this.bossParty, this.bossSolo) - 1e-9) this.interruptJudgment();
-    }
     const shooter = source >= 0 ? this.slots[source] : undefined;
     const applied = Math.min(amount, this.eHp[slot]);
     if (shooter) { shooter.damage += applied; this.streaks.touch(slot, source); }
     this.commanders.damaged(slot, applied);
     this.eHp[slot] -= amount;
     this.eHurtTick[slot] = this.tick;
+    // Judgment's break fill and the 50% threshold read the accepted hit.
+    if (slot === this.bossSlot) this.boss.bodyDamaged(applied);
     // A client-timed shot's own hits already showed their numbers on the shooter's screen (netcode stage 3).
     // Bots get theirs too: the lag test's bot guest plays its reported kills like a player (netcode stage 4).
     if (shooter && !(origin && shooter.shotIndex >= 0)) {
@@ -2864,7 +2948,7 @@ export class Simulation {
   /** A credited kill bursts when its tick's force reaches 2× the type's max HP, heavy at 4× (M12 §4.1). */
   private noteBurst(slot: number, shooter: SimPlayer | null, fromX: number, fromY: number): void {
     const type = this.eType[slot];
-    if (type === GATEKEEPER) return;
+    if (isBossBody(type)) return;
     const tier = burstTier(this.eForce[slot], ENEMIES[type].hp);
     if (tier === 0) return;
     const fx = Number.isNaN(fromX) ? shooter?.x ?? this.eX[slot] : fromX;
@@ -2922,12 +3006,14 @@ export class Simulation {
    * Damage to a player; returns what it removed. `from` is where it came from and how (R06 follow-up §9):
    * the hurt player is told, to draw a hit arc toward it; without one it has no direction.
    */
-  damagePlayer(p: SimPlayer, amount: number, from?: { x: number; y: number; kind: HurtKind }): number {
+  damagePlayer(p: SimPlayer, amount: number, from?: { x: number; y: number; kind: HurtKind }, lethal = false): number {
     if (p.dead || !p.connected) return 0;
+    // Invulnerability is checked first: a refused hit consumes neither shield nor HP (rogue bosses.md §3.5).
+    if (this.isInvulnerable(p)) return 0;
+    // Judgment's lethal hit: the player's HP plus shield, through Brimstone Hide and any shield (the Shroud still bursts).
+    if (lethal) amount = p.hp + p.shield;
     // 2. Brimstone Hide.
-    if (p.classId === 'fallen') amount *= 0.6;
-    // 3. Invulnerability.
-    if (this.isInvulnerable(p)) amount = 0;
+    else if (p.classId === 'fallen') amount *= 0.6;
     if (amount <= 0) return 0;
     p.lastDamageTick = this.tick;
     p.lastHurtTick = this.tick;
@@ -2938,7 +3024,7 @@ export class Simulation {
       absorbed = Math.min(p.shield, amount);
       p.shield -= absorbed;
       amount -= absorbed;
-      burst = p.shield <= 0 && p.sealUntil <= this.tick;
+      burst = p.shield <= 0 && (p.sealUntil <= this.tick || lethal);
     }
     const [x, y, z] = [p.x, p.y, p.z];
     // Intensity (M12 §2.3): the shield absorbed plus the HP lost, counted down to 0 only.
@@ -3036,7 +3122,7 @@ export class Simulation {
   // ------------------------------------------------------------------ status effects (§5.6)
 
   private immune(slot: number): boolean {
-    return this.eType[slot] === GATEKEEPER;
+    return isBossBody(this.eType[slot]);
   }
 
   /** Slow: refreshes the duration, doesn't stack. */
@@ -3426,11 +3512,12 @@ export class Simulation {
    */
   private shatterGlobe(slot: number, x: number, y: number, z: number, direct: SimPlayer | null, spared: readonly number[] = []): void {
     const damage = this.pDamage[slot];
-    const dx = this.pDx[slot], dy = this.pDy[slot], dz = this.pDz[slot];
+    const dx = this.pDx[slot], dy = this.pDy[slot], dz = this.pDz[slot], volley = this.pVolley[slot];
     this.removeProjectile(slot);
     for (const p of this.players) {
       if (!this.livingTargetable(p) || spared.includes(p.id)) continue;
       if (p !== direct && !this.inGlobeBlast(p, x, y, z, dx, dy, dz)) continue;
+      if (!this.boss.volleyMayHit(volley, p)) continue;
       this.damagePlayer(p, damage, { x: x - dx * 4, y: y - dy * 4, kind: HURT_RANGED });
     }
     this.emit('all', { type: 'globeShatter', x, y, z, by: -1 });
@@ -3873,7 +3960,7 @@ export class Simulation {
     const out: number[] = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
-      if (this.eType[s] === GATEKEEPER) continue;
+      if (isBossBody(this.eType[s])) continue;
       const def = ENEMIES[this.eType[s]];
       if (distToCylinder(ex, ey, ez, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > CHAINS_RANGE) continue;
       const bx = this.eX[s] - ex;
@@ -3922,7 +4009,7 @@ export class Simulation {
     this.pMaxDist[slot] = Math.min(maxDist, PROJECTILE_RANGE);
     this.pOwner[slot] = owner;
     this.pViewLag[slot] = 0;
-    this.pReflected[slot] = 0; this.pHostileBudget[slot] = owner < 0 ? 1 : 0;
+    this.pReflected[slot] = 0; this.pHostileBudget[slot] = owner < 0 ? 1 : 0; this.pVolley[slot] = 0;
     this.pOrigin.set([x, y, z], slot * 3); this.pRoom[slot] = this.pickups.roomAt(x, y);
     this.projectiles.push(slot);
     return slot;
@@ -4072,7 +4159,7 @@ export class Simulation {
     for (const p of this.players) if (this.livingTargetable(p) && viewLag(p.view, this.tick - 1) * step > over + 1e-9) owed.push(p.id);
     if (owed.length) {
       this.lateShots.push({ kind: this.pKind[slot], damage: this.pDamage[slot], radius: this.pRadius[slot], step, x, y, z,
-        dx: this.pDx[slot], dy: this.pDy[slot], dz: this.pDz[slot], flown, over, blast, owed });
+        dx: this.pDx[slot], dy: this.pDy[slot], dz: this.pDz[slot], flown, over, blast, owed, volley: this.pVolley[slot] });
     }
     if (blast) this.shatterGlobe(slot, x, y, z, null, owed);
     else this.removeProjectile(slot);
@@ -4094,11 +4181,11 @@ export class Simulation {
         const pr = s.radius;
         const t = stretch ? stretchHit(s.x, s.y, s.z, s.dx, s.dy, s.dz, stretch[0], stretch[1], p.x, p.y, p.z - pr, PLAYER_RADIUS + pr, PLAYER_HEIGHT + 2 * pr) : Infinity;
         if (t < Infinity) {
-          this.damagePlayer(p, s.damage, { x: s.x + s.dx * (t - 4), y: s.y + s.dy * (t - 4), kind: HURT_RANGED });
+          if (this.boss.volleyMayHit(s.volley ?? 0, p)) this.damagePlayer(p, s.damage, { x: s.x + s.dx * (t - 4), y: s.y + s.dy * (t - 4), kind: HURT_RANGED });
           return false;
         }
         if (s.over < back) return true;
-        if (s.blast && this.inGlobeBlast(p, s.x, s.y, s.z, s.dx, s.dy, s.dz)) this.damagePlayer(p, s.damage, { x: s.x - s.dx * 4, y: s.y - s.dy * 4, kind: HURT_RANGED });
+        if (s.blast && this.inGlobeBlast(p, s.x, s.y, s.z, s.dx, s.dy, s.dz) && this.boss.volleyMayHit(s.volley ?? 0, p)) this.damagePlayer(p, s.damage, { x: s.x - s.dx * 4, y: s.y - s.dy * 4, kind: HURT_RANGED });
         return false;
       });
       if (!s.owed.length) this.lateShots.splice(i, 1);
@@ -4136,7 +4223,12 @@ export class Simulation {
     const shooter = this.slots[owner];
     // The censer's hit and its cloud are one LMB root (classes-heretic.md "Button kills").
     const root = this.talents.heretic.takeRoot(slot) ?? (shooter ? this.talents.root(shooter, 'LMB') : null);
-    if (direct >= 0) { if (root && shooter) this.talents.primary(root, direct, damage, damage, x, y); else this.damageEnemy(direct, damage, owner, damage, x, y); }
+    if (direct >= 0) {
+      // A censer's direct hit is a direct shot for a boss part (rogue bosses.md §3.5); its cloud is area.
+      this.directPartHit = true;
+      try { if (root && shooter) this.talents.primary(root, direct, damage, damage, x, y); else this.damageEnemy(direct, damage, owner, damage, x, y); }
+      finally { this.directPartHit = false; }
+    }
     if (!shooter) return;
     // Its cloud (at most 6 per Heretic, the oldest going out), or its LMB Payload's area.
     this.talents.heretic.censerBroke(shooter, x, y, z, direct, hx, hy, root!);
@@ -4176,6 +4268,7 @@ export class Simulation {
       this.retargetBoss(slot);
       return;
     }
+    if (this.eType[slot] === BOSS_PART) { this.eTarget[slot] = -1; return; }
     // A Watchman's aim keeps its locked target (rooms.md §6.4); otherwise its sight checks choose.
     if (this.eType[slot] === WATCHMAN && this.watchmen.retarget(slot)) return;
     if (this.eTauntUntil[slot] > this.tick) {
@@ -4268,14 +4361,13 @@ export class Simulation {
       const slot = this.active[k];
       this.eStartX[slot] = this.eX[slot];
       this.eStartY[slot] = this.eY[slot];
-      if (this.eSpawnTick[slot] === tick) continue;
+      if (this.eSpawnTick[slot] === tick || this.eType[slot] === BOSS_PART) continue;
       const t = this.eTarget[slot];
       const targetGone = t >= 0 && (!this.livingTargetable(this.slots[t]) || !this.enemyMayTarget(slot, this.slots[t]!));
       if (targetGone || t < 0 || slot % RETARGET_TICKS === tick % RETARGET_TICKS) this.retarget(slot);
       const type = this.eType[slot];
       if (type === GATEKEEPER) {
         this.updateLos(slot);
-        this.updateBoss(slot);
         continue;
       }
       const familyHolding = this.commanders.update(slot);
@@ -4306,6 +4398,8 @@ export class Simulation {
       else if (type !== DOMINION && type !== CANTOR) this.updateCast(slot);
     }
     if (this.livingDominions > 0) this.dominionBehavior.update();
+    // After the loop: the encounter spawns and removes its parts.
+    if (this.bossSlot >= 0 && this.eSpawnTick[this.bossSlot] !== tick) this.boss.update();
   }
 
 
@@ -4342,100 +4436,6 @@ export class Simulation {
     const p = this.slots[t];
     if (!p) return;
     this.eLos[slot] = lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eyeZ(slot), p.x, p.y, p.z + PLAYER_HEIGHT / 2) ? 1 : 0;
-  }
-
-  /**
-   * The Gatekeeper's casts and summons (§7.4, §5.6). A cast that becomes allowed when another one ends
-   * starts on the next tick.
-   */
-  private updateBoss(slot: number): void {
-    const tick = this.tick;
-    const silenced = tick < this.eSilenceUntil[slot];
-    const t = this.eTarget[slot];
-    const wasCasting = this.bossCast !== BOSS_CAST_NONE;
-    this.eState[slot] = ST_IDLE;
-
-    if (tick >= this.summonDue) {
-      // Not a cast: silence doesn't stop it.
-      const ai = this.eRoom[slot];
-      const counts = [scaleCount(SUMMON.blessed, this.bossParty), 0, scaleCount(SUMMON.cherubs, this.bossParty)];
-      if (ai >= 0) this.rooms[ai].queue.push({ counts, spawned: [0, 0, 0], wave: -1 });
-      this.summonDue += ticks(SUMMON_INTERVAL);
-    }
-
-    if (this.bossCast === BOSS_CAST_VOLLEY) {
-      if (silenced || t < 0) {
-        this.bossCast = BOSS_CAST_NONE;
-        this.volleyDue = tick + ticks(VOLLEY_INTERVAL);
-      } else if (++this.bossCastTicks >= ticks(VOLLEY_WINDUP)) {
-        this.fireVolley(slot);
-        this.bossCast = BOSS_CAST_NONE;
-        this.volleyDue = tick + ticks(VOLLEY_INTERVAL);
-        this.eState[slot] = ST_ATTACKING;
-      } else this.eState[slot] = ST_WINDUP;
-    } else if (this.bossCast === BOSS_CAST_JUDGMENT) {
-      if (silenced) this.interruptJudgment();
-      else if (++this.bossCastTicks >= ticks(JUDGMENT_CAST)) this.completeJudgment(slot);
-      else this.eState[slot] = ST_WINDUP;
-    }
-    if (wasCasting || silenced) return;
-
-    if (tick >= this.judgmentDue) {
-      this.bossCast = BOSS_CAST_JUDGMENT;
-      this.bossCastTicks = 0;
-      this.judgmentDamage = 0;
-      this.eState[slot] = ST_WINDUP;
-      this.emit('all', { type: 'bossCast', phase: 'start' });
-    } else if (tick >= this.volleyDue && t >= 0 && this.eLos[slot]) {
-      this.bossCast = BOSS_CAST_VOLLEY;
-      this.bossCastTicks = 0;
-      this.eState[slot] = ST_WINDUP;
-    }
-  }
-
-  /** Orb Volley: 8 orbs at the target's body center, rotated by evenly spread angles from −25° to +25°. */
-  private fireVolley(slot: number): void {
-    const p = this.slots[this.eTarget[slot]];
-    if (!p) return;
-    const ox = this.eX[slot];
-    const oy = this.eY[slot];
-    const oz = this.eyeZ(slot);
-    const dx = p.x - ox;
-    const dy = p.y - oy;
-    const dz = p.z + PLAYER_HEIGHT / 2 - oz;
-    const len = Math.hypot(dx, dy, dz);
-    if (len < 1e-9) return;
-    for (let i = 0; i < VOLLEY_ORBS; i++) {
-      const a = -VOLLEY_SPREAD + (2 * VOLLEY_SPREAD * i) / (VOLLEY_ORBS - 1);
-      const ca = Math.cos(a);
-      const sa = Math.sin(a);
-      const rx = dx * ca - dy * sa;
-      const ry = dx * sa + dy * ca;
-      this.spawnProjectile(PROJ_GLOBE, ox, oy, oz, rx / len, ry / len, dz / len, VOLLEY_ORB.speed * (this.edicts.includes(3) ? SWIFT_HYMNS : 1), VOLLEY_ORB.radius, VOLLEY_ORB.damage, PROJECTILE_RANGE, -1);
-    }
-  }
-
-  /** Judgment completes: 100% of max HP to every living player whose eye sees the boss's eye. */
-  private completeJudgment(slot: number): void {
-    const bx = this.eX[slot];
-    const by = this.eY[slot];
-    const bz = this.eyeZ(slot);
-    this.bossCast = BOSS_CAST_NONE;
-    this.judgmentDue = this.tick + ticks(JUDGMENT_INTERVAL);
-    this.eState[slot] = ST_ATTACKING;
-    this.emit('all', { type: 'bossCast', phase: 'completed' });
-    for (const p of this.players) {
-      if (!this.livingTargetable(p)) continue;
-      if (lineOfSight(this.map, p.x, p.y, p.z + PLAYER_EYE, bx, by, bz)) this.damagePlayer(p, p.maxHp);
-    }
-  }
-
-  /** Discord or 1 300 damage (scaled, M9 §4) interrupts Judgment; the next one is due 25 s later. */
-  private interruptJudgment(): void {
-    if (this.bossCast !== BOSS_CAST_JUDGMENT) return;
-    this.bossCast = BOSS_CAST_NONE;
-    this.judgmentDue = this.tick + ticks(JUDGMENT_INTERVAL);
-    this.emit('all', { type: 'bossCast', phase: 'interrupted' });
   }
 
   /** Whether a caster's target is within its range with line of sight. */
@@ -4725,7 +4725,7 @@ export class Simulation {
     start.fill(0);
     const isLayer = (slot: number) => {
       const t = this.eType[slot];
-      return t !== GATEKEEPER && ENEMIES[t].flying === (layer === 1);
+      return !isBossBody(t) && ENEMIES[t].flying === (layer === 1);
     };
     const cellOf = (slot: number) => {
       let c = Math.floor(this.eX[slot]);
@@ -4832,13 +4832,12 @@ export class Simulation {
     return n;
   }
 
-  /** The boss fields of the snapshot header; 0 outside the boss fight (§9.4). */
-  private bossHeader(): Pick<SnapshotHeader, 'bossHp' | 'bossMaxHp' | 'bossCast' | 'bossCastProgress'> {
+  /** The boss fields of the snapshot header; 0 outside the boss fight (rogue bosses.md §3.5). */
+  private bossHeader(): BossHeader {
     const s = this.bossSlot;
-    if (s < 0) return { bossHp: 0, bossMaxHp: 0, bossCast: BOSS_CAST_NONE, bossCastProgress: 0 };
-    const len = this.bossCast === BOSS_CAST_VOLLEY ? ticks(VOLLEY_WINDUP) : ticks(JUDGMENT_CAST);
-    const progress = this.bossCast === BOSS_CAST_NONE ? 0 : Math.min(255, Math.round((this.bossCastTicks / len) * 255));
-    return { bossHp: Math.max(0, this.eHp[s]), bossMaxHp: Math.round(this.bossMaxHp), bossCast: this.bossCast, bossCastProgress: progress };
+    const encounter = this.boss.header();
+    if (s < 0) return { bossHp: 0, bossMaxHp: 0, bossCast: BOSS_CAST_NONE, bossCastProgress: 0, ...encounter };
+    return { bossHp: Math.max(0, this.eHp[s]), bossMaxHp: Math.round(this.bossMaxHp), bossCast: this.bossCast, bossCastProgress: this.boss.castProgress(), ...encounter };
   }
 
   private prepareSnapshot(): void {
@@ -4865,6 +4864,7 @@ export class Simulation {
       if (tick < this.eSlowUntil[s] || this.items.slowed[s]) f |= FLAG_SLOWED;
       if (tick < this.eTauntUntil[s]) f |= FLAG_TAUNTED;
       if (tick < this.eStunUntil[s]) f |= FLAG_STUNNED;
+      if (this.eType[s] === BOSS_PART) f = (this.boss.partOpening(s) ? FLAG_PART_OPENING : 0) | (this.boss.hold?.seal === s ? FLAG_PART_SEAL : 0);
       this.baseFlags[k] = f;
     }
     e.projectileCount = this.projectiles.length;

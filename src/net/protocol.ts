@@ -5,7 +5,8 @@ import { WATCHMAN_BYTES, writeWatchman, readWatchman } from './watchmanCodec';
 /** Binary input and snapshot encoding, little-endian (§9.3, §9.4). */
 import { PROTOCOL_VERSION } from './version';
 import { PICKUP_CAP, PICKUP_KIND_COUNT } from '../data/pickups';
-import { CANTOR, CARRIER, DOMINION, ENEMIES, ST_WINDUP, WATCHMAN } from '../data/enemies';
+import { BOSS_PART, CANTOR, CARRIER, DOMINION, ENEMIES, ST_WINDUP, WATCHMAN } from '../data/enemies';
+import { FLAG_PART_SEAL } from '../data/gatekeeper';
 import { DOMINION_CAST_CAP, DOMINION_TELL_TICKS, DOMINION_LEAP_MIN_RANGE, DOMINION_LEAP_MAX_RANGE, type DominionCast } from '../data/dominion';
 import { ENEMY_SLOTS, MAX_LIVING_ENEMIES, PROJECTILE_SLOTS } from '../sim/constants';
 
@@ -148,8 +149,11 @@ export function decodeInput(buf: ArrayBuffer, expectedRunId: string): InputMsg |
 
 // ---------------------------------------------------------------- snapshots
 
-/** Run-scoped header, repeated in every part (rogue r01.md, R1.6); bytes 69–70 count the Watchman aims (protocol 13). */
-export const HEADER_BYTES = 71;
+/**
+ * Run-scoped header, repeated in every part (rogue r01.md, R1.6); bytes 69–70 count the Watchman aims (protocol 13);
+ * bytes 71–95 carry the Gatekeeper's encounter (protocol 21, rogue bosses.md §3.5).
+ */
+export const HEADER_BYTES = 96;
 export const DOMINION_CAST_BYTES = 44;
 /** The MVP's 28 bytes plus `revive` and `shots` (M8 §10), `shots2` and `beam` (M9 §10), `shotsDone` (netcode stage 3). */
 export const PLAYER_BYTES = 41;
@@ -213,7 +217,29 @@ export interface SnapshotHeader {
   bossMaxHp: number;
   bossCast: number;
   bossCastProgress: number;
+  /** 1 or 2, + BOSS_PHASE_INVULNERABLE during the 1.5 s transition; 0 outside the fight. */
+  bossPhase: number;
+  /** Judgment's accepted damage toward its break, 0–255 of the threshold. */
+  bossBreak: number;
+  /** BOSS_FLAG_* bits. */
+  bossFlags: number;
+  /** The scheduled cycle's start tick (may be negative after an early transition). */
+  bossCycleStart: number;
+  /** The Toll's impact tick: announced during its tell, then the rolling ring's; 0 for none. */
+  tollTick: number;
+  /** The held player's ID, 255 for none; the Call's tell target, 255 for none. */
+  heldPlayer: number;
+  callTarget: number;
+  /** The hold's deadline and start tick, 0 outside a hold. */
+  heldUntil: number;
+  heldSince: number;
+  /** The transition's end tick, 0 outside it. */
+  bossTransitionUntil: number;
 }
+
+/** The boss fields of the header. */
+export type BossHeader = Pick<SnapshotHeader, 'bossHp' | 'bossMaxHp' | 'bossCast' | 'bossCastProgress' | 'bossPhase' | 'bossBreak' | 'bossFlags' |
+  'bossCycleStart' | 'tollTick' | 'heldPlayer' | 'callTarget' | 'heldUntil' | 'heldSince' | 'bossTransitionUntil'>;
 
 export interface SnapshotPlayer {
   id: number;
@@ -360,6 +386,10 @@ export function encodeSnapshot(
     v.setUint8(66, nc);
     v.setUint8(67, family.length); v.setUint8(68, nf);
     v.setUint8(69, aims.length); v.setUint8(70, nw);
+    v.setUint8(71, h.bossPhase); v.setUint8(72, h.bossBreak); v.setUint8(73, h.bossFlags);
+    v.setInt32(74, h.bossCycleStart | 0, true); v.setUint32(78, h.tollTick >>> 0, true);
+    v.setUint8(82, h.heldPlayer); v.setUint8(83, h.callTarget);
+    v.setUint32(84, h.heldUntil >>> 0, true); v.setUint32(88, h.heldSince >>> 0, true); v.setUint32(92, h.bossTransitionUntil >>> 0, true);
     let o = HEADER_BYTES;
     for (const p of players) {
       v.setUint8(o, p.id);
@@ -513,6 +543,10 @@ export function decodeSnapshot(buf: ArrayBuffer, expectedRunId?: string): Snapsh
     bossMaxHp: v.getUint32(43, true),
     bossCast: v.getUint8(47),
     bossCastProgress: v.getUint8(48),
+    bossPhase: v.getUint8(71), bossBreak: v.getUint8(72), bossFlags: v.getUint8(73),
+    bossCycleStart: v.getInt32(74, true), tollTick: v.getUint32(78, true),
+    heldPlayer: v.getUint8(82), callTarget: v.getUint8(83),
+    heldUntil: v.getUint32(84, true), heldSince: v.getUint32(88, true), bossTransitionUntil: v.getUint32(92, true),
     players: [],
     enemyCount: ne,
     enemySlot: new Uint16Array(ne),
@@ -584,7 +618,7 @@ export function decodeSnapshot(buf: ArrayBuffer, expectedRunId?: string): Snapsh
     s.enemyZ[i] = v.getUint16(o + 8, true) / POS_SCALE;
     s.enemyIncarnation[i] = v.getUint32(o + 10, true);
     s.enemyHp[i] = v.getUint16(o + 14, true);
-    if (s.enemySlot[i] >= ENEMY_SLOTS || s.enemyIncarnation[i] === 0 || s.enemyType[i] >= ENEMIES.length || s.enemyState[i] > 4 || (s.enemyFlags[i] & ~63) !== 0) return null;
+    if (s.enemySlot[i] >= ENEMY_SLOTS || s.enemyIncarnation[i] === 0 || s.enemyType[i] >= ENEMIES.length || s.enemyState[i] > 4 || (s.enemyFlags[i] & ~(s.enemyType[i] === BOSS_PART ? 63 | FLAG_PART_SEAL : 63)) !== 0) return null;
     o += ENEMY_BYTES;
   }
   for (let i = 0; i < np; i++) {
@@ -761,6 +795,7 @@ export class SnapshotAssembler {
 
 const SHARED_HEADER = ['runId', 'tick', 'stateRevision', 'activeRoom', 'activePhase', 'countdown', 'hold',
   'clearedMask', 'enemiesRemaining', 'bossHp', 'bossMaxHp', 'bossCast', 'bossCastProgress',
+  'bossPhase', 'bossBreak', 'bossFlags', 'bossCycleStart', 'tollTick', 'heldPlayer', 'callTarget', 'heldUntil', 'heldSince', 'bossTransitionUntil',
   'totalEnemyCount', 'totalProjectileCount', 'totalPickupCount', 'totalDominionCasts', 'totalCommanderCasts', 'totalWatchmanAims'] as const;
 
 /** Bounded authoritative records; active only before their accepted impact deadline. */

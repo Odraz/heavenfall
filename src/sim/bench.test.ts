@@ -3,6 +3,7 @@ import { BLESSED, GATEKEEPER } from '../data/enemies';
 import { getDungeon } from '../data/dungeons/index';
 import { PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
 import { MAX_LIVING_ENEMIES } from './constants';
+import { PART_RESERVE } from '../data/gatekeeper';
 import { Simulation } from './sim';
 
 describe('benchmark arena (M10 gate §4)', () => {
@@ -23,13 +24,14 @@ describe('benchmark arena (M10 gate §4)', () => {
     expect([Math.floor(sim.eX[sim.bossSlot]), Math.floor(sim.eY[sim.bossSlot])]).toEqual(sim.map.boss);
     expect([Math.floor(p.x), Math.floor(p.y)]).toEqual([ec, er]);
 
-    // The Gatekeeper counts toward the 1 500.
+    // The Gatekeeper counts toward the 1 500, less the slots kept for his eyes and Seal (rogue bosses.md §3.5).
     let n = 0;
-    for (let t = 0; t < 3000 && n < MAX_LIVING_ENEMIES; t++) {
+    const full = MAX_LIVING_ENEMIES - PART_RESERVE;
+    for (let t = 0; t < 3000 && n < full; t++) {
       sim.step();
       n = sim.living + (sim.bossSlot >= 0 ? 1 : 0);
     }
-    expect(n).toBe(MAX_LIVING_ENEMIES);
+    expect(n).toBe(full);
     expect(p.dead).toBe(false);
   });
 

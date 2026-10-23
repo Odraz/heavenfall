@@ -517,7 +517,7 @@ describe('balance (M8 §8)', () => {
     const g = enemyAt(sim, GATEKEEPER, 15.5, 3.5);
     sim.root(g, 5);
     sim.damageEnemy(g, 100, -1);
-    expect(sim.eHp[g]).toBe(29000 - 100);
+    expect(sim.eHp[g]).toBe(52000 - 100);
   });
 
   it('the shotgun fires 8 pellets every 0.9 s, ±11°: 25 within 6 m (R06 follow-up §4), 10 beyond (M12 §5.1)', () => {

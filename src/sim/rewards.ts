@@ -171,7 +171,8 @@ export class Rewards {
     }
     // Only the types that can drop a mote draw a random number for it, as before.
     const mote = moteDropChance(type);
-    if (mote > 0 && sim.random() < mote) this.dropMote(room, x, y);
+    // The Gatekeeper's adds drop at most eight motes in the whole fight (rogue bosses.md §3.4).
+    if (mote > 0 && sim.random() < mote && (!sim.map.rooms[room]?.boss || sim.boss.takeMote())) this.dropMote(room, x, y);
   }
 
   /** A random item drop fades after DROPPED_ITEM_LIFETIME (audit A1); clear rewards don't. */

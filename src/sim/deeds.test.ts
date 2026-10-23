@@ -11,7 +11,7 @@ import { RunRecords } from '../net/runRecords';
 import { applyProgress, stakeProfile } from '../profile/lifecycle';
 import { Simulation } from './sim';
 import { XP_GAIN } from './rewards';
-import { sealNow } from './testutil/sims';
+import { openBossGate, sealNow } from './testutil/sims';
 import { Lobby } from '../net/lobby';
 
 const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
@@ -28,7 +28,7 @@ function bossSim(edicts: number[] = [], players = 1, winsBefore = 1, progression
   sim.step(); sealNow(sim, g.floor.boss);
   return { sim, profiles };
 }
-const win = (sim: Simulation) => { sim.damageEnemy(sim.bossSlot, 1e6, 0); sim.step(); };
+const win = (sim: Simulation) => { openBossGate(sim); sim.damageEnemy(sim.bossSlot, 1e6, 0); sim.step(); };
 function events<T extends GameEvent['type']>(sim: Simulation, type: T): Array<Extract<GameEvent, { type: T }>> {
   return sim.events.flatMap((e) => (e.event.type === type ? [e.event as Extract<GameEvent, { type: T }>] : []));
 }
@@ -71,8 +71,10 @@ describe('Edict rules', () => {
     }
   });
 
-  it('the Trumpet calls the first Judgment at the start of the fight', () => {
-    expect(bossSim([5]).sim.judgmentDue - bossSim([]).sim.judgmentDue).toBeLessThan(0);
+  it('the Trumpet opens the Watchers in the first cycle (rogue bosses.md §3.1.2)', () => {
+    const eyesAt = (edicts: number[]) => { const { sim } = bossSim(edicts); const start = sim.tick; while (sim.tick < start + 20 * 30) sim.step(); return sim.boss.eyes.length; };
+    expect(eyesAt([5])).toBeGreaterThan(0);
+    expect(eyesAt([])).toBe(0);
   });
 
   it('the Lobby takes Edicts from the host only, once its profile has cleared the heaven', () => {

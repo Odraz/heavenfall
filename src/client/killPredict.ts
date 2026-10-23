@@ -5,7 +5,7 @@
  * this screen's shots dealt that the host hasn't resolved yet (`OwnDamage`). Cosmetic and local. Pure:
  * no DOM or three.js.
  */
-import { ENEMIES, GATEKEEPER } from '../data/enemies';
+import { BOSS_PART, ENEMIES, GATEKEEPER } from '../data/enemies';
 import { WEAPONS } from '../data/weapons';
 import { BURST_LIGHT, silverBulletHits } from '../sim/combat';
 import { pressDelta } from '../sim/fireLatch';
@@ -19,7 +19,8 @@ export type Predicted = 0 | 1 | 2;
  * `alwaysBursts` (the shotgun within 6 m, the Scourge) or the damage reaches 2× the type's max HP.
  */
 export function predictHit(type: number, hp: number, damage: number, factor = 1, alwaysBursts = false): Predicted {
-  if (type === GATEKEEPER || !(hp > 0)) return 0;
+  // Boss parts: a grey opening eye refuses damage and the Seal's HP follows the living, so their deaths wait for the host.
+  if (type === GATEKEEPER || type === BOSS_PART || !(hp > 0)) return 0;
   const d = damage * factor;
   if (d < hp - 1e-9) return 0;
   return alwaysBursts || d >= BURST_LIGHT * ENEMIES[type].hp - 1e-9 ? 2 : 1;

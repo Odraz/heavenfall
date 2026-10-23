@@ -7,7 +7,7 @@
  * wings on a clock instead of walking; the Gatekeeper's casts follow the boss cast in the snapshot.
  */
 import { CANTOR, CARRIER, BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_FALLING, ST_MOVING, ST_WINDUP, WATCHMAN } from '../data/enemies';
-import { BOSS_CAST_JUDGMENT, BOSS_CAST_VOLLEY } from '../sim/sim';
+import { BOSS_CAST_CALL, BOSS_CAST_JUDGMENT, BOSS_CAST_TOLL, BOSS_CAST_VOLLEY } from '../sim/sim';
 import { ENEMY_SLOTS } from '../sim/constants';
 import { CANTOR_TELL } from '../data/commanders';
 
@@ -46,7 +46,8 @@ export const FLY_CYCLE_MS = 500;
 export const CORPSE_FALL_G = 20;
 /** The Gatekeeper's Volley: frames 1–3 over the wind-up, then frame 4 for 0.3 s once it fires. */
 export const VOLLEY_WINDUP_FRAMES = 3;
-export const VOLLEY_WINDUP_MS = 500;
+/** The Orb Volley's 1.0 s single-target wind-up (rogue bosses.md §3.2, was 0.5 s). */
+export const VOLLEY_WINDUP_MS = 1000;
 export const VOLLEY_RELEASE_MS = 300;
 /** Judgment's 4 frames loop every second while it is cast. */
 export const JUDGMENT_FRAMES = 4;
@@ -223,7 +224,10 @@ export class EnemyAnimator {
     if (sinceFired >= 0 && sinceFired < VOLLEY_RELEASE_MS) return { anim: 'volley', frame: VOLLEY_WINDUP_FRAMES };
     const t = Math.max(0, now - this.stateSince[slot]);
     if (bossCast === BOSS_CAST_JUDGMENT) return { anim: 'judgment', frame: Math.floor((t % JUDGMENT_CYCLE_MS) / (JUDGMENT_CYCLE_MS / JUDGMENT_FRAMES)) };
-    if (bossCast === BOSS_CAST_VOLLEY && this.state[slot] === ST_WINDUP) {
+    // Until the toll (keys raised, struck) and call (keys pointed) poses are painted: the Toll reuses
+    // the raised-hand cast, the Call the staff's wind-up (rogue bosses.md §3.5, Art and sounds).
+    if (bossCast === BOSS_CAST_TOLL) return { anim: 'judgment', frame: Math.floor((t % JUDGMENT_CYCLE_MS) / (JUDGMENT_CYCLE_MS / JUDGMENT_FRAMES)) };
+    if ((bossCast === BOSS_CAST_VOLLEY || bossCast === BOSS_CAST_CALL) && this.state[slot] === ST_WINDUP) {
       return { anim: 'volley', frame: Math.min(VOLLEY_WINDUP_FRAMES - 1, Math.floor((t / VOLLEY_WINDUP_MS) * VOLLEY_WINDUP_FRAMES)) };
     }
     return { anim: 'idle', frame: 0 };

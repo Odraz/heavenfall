@@ -198,7 +198,8 @@ export type GameEvent =
    * at full HP; the player Martyr's Shroud shielded; the Falling Star ally. Empty for the others.
    */
   | { type: 'abilityUsed'; playerId: number; slot: 'Q' | 'E'; x: number; y: number; z: number; targets: number[]; /** Thrown Silver: the coins fly 0.5 s before the Field starts. */ thrown?: boolean }
-  | { type: 'teleport'; teleportId: number; x: number; y: number; z: number; /** Horizontal launch velocity, m/s. */ launch?: { dx: number; dy: number }; carry?: boolean }
+  | { type: 'teleport'; teleportId: number; x: number; y: number; z: number; /** Horizontal launch velocity, m/s. */ launch?: { dx: number; dy: number }; carry?: boolean;
+      /** Called to the Gate: the hold starts, dragging toward this point, or ends (null). */ hold?: [number, number] | null }
   | { type: 'playerDied'; playerId: number }
   | { type: 'playerRespawned'; playerId: number }
   /** Revived by the party at the soul's ground point (M8 §4.2). */
@@ -224,7 +225,25 @@ export type GameEvent =
   /** A globe shattered (M12 follow-up §1.3): `by` is the player who shot it down, or −1 when it broke on its own. */
   | { type: 'globeShatter'; x: number; y: number; z: number; by: number }
   | { type: 'roomState'; room: number; phase: number; knowledge: number; entrySocket: number }
-  | { type: 'bossCast'; phase: 'start' | 'interrupted' | 'completed' }
+  /**
+   * A Gatekeeper cast (rogue bosses.md §3.5): `cast` is its BOSS_CAST_* id (absent: Judgment, as before
+   * protocol 21); the Toll's `impactTick` is announced at its start and confirmed at its impact.
+   */
+  | { type: 'bossCast'; phase: 'start' | 'interrupted' | 'completed'; cast?: number; impactTick?: number }
+  /** The fight's phase: 1 at the seal, 2 at the 50% transition, 0 at his death; with its line. */
+  | { type: 'bossPhase'; phase: number; line: string }
+  /** The Host descends through the Gate's bars. */
+  | { type: 'hostDescend' }
+  /** Called to the Gate: the tell on a player, then the hold until `untilTick`, then the release. */
+  | { type: 'called'; playerId: number; phase: 'tell' | 'held' | 'released'; untilTick: number }
+  /** A held player's Seal was shot open; `by` is the breaker's ID or −1. */
+  | { type: 'sealBroken'; playerId: number; by: number }
+  /** A player was judged: killed by his gaze, half-struck by a Watcher's, or (by the Seal) unharmed while he heals `heal`. */
+  | { type: 'judged'; playerId: number; by: 'gatekeeper' | 'watcher' | 'seal'; heal?: number }
+  /** The Watchers open (`first`: the fight's first opening). */
+  | { type: 'watchersOpen'; episode: number; count: number; first: boolean }
+  /** An eye broke and its tether tore `damage` from the Gatekeeper. */
+  | { type: 'watcherBreak'; episode: number; x: number; y: number; z: number; by: number; damage: number }
   /** `stats`: the players still connected at the end, by ID. */
   | { type: 'gameOver'; result: 'victory' | 'defeat'; timeMs: number; unclaimed?: boolean; stats: Record<number, PlayerStats>;
       /** The run's Sentence, and the streak crown: the human with the best streak (ties: the earlier to reach it), or -1. */

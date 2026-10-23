@@ -51,6 +51,17 @@ const header: SnapshotHeader = {
   bossMaxHp: 40000,
   bossCast: 2,
   bossCastProgress: 200,
+  // The Gatekeeper's encounter (protocol 21): a signed cycle start may precede tick 0 after an early transition.
+  bossPhase: 2 | 128,
+  bossBreak: 77,
+  bossFlags: 3,
+  bossCycleStart: -390,
+  tollTick: 123400,
+  heldPlayer: 2,
+  callTarget: 255,
+  heldUntil: 123500,
+  heldSince: 123320,
+  bossTransitionUntil: 123460,
 };
 
 function players(n: number): SnapshotPlayer[] {
@@ -214,7 +225,10 @@ describe('snapshot protocol', () => {
     expect(parts.length).toBe(1);
     expect(parts[0].byteLength).toBe(HEADER_BYTES + 4 * PLAYER_BYTES + 100 * ENEMY_BYTES + 20 * PROJECTILE_BYTES);
     const s = decodeSnapshot(parts[0])!;
-    expect(HEADER_BYTES).toBe(71);
+    expect(HEADER_BYTES).toBe(96);
+    // The Gatekeeper's encounter fields (protocol 21), the cycle start signed.
+    expect([s.bossPhase, s.bossBreak, s.bossFlags, s.bossCycleStart, s.tollTick, s.heldPlayer, s.callTarget, s.heldUntil, s.heldSince, s.bossTransitionUntil])
+      .toEqual([130, 77, 3, -390, 123400, 2, 255, 123500, 123320, 123460]);
     const v = new DataView(parts[0]);
     expect([v.getUint8(0), v.getUint8(1), v.getUint8(2), v.getUint8(3)]).toEqual([PROTOCOL_VERSION, 0, 1, 4]);
     expect(Array.from(new Uint8Array(parts[0], 4, 16))).toEqual(Array.from(new Uint8Array(encodeInput({

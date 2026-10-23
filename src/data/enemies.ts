@@ -4,12 +4,15 @@ export const CHORISTER = 1;
 export const CHERUB = 2;
 export const GATEKEEPER = 3;
 export const DOMINION = 4;
-/** 5 is reserved for the Gatekeeper's generic boss parts. */
+/** The Gatekeeper's generic boss part (rogue bosses.md §3.5): a Watcher, or with FLAG_PART_SEAL the Seal. */
+export const BOSS_PART = 5;
 export const CANTOR = 6;
 export const CARRIER = 7;
 /** An armed Blessed with an instant line-of-sight shot (rooms.md §6.4). */
 export const WATCHMAN = 8;
 export function isCommander(type: number): boolean { return type === DOMINION || type === CANTOR || type === CARRIER; }
+/** The Gatekeeper and his parts: outside the add cap, the room's alive count and every crowd rule. */
+export function isBossBody(type: number): boolean { return type === GATEKEEPER || type === BOSS_PART; }
 
 /** Enemy states, as encoded in snapshots (§9.4). */
 export const ST_IDLE = 0;
@@ -45,11 +48,11 @@ export const ENEMIES: readonly EnemyDef[] = [
   // keeps its 0.8 m, which sets the levels' headroom (heights.ts), so the walls don't change.
   { hp: 60, radius: 0.45, height: 2.4, speed: 3, flying: false, draw: 1.2, shot: { radius: 0.45, base: 0, top: 2.45 } },
   { hp: 30, radius: 0.4, height: 0.8, speed: 7, flying: true, draw: 1.15, shot: { radius: 0.6, base: 0, top: 1.2 } },
-  // The Gatekeeper: 29 000 HP (M9 §4; M8's 45 000): Field of Blood replaced Kiss, and party damage on
-  // one target fell to about 64% of M8's.
-  { hp: 29000, radius: 2.0, height: 6.0, speed: 0, flying: false, draw: 1, shot: { radius: 2.0, base: 0, top: 6.0 } },
+  // The Gatekeeper: 52 000 HP at four players (rogue bosses.md §3.1, was 29 000), scaled by bossFactor(P).
+  { hp: 52000, radius: 2.0, height: 6.0, speed: 0, flying: false, draw: 1, shot: { radius: 2.0, base: 0, top: 6.0 } },
   { hp: 1500, radius: 0.45, height: 3.2, speed: 3.5, flying: false, draw: 1.9, shot: { radius: 0.85, base: 0, top: 3.3 } },
-  { hp: 1, radius: 0.4, height: 1, speed: 0, flying: false, draw: 1, shot: { radius: 0.4, base: 0, top: 1 } }, // reserved boss part
+  // The boss part (Watcher or Seal): placed by the host, never moved by the crowd; HP is set per part.
+  { hp: 60, radius: 0.6, height: 1.2, speed: 0, flying: false, draw: 1, shot: { radius: 0.6, base: 0, top: 1.2 } },
   { hp: 1200, radius: 0.45, height: 3, speed: 2.5, flying: false, draw: 1.4, shot: { radius: 0.7, base: 0, top: 3.3 } },
   // The Carrier's sprite hangs about 2 m below its feet point (its talons and a carried player).
   { hp: 1000, radius: 0.4, height: 0.8, speed: 5, flying: true, draw: 2.5, shot: { radius: 1.25, base: -2.1, top: 2.5 } },

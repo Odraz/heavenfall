@@ -30,6 +30,8 @@ export interface LateShot {
   blast: boolean;
   /** The players whose screens haven't drawn its end yet. */
   owed: number[];
+  /** Its Orb Volley (0 or absent: none): one hit per player per volley. */
+  volley?: number;
 }
 
 /**
