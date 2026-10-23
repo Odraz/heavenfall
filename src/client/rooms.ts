@@ -72,7 +72,8 @@ export function roomMessage(model: ClientRooms, ownRoom: number, activeRoom: num
   switch (room.kind) {
     case 'pardoner': return 'The Pardoner · Personal stock · Aim and press F to buy';
     case 'confessional': return 'The Confessional · Sanctuary · Press F at the grille: talents, relics and the bargain';
-    case 'boss': return 'The Gatekeeper · Inherited fight fixture (authored encounter arrives in R7)';
+    // The authored Gatekeeper (R7): his identity rule before the seal; during the fight his bar speaks.
+    case 'boss': return activeRoom === ownRoom && activePhase === PHASE_COMBAT ? null : 'The Gate · Judgment strikes everyone he can see: hide';
     default: return null;
   }
 }

@@ -17,7 +17,7 @@ test('a second generated run after Results gets a fresh identity and accepts res
   await page.setViewportSize({ width: 640, height: 360 });
   await page.goto(`/?dev=1&map=rogue&seed=${PINNED.seed}&room=999&class=fallen&god=1`);
   await page.waitForFunction(() => window.__heavenfall?.screen === 'inGame' && window.__heavenfall.activePhase === 'combat');
-  await expect(page.locator('.room-message')).toHaveText('The Gatekeeper · Inherited fight fixture (authored encounter arrives in R7)');
+  await expect(page.locator('.boss-name')).toHaveText('The Gatekeeper');
   const first = await state(page);
   await page.keyboard.press('KeyQ');
   await page.keyboard.press('KeyK');

@@ -45,7 +45,7 @@ export class HostSession {
   }
 
   /** Multiplayer: opens the lobby in the worker and connects the clients' connections to it. */
-  hostLobby(net: HostNet, fixture: string | null, password: string, name: string, god: boolean, bot: boolean, profile?: Profile, progressionEnabled = false, diagnostics = false): void {
+  hostLobby(net: HostNet, fixture: string | null, password: string, name: string, god: boolean, bot: boolean, profile?: Profile, progressionEnabled = false, diagnostics = false, dev: { seed?: number; startRoom?: number } = {}): void {
     this.net = net;
     net.onCtrl = (conn, msg) => this.post({ t: 'connCtrl', conn, msg });
     net.onInput = (conn, buf) => {
@@ -56,7 +56,7 @@ export class HostSession {
       this.unbind(conn);
       this.post({ t: 'connClosed', conn });
     };
-    this.post({ t: 'host', heaven: 1, fixture, password, name, god, bot, profile, progressionEnabled, diagnostics });
+    this.post({ t: 'host', heaven: 1, fixture, password, name, god, bot, profile, progressionEnabled, diagnostics, devSeed: dev.seed, devStartRoom: dev.startRoom });
   }
 
   /** The host's `Start` in the Lobby. */

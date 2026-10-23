@@ -1151,8 +1151,8 @@ export class Simulation {
   }
 
   /** Moves a player on the host and tells its client (§9.3). `launch` is a horizontal velocity in m/s. */
-  /** `hold`: the Call's hold starts, dragging toward this point (the Gatekeeper), or ends (null). */
-  teleport(p: SimPlayer, x: number, y: number, z: number, launch?: { dx: number; dy: number }, carry?: boolean, hold?: [number, number] | null): void {
+  /** `hold`: the Call's hold starts at tick [2], dragging toward ([0], [1]) (the Gatekeeper), or ends (null). */
+  teleport(p: SimPlayer, x: number, y: number, z: number, launch?: { dx: number; dy: number }, carry?: boolean, hold?: [number, number, number] | null): void {
     if (carry === undefined) this.commanders.releasePlayer(p.id, false);
     p.x = x;
     p.y = y;

@@ -63,11 +63,12 @@ describe('R1.5 client room projection', () => {
     for (const [kind, label] of [
       ['pardoner', 'The Pardoner · Personal stock · Aim and press F to buy'],
       ['confessional', 'The Confessional · Sanctuary · Press F at the grille: talents, relics and the bargain'],
-      ['boss', 'The Gatekeeper · Inherited fight fixture (authored encounter arrives in R7)'],
+      ['boss', 'The Gate · Judgment strikes everyone he can see: hide'],
     ] as const) {
       const room = model.map.rooms.findIndex((r) => r.kind === kind);
       for (const phase of [PHASE_IDLE, PHASE_COUNTDOWN, PHASE_COMBAT, PHASE_CLEARED]) {
-        expect(roomMessage(model, room, room, phase)).toBe(label);
+        // During his fight the Gatekeeper's bar and cues take the line's place (R7).
+        expect(roomMessage(model, room, room, phase)).toBe(kind === 'boss' && phase === PHASE_COMBAT ? null : label);
       }
     }
     expect(roomMessage(model, 255, 255, PHASE_IDLE)).toBeNull();

@@ -169,7 +169,7 @@ function start(m: Extract<MainToWorker, { t: 'start' }>): void {
 
 function host(m: Extract<MainToWorker, { t: 'host' }>): void {
   lobby = new Lobby({ heaven: m.heaven, fixture: m.fixture, password: m.password, version: __BUILD_VERSION__, hostName: m.name, hostBot: m.bot,
-    profile: m.bot ? undefined : validProfile(m.profile), progressionEnabled: m.progressionEnabled });
+    profile: m.bot ? undefined : validProfile(m.profile), progressionEnabled: m.progressionEnabled, devSeed: m.devSeed, devStartRoom: m.devStartRoom });
   god = m.god;
   diagnostics = !!m.diagnostics;
   localPlayerId = 0;
@@ -375,7 +375,7 @@ function checkLoadTimeout(): void {
 function maybeGo(): void {
   if (!lobby?.allReady()) return;
   const players = lobby.go().map(p => ({ ...p, profile: lobby!.profile(p.id) }));
-  start({ ...lobby.run!, t: 'start', players, god, benchArena: -1, benchBurst: false, localPlayerId: 0, diagnostics });
+  start({ ...lobby.run!, t: 'start', players, god, benchArena: -1, benchBurst: false, localPlayerId: 0, diagnostics, startRoom: lobby.run!.devStartRoom });
 }
 
 ctx.onmessage = (e: MessageEvent<MainToWorker>) => {

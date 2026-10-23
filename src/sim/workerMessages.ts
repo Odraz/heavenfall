@@ -25,7 +25,9 @@ export type MainToWorker =
       devRelics?: string[];
     } & RunConfig)
   /** Multiplayer: the host clicked `Create`; the worker opens the lobby with the host as player 0. */
-  | { t: 'host'; heaven: 1; fixture: string | null; password: string; name: string; god: boolean; bot: boolean; profile?: Profile; progressionEnabled?: boolean; diagnostics?: boolean }
+  | { t: 'host'; heaven: 1; fixture: string | null; password: string; name: string; god: boolean; bot: boolean; profile?: Profile; progressionEnabled?: boolean; diagnostics?: boolean;
+      /** Dev co-op setups (`dev=1`, disposable runs only): the floor seed and the room the party starts in. */
+      devSeed?: number; devStartRoom?: number }
   /** The host clicked `Start` in the Lobby. */
   | { t: 'startGame' }
   /** A `ctrl` message from the host's own player, through `LocalTransport`. */

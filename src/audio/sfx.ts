@@ -260,6 +260,30 @@ export const SFX = {
       part({ wave: 'sine', freq: 90, freqEnd: 30, decay: 0.3, sustain: 0.5, hold: 0.2, release: 0.6, volume: 0.6 }),
     ],
   },
+  // The authored Gatekeeper (rogue bosses.md §3.5): synthesized stand-ins until the S7 recordings.
+  // Every move keeps its own wind-up; the phase warning is a choir chord, never a sounded trumpet.
+  /** The Toll's wind-up: a great bell swelling over 1.5 s. */
+  tollWindup: { priority: PRIO_ABILITY, parts: [part({ wave: 'triangle', freq: 98, attack: 0.6, decay: 0.3, sustain: 0.8, hold: 0.5, release: 0.2, volume: 0.35, vibratoRate: 4, vibratoDepth: 0.3 }), part({ wave: 'sine', freq: 196, attack: 0.8, hold: 0.5, release: 0.2, volume: 0.2 })] },
+  /** The Toll's strike: a bell hit with a long tail. */
+  tollStrike: { priority: PRIO_ABILITY, parts: [part({ wave: 'sine', freq: 147, decay: 0.4, sustain: 0.4, hold: 0.3, release: 1.2, volume: 0.5 }), part({ wave: 'triangle', freq: 441, decay: 0.2, sustain: 0.2, release: 0.8, volume: 0.25 }), part({ wave: 'noise', freq: 4000, decay: 0.05, release: 0.2, volume: 0.25, lowpass: 3000 })] },
+  /** The ring's front 1 s away: a rising whoosh. */
+  ringWhoosh: { priority: PRIO_OWN, parts: [part({ wave: 'noise', freq: 1200, attack: 0.7, decay: 0.1, sustain: 0.8, hold: 0.1, release: 0.2, volume: 0.35, lowpass: 600, lowpassEnd: 5000 })] },
+  /** Called's wind-up: a bright chime and a chain's rattle, heard by all. */
+  callWindup: { priority: PRIO_ABILITY, parts: [part({ wave: 'sine', freq: 1568, decay: 0.15, sustain: 0.3, hold: 0.3, release: 0.4, volume: 0.25 }), part({ wave: 'noise', freq: 6000, attack: 0.2, decay: 0.1, hold: 0.5, release: 0.2, volume: 0.18, lowpass: 5000, bits: 4 })] },
+  /** The Seal shot open: a padlock snapping and a bright release. */
+  sealBreak: { priority: PRIO_ABILITY, parts: [part({ wave: 'noise', freq: 9000, decay: 0.04, release: 0.15, volume: 0.45 }), part({ wave: 'triangle', freq: 880, freqEnd: 1320, decay: 0.12, release: 0.3, volume: 0.25 })] },
+  /** The Seal slams shut: he takes his due. */
+  sealJudged: { priority: PRIO_ABILITY, parts: [part({ wave: 'sine', freq: 110, freqEnd: 55, decay: 0.2, release: 0.4, volume: 0.5 }), part({ wave: 'noise', freq: 1500, decay: 0.08, release: 0.2, volume: 0.35, lowpass: 1500 })] },
+  /** The Host descends: a choir swell. */
+  hostDescend: { priority: PRIO_OTHERS, parts: [part({ wave: 'triangle', freq: 262, attack: 0.5, decay: 0.3, hold: 0.6, release: 0.6, volume: 0.16 }), part({ wave: 'triangle', freq: 330, attack: 0.6, decay: 0.3, hold: 0.5, release: 0.6, volume: 0.13 }), part({ wave: 'triangle', freq: 392, attack: 0.7, decay: 0.3, hold: 0.4, release: 0.6, volume: 0.11 })] },
+  /** The Watchers open: a shimmering chord of many high voices. */
+  watchersOpen: { priority: PRIO_ABILITY, parts: [part({ wave: 'sine', freq: 1047, attack: 0.4, hold: 1.2, release: 0.5, volume: 0.12, vibratoRate: 9, vibratoDepth: 0.6 }), part({ wave: 'sine', freq: 1319, attack: 0.5, hold: 1.1, release: 0.5, volume: 0.1, vibratoRate: 11, vibratoDepth: 0.6 }), part({ wave: 'sine', freq: 1568, attack: 0.6, hold: 1.0, release: 0.5, volume: 0.09, vibratoRate: 13, vibratoDepth: 0.6 })] },
+  /** An eye bursts and its tether snaps into him: a glass ping and a deep crack. */
+  watcherBreak: { priority: PRIO_ABILITY, parts: [part({ wave: 'sine', freq: 2637, decay: 0.05, release: 0.3, volume: 0.25 }), part({ wave: 'sine', freq: 80, freqEnd: 40, delay: 0.08, decay: 0.12, release: 0.25, volume: 0.45 })] },
+  /** The 50% threshold: a choir warning chord (the first trumpet stays silent). */
+  phaseChoirThreat: { priority: PRIO_ABILITY, parts: [part({ wave: 'saw', freq: 147, attack: 0.3, decay: 0.4, hold: 1.0, release: 0.8, volume: 0.18, lowpass: 1500 }), part({ wave: 'triangle', freq: 175, attack: 0.3, hold: 1.0, release: 0.8, volume: 0.16 }), part({ wave: 'triangle', freq: 220, attack: 0.4, hold: 0.9, release: 0.8, volume: 0.14 })] },
+  /** Judgment's pre-warning at c 22: the drone begins quietly. */
+  judgmentPrewarn: { priority: PRIO_ABILITY, parts: [part({ wave: 'saw', freq: 55, attack: 1.2, decay: 0.3, sustain: 0.7, hold: 1.0, release: 0.5, volume: 0.12, lowpass: 300, lowpassEnd: 900 })] },
   /** Interrupted: breaking glass. */
   interrupted: {
     priority: PRIO_ABILITY,

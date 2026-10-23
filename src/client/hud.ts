@@ -85,6 +85,11 @@ interface Fade {
   from: number;
 }
 
+/** The Gatekeeper's cast bar (rogue bosses.md §3.2): its name, wind-up progress and, for Judgment, the red break fill (0–1). */
+export interface BossCastView { label: string; progress: number; brk?: number }
+/** The boss bar's phase (`II` in phase 2), the pale-grey invulnerable transition, and the deferred final hit. */
+export interface BossBarState { phase?: number; invulnerable?: boolean; deferred?: boolean }
+
 export class Hud {
   readonly root: HTMLDivElement;
   private readonly hpBar: HTMLDivElement;
@@ -193,9 +198,17 @@ export class Hud {
   private readonly soulLayer: HTMLDivElement;
   private readonly result: HTMLDivElement;
   private readonly boss: HTMLDivElement;
+  private readonly bossName: HTMLDivElement;
   private readonly bossFill: HTMLDivElement;
   private readonly bossCast: HTMLDivElement;
   private readonly bossCastFill: HTMLDivElement;
+  private readonly bossBreak: HTMLDivElement;
+  private readonly bossCastLabel: HTMLDivElement;
+  private readonly bossNote: HTMLDivElement;
+  private readonly sight: HTMLDivElement;
+  private readonly called: HTMLDivElement;
+  private readonly cue: HTMLDivElement;
+  private cueUntil = 0;
   private readonly judgment: HTMLDivElement;
   private readonly judgmentFlash: HTMLDivElement;
   /** The ally target's chevron (M8 §3.5): gold over the target, grey over an ally out of range. */
@@ -478,11 +491,25 @@ export class Hud {
     this.hiddenMark.hidden = true;
 
     this.boss = el('div', 'boss', this.root);
-    el('div', 'boss-name', this.boss).textContent = 'The Gatekeeper';
+    this.bossName = el('div', 'boss-name', this.boss);
+    this.bossName.textContent = 'The Gatekeeper';
     this.bossFill = el('div', 'boss-fill', el('div', 'boss-bar', this.boss));
+    this.bossNote = el('div', 'boss-note', this.boss);
+    this.bossNote.textContent = 'Break the seals of Judgment';
+    this.bossNote.hidden = true;
+    this.bossCastLabel = el('div', 'boss-cast-label', this.boss);
     this.bossCast = el('div', 'boss-cast', this.boss);
     this.bossCastFill = el('div', 'boss-cast-fill', this.bossCast);
+    // Judgment's red break fill: the damage taken toward breaking the cast (rogue bosses.md §3.2).
+    this.bossBreak = el('div', 'boss-break-fill', this.bossCast);
     this.boss.hidden = true;
+    // The crosshair eye (§3.5): open while he sees you, half-open while only a Watcher does.
+    this.sight = el('div', 'sight-eye', this.root);
+    this.sight.hidden = true;
+    this.called = el('div', 'called-text', this.root);
+    this.called.hidden = true;
+    this.cue = el('div', 'boss-cue', this.root);
+    this.cue.hidden = true;
     this.judgmentFlash = el('div', 'judgment-flash', this.root);
     this.judgment = el('div', 'judgment-text', this.root);
     this.judgment.hidden = true;
@@ -719,17 +746,52 @@ export class Hud {
    * The Gatekeeper's HP bar, shown while `maxHp` > 0, and the Judgment cast bar under it while
    * `judgment` (progress 0–1) isn't null.
    */
-  setBoss(hp: number, maxHp: number, judgment: number | null): void {
+  setBoss(hp: number, maxHp: number, cast: BossCastView | null, state: BossBarState = {}): void {
     this.boss.hidden = maxHp <= 0;
     if (maxHp <= 0) return;
     this.bossFill.style.width = `${Math.max(0, Math.min(1, hp / maxHp)) * 100}%`;
-    this.bossCast.hidden = judgment === null;
-    if (judgment !== null) this.bossCastFill.style.width = `${Math.min(1, judgment) * 100}%`;
+    // Phase 2 names him `II`; pale grey while he can't be damaged.
+    const name = state.phase === 2 ? 'The Gatekeeper II' : 'The Gatekeeper';
+    if (this.bossName.textContent !== name) this.bossName.textContent = name;
+    this.boss.classList.toggle('invulnerable', !!state.invulnerable);
+    this.bossNote.hidden = !state.deferred;
+    this.bossCast.hidden = cast === null;
+    this.bossCastLabel.hidden = cast === null;
+    if (cast !== null) {
+      this.bossCastFill.style.width = `${Math.min(1, cast.progress) * 100}%`;
+      this.bossBreak.style.width = `${Math.min(1, cast.brk ?? 0) * 100}%`;
+      if (this.bossCastLabel.textContent !== cast.label) this.bossCastLabel.textContent = cast.label;
+    }
+  }
+
+  /** The bar flashes: green when he takes his due, red when a tether tears his health. */
+  bossFlash(color: 'green' | 'red'): void {
+    this.bossFill.parentElement?.animate([{ boxShadow: `0 0 18px 4px ${color === 'green' ? 'rgba(80, 230, 100, 0.95)' : 'rgba(235, 40, 20, 0.95)'}` }, {}], { duration: 600, easing: 'ease-out' });
+  }
+
+  /** The crosshair eye: `full`, `half`, or hidden (`none`/null). */
+  setSight(state: 'full' | 'half' | 'none' | null): void {
+    const show = state === 'full' || state === 'half';
+    this.sight.hidden = !show;
+    if (show && this.sight.dataset.state !== state) this.sight.dataset.state = state;
+  }
+
+  /** The held player's own line while the Call holds them, or null. */
+  setCalled(text: string | null): void {
+    this.called.hidden = text === null;
+    if (text !== null && this.called.textContent !== text) this.called.textContent = text;
+  }
+
+  /** A Gatekeeper cue under his bar (the Toll, a Call, the Watchers); Judgment keeps its own large warning. */
+  bossText(text: string, ms: number, now: number): void {
+    this.cue.textContent = text;
+    this.cue.hidden = false;
+    this.cueUntil = now + ms;
   }
 
   /** Judgment feedback (§10): the warning for the 3 s cast, then a white flash or "Interrupted!". */
   judgmentEvent(phase: 'start' | 'interrupted' | 'completed', now: number): void {
-    if (phase === 'start') this.showJudgmentText('JUDGMENT — break line of sight!', JUDGMENT_TEXT_MS, now);
+    if (phase === 'start') this.showJudgmentText('JUDGMENT — hide from his sight!', JUDGMENT_TEXT_MS, now);
     else if (phase === 'interrupted') this.showJudgmentText('Interrupted!', INTERRUPTED_MS, now);
     else {
       this.judgment.hidden = true;
@@ -1080,6 +1142,7 @@ export class Hud {
     while (this.chatShown.length && now - this.chatShown[0].at >= CHAT_SHOW_MS) this.chatShown.shift()!.el.remove();
     for (const m of this.chatShown) m.el.style.opacity = String(Math.min(1, (CHAT_SHOW_MS - (now - m.at)) / CHAT_FADE_MS));
     if (now > this.judgmentUntil) this.judgment.hidden = true;
+    if (now > this.cueUntil) this.cue.hidden = true;
     for (let i = this.fades.length - 1; i >= 0; i--) {
       const f = this.fades[i];
       const t = (now - f.start) / f.duration;

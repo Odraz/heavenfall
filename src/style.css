@@ -1268,6 +1268,101 @@ div.weapon-swing {
   background: linear-gradient(#ffffff, #f7e7a8);
 }
 
+/* Judgment's red break fill rides over the cast bar's lower half (rogue bosses.md §3.2). */
+.boss-break-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 45%;
+  width: 0;
+  background: linear-gradient(#ff6a50, #c4140c);
+}
+
+.boss-cast-label {
+  margin-top: 6px;
+  font: 600 13px/1 var(--display-font);
+  color: var(--parchment);
+  text-shadow: 0 1px 3px #000;
+}
+
+.boss-cast-label[hidden],
+.boss-note[hidden] {
+  display: none;
+}
+
+.boss-note {
+  margin-top: 4px;
+  font: 600 13px/1 var(--display-font);
+  color: #ff8a70;
+  text-shadow: 0 1px 3px #000;
+}
+
+/* The 1.5 s transition: he can't be damaged (pale grey). */
+.boss.invulnerable .boss-fill {
+  background: linear-gradient(#f2f2f2, #a8a8a8);
+}
+
+/* The crosshair eye: open while he sees you, half-shut while only a Watcher does. */
+.sight-eye {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 26px);
+  width: 34px;
+  height: 18px;
+  transform: translateX(-50%);
+  border: 2px solid var(--gold);
+  border-radius: 50%;
+  background: radial-gradient(circle, #3a1d05 0 22%, var(--gold) 24% 46%, rgba(255, 246, 214, 0.85) 48%);
+  box-shadow: 0 0 6px #000;
+  pointer-events: none;
+}
+
+.sight-eye[data-state='half'] {
+  height: 9px;
+  margin-top: 5px;
+  border-color: #d81e1e;
+}
+
+.sight-eye[hidden],
+.called-text[hidden] {
+  display: none;
+}
+
+/* A Gatekeeper cue under his bar: the Toll, a Call, the Watchers. */
+.boss-cue {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 33%;
+  text-align: center;
+  font: 700 clamp(16px, 3.2vw, 30px)/1.2 var(--display-font);
+  color: #fff3cf;
+  text-shadow: 0 0 10px #c99a2e, 0 2px 4px #000;
+  pointer-events: none;
+}
+
+.boss-cue[hidden] {
+  display: none;
+}
+
+/* The held player's own instruction while the Call drags them. */
+.called-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 40%;
+  text-align: center;
+  font: 700 clamp(16px, 2.8vw, 26px)/1.2 var(--display-font);
+  color: #ffe08a;
+  text-shadow: 0 0 6px #000, 0 2px 4px #000;
+  pointer-events: none;
+}
+
+/* A held teammate's party frame: a gold padlock rim. */
+.party-frame.held {
+  box-shadow: 0 0 0 2px var(--gold), 0 0 10px rgba(255, 210, 74, 0.8);
+}
+
 .judgment-text {
   position: absolute;
   left: 0;

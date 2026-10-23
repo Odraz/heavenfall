@@ -59,6 +59,8 @@ export interface DebugState {
   commanders: CommanderCast[];
   /** The latest snapshot's Watchman aim records (rogue rooms.md §6.4). */
   watchmen: WatchmanAim[];
+  /** The Gatekeeper fight as this screen draws it (rogue bosses.md §3); null outside it. */
+  boss: { phase: number; cast: number; cycle: number; held: number; heldLocal: boolean; eyes: number; seals: number; sight: string; rings: number[]; hp: number; maxHp: number; flags: number; at: [number, number, number]; seal: [number, number, number] | null } | null;
   /** ...and every Watchman's accepted feet in that snapshot. */
   watchmanBodies: Array<{ slot: number; incarnation: number; x: number; y: number; z: number }>;
   carrierChecks: CarrierCheck[];
@@ -156,6 +158,7 @@ export const debugState: DebugState = {
   hazards: { activeRoom: -1, activeCells: 0 },
   commanders: [],
   watchmen: [],
+  boss: null,
   watchmanBodies: [],
   carrierChecks: [],
   weaponKills: {},
@@ -215,6 +218,7 @@ export function resetGameDebug(): void {
     hazards: { activeRoom: -1, activeCells: 0 },
     commanders: [],
   watchmen: [],
+  boss: null,
   watchmanBodies: [],
     carrierChecks: [],
     weaponKills: {},
@@ -258,6 +262,7 @@ declare global {
     readonly __heavenfall: Readonly<DebugState>;
     /** With `dev=1`, in game: moves the local player to (x, y) on the floor there, as a teleport (screenshots, M12 stage 4). */
     __heavenfallTeleport?: (x: number, y: number) => void;
+    __heavenfallLook?: (yaw: number, pitch?: number) => void;
     /** Dev menu only: finish the prepared client's real ready handshake. */
     __heavenfallReady?: () => void;
   }

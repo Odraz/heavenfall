@@ -31,6 +31,8 @@ export interface RunConfig extends RunIdentity {
   edicts: number[];
   progressionEnabled: boolean;
   fixture: string | null;
+  /** A dev co-op host's starting room (R7 observation setups), so every client starts at its entry; disposable runs only. */
+  devStartRoom?: number;
 }
 
 /** Shared room checkpoint, sent after go and before live events (rogue r01.md, R1.5). */
@@ -199,7 +201,7 @@ export type GameEvent =
    */
   | { type: 'abilityUsed'; playerId: number; slot: 'Q' | 'E'; x: number; y: number; z: number; targets: number[]; /** Thrown Silver: the coins fly 0.5 s before the Field starts. */ thrown?: boolean }
   | { type: 'teleport'; teleportId: number; x: number; y: number; z: number; /** Horizontal launch velocity, m/s. */ launch?: { dx: number; dy: number }; carry?: boolean;
-      /** Called to the Gate: the hold starts, dragging toward this point, or ends (null). */ hold?: [number, number] | null }
+      /** Called to the Gate: the hold starts at host tick [2], dragging toward ([0], [1]), or ends (null). */ hold?: [number, number, number] | null }
   | { type: 'playerDied'; playerId: number }
   | { type: 'playerRespawned'; playerId: number }
   /** Revived by the party at the soul's ground point (M8 §4.2). */

@@ -278,7 +278,9 @@ function toHostSetup(name: string): void {
       const host = new HostSession(0);
       createHostNet(() => left).then(
         (net) => {
-          host.hostLobby(net, dungeonId === 'rogue' ? null : dungeonId, password, name, params.god, params.bot, profileSession?.profile, !disposable && dungeonId === 'rogue', params.dev);
+          // Dev co-op setups (R7): `seed` and `room` fix the floor and the starting room, as in a dev solo run.
+          const dev = params.dev && dungeonId === 'rogue' ? { seed: params.seed ?? undefined, startRoom: params.startRoom ?? undefined } : {};
+          host.hostLobby(net, dungeonId === 'rogue' ? null : dungeonId, password, name, params.god, params.bot, profileSession?.profile, !disposable && dungeonId === 'rogue', params.dev, dev);
           enterLobby({ transport: host.local, playerId: 0, host, client: null, gameId: net.gameId, net: net.stats }, null, false);
         },
         (e: unknown) => {
@@ -523,6 +525,8 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
       localPlayerId: s.playerId,
       roster,
       singleplayer: false,
+      // A dev co-op setup's starting room (R7): every client starts at its entry, as the host places them.
+      startRoom: msg.devStartRoom !== undefined ? Math.min(msg.devStartRoom, assets.map.rooms.length - 1) : undefined,
       net: s.net,
       link: s.client?.link ?? null,
       onResults: showGameResults,

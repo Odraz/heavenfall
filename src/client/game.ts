@@ -12,7 +12,7 @@ import { rewardLabel } from '../gen/rewards';
 import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
-import { CANTOR, CARRIER, isCommander, CHORISTER, DOMINION, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_FALLING, ST_WINDUP, WATCHMAN } from '../data/enemies';
+import { BOSS_PART, CANTOR, CARRIER, isCommander, CHORISTER, DOMINION, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_FALLING, ST_WINDUP, WATCHMAN } from '../data/enemies';
 import { DOMINION_RADIUS } from '../data/dominion';
 import { DominionProjection } from './dominion';
 import { DominionView } from './dominionView';
@@ -102,7 +102,7 @@ import { Flinches, HIT_FLINCH, KILL_FLINCH, KillConfirmations, OwnDamage, Predic
 import { BurstPops, MassKills } from './massKill';
 import { dominionShake, massKillShake, Shake, SHAKE_BLASPHEMY, SHAKE_LANDING, SHAKE_SHROUD, SHROUD_SHAKE_RANGE } from './shake';
 import { LIGHTMAP_TEXELS } from '../render/lightmap';
-import { Bot, type BotEnemy } from './bot';
+import { Bot, type BotBoss, type BotEnemy } from './bot';
 import { corpseFrame, EnemyAnimator, spriteDirection, type Corpse } from './enemyAnim';
 import { FpsCounter } from './fps';
 import type { HostSession } from './hostSession';
@@ -156,6 +156,8 @@ import type { RelicOfferState, RouteState } from '../net/messages';
 import type { RelicId } from '../data/relics';
 import { STREAK_NAMES } from '../sim/streaks';
 import { sentenceLabel } from '../data/edicts';
+import { GatekeeperView, partsOf, sightState, sightWindow, ringContactIn, type PartView } from './gatekeeperView';
+import { BOSS_CAST_CALL, BOSS_CAST_TOLL, BOSS_CAST_VOLLEY, BOSS_FLAG_DEFERRED, BOSS_FLAG_WATCHERS, BOSS_PHASE_INVULNERABLE, FLAG_PART_OPENING, FLAG_PART_SEAL } from '../data/gatekeeper';
 
 const BENCH_TURN_RATE = 0.3;
 /** A move longer than this in one frame is a teleport: the weapon's sway resets (M11 §3.2, as the bob). */
@@ -472,6 +474,17 @@ export class Game {
   private readonly commanders: CommanderProjection;
   private readonly watchmen: WatchmanProjection;
   private readonly watchmanView: WatchmanView;
+  /** The Gatekeeper's ring, parts, chain and threads (rogue bosses.md §3.5 Client). */
+  private readonly gatekeeperView: GatekeeperView;
+  /** The Toll impacts seen in snapshot headers, newest last (at most two rings roll at once). */
+  private tollImpacts: number[] = [];
+  /** The ring impact whose whoosh already played. */
+  private whooshed = 0;
+  /** The crosshair eye's last test (every 100 ms) and result. */
+  private sightAt = -Infinity;
+  private sight: 'full' | 'half' | 'none' = 'none';
+  /** The cycle whose Judgment pre-warning played. */
+  private prewarned = Number.NaN;
   private readonly commanderView: CommanderView;
   private readonly damageNumbers: DamageNumbers;
   private readonly hitArcs: HitArcs;
@@ -617,6 +630,8 @@ export class Game {
     this.scene.scene.add(this.commanderView.group);
     this.watchmanView = new WatchmanView(o.textures.fx.beam, !o.enemyAnims[WATCHMAN], o.params.dev);
     this.scene.scene.add(this.watchmanView.group);
+    this.gatekeeperView = new GatekeeperView(o.textures.fx.beam);
+    this.scene.scene.add(this.gatekeeperView.group);
     this.rewardShafts = new RewardShafts(o.textures.fx.beam);
     this.scene.scene.add(this.rewardShafts.group);
     this.spawnWarnings = new SpawnProjection(o.runId, this.map);
@@ -715,6 +730,8 @@ export class Game {
       this.player.teleport(x, y, z);
       Object.assign(debugState.self, { x, y, z });
     };
+    // Dev: turn the view (e2e screenshots of what a player sees, e.g. facing the Gatekeeper).
+    if (this.params.dev) window.__heavenfallLook = (yaw, pitch = 0) => { this.player.yaw = yaw; this.player.pitch = pitch; };
     this.bench = this.params.benchArena >= 0 && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString(), () => this.scene.renderStats()) : null;
 
     debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0, primaryShots: 0, secondaryShots: 0 }));
@@ -1542,10 +1559,11 @@ export class Game {
         break;
       case 'teleport':
         if (((e.teleportId - this.lastTeleportId) & 0xffff) >= 0x8000 || e.teleportId === this.lastTeleportId) break;
-        this.player.teleport(e.x, e.y, e.z, e.launch);
+        if (e.hold) this.player.hold(this.map, e.x, e.y, e.z, e.hold[0], e.hold[1], Math.max(0, this.snaps.estimatedTick(now) - e.hold[2]) / 30);
+        else this.player.teleport(e.x, e.y, e.z, e.launch);
         this.player.carried = e.carry === true;
         if (this.player.carried) this.cancelCarriedActions();
-        if (e.carry === false) this.player.body.grounded = false;
+        if (e.carry === false || e.hold === null) this.player.body.grounded = false;
         this.lastTeleportId = e.teleportId;
         break;
       case 'roomState':
@@ -1572,7 +1590,45 @@ export class Game {
         this.abilityVfx(e, now);
         break;
       case 'bossCast':
-        this.hud.judgmentEvent(e.phase, now);
+        if (e.cast === undefined || e.cast === BOSS_CAST_JUDGMENT) this.hud.judgmentEvent(e.phase, now);
+        else if (e.cast === BOSS_CAST_TOLL && e.phase === 'start') this.hud.bossText('THE TOLL — jump the ring!', 1500, now);
+        if (e.cast === BOSS_CAST_TOLL && e.impactTick && !this.tollImpacts.includes(e.impactTick)) this.tollImpacts = [...this.tollImpacts, e.impactTick].slice(-2);
+        break;
+      case 'bossPhase': this.bossPhaseEvent(e, now); break;
+      case 'called': {
+        const mine = e.playerId === this.localId, who = this.roster.find((r) => r.id === e.playerId)?.name ?? 'An ally';
+        if (e.phase === 'tell') {
+          const at = this.playerPose(e.playerId);
+          if (at) this.vfx.ring(now, at.x, at.y, at.z + 0.05, 0xffd36a, 1.2, 0.3, 1000);
+          this.hud.bossText(mine ? 'He calls you by name!' : `He calls ${who}!`, 1200, now);
+        } else if (e.phase === 'held' && !mine) this.hud.bossText(`${who} is called: shoot the seal!`, 2000, now);
+        break;
+      }
+      case 'sealBroken': {
+        const at = this.playerPose(e.playerId);
+        if (at) this.vfx.burstSphere(now, at.x, at.y, at.z + 1.6, 0xffd36a, 0.2, 1.4, 350, 0.7);
+        if (e.playerId === this.localId) this.hud.bossText('Freed!', 1200, now);
+        break;
+      }
+      case 'judged':
+        if (e.by === 'seal') { this.hud.bossText('The Gatekeeper takes his due', 2200, now); this.hud.bossFlash('green'); }
+        else if (e.by === 'watcher' && e.playerId === this.localId) this.hud.bossText('A Watcher saw you', 1500, now);
+        break;
+      case 'watchersOpen':
+        if (e.first) this.hud.bossText('The Watchers open', 2500, now);
+        break;
+      case 'watcherBreak': {
+        const boss = this.bossPoint();
+        if (boss) this.vfx.beam(now, [[e.x, e.y, e.z], [boss.x, boss.y, boss.z + 4]], 0xff2a1a, 0.16, 450);
+        this.vfx.glow(now, e.x, e.y, e.z, 0xffd36a, 0.3, 1.6, 300);
+        this.hud.bossFlash('red');
+        break;
+      }
+      case 'hostDescend':
+        for (const [c, r] of this.map.rooms[this.snaps.newest?.activeRoom ?? -1]?.points?.addSpawns?.gate ?? []) {
+          const z = this.map.floor[r * this.map.w + c];
+          this.vfx.beam(now, [[c + 0.5, r + 0.5, z], [c + 0.5, r + 0.5, z + 9]], 0xffe08a, 0.6, 1400);
+        }
         break;
       case 'starLanded':
         // Others' landings show after the render delay; the own one showed when its leap ended (M12 §5.2).
@@ -1725,6 +1781,96 @@ export class Game {
     const q = this.snaps.playersOut.find((o) => o.id === playerId);
     if (!q) return null;
     return [q.x + Math.cos(q.yaw) * OTHERS_MUZZLE, q.y + Math.sin(q.yaw) * OTHERS_MUZZLE, q.z + PLAYER_HEIGHT / 2];
+  }
+
+  /** The Gatekeeper fight for the bot, read from the newest header at the screen's drawn time. */
+  private botBoss(): BotBoss | null {
+    const s = this.snaps.newest, boss = this.bossPoint();
+    if (!s || !boss) return null;
+    const v = this.snaps.view, reward = this.map.rooms[s.activeRoom]?.points?.reward;
+    const base = reward ? this.map.floor[(reward[1] + 1) * this.map.w + reward[0] + 1] : boss.z;
+    return { x: boss.x, y: boss.y, z: boss.z, eyeZ: boss.z + 5, tick: v.tick + v.gap * v.frac, cycleStart: s.bossCycleStart, tollImpact: this.tollImpacts[this.tollImpacts.length - 1] ?? 0, base };
+  }
+
+  /** The Gatekeeper's body (feet) in the newest snapshot, or null outside the fight. */
+  private bossPoint(): { x: number; y: number; z: number } | null {
+    const s = this.snaps.newest;
+    if (!s || s.bossMaxHp <= 0) return null;
+    for (let i = 0; i < s.enemyCount; i++) if (s.enemyType[i] === GATEKEEPER) return { x: s.enemyX[i], y: s.enemyY[i], z: s.enemyZ[i] };
+    return null;
+  }
+
+  /** The fight's phase lines: the seal, the silent trumpet at 50% (a feather burst), the victory. */
+  private bossPhaseEvent(e: Extract<GameEvent, { type: 'bossPhase' }>, now: number): void {
+    const boss = this.bossPoint();
+    if (e.phase === 1) this.hud.centerText(e.line, 3000, now);
+    else if (e.phase === 2) {
+      this.hud.centerText('He lifts the first trumpet', 2500, now, 'It stays silent. The Watchers will open.');
+      if (boss) {
+        this.vfx.ring(now, boss.x, boss.y, boss.z, 0xffffff, 2, 45, 1600);
+        this.vfx.burstSphere(now, boss.x, boss.y, boss.z + 6, 0xfff3cf, 1, 14, 1200, 0.5);
+        for (let i = 0; i < 40; i++) this.particles.trailFeather(boss.x + (Math.random() - 0.5) * 30, boss.y + (Math.random() - 0.5) * 30, boss.z + 4 + Math.random() * 6);
+      }
+    } else this.hud.centerText(e.line, 4000, now);
+  }
+
+  /**
+   * The local player's hold from the snapshot, when its reliable start or release was missed (a rejoin
+   * during a hold): the drag is predicted from the snapshot's position, and a release lands where the host has it.
+   */
+  private syncHold(s: Snapshot): void {
+    const me = s.players.find((p) => p.id === this.localId);
+    const heldHere = s.heldPlayer === this.localId;
+    this.hud.setCalled(heldHere && !this.dead ? 'You are called: shoot the seal!' : null);
+    if (!me) return;
+    const boss = this.bossPoint();
+    const current = (((me.teleportId ?? 0) - this.lastTeleportId) & 0xffff) < 0x8000;
+    if (heldHere && !this.player.held && boss && current) this.player.hold(this.map, me.x, me.y, me.z, boss.x, boss.y, 0);
+    else if (!heldHere && this.player.held && current && (me.teleportId ?? 0) !== this.lastTeleportId) { this.player.teleport(me.x, me.y, me.z); this.player.body.grounded = false; }
+  }
+
+  /** The Toll's ring at the screen's drawn time, the parts, the chain, the threads, the crosshair eye and the ring's whoosh. */
+  private drawGatekeeper(now: number, ents: InterpolatedEnemies, enemyZ: Float32Array): void {
+    const s = this.snaps.newest;
+    const boss = this.bossPoint();
+    const v = this.snaps.view, tick = v.tick + v.gap * v.frac;
+    const parts: PartView[] = boss ? partsOf(ents, enemyZ) : [];
+    const room = s && s.activeRoom !== 255 ? this.map.rooms[s.activeRoom] : undefined;
+    const reward = room?.points?.reward;
+    const base = reward ? this.map.floor[(reward[1] + 1) * this.map.w + reward[0] + 1] : boss?.z ?? 0;
+    const held = s && s.heldPlayer !== 255 ? (s.heldPlayer === this.localId ? this.player.body : this.playerPose(s.heldPlayer) ?? null) : null;
+    const me = this.dead ? null : this.player.body;
+    this.gatekeeperView.update({ map: this.map, tick, boss, base, rings: boss ? this.tollImpacts : [], tollTell: s?.bossCast === BOSS_CAST_TOLL ? s.bossCastProgress / 255 : null,
+      parts, held, heldLocal: s?.heldPlayer === this.localId, me, camera: this.scene.camera.position });
+    // The crosshair eye: every 100 ms from c 22 through c 28, and while Watchers are open.
+    let sight: 'full' | 'half' | 'none' | null = null;
+    if (s && boss && me && sightWindow(tick - s.bossCycleStart, (s.bossFlags & BOSS_FLAG_WATCHERS) !== 0)) {
+      if (now - this.sightAt >= 100) {
+        this.sightAt = now;
+        this.sight = sightState(this.map, me.x, me.y, me.z + PLAYER_EYE, [boss.x, boss.y, boss.z + 5], parts);
+      }
+      sight = this.sight;
+    }
+    this.hud.setSight(sight);
+    debugState.boss = s && boss ? { phase: s.bossPhase, cast: s.bossCast, cycle: tick - s.bossCycleStart, held: s.heldPlayer, heldLocal: !!this.player.held,
+      eyes: parts.filter((p) => !p.seal).length, seals: parts.filter((p) => p.seal).length, sight: sight ?? 'off', rings: [...this.tollImpacts], hp: s.bossHp, maxHp: s.bossMaxHp, flags: s.bossFlags,
+      at: [boss.x, boss.y, boss.z], seal: ((q) => q ? [q.x, q.y, q.z] as [number, number, number] : null)(parts.find((p) => p.seal)) } : null;
+    // Judgment's pre-warning at c 22: six seconds to its impact, the drone starts quietly.
+    if (s && boss && !this.dead) {
+      const c = tick - s.bossCycleStart;
+      if (c >= 22 * 30 && c < 25 * 30 && this.prewarned !== s.bossCycleStart) {
+        this.prewarned = s.bossCycleStart;
+        this.sounds.bossCue('judgmentPrewarn');
+        this.hud.bossText('Judgment gathers — find cover', 2500, now);
+      }
+    }
+    // A rising whoosh when the front is 1 s from you, forecast from the announced impact during the tell too.
+    const impact = this.tollImpacts[this.tollImpacts.length - 1] ?? 0;
+    if (boss && me && impact > 0 && impact !== this.whooshed && !this.player.held) {
+      const d = Math.hypot(me.x - boss.x, me.y - boss.y);
+      const floor = this.map.floor[Math.floor(me.y) * this.map.w + Math.floor(me.x)];
+      if (floor <= base + 1 + 1e-6 && ringContactIn(impact, tick, d) <= 1) { this.whooshed = impact; this.sounds.bossCue('ringWhoosh'); }
+    }
   }
 
   /**
@@ -2125,11 +2271,16 @@ export class Game {
         .filter((p) => p.id !== this.localId)
         .flatMap((p) => {
           const r = this.roster.find((q) => q.id === p.id);
-          return r ? [{ id: p.id, name: r.name, classId: r.classId, hp: p.hp, shield: p.shield, dead: p.dead, revive: p.revive / 255 }] : [];
+          return r ? [{ id: p.id, name: r.name, classId: r.classId, hp: p.hp, shield: p.shield, dead: p.dead, revive: p.revive / 255, held: s.heldPlayer === p.id }] : [];
         }),
     );
     this.hud.setRemaining(s.activePhase === PHASE_COMBAT ? s.enemiesRemaining : null);
-    this.hud.setBoss(s.bossHp, s.bossMaxHp, s.bossCast === BOSS_CAST_JUDGMENT ? s.bossCastProgress / 255 : null);
+    const castLabel = s.bossCast === BOSS_CAST_JUDGMENT ? 'Judgment' : s.bossCast === BOSS_CAST_TOLL ? 'The Toll' : s.bossCast === BOSS_CAST_CALL ? 'Called to the Gate' : s.bossCast === BOSS_CAST_VOLLEY ? 'Orb Volley' : '';
+    this.hud.setBoss(s.bossHp, s.bossMaxHp, castLabel ? { label: castLabel, progress: s.bossCastProgress / 255, brk: s.bossCast === BOSS_CAST_JUDGMENT ? s.bossBreak / 255 : 0 } : null,
+      { phase: s.bossPhase & 3, invulnerable: (s.bossPhase & BOSS_PHASE_INVULNERABLE) !== 0, deferred: (s.bossFlags & BOSS_FLAG_DEFERRED) !== 0 });
+    if (s.tollTick > 0 && !this.tollImpacts.includes(s.tollTick)) this.tollImpacts = [...this.tollImpacts, s.tollTick].slice(-2);
+    if (s.bossMaxHp <= 0) this.tollImpacts = [];
+    this.syncHold(s);
     this.bossCast = s.bossCast;
     this.bossCastProgress = s.bossCastProgress / 255;
     this.bench?.onSnapshot(s);
@@ -2787,6 +2938,8 @@ export class Game {
         e.x = ents.x[i];
         e.y = ents.y[i];
         e.z = enemyZ[i];
+        e.seal = (ents.flags[i] & FLAG_PART_SEAL) !== 0 && e.type === BOSS_PART;
+        e.opening = (ents.flags[i] & FLAG_PART_OPENING) !== 0 && e.type === BOSS_PART;
       }
       const s = this.snaps.newest;
       const out = this.bot.update(now, {
@@ -2816,8 +2969,9 @@ export class Game {
           const cls = this.classOf(q.id);
           const rec = s?.players.find((r) => r.id === q.id);
           if (q.id === this.localId || q.dead || !cls || !rec) return [];
-          return [{ x: q.x, y: q.y, z: q.z, hpFrac: rec.hp / CLASSES[cls].hp }];
+          return [{ x: q.x, y: q.y, z: q.z, hpFrac: rec.hp / CLASSES[cls].hp, human: !this.roster.find((r) => r.id === q.id)?.bot }];
         }),
+        boss: this.botBoss(),
       });
       if (out.yaw !== null) p.yaw = out.yaw;
       if (out.pitch !== null) p.pitch = out.pitch;
@@ -3032,6 +3186,7 @@ export class Game {
     this.commanderView.update(family, this.map, dominionTick, this.scene.camera.position);
     this.sounds.commanders(this.paused ? [] : family, dominionTick);
     this.drawWatchmen(now, ents, enemyZ, dominionTick);
+    this.drawGatekeeper(now, ents, enemyZ);
     debugState.spawnWarnings = this.spawnWarnings.live(dominionTick);
     this.spawnView.update(debugState.spawnWarnings, dominionTick);
     this.sounds.arrivals(this.paused ? [] : debugState.spawnWarnings, dominionTick);
@@ -3465,6 +3620,7 @@ export class Game {
   dispose(): void {
     this.disposed = true;
     window.__heavenfallTeleport = undefined;
+    window.__heavenfallLook = undefined;
     cancelAnimationFrame(this.raf);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     document.removeEventListener('visibilitychange', this.onVisibility);
@@ -3485,6 +3641,7 @@ export class Game {
     this.dominionView.dispose();
     this.commanderView.dispose();
     this.watchmanView.dispose();
+    this.gatekeeperView.dispose();
     this.rewardShafts.dispose();
     this.spawnView.dispose();
     this.hazards.dispose();

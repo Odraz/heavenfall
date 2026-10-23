@@ -15,6 +15,8 @@ export interface PartyMember {
   dead: boolean;
   /** Revive progress 0–1 while dead (M8 §3.1). */
   revive: number;
+  /** Held by the Gatekeeper's Call (rogue bosses.md §3.2): the frame shows a padlock. */
+  held?: boolean;
 }
 
 /** Party frame flashes (M8 §3.1): healed, shielded and (from stage 4) revived. */
@@ -80,6 +82,8 @@ export class PartyFrames {
       f.shield.style.left = f.hp.style.width;
       f.shield.style.width = `${(m.shield / total) * 100}%`;
       f.root.classList.toggle('dead', m.dead);
+      f.root.classList.toggle('held', !!m.held);
+      f.root.title = m.held ? `${m.name} is called: shoot the seal!` : '';
       // A dead player's frame shows their revive progress, without text (M8 §3.1).
       f.revive.style.width = m.dead ? `${Math.max(0, Math.min(1, m.revive)) * 100}%` : '0';
       f.status.textContent = m.dead ? '' : m.shield > 0 ? `${Math.ceil(m.hp)} + ${Math.ceil(m.shield)}` : `${Math.ceil(m.hp)}`;

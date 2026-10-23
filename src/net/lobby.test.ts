@@ -230,6 +230,19 @@ describe('lobby', () => {
     expect(cleanName(42)).toBe('Player');
   });
 
+  it('a dev co-op host fixes the floor seed and starting room for every client, never for a saved run (R7 setups)', () => {
+    const lobby = (progressionEnabled: boolean) => new Lobby({ heaven: 1, fixture: null, password: '', version: V, hostName: 'Host', progressionEnabled, devSeed: 317434499, devStartRoom: 10 });
+    const l = lobby(false);
+    l.join('Guest', '', V);
+    l.pickClass(0, 'fallen');
+    l.pickClass(1, 'binder');
+    const dev = l.start(0)!;
+    expect([dev.seed, dev.devStartRoom]).toEqual([317434499, 10]);
+    // A saved (progression) run ignores both.
+    const saved = lobby(true) as unknown as { devSeed?: number; devStartRoom?: number };
+    expect([saved.devSeed, saved.devStartRoom]).toEqual([undefined, undefined]);
+  });
+
   it('retains one generated-run identity through loading, a dropped loader and late admission', () => {
     const l = new Lobby({ heaven: 1, fixture: null, password: '', version: V, hostName: 'Host', hostBot: true });
     expect(l.run).toBeNull();

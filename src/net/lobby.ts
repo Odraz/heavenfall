@@ -30,6 +30,9 @@ export interface LobbyOptions {
   hostBot?: boolean;
   progressionEnabled?: boolean;
   profile?: Profile;
+  /** A dev co-op host's fixed floor seed and starting room; disposable runs only. */
+  devSeed?: number;
+  devStartRoom?: number;
 }
 
 export type JoinResult = { ok: true; playerId: number; inProgress: boolean } | { ok: false; reason: RejectReason };
@@ -78,11 +81,17 @@ export class Lobby {
   /** The host's Edicts for the next run (§2.5). */
   edicts: number[] = [];
 
+  /** A dev co-op host's fixed floor seed (R7 observation setups). */
+  private readonly devSeed: number | undefined;
+  private readonly devStartRoom: number | undefined;
+
   constructor(o: LobbyOptions) {
     this.fixture = o.fixture;
     this.password = o.password;
     this.version = o.version;
     this.progressionEnabled = o.progressionEnabled ?? false;
+    this.devSeed = this.progressionEnabled ? undefined : o.devSeed;
+    this.devStartRoom = this.progressionEnabled || this.fixture !== null ? undefined : o.devStartRoom;
     this.players.set(0, { id: 0, name: cleanName(o.hostName), classId: null, bot: !!o.hostBot, isHost: true, inResults: false, state: 'lobby', startedAt: 0, profile: o.profile });
   }
 
@@ -194,7 +203,8 @@ export class Lobby {
   /** Starts Loading: returns the `start` message, or null if the lobby can't start. */
   start(nowMs: number): Extract<CtrlMessage, { type: 'start' }> | null {
     if (!this.canStart()) return null;
-    this.runConfig = { ...newRunIdentity(), heaven: this.heaven, floor: 1, edicts: [...this.edicts], progressionEnabled: this.progressionEnabled, fixture: this.fixture };
+    this.runConfig = { ...newRunIdentity(this.devSeed), heaven: this.heaven, floor: 1, edicts: [...this.edicts], progressionEnabled: this.progressionEnabled, fixture: this.fixture,
+      ...(this.devStartRoom !== undefined ? { devStartRoom: this.devStartRoom } : {}) };
     this.phase = 'loading';
     for (const p of this.players.values()) {
       p.state = 'loading';

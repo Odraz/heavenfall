@@ -486,7 +486,7 @@ export class GatekeeperFight {
     if (slot < 0) { this.callResolved = true; return; }
     this.hold = { playerId: p.id, start: this.tick, until: this.tick + HOLD_TICKS, z, seal: slot, sealIncarnation: sim.eIncarnation[slot], heads, sealMax: SEAL_HP_PER_HEAD * heads };
     p.z = z;
-    sim.teleport(p, p.x, p.y, z, undefined, undefined, [sim.eX[s], sim.eY[s]]);
+    sim.teleport(p, p.x, p.y, z, undefined, undefined, [sim.eX[s], sim.eY[s], this.tick]);
     sim.emit('all', { type: 'called', playerId: p.id, phase: 'held', untilTick: this.hold.until });
   }
 

@@ -3,7 +3,9 @@ import type { WatchmanAim } from '../data/watchman';
 import { beamSegment } from '../sim/commanders';
 /** The bot (`?bot=1`): replaces the local player's input in game (§2.5). */
 import type { ClassId } from '../data/classes';
-import { ENEMIES } from '../data/enemies';
+import { BOSS_PART, ENEMIES } from '../data/enemies';
+import { WATCHER_GAZE, WATCHER_HEIGHT } from '../data/gatekeeper';
+import { ringContactIn } from './gatekeeperView';
 import { FIRE_LEFT, FIRE_RIGHT, SCOURGE_HALF_ARC, SECONDARIES, WEAPONS } from '../data/weapons';
 import { aimDir, rayEnemy } from '../sim/combat';
 import { PHASE_COMBAT, PHASE_COUNTDOWN } from '../net/protocol';
@@ -23,6 +25,24 @@ export interface BotEnemy {
   x: number;
   y: number;
   z: number;
+  /** Boss parts (rogue bosses.md §3.5): the Seal, and a grey Watcher that can't be damaged yet. */
+  seal?: boolean;
+  opening?: boolean;
+}
+
+/** The Gatekeeper fight as a bot reads it (rogue bosses.md §3.7). */
+export interface BotBoss {
+  /** His feet and eye. */
+  x: number;
+  y: number;
+  z: number;
+  eyeZ: number;
+  /** The fractional tick the bot's screen draws, the cycle's start and the Toll's announced impact (0: none). */
+  tick: number;
+  cycleStart: number;
+  tollImpact: number;
+  /** The room's base floor: the ring travels on floors at most 1 m above it. */
+  base: number;
 }
 
 export interface BotView {
@@ -56,7 +76,9 @@ export interface BotView {
   humanSouls?: ReadonlyArray<{ x: number; y: number; z: number }>;
   classId: ClassId;
   /** Living teammates (not the bot), with their HP as a fraction of max HP, for Sacrament (M9 §8). */
-  teammates: ReadonlyArray<{ x: number; y: number; z: number; hpFrac: number }>;
+  teammates: ReadonlyArray<{ x: number; y: number; z: number; hpFrac: number; human?: boolean }>;
+  /** The Gatekeeper fight, or null outside it. */
+  boss?: BotBoss | null;
 }
 
 export interface BotOutput {
@@ -89,6 +111,8 @@ const HEAL_RANGE = 40;
 const SCOURGE_MIN = 3;
 const BULLET_MIN = 4;
 const BULLET_CHECK_MS = 250;
+/** A bot jumps the Toll when its front is this close in time (bosses.md §3.3.1): 0.081 s to lift the feet plus a tick of reaction. */
+const RING_JUMP_LEAD = 0.22;
 
 export class Bot {
   private targetSlot = -1;
@@ -104,6 +128,8 @@ export class Bot {
   /** The Betrayer's last line check and its result. */
   private lastLineCheck = -Infinity;
   private lineFull = false;
+  /** Judgment's hiding cell for the cycle starting at `cycle`. */
+  private cover: { cycle: number; x: number; y: number } | null = null;
 
   constructor(map: GameMap) {
     this.field = new FlowField(map, false);
@@ -209,10 +235,21 @@ export class Bot {
       goal = this.nextEntry(v);
     }
 
+    // The Gatekeeper (bosses.md §3.7): from c 22 Judgment's cover comes before every other goal.
+    const boss = v.boss;
+    if (boss && !v.stair) {
+      const c = boss.tick - boss.cycleStart;
+      if (c >= 22 * 30 && c < 28 * 30) {
+        const cover = this.judgmentCover(v, boss);
+        goal = cover && Math.hypot(cover.x - b.x, cover.y - b.y) > 0.4 ? cover : null;
+        if (!goal) { o.dirX = 0; o.dirY = 0; }
+      }
+    }
+
     if (goal) this.steer(now, v, goal, o);
     this.escapeDominion(v, o);
     this.escapeCommander(v, o);
-    o.jump = v.blockedLastFrame;
+    o.jump = v.blockedLastFrame || (!!boss && this.ringSoon(v, boss));
     return o;
   }
 
@@ -414,18 +451,74 @@ export class Bot {
   private findVisible(v: BotView, ex: number, ey: number, ez: number): BotEnemy | undefined {
     const range = WEAPONS[v.classId].range;
     const list = v.enemies
+      .filter((e) => !e.opening)
       .map((e) => {
         const def = ENEMIES[e.type];
         const d = distToCylinder(ex, ey, ez, e.x, e.y, e.z, def.radius, def.height);
         // A carrier holding a teammate first; then a Watchman aiming at this bot, within its weapon's range.
         const aiming = d <= range && v.watchmanAims?.some((a) => a.slot === e.slot && a.phase === 'aim' && a.targetId === v.entryIndex);
-        return { e, d: (v.commanderCasts?.some((c) => c.slot === e.slot && c.phase === 'carry') ? -10000 : aiming ? -5000 : 0) + d };
+        return { e, d: (v.commanderCasts?.some((c) => c.slot === e.slot && c.phase === 'carry') ? -10000 : aiming ? -5000 : 0) + this.partPriority(v, e, d, range, ex, ey, ez) + d };
       })
       .sort((a, b) => a.d - b.d);
     for (const { e } of list) {
       if (lineOfSight(v.map, ex, ey, ez, e.x, e.y, e.z + ENEMIES[e.type].height / 2)) return e;
     }
     return undefined;
+  }
+
+  /**
+   * Boss parts first (bosses.md §3.7): any Seal in range (its own or a held ally's), then an eye whose
+   * 24 m gaze reaches this bot, then one threatening a living human; a harmless distant eye is ordinary.
+   */
+  private partPriority(v: BotView, e: BotEnemy, d: number, range: number, ex: number, ey: number, ez: number): number {
+    if (e.type !== BOSS_PART || d > range) return 0;
+    if (e.seal) return -20000;
+    const cz = e.z + WATCHER_HEIGHT / 2;
+    const sees = (x: number, y: number, z: number) => Math.hypot(e.x - x, e.y - y) <= WATCHER_GAZE && lineOfSight(v.map, e.x, e.y, cz, x, y, z);
+    if (sees(ex, ey, ez)) return -15000;
+    if (v.teammates.some((t) => t.human !== false && sees(t.x, t.y, t.z + PLAYER_EYE))) return -12000;
+    return 0;
+  }
+
+  /** Whether the Toll's front (or birth disk) will touch this grounded bot within the jump lead. */
+  private ringSoon(v: BotView, boss: BotBoss): boolean {
+    const b = v.body;
+    if (!b.grounded || boss.tollImpact <= 0) return false;
+    const floor = v.map.floor[Math.floor(b.y) * v.map.w + Math.floor(b.x)];
+    if (!(floor <= boss.base + 1 + 1e-6)) return false;
+    return ringContactIn(boss.tollImpact, boss.tick, Math.hypot(b.x - boss.x, b.y - boss.y), b.radius) <= RING_JUMP_LEAD;
+  }
+
+  /**
+   * Judgment's cover for this cycle (bosses.md §3.7): the nearest reachable base-floor cell whose eye
+   * point his eye can't see, by breadth-first search over walkable cells (no dais, no plinth tops).
+   * Recomputed each cycle and when the remembered cell is seen again; never a remembered world point.
+   */
+  private judgmentCover(v: BotView, boss: BotBoss): { x: number; y: number } | null {
+    const map = v.map, eye = (x: number, y: number, f: number) => lineOfSight(map, x, y, f + PLAYER_EYE, boss.x, boss.y, boss.eyeZ);
+    if (this.cover && this.cover.cycle === boss.cycleStart) {
+      const f = map.floor[Math.floor(this.cover.y) * map.w + Math.floor(this.cover.x)];
+      if (!eye(this.cover.x, this.cover.y, f)) return this.cover;
+    }
+    const start = Math.floor(v.body.y) * map.w + Math.floor(v.body.x);
+    const seen = new Set<number>([start]);
+    const queue = [start];
+    for (let q = 0; q < queue.length && q < 6000; q++) {
+      const i = queue[q], c = i % map.w, r = Math.floor(i / map.w), f = map.floor[i];
+      if (q > 0 && !eye(c + 0.5, r + 0.5, f)) {
+        this.cover = { cycle: boss.cycleStart, x: c + 0.5, y: r + 0.5 };
+        return this.cover;
+      }
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const n = (r + dr) * map.w + c + dc;
+        if (seen.has(n) || c + dc < 0 || r + dr < 0 || c + dc >= map.w || r + dr >= map.h || map.solid[n]) continue;
+        // Walkable steps only, up to the +1 m terrace and stairs; the dais and plinths stay out.
+        if (map.floor[n] > f + 0.5 + 1e-6 || map.floor[n] > boss.base + 2 + 1e-6) continue;
+        seen.add(n);
+        queue.push(n);
+      }
+    }
+    return null;
   }
 
   /** Follows a ground flow field toward the goal's cell, steering like an enemy (§7.3). */

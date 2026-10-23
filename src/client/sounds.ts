@@ -15,7 +15,7 @@ import type { GameEvent } from '../net/messages';
 import { PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import { ENEMY_SLOTS, TICK_MS } from '../sim/constants';
 import { roomCleared, type GameMap } from '../sim/map';
-import { BOSS_CAST_VOLLEY, PROJ_ARROW, PROJ_GLOBE } from '../sim/sim';
+import { BOSS_CAST_JUDGMENT, BOSS_CAST_TOLL, BOSS_CAST_VOLLEY, PROJ_ARROW, PROJ_GLOBE } from '../sim/sim';
 import type { SfxName } from '../audio/sfx';
 import type { MassKillPlay } from './massKill';
 import { roomTrack } from './roomTrack';
@@ -390,9 +390,22 @@ export class GameSounds {
         if (e.phase !== 'start') { this.tells.get(e.cast.castId)?.stop(); this.tells.delete(e.cast.castId); }
         if (e.phase === 'strike') sfx('dominionSlam', { x: e.x, y: e.y }, 1, 0, PRIO_ABILITY);
         break;
-      case 'bossCast':
-        sfx(e.phase === 'start' ? 'judgmentCharge' : e.phase === 'completed' ? 'judgmentBlast' : 'interrupted');
+      case 'bossCast': {
+        // Judgment keeps its drone, blast and breaking glass; the Toll and the Call have their own wind-ups.
+        const cast = e.cast ?? BOSS_CAST_JUDGMENT;
+        if (cast === BOSS_CAST_JUDGMENT) sfx(e.phase === 'start' ? 'judgmentCharge' : e.phase === 'completed' ? 'judgmentBlast' : 'interrupted');
+        else if (cast === BOSS_CAST_TOLL) { if (e.phase === 'start') sfx('tollWindup'); else if (e.phase === 'completed') sfx('tollStrike'); }
         break;
+      }
+      case 'called':
+        if (e.phase === 'tell') sfx('callWindup');
+        break;
+      case 'sealBroken': sfx('sealBreak', pose(e.playerId) ?? null); break;
+      case 'judged': if (e.by === 'seal') sfx('sealJudged'); break;
+      case 'hostDescend': sfx('hostDescend'); break;
+      case 'watchersOpen': sfx('watchersOpen'); break;
+      case 'watcherBreak': sfx('watcherBreak', { x: e.x, y: e.y }); break;
+      case 'bossPhase': if (e.phase === 2) sfx('phaseChoirThreat'); break;
       case 'gameOver':
         // The playing track fades and the sting plays; without one, the synthesized sting.
         if (!audio()?.music.sting(e.result)) sfx(e.result);
@@ -425,6 +438,11 @@ export class GameSounds {
       if (Math.hypot(s.enemyX[i] - me.x, s.enemyY[i] - me.y) <= MELEE_REACH) return true;
     }
     return false;
+  }
+
+  /** A Gatekeeper cue the client decides itself (the ring's whoosh, Judgment's pre-warning). */
+  bossCue(name: 'ringWhoosh' | 'judgmentPrewarn'): void {
+    sfx(name);
   }
 
   dispose(): void {
