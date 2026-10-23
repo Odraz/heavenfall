@@ -40,7 +40,7 @@ export class DebugOverlay {
       `net in ${d.netInKBps.toFixed(1)} KB/s  out ${d.netOutKBps.toFixed(1)} KB/s`,
       `view delay ${Math.round(d.link.delayMs)} ms · jitter ${Math.round(d.link.jitterMs)} ms`,
       ...d.link.lines,
-      ...(d.killMarkers.predicted ? [`kill markers confirmed ${d.killMarkers.confirmed}/${d.killMarkers.confirmed + d.killMarkers.missed}`] : []),
+      ...(d.killMarkers.predicted ? [`kill markers confirmed ${d.killMarkers.confirmed}/${d.killMarkers.confirmed + d.killMarkers.missed} · reappeared ${d.killMarkers.revealed}`] : []),
       `pos ${this.position.x.toFixed(2)} ${this.position.y.toFixed(2)} ${this.position.z.toFixed(2)} yaw ${this.position.yaw.toFixed(3)}`,
       ...(this.dev ? [`Wading: ${d.wade.count} · ×${d.wade.factor.toFixed(2)}`] : []),
       ...(this.dev && dir ? [`Director: ${dir.phase} ${dir.phaseTime.toFixed(1)} s · ${Math.round(dir.intensity)} · ${dir.alive}/${dir.waveTotal}`] : []),

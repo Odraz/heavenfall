@@ -75,6 +75,8 @@ import {
   ATTACK_PRIMARY,
   attackDef,
   chooseAttack,
+  FIRE_LEFT,
+  FIRE_RIGHT,
   SECONDARIES,
   WEAPONS,
   type AttackSlot,
@@ -125,8 +127,9 @@ import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } fr
 import { directStepAllowed, FlowField, UNREACHABLE } from './flowfield';
 import { DryNavigation, FIRE_ENEMY_DAMAGE, FIRE_PLAYER_DAMAGE, Hazards } from './hazards';
 import { SpawnWarnings } from './spawnWarnings';
-import { EnemyHistory, NO_VIEW, type ViewTick } from './lagComp';
-import { latchBits, latchClear, latchFired, latchPress, newFireLatch, pressDelta, type FireLatch } from './fireLatch';
+import { EnemyHistory, NO_VIEW, viewLag, type ViewTick } from './lagComp';
+import { lateStretch, stretchHit, type LateShot } from './lateShots';
+import { HELD_FIRE, latchBits, latchClear, latchFired, latchPress, newFireLatch, nextShot, pressDelta, queueShots, SHOT_EARLY_TICKS, type ClientShot, type FireLatch } from './fireLatch';
 import { CROWD_RADIUS, PINCER_FROM_WAVE, PINCER_SHARE, PINCER_WARNING_TICKS, PositionHistory, pincerPoint, retreatHeading, type Retreat } from './pincer';
 import { lineOfSight, raycastTerrain } from './los';
 import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
@@ -336,6 +339,12 @@ export interface SimPlayer {
   fireLatch: FireLatch;
   /** What the player's screen showed with its latest accepted input (lag compensation). */
   view: ViewTick;
+  /** The player's screen times its shots (client-timed shots); false: the host fires the held buttons. */
+  clientShots: boolean;
+  /** The shot counter of the latest accepted input. */
+  shotsSeen: number;
+  /** Shots the player's screen fired, waiting for the fire timer. */
+  shotQueue: ClientShot[];
 }
 
 /**
@@ -798,6 +807,8 @@ export class Simulation {
   private readonly pFreedTick = new Int32Array(PROJECTILE_SLOTS).fill(-SLOT_REUSE_TICKS);
   /** Living projectile slots, oldest first. */
   readonly projectiles: number[] = [];
+  /** Spent enemy projectiles still owed to players whose screens draw them behind (dodge compensation). */
+  readonly lateShots: LateShot[] = [];
   private readonly pFree: number[] = [];
   private pNextFresh = 0;
 
@@ -1040,6 +1051,10 @@ export class Simulation {
     }
     p.leftPresses = m.leftPresses;
     p.rightPresses = m.rightPresses;
+    // Client-timed shots: the shots the player's screen fired since the previous input.
+    p.clientShots = m.shotButton !== HELD_FIRE;
+    const newShots = initial || !p.clientShots ? 0 : pressDelta(m.shots, p.shotsSeen);
+    p.shotsSeen = m.shots;
     p.view = m.viewTick >= 0 ? { tick: m.viewTick, gap: m.viewGap, frac: m.viewFrac } : NO_VIEW;
     p.lastSeq = m.seq;
     p.mapHeld = m.mapHeld;
@@ -1103,6 +1118,8 @@ export class Simulation {
     p.lastAcceptMs = nowMs;
     p.fire = m.fire;
     p.allyTargetId = m.allyTargetId;
+    // Each with the aim and view of this input, sent in the frame the shot was fired.
+    if (newShots) queueShots(p.shotQueue, newShots, { button: m.shotButton === 1 ? 1 : 0, yaw: m.yaw, pitch: m.pitch, view: p.view, tick: this.tick });
     // Any increase of a press counter is one press (§9.3).
     if (qPressed) p.pendingQ = true;
     if (ePressed) {
@@ -1201,6 +1218,9 @@ export class Simulation {
       leftPresses: 0,
       rightPresses: 0,
       fireLatch: newFireLatch(),
+      clientShots: false,
+      shotsSeen: 0,
+      shotQueue: [],
       view: NO_VIEW,
     };
     const character = init.profile?.characters[init.classId];
@@ -1254,7 +1274,7 @@ export class Simulation {
       Object.assign(p, old, { connected: true, x, y, z, lastSeq: -1, lastAcceptMs: this.nowMs, pilgrim: null, mapHeld: false,
         cdQ: Math.max(0, old.cdQ - elapsed), cdE: Math.max(0, old.cdE - elapsed),
         shield: 0, shieldCaster: null, featherUntil: 0, sealUntil: 0, speed: CLASSES[p.classId].speed, pendingItems: [false, false], invulUntil: 0, fire: 0, pendingQ: false, pendingE: false,
-        dash: null, landingTick: -1, teleportId: p.teleportId, fireLatch: newFireLatch(), view: NO_VIEW,
+        dash: null, landingTick: -1, teleportId: p.teleportId, fireLatch: newFireLatch(), view: NO_VIEW, shotQueue: [],
         revive: old.dead ? Math.max(0, old.revive - elapsed * REVIVE_DECAY) : 0 });
       this.retainedPlayers.delete(init.id);
     } else if (!p.bot) { p.wallet = this.rewards.halosCredited; p.presentAtStart = false; }
@@ -1334,6 +1354,7 @@ export class Simulation {
     this.separate(0);
     this.separate(1);
     this.commanders.pulse();
+    this.updateLateShots();
     this.updateProjectiles();
     this.updateClouds();
     this.props.update(this.tick, (p) => this.explodeProp(p), (p) => this.emit('all', { type: 'propReady', id: p.id, x: p.x, y: p.y, z: p.z }));
@@ -1426,6 +1447,7 @@ export class Simulation {
     this.relicOffers.closeBargains(); this.rites.closeBargains();
     for (const p of this.players) if (!p.bot) { this.relicOffers.publish(p); this.rites.publish(p); }
     this.items.clearAll(); this.relics.clearAll(); for (const s of [...this.projectiles]) this.removeProjectile(s);
+    this.lateShots.length = 0;
     this.clouds.length = 0; this.fieldUntil = 0;
     for (let i = 0; i < this.rooms.length; i++) { this.rooms[i].queue.length = 0; this.rooms[i].squad = this.rooms[i].watch = null; this.items.clearCombat(i); }
     this.rooms[this.floor.boss].phase = PHASE_CLEARED; this.activeRoom = ROOM_NONE;
@@ -3103,6 +3125,7 @@ export class Simulation {
   cancelPlayerActions(p: SimPlayer): void {
     p.fire = 0; p.pendingQ = p.pendingE = false;
     latchClear(p.fireLatch);
+    p.shotQueue.length = 0;
     p.pendingItems[0] = p.pendingItems[1] = false;
     p.dash = null; p.landingTick = -1;
   }
@@ -3120,6 +3143,7 @@ export class Simulation {
       if (p.dead || carried) {
         p.fireTimer = Math.max(0, p.fireTimer - TICK_DT);
         latchClear(p.fireLatch);
+        p.shotQueue.length = 0;
         continue;
       }
       if (p.landingTick >= 0 && this.tick >= p.landingTick) {
@@ -3144,19 +3168,51 @@ export class Simulation {
    * adds its own interval; the timer counts down twice as fast in a Field of Blood.
    */
   private updateWeapon(p: SimPlayer): void {
+    if (p.clientShots) {
+      this.updateClientShots(p);
+      return;
+    }
     const slot = chooseAttack(p.classId, p.fire | latchBits(p.fireLatch, this.tick), this.sacramentTarget(p) !== undefined);
     if (slot !== ATTACK_NONE && p.fireTimer <= 1e-6) {
       latchFired(p.fireLatch, slot);
-      // Resolved against the enemies where this player's screen drew them (lag compensation).
-      this.enemyHistory.rewind(p.view, this.active, this.activeCount, this.eX, this.eY, this.eZ);
-      try { this.fireWeapon(p, slot); } finally { this.enemyHistory.restore(this.eX, this.eY, this.eZ); }
-      if (slot === ATTACK_PRIMARY) p.shots++;
-      else p.shots2++;
-      // Whirl slows the Scourge to 1.2 s between swings (classes-binder.md `b.1a`).
-      p.fireTimer += p.classId === 'binder' && slot !== ATTACK_PRIMARY ? this.talents.binder.scourgeInterval(p) : attackDef(p.classId, slot).interval;
+      this.shoot(p, slot);
     }
     p.fireTimer -= TICK_DT * this.fireRate(p);
     if (slot === ATTACK_NONE && p.fireTimer < 0) p.fireTimer = 0;
+  }
+
+  /**
+   * Client-timed shots (netcode stage 2): the shots the player's screen fired, each with the aim and view
+   * of the input that carried it, no faster than the fire timer allows; a shot may come SHOT_EARLY_TICKS
+   * before the timer is ready, so network jitter doesn't hold it back.
+   */
+  private updateClientShots(p: SimPlayer): void {
+    const shot = nextShot(p.shotQueue, this.tick);
+    if (shot && p.fireTimer <= SHOT_EARLY_TICKS * TICK_DT + 1e-6) {
+      p.shotQueue.shift();
+      // A Heretic's Sacrament with no ally to heal here falls back to the censer while the left is held, as held buttons do.
+      const bits = shot.button ? FIRE_RIGHT | (p.classId === 'heretic' ? p.fire & FIRE_LEFT : 0) : FIRE_LEFT;
+      const slot = chooseAttack(p.classId, bits, this.sacramentTarget(p) !== undefined);
+      if (slot !== ATTACK_NONE) {
+        const { yaw, pitch, view } = p;
+        p.yaw = shot.yaw;
+        p.pitch = shot.pitch;
+        p.view = shot.view;
+        try { this.shoot(p, slot); } finally { p.yaw = yaw; p.pitch = pitch; p.view = view; }
+      }
+    }
+    p.fireTimer -= TICK_DT * this.fireRate(p);
+    if (!p.shotQueue.length && p.fireTimer < 0) p.fireTimer = 0;
+  }
+
+  /** Fires `slot` and starts its interval, against the enemies where the player's screen drew them (lag compensation). */
+  private shoot(p: SimPlayer, slot: AttackSlot): void {
+    this.enemyHistory.rewind(p.view, this.active, this.activeCount, this.eX, this.eY, this.eZ);
+    try { this.fireWeapon(p, slot); } finally { this.enemyHistory.restore(this.eX, this.eY, this.eZ); }
+    if (slot === ATTACK_PRIMARY) p.shots++;
+    else p.shots2++;
+    // Whirl slows the Scourge to 1.2 s between swings (classes-binder.md `b.1a`).
+    p.fireTimer += p.classId === 'binder' && slot !== ATTACK_PRIMARY ? this.talents.binder.scourgeInterval(p) : attackDef(p.classId, slot).interval;
   }
 
   /** How fast a player's fire timer counts down: 2 in a Field of Blood, otherwise 1 (M9 §3.4). */
@@ -3278,7 +3334,7 @@ export class Simulation {
     let hit: number[] | null = null;
     for (const g of this.projectiles) {
       if (this.pKind[g] !== PROJ_GLOBE || this.pOwner[g] >= 0) continue;
-      const back = Math.min(this.pTraveled[g], this.pSpeed[g] * GLOBE_SHOT_TRAIL);
+      const back = Math.min(this.pTraveled[g], this.pSpeed[g] * (GLOBE_SHOT_TRAIL + viewLag(p.view, this.tick - 1) * TICK_DT));
       const gx = this.pX[g];
       const gy = this.pY[g];
       const gz = this.pZ[g];
@@ -3324,21 +3380,22 @@ export class Simulation {
    * A globe shatters on what it touched at (x, y, z) (M12 follow-up §1.3): its damage to the player it hit
    * (`direct`, or none) and to every other living targetable player within 1.5 m in its line of sight.
    */
-  private shatterGlobe(slot: number, x: number, y: number, z: number, direct: SimPlayer | null): void {
+  private shatterGlobe(slot: number, x: number, y: number, z: number, direct: SimPlayer | null, spared: readonly number[] = []): void {
     const damage = this.pDamage[slot];
-    const lx = x - this.pDx[slot] * GLOBE_LOS_BACK;
-    const ly = y - this.pDy[slot] * GLOBE_LOS_BACK;
-    const lz = z - this.pDz[slot] * GLOBE_LOS_BACK;
+    const dx = this.pDx[slot], dy = this.pDy[slot], dz = this.pDz[slot];
     this.removeProjectile(slot);
     for (const p of this.players) {
-      if (!this.livingTargetable(p)) continue;
-      if (p !== direct) {
-        if (distToCylinder(x, y, z, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) > GLOBE_BLAST + 1e-9) continue;
-        if (!lineOfSight(this.map, lx, ly, lz, p.x, p.y, p.z + PLAYER_HEIGHT / 2)) continue;
-      }
-      this.damagePlayer(p, damage, { x: x - this.pDx[slot] * 4, y: y - this.pDy[slot] * 4, kind: HURT_RANGED });
+      if (!this.livingTargetable(p) || spared.includes(p.id)) continue;
+      if (p !== direct && !this.inGlobeBlast(p, x, y, z, dx, dy, dz)) continue;
+      this.damagePlayer(p, damage, { x: x - dx * 4, y: y - dy * 4, kind: HURT_RANGED });
     }
     this.emit('all', { type: 'globeShatter', x, y, z, by: -1 });
+  }
+
+  /** Whether a globe flying along (dx, dy, dz) and shattering at (x, y, z) catches `p` in its blast. */
+  private inGlobeBlast(p: SimPlayer, x: number, y: number, z: number, dx: number, dy: number, dz: number): boolean {
+    if (distToCylinder(x, y, z, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) > GLOBE_BLAST + 1e-9) return false;
+    return lineOfSight(this.map, x - dx * GLOBE_LOS_BACK, y - dy * GLOBE_LOS_BACK, z - dz * GLOBE_LOS_BACK, p.x, p.y, p.z + PLAYER_HEIGHT / 2);
   }
 
   /**
@@ -3850,6 +3907,8 @@ export class Simulation {
     const terrainT = raycastTerrain(this.map, x, y, z, dx, dy, dz, len);
     let hitT = Infinity;
     let hitSlot = -1;
+    /** For an enemy projectile: how far into this tick's flight its player hit happens. */
+    let hitKey = Infinity;
     if (owner >= 0) {
       const thrower = this.slots[owner];
       for (let k = 0; k < this.activeCount; k++) {
@@ -3884,15 +3943,22 @@ export class Simulation {
         return;
       }
     } else {
+      // Dodge compensation: each player is tested against the stretch of this tick's flight their screen
+      // drew, `back` behind it; the hit that comes first in the flight wins.
+      const step = this.pSpeed[slot] * TICK_DT;
       for (const p of this.players) {
         if (!this.livingTargetable(p)) continue;
-        const t = rayCylinder(x, y, z, dx, dy, dz, p.x, p.y, p.z - pr, PLAYER_RADIUS + pr, PLAYER_HEIGHT + 2 * pr);
-        if (t <= terrainT && t < hitT) {
+        const back = viewLag(p.view, this.tick - 1) * step;
+        const stretch = lateStretch(back, this.pTraveled[slot], 0, len, terrainT);
+        if (!stretch) continue;
+        const t = stretchHit(x, y, z, dx, dy, dz, stretch[0], stretch[1], p.x, p.y, p.z - pr, PLAYER_RADIUS + pr, PLAYER_HEIGHT + 2 * pr);
+        if (t + back < hitKey) {
+          hitKey = t + back;
           hitT = t;
           hitSlot = p.index;
         }
       }
-      const reflection = this.items.reflection(x, y, z, dx, dy, dz, Math.min(len, terrainT, hitT));
+      const reflection = this.items.reflection(x, y, z, dx, dy, dz, Math.min(len, terrainT, hitKey));
       if (reflection) {
         const t = reflection.distance, rx = x + dx * t, ry = y + dy * t, rz = z + dz * t;
         let ax = this.pOrigin[slot * 3] - rx, ay = this.pOrigin[slot * 3 + 1] - ry, az = this.pOrigin[slot * 3 + 2] - rz;
@@ -3917,8 +3983,7 @@ export class Simulation {
     }
     if (terrainT < len) {
       if (owner >= 0) this.explodeCenser(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT, -1);
-      else if (this.pKind[slot] === PROJ_GLOBE) this.shatterGlobe(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT, null);
-      else this.removeProjectile(slot);
+      else this.endHostile(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT, this.pTraveled[slot] + terrainT, len - terrainT, this.pKind[slot] === PROJ_GLOBE);
       return;
     }
     const nx = x + dx * len;
@@ -3931,11 +3996,58 @@ export class Simulation {
     if (this.pTraveled[slot] >= this.pMaxDist[slot] - 1e-9) {
       // Beyond an open edge a censer vanishes without breaking (M10 §3.4): its cloud would hurt nothing.
       if (owner >= 0 && !overVoid(this.map, nx, ny)) this.explodeCenser(slot, nx, ny, nz, -1);
-      else if (owner < 0 && this.pKind[slot] === PROJ_GLOBE) this.shatterGlobe(slot, nx, ny, nz, null);
+      else if (owner < 0) this.endHostile(slot, nx, ny, nz, this.pTraveled[slot], 0, this.pKind[slot] === PROJ_GLOBE);
       else this.removeProjectile(slot);
       return;
     }
-    if (nx < 0 || ny < 0 || nx >= this.map.w || ny >= this.map.h || nz > WALL_TOP) this.removeProjectile(slot);
+    if (nx < 0 || ny < 0 || nx >= this.map.w || ny >= this.map.h || nz > WALL_TOP) {
+      if (owner < 0) this.endHostile(slot, nx, ny, nz, this.pTraveled[slot], 0, false);
+      else this.removeProjectile(slot);
+    }
+  }
+
+  /**
+   * An enemy projectile ends at (x, y, z), `flown` from its spawn and `over` short of where this tick's
+   * flight would have taken it (dodge compensation). The players whose screens haven't drawn its end yet
+   * are owed it as a late shot; the others get a globe's shatter (`blast`) now. Removes the projectile.
+   */
+  private endHostile(slot: number, x: number, y: number, z: number, flown: number, over: number, blast: boolean): void {
+    const step = this.pSpeed[slot] * TICK_DT;
+    const owed: number[] = [];
+    for (const p of this.players) if (this.livingTargetable(p) && viewLag(p.view, this.tick - 1) * step > over + 1e-9) owed.push(p.id);
+    if (owed.length) {
+      this.lateShots.push({ kind: this.pKind[slot], damage: this.pDamage[slot], radius: this.pRadius[slot], step, x, y, z,
+        dx: this.pDx[slot], dy: this.pDy[slot], dz: this.pDz[slot], flown, over, blast, owed });
+    }
+    if (blast) this.shatterGlobe(slot, x, y, z, null, owed);
+    else this.removeProjectile(slot);
+  }
+
+  /**
+   * The late shots fly on unseen (dodge compensation): each player still owed one is hit by the stretch
+   * their screen drew this tick, or caught in a globe's shatter when their screen reaches its end.
+   */
+  private updateLateShots(): void {
+    for (let i = this.lateShots.length - 1; i >= 0; i--) {
+      const s = this.lateShots[i];
+      s.over += s.step;
+      s.owed = s.owed.filter((id) => {
+        const p = this.playerById(id);
+        if (!this.livingTargetable(p)) return false;
+        const back = viewLag(p.view, this.tick - 1) * s.step;
+        const stretch = lateStretch(back, s.flown, s.over - s.step, s.over, 0);
+        const pr = s.radius;
+        const t = stretch ? stretchHit(s.x, s.y, s.z, s.dx, s.dy, s.dz, stretch[0], stretch[1], p.x, p.y, p.z - pr, PLAYER_RADIUS + pr, PLAYER_HEIGHT + 2 * pr) : Infinity;
+        if (t < Infinity) {
+          this.damagePlayer(p, s.damage, { x: s.x + s.dx * (t - 4), y: s.y + s.dy * (t - 4), kind: HURT_RANGED });
+          return false;
+        }
+        if (s.over < back) return true;
+        if (s.blast && this.inGlobeBlast(p, s.x, s.y, s.z, s.dx, s.dy, s.dz)) this.damagePlayer(p, s.damage, { x: s.x - s.dx * 4, y: s.y - s.dy * 4, kind: HURT_RANGED });
+        return false;
+      });
+      if (!s.owed.length) this.lateShots.splice(i, 1);
+    }
   }
 
   private updateReflected(slot: number, distance = this.pSpeed[slot] * TICK_DT): void {

@@ -8,7 +8,7 @@ import { dungeonOf } from './maps';
 export const INPUT_DEFAULTS = {
   runId: '00000000000000000000000000000000',
   item1Presses: 0, item2Presses: 0, mapHeld: false, qHeld: false, eHeld: false,
-  leftPresses: 0, rightPresses: 0, viewTick: -1, viewGap: 0, viewFrac: 0,
+  leftPresses: 0, rightPresses: 0, viewTick: -1, viewGap: 0, viewFrac: 0, shots: 0, shotButton: 255,
 };
 
 /** An open room of floor 0, `w` × `h` cells inside a wall border. */

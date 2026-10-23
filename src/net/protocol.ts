@@ -22,7 +22,7 @@ function readRunId(v: DataView, offset: number): string {
 
 // ---------------------------------------------------------------- input
 
-export const INPUT_BYTES = 57;
+export const INPUT_BYTES = 59;
 export const ALLY_NONE = 255;
 
 export interface InputMsg {
@@ -55,6 +55,10 @@ export interface InputMsg {
   viewTick: number;
   viewGap: number;
   viewFrac: number;
+  /** Running counter of the shots the screen fired, wrapping at 256 (client-timed shots). */
+  shots: number;
+  /** The latest shot's button, 0 left or 1 right; HELD_FIRE (255) leaves firing to the host's own timer. */
+  shotButton: number;
 }
 
 export function encodeInput(m: InputMsg): ArrayBuffer {
@@ -80,6 +84,8 @@ export function encodeInput(m: InputMsg): ArrayBuffer {
   v.setUint32(51, m.viewTick < 0 ? 0xffffffff : m.viewTick >>> 0, true);
   v.setUint8(55, Math.max(0, Math.min(255, m.viewGap | 0)));
   v.setUint8(56, Math.round(Math.max(0, Math.min(1, m.viewFrac)) * 255));
+  v.setUint8(57, m.shots & 0xff);
+  v.setUint8(58, m.shotButton & 0xff);
   return buf;
 }
 
@@ -90,7 +96,8 @@ export function decodeInput(buf: ArrayBuffer, expectedRunId: string): InputMsg |
   if (runId !== expectedRunId) return null;
   const flags = v.getUint8(48);
   const fire = v.getUint8(24);
-  if ((flags & ~7) !== 0 || (fire & ~7) !== 0) return null;
+  const shotButton = v.getUint8(58);
+  if ((flags & ~7) !== 0 || (fire & ~7) !== 0 || (shotButton > 1 && shotButton !== 255)) return null;
   for (const offset of [4, 8, 12, 16, 20]) if (!Number.isFinite(v.getFloat32(offset, true))) return null;
   return {
     runId,
@@ -115,6 +122,8 @@ export function decodeInput(buf: ArrayBuffer, expectedRunId: string): InputMsg |
     viewTick: v.getUint32(51, true) === 0xffffffff ? -1 : v.getUint32(51, true),
     viewGap: v.getUint8(55),
     viewFrac: v.getUint8(56) / 255,
+    shots: v.getUint8(57),
+    shotButton,
   };
 }
 

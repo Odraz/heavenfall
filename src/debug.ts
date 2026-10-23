@@ -88,7 +88,7 @@ export interface DebugState {
    */
   link: { rttMs: number | null; route: 'direct' | 'relay' | null; delayMs: number; jitterMs: number; lines: string[] };
   /** The local player's predicted kills: made, confirmed by the host (the enemy left the snapshots), missed. */
-  killMarkers: { predicted: number; confirmed: number; missed: number };
+  killMarkers: { predicted: number; confirmed: number; missed: number; revealed: number };
   players: DebugPlayer[];
   gameResult: null | 'victory' | 'defeat';
   /** The last 50 chat messages of the session (M8 §10). */
@@ -166,7 +166,7 @@ export const debugState: DebugState = {
   netInKBps: 0,
   netOutKBps: 0,
   link: { rttMs: null, route: null, delayMs: 0, jitterMs: 0, lines: [] },
-  killMarkers: { predicted: 0, confirmed: 0, missed: 0 },
+  killMarkers: { predicted: 0, confirmed: 0, missed: 0, revealed: 0 },
   players: [],
   gameResult: null,
   chat: [],
@@ -223,7 +223,7 @@ export function resetGameDebug(): void {
     netInKBps: 0,
     netOutKBps: 0,
     link: { rttMs: null, route: null, delayMs: 0, jitterMs: 0, lines: [] },
-    killMarkers: { predicted: 0, confirmed: 0, missed: 0 },
+    killMarkers: { predicted: 0, confirmed: 0, missed: 0, revealed: 0 },
     players: [],
     gameResult: null,
     chat: [],

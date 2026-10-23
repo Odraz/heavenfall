@@ -32,12 +32,14 @@ test('a guest with 160 ms of lag sees its kill markers confirmed and its connect
     const s = await state(b), host = await state(a);
     const settled = s.killMarkers.confirmed + s.killMarkers.missed;
     console.log(`lag: rtt ${s.link.rttMs?.toFixed(0)} ms (${s.link.route}), view delay ${s.link.delayMs.toFixed(0)} ms, jitter ${s.link.jitterMs.toFixed(0)} ms, ` +
-      `kill markers ${s.killMarkers.confirmed}/${settled} confirmed, host lines ${JSON.stringify(host.link.lines)}`);
+      `kill markers ${s.killMarkers.confirmed}/${settled} confirmed, ${s.killMarkers.revealed} predicted deaths reappeared, host lines ${JSON.stringify(host.link.lines)}`);
     expect(s.link.rttMs).toBeGreaterThanOrEqual(150);
     expect(s.link.rttMs).toBeLessThan(450);
     expect(s.link.route).toBe('direct');
     expect(s.link.delayMs).toBeGreaterThanOrEqual(150);
     expect(s.killMarkers.confirmed / settled).toBeGreaterThanOrEqual(0.9);
+    // Predicted kills die on the guest's screen at once; few come back because the host disagreed.
+    expect(s.killMarkers.revealed / s.killMarkers.predicted).toBeLessThanOrEqual(0.1);
     const guest = host.players.find((p) => p.id === 1)!;
     expect(guest.kills).toBeGreaterThan(0);
     expect(host.link.lines).toHaveLength(1);

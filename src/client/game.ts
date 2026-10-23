@@ -38,6 +38,7 @@ import {
   SCOURGE_HALF_ARC,
   SECONDARIES,
   SHADOWSTEP_TIME,
+  SHOTGUN_CLOSE_DAMAGE,
   SHOTGUN_KNOCKBACK_RANGE,
   SHROUD_BURST_RADIUS,
   type AttackSlot,
@@ -49,7 +50,8 @@ import type { LinkQuality } from '../net/linkQuality';
 import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_STUNNED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
-import { aimDir, estimateSilverBullet, rayCylinder, rayEnemy } from '../sim/combat';
+import { aimDir, BURST_HEAVY, burstAngle, estimateSilverBullet, rayCylinder, rayEnemy } from '../sim/combat';
+import { PREDICTION_MAX_MS, PredictedDeaths, revealTick } from './predictedDeaths';
 import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, PROJECTILE_SLOTS, TICK_DT, TICK_MS } from '../sim/constants';
 import { raycastTerrain } from '../sim/los';
 import { applyLeaves, leafOpen, overVoid, type GameMap } from '../sim/map';
@@ -446,6 +448,9 @@ export class Game {
   private readonly latch = newFireLatch();
   /** Ticks of the cosmetic fire timer so far: the latch's clock. */
   private fireTick = 0;
+  /** The shots the cosmetic fire timer fired, sent to the host, and the latest one's button (client-timed shots). */
+  private shots = 0;
+  private shotButton: 0 | 1 = 0;
   /** The view's yaw and pitch last frame, for the weapon's sway (M11 §3.2). */
   private swayYaw = 0;
   private swayPitch = 0;
@@ -550,6 +555,10 @@ export class Game {
   private readonly predicted = new PredictedKills();
   /** The share of predicted kills the host confirmed (F3, the lag test). */
   private readonly confirmations = new KillConfirmations();
+  /** Enemies the local player's screen predicted it killed: they die at once and stay hidden (netcode stage 2). */
+  private readonly deaths = new PredictedDeaths();
+  /** Predicted kills that reappeared because the host's snapshots kept them alive (F3, the lag test). */
+  private revealedKills = 0;
   private readonly flinches = new Flinches();
   private readonly shake = new Shake();
   private wasLeaping = false;
@@ -1338,6 +1347,8 @@ export class Game {
         viewTick: this.snaps.view.tick,
         viewGap: this.snaps.view.gap,
         viewFrac: this.snaps.view.frac,
+        shots: this.shots,
+        shotButton: this.shotButton,
       }),
     );
   }
@@ -1997,6 +2008,11 @@ export class Game {
       for (let i = 0; i < prev.enemyCount; i++) {
         const slot = prev.enemySlot[i];
         if (this.snaps.hasEnemy(slot)) continue;
+        // Its death already played when this screen predicted the kill (netcode stage 2).
+        if (this.deaths.confirm(slot, prev.enemyIncarnation[i], now)) {
+          this.burstMemory.forget(slot);
+          continue;
+        }
         const type = prev.enemyType[i];
         const def = ENEMIES[type];
         const g = groundHeight(this.map, prev.enemyX[i], prev.enemyY[i], def.radius, Infinity, false, true);
@@ -2024,6 +2040,12 @@ export class Game {
         if (overVoid(this.map, prev.projX[i], prev.projY[i])) continue;
         this.pendingBursts.push({ at: now + delay, censer: true, slot: -1, type: -1, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i], ground: 0, feet: 0, facing: 0, rippled: false });
       }
+    }
+    // A predicted kill the host's snapshots still show alive after the shot reached it reappears.
+    for (const slot of this.deaths.settle(s.tick, (q) => this.snaps.incarnationOf(q), now)) {
+      this.revealedKills++;
+      // Its predicted corpse goes with it.
+      for (let i = this.corpses.length - 1; i >= 0; i--) if (this.corpses[i].slot === slot && now - this.corpses[i].start < PREDICTION_MAX_MS) this.corpses.splice(i, 1);
     }
     if (prev) this.spawnGlows(s, prev, now + this.snaps.delayTicks * TICK_MS);
     // Where each enemy was last seen, and burst slots reused by new enemies forgotten (M12 §4.2).
@@ -2298,7 +2320,7 @@ export class Game {
         // Every Scourge kill bursts; each hit flinches away from the Binder (M12 §4.4).
         for (const i of hits) {
           const r = predictHit(ents.type[i], w.damage, (ents.flags[i] & FLAG_ROOTED) !== 0, true);
-          this.predictedHit(now, ents.slot[i], ents.x[i] - p.body.x, ents.y[i] - p.body.y, r);
+          this.predictedHit(now, ents, enemyZ, i, ents.x[i] - p.body.x, ents.y[i] - p.body.y, r, w.damage);
         }
         return;
       }
@@ -2354,11 +2376,11 @@ export class Game {
           const line = ts.map(({ type, rooted }) => ({ type, rooted }));
           const r = estimateSilverBullet(line, w.damage);
           if (r.stopped) end = ts[r.reached - 1].t;
-          predictSilverBullet(line.slice(0, r.reached), r.carried).forEach((res, n) => this.predictedHit(now, ents.slot[ts[n].i], dx, dy, res));
+          predictSilverBullet(line.slice(0, r.reached), r.carried).forEach((res, n) => this.predictedHit(now, ents, enemyZ, ts[n].i, dx, dy, res, r.carried[n]));
         } else {
           const hits = predicted[k];
           if (hits.length >= w.maxHits) end = hits[hits.length - 1].target.t;
-          for (const h of hits) this.predictedHit(now, ents.slot[h.target.i], dx, dy, h.result);
+          for (const h of hits) this.predictedHit(now, ents, enemyZ, h.target.i, dx, dy, h.result, shotgun && h.target.close ? SHOTGUN_CLOSE_DAMAGE : w.damage);
         }
       }
       // A shot through a teammate's soul (for the revive hum).
@@ -2403,16 +2425,51 @@ export class Game {
   }
 
   /**
-   * A predicted hit of the local player's on an enemy slot, along the horizontal (dx, dy) (M12 §4.4):
-   * it flinches, and a predicted kill plays the kill marker (or the burst marker) and `killTick` now.
+   * A predicted hit of `damage` by the local player on the interpolated enemy `i`, along the horizontal
+   * (dx, dy) (M12 §4.4): it flinches, and a predicted kill plays the kill marker (or the burst marker),
+   * `killTick` and the enemy's death now, where it's drawn (netcode stage 2).
    */
-  private predictedHit(now: number, slot: number, dx: number, dy: number, r: Predicted): void {
+  private predictedHit(now: number, ents: InterpolatedEnemies, enemyZ: Float32Array, i: number, dx: number, dy: number, r: Predicted, damage: number): void {
+    const slot = ents.slot[i];
+    // Already dead on this screen: a second shot in the same frame passes it.
+    if (this.deaths.hides(slot, ents.incarnation[i])) return;
     this.flinches.add(slot, now, dx, dy, r ? KILL_FLINCH : HIT_FLINCH);
     if (!r) return;
     this.confirmations.add(slot, now);
     this.sounds.kill(this.predicted.kill(now));
     if (r === 2) this.hud.burst(now);
     else this.hud.kill(now);
+    this.predictedDeath(now, ents, enemyZ, i, dx, dy, r === 2, damage);
+  }
+
+  /**
+   * The enemy `i` the local player's screen predicted it killed dies at once, where it's drawn, and is
+   * hidden until the snapshots confirm it (netcode stage 2). A predicted burst blasts it along the shot,
+   * heavy when the damage reaches 4× its max HP; the host's own burst wins if it already arrived.
+   */
+  private predictedDeath(now: number, ents: InterpolatedEnemies, enemyZ: Float32Array, i: number, dx: number, dy: number, bursts: boolean, damage: number): void {
+    const slot = ents.slot[i];
+    const type = ents.type[i];
+    const rtt = this.o.link ? this.o.link.rttMs : 0;
+    if (!this.deaths.add(slot, ents.incarnation[i], revealTick(this.snaps.estimatedTick(now), rtt, TICK_MS), now)) return;
+    // Killed on the host already, its death waiting for the render delay: it plays now instead.
+    const pending = this.pendingBursts.findIndex((b) => !b.censer && b.slot === slot);
+    if (pending >= 0) {
+      this.pendingBursts.splice(pending, 1);
+      this.deaths.confirm(slot, ents.incarnation[i], now);
+    }
+    const def = ENEMIES[type];
+    const x = ents.x[i];
+    const y = ents.y[i];
+    if (bursts && !this.burstMemory.peek(slot, now)) {
+      const heavy = ((ents.flags[i] & FLAG_ROOTED) !== 0 ? 2 : 1) * damage >= BURST_HEAVY * def.hp - 1e-9;
+      const angle = burstAngle(x - dx, y - dy, x, y, slot);
+      this.burstMemory.remember([slot, heavy ? angle + 360 : angle, this.localId], now, () => 0);
+    }
+    const g = groundHeight(this.map, x, y, def.radius, Infinity, false, true);
+    const ground = g === -Infinity ? 0 : g;
+    const feet = def.flying ? enemyZ[i] : ground;
+    this.playDeath({ at: now, censer: false, slot, type, x, y, z: feet + def.height / 2, ground, feet, facing: this.animator.facing[slot], rippled: true }, now);
   }
 
   /** An enemy slot's distance from a player, for the ripple: the local one's own position, others' interpolated. */
@@ -2438,7 +2495,7 @@ export class Game {
     this.sounds.enemyDeath(b.type, b);
     if (this.o.enemyAnims[b.type]?.anims.death) {
       const fallFrom = ENEMIES[b.type].flying ? b.feet : undefined;
-      this.corpses.push({ start: now, x: b.x, y: b.y, z: b.ground, facing: b.facing, type: b.type, fallFrom });
+      this.corpses.push({ start: now, x: b.x, y: b.y, z: b.ground, facing: b.facing, type: b.type, fallFrom, slot: b.slot });
       if (this.corpses.length > MAX_CORPSES) this.corpses.shift();
     }
   }
@@ -2580,6 +2637,7 @@ export class Game {
     const simNow = this.paused && this.o.singleplayer ? this.pausedAt : now;
     // Render authoritative altitude as well as horizontal movement (leaps, throws and hovering).
     const ents = this.snaps.interpolate(simNow);
+    this.deaths.filter(ents);
     const enemyZ = this.zScratch;
     enemyZ.set(ents.z.subarray(0, ents.count));
     this.frameNo++;
@@ -2727,6 +2785,7 @@ export class Game {
     // §2.2); Sacrament can fire while there's a local ally target.
     this.attack = chooseAttack(this.classId, this.fire, this.allyTargetId !== ALLY_NONE);
     this.fireAcc = Math.min(this.fireAcc + dt, 5 * TICK_DT);
+    let shotNow = false;
     while (this.fireAcc >= TICK_DT) {
       this.fireAcc -= TICK_DT;
       this.fireTick++;
@@ -2735,6 +2794,10 @@ export class Game {
       if (attack !== ATTACK_NONE && this.fireTimer <= 1e-6) {
         latchFired(this.latch, attack);
         this.cosmeticShot(now, attack, ents, enemyZ);
+        // The host fires this shot with the aim and view of the input sent this frame (client-timed shots).
+        this.shots = (this.shots + 1) & 0xff;
+        this.shotButton = attack === ATTACK_SECONDARY ? 1 : 0;
+        shotNow = true;
         // Whirl swings every 1.2 s (classes-binder.md `b.1a`).
         this.fireTimer += this.classId === 'binder' && attack === ATTACK_SECONDARY && this.talents.ownHas('binder.b.1a') ? BINDER.whirlInterval : attackDef(this.classId, attack).interval;
       }
@@ -2742,9 +2805,12 @@ export class Game {
       if (attack === ATTACK_NONE && this.fireTimer < 0) this.fireTimer = 0;
     }
 
-    // Input to the host at 30 Hz.
+    // Input to the host at 30 Hz, and in every frame that fired a shot.
     this.inputAcc += dt;
-    if (this.inputAcc >= TICK_DT && !this.over) {
+    if (shotNow && !this.over) {
+      this.inputAcc = 0;
+      this.sendInput();
+    } else if (this.inputAcc >= TICK_DT && !this.over) {
       this.inputAcc = Math.min(this.inputAcc - TICK_DT, TICK_DT);
       this.sendInput();
     }
@@ -2917,7 +2983,7 @@ export class Game {
     };
     const c = this.confirmations;
     c.update(now, (slot) => this.snaps.hasEnemy(slot));
-    debugState.killMarkers = { predicted: c.predicted, confirmed: c.confirmed, missed: c.missed };
+    debugState.killMarkers = { predicted: c.predicted, confirmed: c.confirmed, missed: c.missed, revealed: this.revealedKills };
     // Read-only own pose also supports the normal-menu multiplayer prop/catch-up fixture.
     Object.assign(debugState.self, { x: b.x, y: b.y, z: b.z, yaw: p.yaw, pitch: p.pitch });
     if (this.params.dev) {

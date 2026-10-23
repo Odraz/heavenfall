@@ -140,11 +140,15 @@ describe('input protocol', () => {
     expect(decodeInput(encodeInput({ ...m, viewTick: 0, viewGap: 999, viewFrac: 7 }), m.runId)).toMatchObject({ viewTick: 0, viewGap: 255, viewFrac: 1 });
     // Counters wrap.
     expect(decodeInput(encodeInput({ ...m, qPresses: 256, item1Presses: 256 }), m.runId)).toMatchObject({ qPresses: 0, item1Presses: 0 });
+    // Client-timed shots: the wrapping shot counter and the latest shot's button; any other button is refused.
+    expect(decodeInput(encodeInput({ ...m, shots: 258, shotButton: 1 }), m.runId)).toMatchObject({ shots: 2, shotButton: 1 });
+    expect(decodeInput(encodeInput({ ...m, shotButton: 255 }), m.runId)).toMatchObject({ shotButton: 255 });
+    expect(decodeInput(encodeInput({ ...m, shotButton: 2 }), m.runId)).toBeNull();
     // The `fire` bits (M9 §10): left, right, right pressed last.
     for (const fire of [0, FIRE_LEFT, FIRE_RIGHT, FIRE_LEFT | FIRE_RIGHT, FIRE_LEFT | FIRE_RIGHT | FIRE_RIGHT_LAST]) {
       expect(decodeInput(encodeInput({ ...m, fire }), m.runId)!.fire).toBe(fire);
     }
-    expect(buf.byteLength).toBe(57);
+    expect(buf.byteLength).toBe(59);
   });
 
   const valid: InputMsg = { ...INPUT_DEFAULTS, runId: header.runId, seq: 1, x: 4.5, y: 4.5, z: 0,

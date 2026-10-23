@@ -654,7 +654,7 @@ Layout: Lobby → corridor → **Arena 1** → corridor → **Arena 2** → corr
     - applies invulnerability;
     - for Falling Star, applies the landing damage and knockback 0.4 s later, at the Fallen's latest reported position.
   - **Displayed cooldown:** the newest snapshot value minus the time since it arrived. For movement abilities, the client also starts its own timer on use and shows the larger of the two.
-- **Firing:** the host resolves `fireHeld` each tick using the latest reported position and aim. Since the netcode stage ([report](rogue/netcode-report.md)): each mouse press is also counted and fires once within 0.3 s even if already released (click latching), and the attack is resolved against the enemies where the shooter's screen drew them (lag compensation, at most 0.4 s back).
+- **Firing:** the host resolves `fireHeld` each tick using the latest reported position and aim. Since the netcode stage ([report](rogue/netcode-report.md)): each mouse press is also counted and fires once within 0.3 s even if already released (click latching), and the attack is resolved against the enemies where the shooter's screen drew them (lag compensation, at most 0.4 s back). Since stage 2 the shooter's screen times the shots: each input counts the shots its cosmetic fire timer fired, and the host fires those, each with the aim and view of the input that carried it, no faster than the weapon allows. Enemy projectiles hit each player where that player's screen drew them (dodge compensation).
 
 ### 9.4 Snapshots
 The host sends a snapshot to each client at **10 Hz**, and to its own player at **30 Hz** (every tick). The format is binary and little-endian, the same through both transports (`LocalTransport` transfers the `ArrayBuffer`).

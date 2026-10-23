@@ -152,6 +152,13 @@ export class SnapshotBuffer {
     return this.ring.length > 0 && this.ring[this.ring.length - 1].slotIndex[slot] >= 0;
   }
 
+  /** The incarnation of the enemy in a slot of the newest complete snapshot, or −1 if the slot is empty. */
+  incarnationOf(slot: number): number {
+    const r = this.ring[this.ring.length - 1];
+    const i = r ? r.slotIndex[slot] : -1;
+    return i >= 0 ? r.snap.enemyIncarnation[i] : -1;
+  }
+
   addPart(buf: ArrayBuffer, now: number): void {
     const part = decodeSnapshot(buf, this.runId);
     if (!part) return;

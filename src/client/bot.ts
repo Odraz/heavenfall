@@ -291,7 +291,17 @@ export class Bot {
         }
       }
     }
-    if (start === 255 || !roomCleared(v.clearedMask, start)) return null;
+    if (start === 255) return null;
+    if (!roomCleared(v.clearedMask, start)) {
+      // Inside a room that hasn't started (just past its doorway): walk on to its nearest entry cell.
+      let cell: [number, number] | null = null, best = Infinity;
+      for (const e of map.rooms[start].entry) {
+        const [x, y] = e.cells[v.entryIndex];
+        const d = (v.body.x - x - 0.5) ** 2 + (v.body.y - y - 0.5) ** 2;
+        if (d < best) { best = d; cell = [x, y]; }
+      }
+      return cell && best > 0.25 ? { x: cell[0] + 0.5, y: cell[1] + 0.5 } : null;
+    }
     const distance = new Int16Array(map.rooms.length).fill(-1);
     const queue = [start];
     distance[start] = 0;

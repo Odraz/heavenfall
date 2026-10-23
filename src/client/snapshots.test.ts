@@ -3,6 +3,8 @@ import { DUNGEONS } from '../data/dungeons';
 import { decodeSnapshot } from '../net/protocol';
 import { Simulation } from '../sim/sim';
 import { SnapshotBuffer } from './snapshots';
+import { BLESSED } from '../data/enemies';
+import { enemyAt, makeSim, room } from '../sim/testutil/sims';
 
 it('isolates complete snapshots and interpolation history across runs, including lower ticks after reset', () => {
   const id = '0'.repeat(32), next = '1'.repeat(32);
@@ -103,4 +105,14 @@ describe('the snapshot clock (netcode stage)', () => {
     b.reset(id);
     expect(b.view.tick).toBe(-1);
   });
+});
+
+it('tells the incarnation of the enemy in a slot of the newest snapshot (predicted deaths)', () => {
+  const sim = makeSim(room(10, 10), ['fallen']);
+  const slot = enemyAt(sim, BLESSED, 5.5, 5.5);
+  const b = new SnapshotBuffer(4.5, sim.runId);
+  expect(b.incarnationOf(slot)).toBe(-1);
+  b.addPart(sim.encodeFor(0)[0], 1000);
+  expect(b.incarnationOf(slot)).toBe(sim.eIncarnation[slot]);
+  expect(b.incarnationOf(slot + 1)).toBe(-1);
 });

@@ -77,6 +77,19 @@ describe('R1.4 bots', () => {
     expect(bot.update(0, v).dirX ** 2 + bot.update(0, v).dirY ** 2).toBeCloseTo(1);
   });
 
+  it('just past the doorway of a room that hasn’t started, walks on to its entry cell, and stops there', () => {
+    const v = view(), bot = new Bot(v.map);
+    const to = v.map.rooms[0].leaves.map((l) => l.to).sort((a, b) => a - b)[0];
+    const room = v.map.rooms[to], socket = room.leaves.find((l) => l.to === 0)!.socket;
+    const [x, y] = room.entry.find((e) => e.socket === socket)!.cells[0];
+    // A cell of that room next to the entry cell, but not on it.
+    const near = [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]].find(([c, r]) => v.map.roomOf[r * v.map.w + c] === to)!;
+    v.body.x = near[0] + 0.5; v.body.y = near[1] + 0.5;
+    expect(destination(bot, v)).toEqual({ x: x + 0.5, y: y + 0.5 });
+    v.body.x = x + 0.5; v.body.y = y + 0.5;
+    expect(destination(bot, v)).toBeNull();
+  });
+
   it('chooses the boss only after all other frontier rooms are cleared', () => {
     const v = view(), bot = new Bot(v.map);
     const boss = v.map.rooms.findIndex((r) => r.kind === 'boss');

@@ -5,6 +5,7 @@
  * The host and the shooter's cosmetic timer run the same rule. Pure.
  */
 import { ATTACK_PRIMARY, ATTACK_SECONDARY, FIRE_LEFT, FIRE_RIGHT, type AttackSlot } from '../data/weapons';
+import type { ViewTick } from './lagComp';
 
 /** A press waits this long for its shot: 0.3 s at 30 Hz. */
 export const FIRE_LATCH_TICKS = 9;
@@ -40,4 +41,44 @@ export function latchClear(latch: FireLatch): void {
 export function pressDelta(counter: number, previous: number): number {
   const d = (counter - previous) & 0xff;
   return d <= 127 ? d : 0;
+}
+
+/**
+ * Client-timed shots (netcode stage 2, 2026-10-22): the shooter's screen counts the shots its cosmetic
+ * fire timer fires and sends an input in the same frame, so that input carries the shot's own aim and
+ * view. The host fires those shots, each with the aim and view of the input that carried it, no faster
+ * than its fire timer allows. Its own timer no longer picks the moment, so the host's shot is the one
+ * the shooter saw, not one aimed wherever the newest input happened to point.
+ */
+export interface ClientShot {
+  /** 0 the left button's attack, 1 the right's. */
+  button: 0 | 1;
+  yaw: number;
+  pitch: number;
+  view: ViewTick;
+  /** The host tick it arrived at. */
+  tick: number;
+}
+
+/** The input's `shotButton` for a client that sends no shots: the host fires its held buttons itself. */
+export const HELD_FIRE = 255;
+/** At most this many shots wait for the fire timer; older ones give way. */
+export const SHOT_QUEUE = 3;
+/** A shot not fired this many ticks after it arrived is dropped: 0.3 s. */
+export const SHOT_WAIT_TICKS = 9;
+/** A shot may fire this many ticks before the fire timer is ready, so network jitter doesn't hold it back. */
+export const SHOT_EARLY_TICKS = 2;
+
+/** Queues `count` shots of the same aim and view (one input can carry several after a slow frame). */
+export function queueShots(queue: ClientShot[], count: number, shot: ClientShot): void {
+  for (let k = 0; k < count; k++) {
+    queue.push({ ...shot });
+    if (queue.length > SHOT_QUEUE) queue.shift();
+  }
+}
+
+/** The next shot to fire at `tick`, after dropping the ones that waited too long. */
+export function nextShot(queue: ClientShot[], tick: number): ClientShot | undefined {
+  while (queue.length && tick - queue[0].tick > SHOT_WAIT_TICKS) queue.shift();
+  return queue[0];
 }

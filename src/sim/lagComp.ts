@@ -22,6 +22,15 @@ export interface ViewTick {
 
 export const NO_VIEW: ViewTick = { tick: -1, gap: 0, frac: 0 };
 
+/**
+ * How many ticks `view` is behind `tick` (the newest state the host has), 0 to MAX_REWIND_TICKS; 0 for
+ * no view. Dodge compensation moves enemy projectiles back by this much per player.
+ */
+export function viewLag(view: ViewTick, tick: number): number {
+  if (view.tick < 0) return 0;
+  return Math.max(0, Math.min(MAX_REWIND_TICKS, tick - (view.tick + view.gap * view.frac)));
+}
+
 /** The enemies' accepted positions per tick, indexed by slot, with the tick each was written at. */
 export class EnemyHistory {
   private readonly x: Float64Array[] = [];

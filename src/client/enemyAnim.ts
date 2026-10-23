@@ -246,6 +246,8 @@ export interface Corpse {
   type: number;
   /** Where a flying enemy died, above `z`: it falls to `z` while dying (Cherubs). */
   fallFrom?: number;
+  /** The slot it died in. */
+  slot?: number;
 }
 
 export const CORPSE_MS = DEATH_MS + CORPSE_LIE_MS + CORPSE_SINK_MS;

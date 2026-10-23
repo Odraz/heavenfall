@@ -1,14 +1,71 @@
 # Netcode stage report: smooth co-op shooting
 
-Status: **implemented, awaiting the human multiplayer session**, 2026-10-22, on `rogue` from `fd437e4`. Done before R07 at Tomas's request ("multiplayer is the highest priority"), after the audit of the same day. Tomas delegated every networking decision.
+Status: **implemented, awaiting the human multiplayer session**, 2026-10-22, on `rogue` from `fd437e4`; stage 2 (below) from `f7f477d`. Done before R07 at Tomas's request ("multiplayer is the highest priority"), after the audit of the same day. Tomas delegated every networking decision.
 
-**Versions:** protocol 16 → **17** (the input message grew from 49 to 57 bytes), rules unchanged at 27. Builds with different versions cannot join each other, so **everyone must load the same build** for the session.
+**Versions:** protocol 16 → 17 → **18** (the input message grew from 49 to 57, then 59 bytes), rules unchanged at 27. Builds with different versions cannot join each other, so **everyone must load the same build** for the session.
 
-## Why
+## Stage 2: the shot you saw is the shot the host fires
+
+A second audit after the first stage found three remaining problems, one of which the first stage's own measure hid.
+
+### What was still wrong
+
+1. **The host often fired a different shot from the one the shooter saw.** The host fired on its own fire timer, aimed wherever the *newest* input pointed. Inputs go out 30 times a second, not every frame, so by the time the host fired, the shooter's aim had often moved on: to the next target after a kill, or along a fast Cherub. The first stage's *kill markers confirmed* counted any death within 1.5 s as confirmed, even when a later shot did it, so it read 95% while the shot itself agreed far less often. Hiding predicted kills (2, below) made this measurable: in the lag test **15–23 of about 80 predicted kills came back alive**.
+2. **Kills didn't look instant.** The kill marker and sound were instant, but the enemy walked on until the host's snapshot dropped it: about 0.3 s at a 100 ms ping. This is the "shots don't feel impactful" complaint.
+3. **Dodging was judged against the host's present.** A friend's screen draws globes and arrows a round trip plus the render delay behind the host. At a 100 ms ping a 6 m/s globe hit them while their screen still showed it 1.8 m away, and a globe that had passed them on the host could still not hit a friend who stepped out of its drawn path in time, or hit one who had. Shooting globes down had a fixed 0.25 s allowance, too short beyond about a 100 ms ping.
+
+### What changed, as players feel it
+
+| # | Change | Effect in play |
+|---|---|---|
+| 1 | **Client-timed shots.** The shooter's screen counts the shots its fire timer fires and sends an input in the same frame, so that input carries the shot's aim and view. The host fires exactly those shots, each with the aim and view of the input that carried it, no faster than the weapon allows (a shot may come 2 ticks early, so jitter doesn't delay it; one that waited 0.3 s is dropped). The host no longer latches clicks itself: the screen's latch already turned each click into a shot it sends. | The host's shot is the one you saw: same moment, same aim, same enemies. |
+| 2 | **Predicted kills die at once.** A kill your screen predicts plays its death or burst immediately, where you see the enemy, and hides it while the snapshots catch up. If a snapshot from after the host resolved the shot still shows it alive, it reappears (its corpse goes with it). | Kills land on the click, not a third of a second later. |
+| 3 | **Dodge compensation.** Each player is hit by the stretch of an enemy projectile's flight their own screen drew this tick. A projectile that ends on a wall or at its range stays owed to the players whose screens haven't drawn its end yet: it can still hit them, and a globe's shatter catches them when their screen reaches it. | You're hit by globes and arrows when you see them hit, and a dodge that worked on your screen works. |
+| 4 | **Globe shooting** allows the shooter's view delay on top of the 0.25 s. | Shooting a globe down works at any ping up to the 0.4 s limit. |
+| 5 | **F3** adds *reappeared*: how many predicted kills came back alive. | The honest measure of shooting agreement during the session. |
+| 6 | **Bot doorway fix.** A bot standing just past the doorway of a room that hasn't started walks on to that room's entry cell; it used to stop where it stood. | Found while chasing the autopilot stall below; bots that fill the party no longer freeze in a doorway. |
+
+### Evidence
+
+**The browser test** ([e2e/lag.spec.ts](../../e2e/lag.spec.ts)): the same bot Betrayer over real PeerJS with 160 ms of lag, ±25 ms jitter and 2% loss. It now also requires that at most 10% of predicted kills reappear.
+
+| Build | Kill markers confirmed | Predicted kills that reappeared |
+|---|---|---|
+| Predicted deaths, host's own fire timer | 78/79 | **15** of 80 (19%) |
+| Same, reveal wait raised to 1 s (diagnosis) | 60/72 | **23** of 72 |
+| Client-timed shots | 78/79 | **2** of 80 (2.5%) |
+
+The second row showed the disagreements were real rather than a reveal that came too early.
+
+**Unit tests:** [clientShots.test.ts](../../src/sim/clientShots.test.ts) (a shot fires with the aim and view of its own input though a newer input turned away, with a no-view control; no shot without the screen's shot; the rate limit, early shots and stale ones; dead players; the Heretic's fallback; old-style held fire), [dodgeComp.test.ts](../../src/sim/dodgeComp.test.ts) (a standing player is hit exactly the lag later; a dodge on the friend's screen avoids a globe that already passed them on the host; a globe or arrow that broke on the wall still hits the player in front of it, once; the shatter waits for the friend's screen; each player judged by their own screen; a lagging shooter hits the globe they saw), [predictedDeaths.test.ts](../../src/client/predictedDeaths.test.ts) (hiding, one death per enemy, confirmation, the reveal tick, a reused slot, the 2 s limit), and the new input bytes in [protocol.test.ts](../../src/net/protocol.test.ts).
+
+### Not done, and why
+
+- **Area attacks with a tell** (Dominion slams, Watchman and commander strikes, boss casts) still resolve at the host's present. Their tells are drawn by the client's tick estimate, which is behind by half a round trip, not the render delay, so the gap is a third of the projectiles' one. Revisit if the session says otherwise.
+- **Enemy melee** is unchanged: enemies stop when they reach you, so the lag only shifts the first hit, and the 0.25 s before it absorbs most of that.
+- **Shotgun spread** is still rolled separately on each side, so the Fallen's far pellets can disagree. Close range, where every pellet kills, is unaffected.
+- **The snapshot rate stays 10 Hz** (as in the first stage): with kills and dodges now judged by what each screen shows, more snapshots would mainly make others' movement fresher, at up to 1.5× the host's upload.
+
+### Checks (stage 2)
+
+| Command | Result |
+|---|---|
+| `npx tsc --noEmit -p .` | clean |
+| `npx vitest run` | **135 files, 1,669 tests passed** |
+| `npx vitest run src/sim/perf.test.ts src/sim/hazards.perf.test.ts src/sim/bench.test.ts --no-file-parallelism` | 5/5 passed, thresholds unchanged |
+| `npm run build` | built |
+| The stage 1 regression set (same 15 files) on the final build | **53/53 passed** (23.1 min); its lag test: ping 175 ms, 77/77 confirmed, 1 reappeared |
+| `e2e/lag.spec.ts`, separate runs during the stage | 4 more passes: 78/79 · 73/74 · 82/83 · 76/77 confirmed, 1–2 reappeared |
+
+**An intermittent autopilot stall, not root-caused.** The solo autopilot test (`e2e/rogue-floor.spec.ts`, "solo autopilot clears the pinned generated floor") sometimes stood at room 3's entrance after clearing room 1: the room never started, and the test failed after 90 s without progress. It ran 31 times with this stage's code (some runs with temporary diagnostics, all since removed). Before the bot doorway fix it failed 3 of 6 runs. After the fix it failed 3 of 25, two of those back to back, then passed every run including the final regression set. The committed `f7f477d` build passed all 6 runs it was given. No page, console or worker error appeared in a failing run. A client-timed-shots switch-off run still failed, so it isn't that change, but the stage can't be cleared of it with this sample. It affects the solo test bot's floor run, not multiplayer: every multiplayer test passed each time. If it recurs, capture the host's own position for the player at the stall (the room starts only when the host counts the player inside it).
+
+## Stage 1
+
+### Why
 
 At the pre-rogue multiplayer playtest ([2026-10-09-mp.md](../playtests/2026-10-09-mp.md)) friends found shots laggy and unimpactful. The audit found that the host resolved every shot against where enemies are *now*, while a friend's screen shows them a round trip plus 150 ms in the past. The friend saw a hit marker and a kill marker, and the enemy lived. A quick click could also vanish, the drawn world stuttered with network jitter, and a slow upload could queue up to a second of snapshots.
 
-## What changed, as players feel it
+### What changed, as players feel it
 
 | # | Change | Effect in play |
 |---|---|---|
@@ -21,7 +78,7 @@ At the pre-rogue multiplayer playtest ([2026-10-09-mp.md](../playtests/2026-10-0
 
 Unchanged: 30 Hz simulation, 10 Hz remote snapshots, the 150 ms base render delay, host authority over damage, client-side movement, the 437 KB/s upload limit, the heartbeat and timeouts.
 
-## Evidence
+### Evidence
 
 **A simulation experiment (not kept as a test).** A Betrayer aimed each shot at where an enemy stood a set time earlier, against four spread-out enemies of each type at 12–22 m, 1,500 ticks per run:
 
@@ -37,7 +94,7 @@ A friend with a 100 ms ping aims about 300 ms behind the host (ping, render dela
 
 **Traffic** (measured during the audit, unchanged by this stage): at a full 1,500-enemy crowd each friend receives about 82 KB/s of snapshots plus 5 KB/s of events, so the host uploads about 2.1 Mbit/s for three friends.
 
-## Checks
+### Checks
 
 | Command | Result |
 |---|---|
@@ -50,13 +107,13 @@ A friend with a 100 ms ping aims about 300 ms behind the host (ping, render dela
 
 New tests: [lagComp.test.ts](../../src/sim/lagComp.test.ts) (history, clamping, rewind and restore, and a strafing Blessed that is hit only with the view), [fireLatch.test.ts](../../src/sim/fireLatch.test.ts) (press and release in one tick, a click before the timer is ready, expiry, held fire unchanged, a right click during a held left, joining and death), the snapshot clock in [snapshots.test.ts](../../src/client/snapshots.test.ts) (steady rate, never backwards, jitter delay, stalls and pauses, the recorded view), [lagSim.test.ts](../../src/net/lagSim.test.ts), [linkQuality.test.ts](../../src/net/linkQuality.test.ts), the kill-marker confirmations in [killPredict.test.ts](../../src/client/killPredict.test.ts), and the new input fields in [protocol.test.ts](../../src/net/protocol.test.ts).
 
-### Regression run
+#### Regression run
 
 `npx playwright test --config playwright.hardware.config.ts e2e/lag.spec.ts e2e/crest-network.spec.ts e2e/multiplayer.spec.ts e2e/dominion.spec.ts e2e/commanders.spec.ts e2e/dungeonChoices.spec.ts e2e/classTalents.spec.ts e2e/talents.spec.ts e2e/profiles.spec.ts e2e/menus.spec.ts e2e/singleplayer.spec.ts e2e/controls.spec.ts e2e/weapon.spec.ts e2e/watchman.spec.ts e2e/rogue-floor.spec.ts`
 
 Result: **53/53 passed** (22.5 min), including four-client multiplayer with late joins and chat, compressed crest snapshots at the upload limit, the Dominion and commander PeerJS late entries, the four classes' singleplayer smoke, weapons and controls, and the solo autopilot clearing the pinned floor. The lag test passed again inside the run: ping 172 ms, 81 of 82 kill markers confirmed.
 
-## Not done, and why
+### Not done, and why
 
 - **The `snap` channel stays reliable-unordered.** True unreliable delivery would need patching PeerJS, and a full-crowd snapshot is two messages of about a dozen packets each: dropping a whole message for one lost packet would lose far more snapshots on a lossy line than retransmission costs. The smaller send queue (4) addresses the lag this could cause.
 - **Q/E abilities are not lag-compensated.** Targeted abilities (Chains, Discord, Kiss and the like) resolve at the host's present. They act on areas or allies, where 0.3 s matters much less than for a single bullet. Revisit if the session says otherwise.
@@ -65,7 +122,7 @@ Result: **53/53 passed** (22.5 min), including four-client multiplayer with late
 
 ## For the session
 
-- **Everyone loads the same build** (protocol 17).
+- **Everyone loads the same build** (protocol 18).
 - **The host is whoever has the best upload**, ideally wired, with no streaming or screen sharing while playing. Full crowds need about 2.1 Mbit/s of upload for three friends.
 - **Press F3 as host:** each friend's ping and route. `relay` means their network forced the TURN relay. Check the Metered account's monthly quota beforehand: about 300 MB per relayed player per hour.
-- **Ask a friend to press F3** if shooting feels off: a *kill markers confirmed* share below about 90% means something other than lag is disagreeing, which is worth a note in the playtest log.
+- **Ask a friend to press F3** if shooting feels off. *Reappeared* is the number to watch: predicted kills the host didn't agree with. More than about one in ten of the confirmed count means something other than lag is disagreeing, which is worth a note in the playtest log, with the class and weapon.
