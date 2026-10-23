@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 import { buildFingerprint, sourceHash } from './buildFingerprint';
@@ -15,8 +16,11 @@ function gitShortHash(): string {
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: './',
+  // `npm run dev:lan` serves over HTTPS with a self-signed certificate: phones on the same Wi-Fi load the
+  // game from the PC's network address, and browsers only allow Web Locks (profile storage) on secure pages.
+  plugins: mode === 'lan' ? [basicSsl()] : [],
   define: {
     __BUILD_VERSION__: JSON.stringify(buildFingerprint(pkg.version, gitShortHash(), PROTOCOL_VERSION, RULES_VERSION,
       sourceHash(fileURLToPath(new URL('.', import.meta.url))))),
@@ -30,4 +34,4 @@ export default defineConfig({
     // The simulation's 8 ms/tick assertion needs an idle CPU, not competing generator/renderer suites.
     maxWorkers: 1,
   },
-});
+}));
