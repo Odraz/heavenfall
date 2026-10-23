@@ -1,7 +1,7 @@
 /** R06 follow-up §8: the host sends each human only their own accepted damage, merged per enemy per tick. */
 import { describe, expect, it } from 'vitest';
 import { BLESSED, CHORISTER, ENEMIES } from '../data/enemies';
-import { DAMAGE_STRIDE, HURT_MELEE, HURT_RANGED, HURT_WORLD } from '../net/protocol';
+import { DAMAGE_HITS_MAX, DAMAGE_STRIDE, HURT_MELEE, HURT_RANGED, HURT_WORLD } from '../net/protocol';
 import { enemyAt, makeSim, put, room } from './testutil/sims';
 import type { Simulation } from './sim';
 
@@ -26,13 +26,32 @@ describe('damage events', () => {
     expect(damageTo(sim, 0)).toEqual([]);
   });
 
-  it('sends nothing for world damage or bots', () => {
+  it('sends nothing for world damage, and a bot its own like a player (netcode stage 4)', () => {
     const sim = makeSim(room(30, 10), ['fallen', 'binder'], { noWaves: true });
     sim.players[1].bot = true;
     const c = enemyAt(sim, CHORISTER, 10.5, 5.5);
     sim.events.length = 0;
-    sim.damageEnemy(c, 10, -1); sim.damageEnemy(c, 10, 1); sim.flushDamage();
+    sim.damageEnemy(c, 10, -1); sim.flushDamage();
     expect(sim.events.filter((e) => e.event.type === 'damage')).toEqual([]);
+    sim.damageEnemy(c, 10, 1); sim.flushDamage();
+    expect(damageTo(sim, 1).flat()[4]).toBe(10);
+  });
+
+  it('lists every kill of the tick with its incarnation, past the limit on numbers too (netcode stage 4)', () => {
+    const sim = makeSim(room(40, 20), ['fallen'], { noWaves: true });
+    const slots = Array.from({ length: DAMAGE_HITS_MAX + 6 }, (_, i) => enemyAt(sim, BLESSED, 4.5 + (i % 10) * 3, 3.5 + Math.floor(i / 10) * 4));
+    const alive = enemyAt(sim, CHORISTER, 20.5, 17.5);
+    const incarnations = slots.map((s) => sim.eIncarnation[s]);
+    sim.events.length = 0;
+    for (const s of slots) sim.damageEnemy(s, 100, 0);
+    sim.damageEnemy(alive, 5, 0);
+    sim.flushDamage();
+    const e = sim.events.find((q) => q.event.type === 'damage')!.event as { hits: number[]; kills?: number[] };
+    expect(e.hits).toHaveLength(DAMAGE_HITS_MAX * DAMAGE_STRIDE);
+    expect(e.kills).toEqual(slots.flatMap((s, i) => [s, incarnations[i]]));
+    // A tick without a kill sends no list.
+    sim.damageEnemy(alive, 5, 0); sim.flushDamage();
+    expect(sim.events.at(-1)!.event).not.toHaveProperty('kills');
   });
 
   it('flushes every tick from the simulation step', () => {

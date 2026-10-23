@@ -213,9 +213,10 @@ export type GameEvent =
   | { type: 'bursts'; list: number[] }
   /**
    * Damage numbers (R06 follow-up §8), to the credited player only: this tick's accepted damage per enemy,
-   * `DAMAGE_STRIDE` numbers each: slot, x, y, z (above the drawn head), amount, 1 if it killed.
+   * `DAMAGE_STRIDE` numbers each: slot, x, y, z (above the drawn head), amount, 1 if it killed. `kills`:
+   * every enemy this player killed this tick, slot and incarnation pairs (netcode stage 4).
    */
-  | { type: 'damage'; hits: number[] }
+  | { type: 'damage'; hits: number[]; kills?: number[] }
   /** Felt hits (R06 follow-up §9 option 1), to the hurt player only: `HURT_STRIDE` numbers each: source x, y, amount, kind. */
   | { type: 'hurt'; hits: number[] }
   /** Shadowstep cut through its path (M12 §5.7): the path's first and last points. */

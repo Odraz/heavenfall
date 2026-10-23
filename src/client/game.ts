@@ -57,7 +57,8 @@ import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, PROJECTILE_SLOTS, TICK_DT, TICK
 import { raycastTerrain } from '../sim/los';
 import { applyLeaves, leafOpen, overVoid, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
-import { BOSS_CAST_JUDGMENT, GLOBE_BLAST, GLOBE_SHOT_BLAST, PROJ_ARROW, PROJ_CENSER, PROJ_GLOBE } from '../sim/sim';
+import { BOSS_CAST_JUDGMENT, GLOBE_BLAST, GLOBE_SHOT_BLAST, PROJ_ARROW, PROJ_CENSER, PROJ_GLOBE, PROJECTILE_RANGE } from '../sim/sim';
+import { OwnCensers, type CenserBreak, type CenserWorld } from './ownCensers';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
@@ -198,14 +199,6 @@ const TRACER_WIDTH = 0.1;
 const SLUG_TRACER_WIDTH = 0.15;
 /** The slug's muzzle flash size (M9 §5.1); every attack's recoil is in attackKick (M11). */
 const SLUG_FLASH = 1.3;
-/**
- * The local player's own censer starts at the painted launcher's muzzle (the stage 2 playtest): the
- * simulation launches it from the eye, so it's drawn from the muzzle, the offset fading over this.
- * A censer appearing within CENSER_CLAIM_MS of a local censer shot, this near the player, is theirs.
- */
-const CENSER_BLEND_MS = 250;
-const CENSER_CLAIM_MS = 600;
-const CENSER_CLAIM_DIST = 3;
 /** The Silver Bullet's tracer: an ember strip with a silver-white core, fading over 0.25 s. */
 const SILVER_EMBER = 0xff7a3a;
 const SILVER_CORE = 0xf2f4ff;
@@ -452,12 +445,13 @@ export class Game {
   /** The shots the cosmetic fire timer fired, sent to the host, and the latest one's button (client-timed shots). */
   private shots = 0;
   private shotButton: 0 | 1 = 0;
+  /** The latest shot's aim and view, which every input repeats (netcode stage 4). */
+  private readonly shotAim = { yaw: 0, pitch: 0, tick: -1, gap: 0, frac: 0 };
   /** The view's yaw and pitch last frame, for the weapon's sway (M11 §3.2). */
   private swayYaw = 0;
   private swayPitch = 0;
-  /** The local player's censer shots waiting for their projectile, and the censers claimed as theirs, by slot. */
-  private readonly censerShots: Array<{ at: number; from: [number, number, number] }> = [];
-  private readonly ownCensers = new Map<number, { at: number; dx: number; dy: number; dz: number }>();
+  /** The local player's own censers, flown here from the click (netcode stage 4). */
+  private readonly ownCensers = new OwnCensers();
   /** Projectile slots drawn this frame and the last. */
   private projSeen = new Set<number>();
   private projPrev = new Set<number>();
@@ -562,6 +556,10 @@ export class Game {
   private readonly deaths = new PredictedDeaths();
   /** Predicted kills that reappeared because the host's snapshots kept them alive (F3, the lag test). */
   private revealedKills = 0;
+  /** The host's reports of the local player's other kills, slot and incarnation pairs, to play next frame (netcode stage 4). */
+  private readonly reportedKills: number[] = [];
+  /** Reported kills that died at once instead of after the render delay (the lag test). */
+  private reportedEarly = 0;
   private readonly flinches = new Flinches();
   private readonly shake = new Shake();
   private wasLeaping = false;
@@ -1352,6 +1350,11 @@ export class Game {
         viewFrac: this.snaps.view.frac,
         shots: this.shots,
         shotButton: this.shotButton,
+        shotYaw: this.shotAim.yaw,
+        shotPitch: this.shotAim.pitch,
+        shotViewTick: this.shotAim.tick,
+        shotViewGap: this.shotAim.gap,
+        shotViewFrac: this.shotAim.frac,
       }),
     );
   }
@@ -1599,6 +1602,11 @@ export class Game {
         break;
       case 'damage':
         if (loadDamageNumbersSetting()) this.damageNumbers.add(e.hits, now);
+        if (Array.isArray(e.kills)) {
+          for (let k = 0; k + 1 < e.kills.length; k += 2) {
+            if (Number.isInteger(e.kills[k]) && Number.isInteger(e.kills[k + 1])) this.reportedKills.push(e.kills[k], e.kills[k + 1]);
+          }
+        }
         break;
       case 'hurt': {
         // Felt hits (R06 follow-up §9): an arc toward the source, and a flinch scaled by the damage.
@@ -2038,9 +2046,16 @@ export class Game {
           rippled: false,
         });
       }
+      // The local player's own censers new in this snapshot are matched to their local flights (netcode stage 4).
+      const had = new Set(prev.projSlot.subarray(0, prev.projectileCount));
+      for (let i = 0; i < s.projectileCount; i++) {
+        if (s.projKind[i] === PROJ_CENSER && s.projOwner[i] === this.localId && !had.has(s.projSlot[i])) this.ownCensers.claim(s.projSlot[i], now, s.projX[i], s.projY[i], s.projZ[i]);
+      }
       const alive = new Set(s.projSlot.subarray(0, s.projectileCount));
       for (let i = 0; i < prev.projectileCount; i++) {
         if (prev.projKind[i] !== PROJ_CENSER || alive.has(prev.projSlot[i])) continue;
+        // The local player's own censer already broke here, at once (netcode stage 4).
+        if (prev.projOwner[i] === this.localId && this.ownCensers.release(prev.projSlot[i], prev.projX[i], prev.projY[i], prev.projZ[i], now)) continue;
         // A censer that vanished over the void didn't break (M10 §3.4).
         if (overVoid(this.map, prev.projX[i], prev.projY[i])) continue;
         this.pendingBursts.push({ at: now + delay, censer: true, slot: -1, type: -1, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i], ground: 0, feet: 0, facing: 0, rippled: false });
@@ -2335,8 +2350,11 @@ export class Game {
       case 'censer': {
         this.hudShot(now, slot);
         this.sounds.ownShot(this.classId, secondary);
+        // It leaves the painted launcher's muzzle (the stage 2 playtest) and flies from the eye, as on the host.
         const [msx, msy] = this.hud.muzzlePoint(now);
-        this.censerShots.push({ at: now, from: this.unproject(msx, msy, OWN_BEAM_DEPTH) });
+        const [mx, my, mz] = this.unproject(msx, msy, OWN_BEAM_DEPTH);
+        const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
+        this.ownCensers.throw(now, ex, ey, ez, dx, dy, dz, Math.min(w.range, PROJECTILE_RANGE), mx, my, mz);
         return;
       }
     }
@@ -2508,6 +2526,58 @@ export class Game {
     this.playDeath({ at: now, censer: false, slot, type, x, y, z: feet + def.height / 2, ground, feet, facing: this.animator.facing[slot], rippled: true }, now);
   }
 
+  /**
+   * The local player's kills the host reported (netcode stage 4): by an ability, fire, incense, a censer, a
+   * talent or a relic, which this screen doesn't predict. Each dies now where this screen draws it, like
+   * a predicted kill, instead of after the render delay. A burst's ripple still delays it once.
+   */
+  private playReportedKills(now: number, ents: InterpolatedEnemies): void {
+    const kills = this.reportedKills;
+    for (let k = 0; k + 1 < kills.length; k += 2) {
+      const slot = kills[k], incarnation = kills[k + 1];
+      if (slot < 0 || slot >= ENEMY_SLOTS || this.deaths.hides(slot, incarnation)) continue;
+      const pending = this.pendingBursts.find((b) => !b.censer && b.slot === slot);
+      let i = -1;
+      for (let j = 0; j < ents.count; j++) if (ents.slot[j] === slot && ents.incarnation[j] === incarnation) { i = j; break; }
+      if (i < 0) {
+        // Not drawn now: its death, if the snapshots already dropped it, plays now.
+        if (pending) pending.at = Math.min(pending.at, now);
+        continue;
+      }
+      const rtt = this.o.link ? this.o.link.rttMs : 0;
+      if (!this.deaths.add(slot, incarnation, revealTick(this.snaps.estimatedTick(now), rtt, TICK_MS), now)) continue;
+      this.reportedEarly++;
+      if (pending) {
+        this.pendingBursts.splice(this.pendingBursts.indexOf(pending), 1);
+        this.deaths.confirm(slot, incarnation, now);
+      }
+      const type = ents.type[i], def = ENEMIES[type], x = ents.x[i], y = ents.y[i];
+      const g = groundHeight(this.map, x, y, def.radius, Infinity, false, true);
+      const ground = g === -Infinity ? 0 : g;
+      const feet = def.flying ? ents.z[i] : ground;
+      this.pendingBursts.push({ at: now, censer: false, slot, type, x, y, z: feet + def.height / 2, ground, feet, facing: this.animator.facing[slot], rippled: false });
+    }
+    kills.length = 0;
+  }
+
+  /** The world the local player's own censers fly through this frame, as this screen draws it (netcode stage 4). */
+  private censerWorld(ents: InterpolatedEnemies, enemyZ: Float32Array, now: number): CenserWorld {
+    const souls: Array<{ x: number; y: number; base: number }> = [];
+    for (const q of this.snaps.playersOut) if (q.id !== this.localId && q.dead) souls.push({ x: q.x, y: q.y, base: q.z + this.souls.rise(q.id, now) });
+    return { map: this.map, enemies: ents, enemyZ, souls, props: this.props.defs, broken: this.props.model.broken, passBlessed: this.talents.ownHas('heretic.a.3b') };
+  }
+
+  /** A local censer broke (M9 §5.1): its small burst and sound now; on an enemy, the hit marker and a flinch. */
+  private ownCenserBreak(now: number, b: CenserBreak, ents: InterpolatedEnemies): void {
+    this.particles.censerBreak(b.x, b.y, b.z);
+    this.vfx.glow(now, b.x, b.y, b.z, 0xf08a24, 0.15, 0.6, 250);
+    this.sounds.censerBreak(b);
+    if (b.enemy < 0) return;
+    this.hud.hit(now);
+    this.sounds.hit();
+    this.flinches.add(ents.slot[b.enemy], now, ents.x[b.enemy] - this.player.body.x, ents.y[b.enemy] - this.player.body.y, HIT_FLINCH);
+  }
+
   /** An enemy slot's distance from a player, for the ripple: the local one's own position, others' interpolated. */
   private distToPlayer(slot: number, playerId: number): number {
     const q = playerId === this.localId ? this.player.body : this.snaps.playersOut.find((o) => o.id === playerId);
@@ -2673,6 +2743,7 @@ export class Game {
     const simNow = this.paused && this.o.singleplayer ? this.pausedAt : now;
     // Render authoritative altitude as well as horizontal movement (leaps, throws and hovering).
     const ents = this.snaps.interpolate(simNow);
+    this.playReportedKills(now, ents);
     this.deaths.filter(ents);
     const enemyZ = this.zScratch;
     enemyZ.set(ents.z.subarray(0, ents.count));
@@ -2834,6 +2905,8 @@ export class Game {
         this.shots = (this.shots + 1) & 0xff;
         this.cosmeticShot(now, attack, ents, enemyZ, this.shots);
         this.shotButton = attack === ATTACK_SECONDARY ? 1 : 0;
+        const view = this.snaps.view;
+        Object.assign(this.shotAim, { yaw: p.yaw, pitch: p.pitch, tick: view.tick, gap: view.gap, frac: view.frac });
         shotNow = true;
         // Whirl swings every 1.2 s (classes-binder.md `b.1a`).
         this.fireTimer += this.classId === 'binder' && attack === ATTACK_SECONDARY && this.talents.ownHas('binder.b.1a') ? BINDER.whirlInterval : attackDef(this.classId, attack).interval;
@@ -2841,6 +2914,9 @@ export class Game {
       this.fireTimer -= TICK_DT * this.localFireRate();
       if (attack === ATTACK_NONE && this.fireTimer < 0) this.fireTimer = 0;
     }
+
+    // The local player's own censers fly on and break where they meet what this screen draws (netcode stage 4).
+    for (const b of this.ownCensers.step(now, Math.min(dt, 0.25), this.censerWorld(ents, enemyZ, now))) this.ownCenserBreak(now, b, ents);
 
     // Input to the host at 30 Hz, and in every frame that fired a shot.
     this.inputAcc += dt;
@@ -3021,7 +3097,9 @@ export class Game {
     };
     const c = this.confirmations;
     c.update(now, (slot) => this.snaps.hasEnemy(slot));
-    debugState.killMarkers = { predicted: c.predicted, confirmed: c.confirmed, missed: c.missed, revealed: this.revealedKills };
+    debugState.killMarkers = { predicted: c.predicted, confirmed: c.confirmed, missed: c.missed, revealed: this.revealedKills, reported: this.reportedEarly };
+    const oc = this.ownCensers;
+    debugState.censers = { thrown: oc.thrown, matched: oc.matched, agreed: oc.agreed, unmatched: oc.unmatched };
     // Read-only own pose also supports the normal-menu multiplayer prop/catch-up fixture.
     Object.assign(debugState.self, { x: b.x, y: b.y, z: b.z, yaw: p.yaw, pitch: p.pitch });
     if (this.params.dev) {
@@ -3231,7 +3309,6 @@ export class Game {
     const proj = this.snaps.projOut;
     const seen = this.projSeen;
     seen.clear();
-    while (this.censerShots.length && now - this.censerShots[0].at > CENSER_CLAIM_MS) this.censerShots.shift();
     for (let i = 0; i < proj.count; i++) {
       const k = proj.kind[i];
       const slot = proj.slot[i];
@@ -3239,21 +3316,8 @@ export class Game {
       let x = proj.x[i];
       let y = proj.y[i];
       let z = proj.z[i];
-      if (k === PROJ_CENSER) {
-        let own = this.ownCensers.get(slot);
-        // A censer new this frame, near the player, just after a local censer shot: the local player's.
-        if (!own && !this.projPrev.has(slot) && this.censerShots.length && Math.hypot(x - this.player.body.x, y - this.player.body.y) < CENSER_CLAIM_DIST) {
-          const shot = this.censerShots.shift()!;
-          own = { at: now, dx: shot.from[0] - x, dy: shot.from[1] - y, dz: shot.from[2] - z };
-          this.ownCensers.set(slot, own);
-        }
-        if (own) {
-          const f = Math.max(0, 1 - (now - own.at) / CENSER_BLEND_MS);
-          x += own.dx * f;
-          y += own.dy * f;
-          z += own.dz * f;
-        }
-      }
+      // The local player's own censers are drawn from their local flight instead (netcode stage 4).
+      if (k === PROJ_CENSER && proj.owner[i] === this.localId && this.ownCensers.hides(slot, now)) continue;
       if (k !== PROJ_ARROW) {
         bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true, 1, 1, 1, k === PROJ_GLOBE ? GLOW_GLOBE : NO_GLOW);
         continue;
@@ -3277,7 +3341,7 @@ export class Game {
         bb.add(this.frames.ember, x - dx * back, y - dy * back, z - dz * back, size, true, 1, 1, 1, GLOW_ARROW);
       });
     }
-    for (const slot of this.ownCensers.keys()) if (!seen.has(slot)) this.ownCensers.delete(slot);
+    this.ownCensers.drawn(now, (x, y, z) => bb.add(this.frames[PROJECTILE_SPRITES[PROJ_CENSER]], x, y, z, PROJECTILE_SIZES[PROJ_CENSER], true, 1, 1, 1, NO_GLOW));
     this.projSeen = this.projPrev;
     this.projPrev = seen;
     // Other players, facing their yaw (§11.1); the ally target is tinted gold (§10).

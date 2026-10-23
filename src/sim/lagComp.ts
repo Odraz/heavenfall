@@ -31,6 +31,12 @@ export function viewLag(view: ViewTick, tick: number): number {
   return Math.max(0, Math.min(MAX_REWIND_TICKS, tick - (view.tick + view.gap * view.frac)));
 }
 
+/** The view of the (fractional) snapshot time `t`: what a screen drawing `t` would send. */
+export function viewAt(t: number): ViewTick {
+  const tick = Math.floor(t);
+  return { tick, gap: 1, frac: t - tick };
+}
+
 /** The enemies' accepted positions per tick, indexed by slot, with the tick each was written at. */
 export class EnemyHistory {
   private readonly x: Float64Array[] = [];

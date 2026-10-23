@@ -18,6 +18,9 @@ let seq = 0;
 function input(sim: Simulation, p: SimPlayer, m: Partial<InputMsg>): void {
   const full: InputMsg = { ...INPUT_DEFAULTS, runId: RUN, seq: ++seq, x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fire: 0,
     qPresses: p.qPresses, ePresses: p.ePresses, allyTargetId: 255, lastTeleportId: p.teleportId, shots: p.shotsSeen, shotButton: 0, ...m };
+  // The latest shot's aim and view: this input's, as when it carries the shot (netcode stage 4).
+  full.shotYaw = m.shotYaw ?? full.yaw; full.shotPitch = m.shotPitch ?? full.pitch;
+  full.shotViewTick = m.shotViewTick ?? full.viewTick; full.shotViewGap = m.shotViewGap ?? full.viewGap; full.shotViewFrac = m.shotViewFrac ?? full.viewFrac;
   sim.applyInput(p.id, decodeInput(encodeInput(full), RUN)!, sim.nowMs);
 }
 
@@ -58,6 +61,21 @@ describe('client-timed shots on the host (netcode stage 2)', () => {
     expect(sim.eAlive[target]).toBe(0);
     // The player still faces where the newest input turned it.
     expect(p.yaw).toBeCloseTo(aimed + Math.PI / 2, 6);
+  });
+
+  it('fires a shot whose own input was lost with the aim and view the next input repeats (netcode stage 4)', () => {
+    for (const repeated of [true, false]) {
+      const { sim, p } = setup();
+      const target = enemyAt(sim, BLESSED, 15.5, 10.5);
+      aimAt(sim, p, target);
+      const aimed = p.yaw, pitch = p.pitch;
+      // The shot's own input never arrives; the next one has turned 90° away and only counts the shot.
+      const turned = repeated ? { shotYaw: aimed, shotPitch: pitch } : {};
+      input(sim, p, { fire: 0, shots: 1, yaw: aimed + Math.PI / 2, pitch: 0, ...turned });
+      sim.step();
+      expect(p.shots).toBe(1);
+      expect(sim.eAlive[target]).toBe(repeated ? 0 : 1);
+    }
   });
 
   it('fires with the view of the input that carried the shot (lag compensation)', () => {

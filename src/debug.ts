@@ -89,8 +89,16 @@ export interface DebugState {
    * delay and the snapshot jitter (ms), and the F3 lines: the client's own, or one per client on the host.
    */
   link: { rttMs: number | null; route: 'direct' | 'relay' | null; delayMs: number; jitterMs: number; lines: string[] };
-  /** The local player's predicted kills: made, confirmed by the host (the enemy left the snapshots), missed. */
-  killMarkers: { predicted: number; confirmed: number; missed: number; revealed: number };
+  /**
+   * The local player's predicted kills: made, confirmed by the host (the enemy left the snapshots), missed,
+   * reappeared; and `reported`, its other kills the host reported that died at once (netcode stage 4).
+   */
+  killMarkers: { predicted: number; confirmed: number; missed: number; revealed: number; reported: number };
+  /**
+   * The local Heretic's own censers (netcode stage 4): thrown here, matched to the host's, ending where the
+   * local one broke, and host censers of its own that matched no throw (drawn late, as the host's).
+   */
+  censers: { thrown: number; matched: number; agreed: number; unmatched: number };
   players: DebugPlayer[];
   gameResult: null | 'victory' | 'defeat';
   /** The last 50 chat messages of the session (M8 §10). */
@@ -169,7 +177,8 @@ export const debugState: DebugState = {
   netInKBps: 0,
   netOutKBps: 0,
   link: { rttMs: null, route: null, delayMs: 0, jitterMs: 0, lines: [] },
-  killMarkers: { predicted: 0, confirmed: 0, missed: 0, revealed: 0 },
+  killMarkers: { predicted: 0, confirmed: 0, missed: 0, revealed: 0, reported: 0 },
+  censers: { thrown: 0, matched: 0, agreed: 0, unmatched: 0 },
   players: [],
   gameResult: null,
   chat: [],
@@ -227,7 +236,8 @@ export function resetGameDebug(): void {
     netInKBps: 0,
     netOutKBps: 0,
     link: { rttMs: null, route: null, delayMs: 0, jitterMs: 0, lines: [] },
-    killMarkers: { predicted: 0, confirmed: 0, missed: 0, revealed: 0 },
+    killMarkers: { predicted: 0, confirmed: 0, missed: 0, revealed: 0, reported: 0 },
+    censers: { thrown: 0, matched: 0, agreed: 0, unmatched: 0 },
     players: [],
     gameResult: null,
     chat: [],

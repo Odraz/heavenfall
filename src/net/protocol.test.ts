@@ -26,6 +26,7 @@ import {
   HEADER_BYTES,
   PLAYER_BYTES,
   ENEMY_BYTES,
+  PROJECTILE_BYTES,
   PICKUP_BYTES,
   INPUT_BYTES,
   MAX_SNAPSHOT_BYTES,
@@ -90,6 +91,7 @@ function entities(ne: number, np: number, nk = 0): SnapshotEntities {
     projectileCount: np,
     projSlot: new Uint16Array(np),
     projKind: new Uint8Array(np),
+    projOwner: new Uint8Array(np),
     projX: new Float32Array(np),
     projY: new Float32Array(np),
     projZ: new Float32Array(np),
@@ -112,6 +114,7 @@ function entities(ne: number, np: number, nk = 0): SnapshotEntities {
   for (let i = 0; i < np; i++) {
     e.projSlot[i] = i;
     e.projKind[i] = i % 3;
+    e.projOwner[i] = i % 2 ? 3 : 255;
     e.projX[i] = 5 + i / 64;
     e.projY[i] = 6;
     e.projZ[i] = 15.984375;
@@ -147,11 +150,17 @@ describe('input protocol', () => {
     expect(decodeInput(encodeInput({ ...m, shots: 258, shotButton: 1 }), m.runId)).toMatchObject({ shots: 2, shotButton: 1 });
     expect(decodeInput(encodeInput({ ...m, shotButton: 255 }), m.runId)).toMatchObject({ shotButton: 255 });
     expect(decodeInput(encodeInput({ ...m, shotButton: 2 }), m.runId)).toBeNull();
+    // The latest shot's aim and view, repeated by every input (netcode stage 4); a non-finite aim is refused.
+    const aim = decodeInput(encodeInput({ ...m, shotYaw: 1.25, shotPitch: -0.25, shotViewTick: 4321, shotViewGap: 3, shotViewFrac: 0.5 }), m.runId)!;
+    expect(aim).toMatchObject({ shotYaw: 1.25, shotPitch: -0.25, shotViewTick: 4321, shotViewGap: 3 });
+    expect(aim.shotViewFrac).toBeCloseTo(0.5, 2);
+    expect(decodeInput(encodeInput({ ...m, shotViewTick: -1 }), m.runId)!.shotViewTick).toBe(-1);
+    expect(decodeInput(encodeInput({ ...m, shotYaw: NaN }), m.runId)).toBeNull();
     // The `fire` bits (M9 §10): left, right, right pressed last.
     for (const fire of [0, FIRE_LEFT, FIRE_RIGHT, FIRE_LEFT | FIRE_RIGHT, FIRE_LEFT | FIRE_RIGHT | FIRE_RIGHT_LAST]) {
       expect(decodeInput(encodeInput({ ...m, fire }), m.runId)!.fire).toBe(fire);
     }
-    expect(buf.byteLength).toBe(59);
+    expect(buf.byteLength).toBe(73);
   });
 
   const valid: InputMsg = { ...INPUT_DEFAULTS, runId: header.runId, seq: 1, x: 4.5, y: 4.5, z: 0,
@@ -203,7 +212,7 @@ describe('snapshot protocol', () => {
   it('round-trips header, players, enemies and projectiles', () => {
     const parts = encodeSnapshot(header, players(4), entities(100, 20));
     expect(parts.length).toBe(1);
-    expect(parts[0].byteLength).toBe(HEADER_BYTES + 4 * PLAYER_BYTES + 100 * ENEMY_BYTES + 20 * 9);
+    expect(parts[0].byteLength).toBe(HEADER_BYTES + 4 * PLAYER_BYTES + 100 * ENEMY_BYTES + 20 * PROJECTILE_BYTES);
     const s = decodeSnapshot(parts[0])!;
     expect(HEADER_BYTES).toBe(71);
     const v = new DataView(parts[0]);
@@ -228,6 +237,9 @@ describe('snapshot protocol', () => {
     expect(s.enemyHp[50]).toBe(63);
     expect(s.enemyHp[0]).toBe(1);
     expect(s.projKind[5]).toBe(2);
+    // Its owner's player ID (netcode stage 4); an even one is an enemy's.
+    expect(s.projOwner[5]).toBe(3);
+    expect(s.projOwner[4]).toBe(255);
     expect(s.projX[5]).toBe(5 + 5 / 64);
     expect(s.projZ[5]).toBe(15.984375);
   });
@@ -243,7 +255,7 @@ describe('snapshot protocol', () => {
     const parts = encodeSnapshot(header, players(4), entities(1500, 400, 160));
     expect(parts.length).toBe(2);
     expect(parts.every((p) => p.byteLength <= MAX_SNAPSHOT_BYTES)).toBe(true);
-    expect(parts.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (HEADER_BYTES + 4 * PLAYER_BYTES) + 1500 * ENEMY_BYTES + 400 * 9 + 160 * PICKUP_BYTES);
+    expect(parts.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (HEADER_BYTES + 4 * PLAYER_BYTES) + 1500 * ENEMY_BYTES + 400 * PROJECTILE_BYTES + 160 * PICKUP_BYTES);
     expect(decodeSnapshot(parts[0])!.pickupCount).toBe(160);
     expect(decodeSnapshot(parts[1])!.pickupCount).toBe(0);
     const a = new SnapshotAssembler(); a.reset(header.runId); a.add(decodeSnapshot(parts[1])!);
@@ -476,7 +488,7 @@ describe('R2 Dominion snapshot control metadata', () => {
   it('reserves three 44-byte records in part zero at maximum capacity, even when their enemies are in part one', () => {
     const e = casting(), packets = encodeSnapshot(header, players(4), e);
     expect(packets).toHaveLength(2); expect(packets.every((p) => p.byteLength <= 16000)).toBe(true);
-    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (HEADER_BYTES + 4 * PLAYER_BYTES) + 1500 * ENEMY_BYTES + 400 * 9 + 160 * 9 + 3 * 44);
+    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (HEADER_BYTES + 4 * PLAYER_BYTES) + 1500 * ENEMY_BYTES + 400 * PROJECTILE_BYTES + 160 * PICKUP_BYTES + 3 * 44);
     const zero = decodeSnapshot(packets[0])!, one = decodeSnapshot(packets[1])!;
     expect(zero.dominionCasts).toEqual(e.dominionCasts); expect(one.dominionCasts).toEqual([]);
     expect(one.totalDominionCasts).toBe(3); expect(zero.enemySlot.includes(e.dominionCasts![0].slot)).toBe(false);
@@ -535,7 +547,7 @@ describe('family commander snapshot metadata', () => {
   it('reassembles bounded beam/carry records with enemies in a later part at maximum occupancy', () => {
     const e = familyEntities(), packets = encodeSnapshot(header, players(4), e), assembler = new SnapshotAssembler(); assembler.reset(header.runId);
     expect(packets).toHaveLength(2); expect(packets.every((p) => p.byteLength <= MAX_SNAPSHOT_BYTES)).toBe(true);
-    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (HEADER_BYTES + 4 * PLAYER_BYTES) + 1500 * ENEMY_BYTES + 400 * 9 + 160 * PICKUP_BYTES + 2 * COMMANDER_BYTES);
+    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(2 * (HEADER_BYTES + 4 * PLAYER_BYTES) + 1500 * ENEMY_BYTES + 400 * PROJECTILE_BYTES + 160 * PICKUP_BYTES + 2 * COMMANDER_BYTES);
     expect(assembler.add(decodeSnapshot(packets[1])!)).toBeNull();
     expect(assembler.add(decodeSnapshot(packets[0])!)?.commanderCasts).toEqual(e.commanderCasts);
   });
@@ -568,7 +580,7 @@ describe('Watchman aim records (rogue rooms.md §6.4)', () => {
   it('round-trips 19-byte records with the enemies in a later part', () => {
     const e = watchEntities(8), packets = encodeSnapshot(header, players(4), e), assembler = new SnapshotAssembler(); assembler.reset(header.runId);
     expect(WATCHMAN_BYTES).toBe(19);
-    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(packets.length * (HEADER_BYTES + 4 * PLAYER_BYTES) + 1500 * ENEMY_BYTES + 400 * 9 + 160 * PICKUP_BYTES + 8 * WATCHMAN_BYTES);
+    expect(packets.reduce((n, p) => n + p.byteLength, 0)).toBe(packets.length * (HEADER_BYTES + 4 * PLAYER_BYTES) + 1500 * ENEMY_BYTES + 400 * PROJECTILE_BYTES + 160 * PICKUP_BYTES + 8 * WATCHMAN_BYTES);
     expect(assembler.add(decodeSnapshot(packets[1])!)).toBeNull();
     expect(assembler.add(decodeSnapshot(packets[0])!)?.watchmanAims).toEqual(e.watchmanAims);
   });

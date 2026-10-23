@@ -56,6 +56,8 @@ export interface InterpolatedProjectiles {
   count: number;
   slot: Uint16Array;
   kind: Uint8Array;
+  /** The owner's player ID, PROJ_NO_OWNER for an enemy's. */
+  owner: Uint8Array;
   x: Float32Array;
   y: Float32Array;
   z: Float32Array;
@@ -96,6 +98,7 @@ export class SnapshotBuffer {
     count: 0,
     slot: new Uint16Array(PROJECTILE_SLOTS),
     kind: new Uint8Array(PROJECTILE_SLOTS),
+    owner: new Uint8Array(PROJECTILE_SLOTS),
     x: new Float32Array(PROJECTILE_SLOTS),
     y: new Float32Array(PROJECTILE_SLOTS),
     z: new Float32Array(PROJECTILE_SLOTS),
@@ -313,6 +316,7 @@ export class SnapshotBuffer {
       const k = po.count++;
       po.slot[k] = slot;
       po.kind[k] = a.projKind[i];
+      po.owner[k] = a.projOwner[i];
       po.x[k] = x;
       po.y[k] = y;
       po.z[k] = z;

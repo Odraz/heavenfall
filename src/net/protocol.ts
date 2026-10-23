@@ -22,7 +22,7 @@ function readRunId(v: DataView, offset: number): string {
 
 // ---------------------------------------------------------------- input
 
-export const INPUT_BYTES = 59;
+export const INPUT_BYTES = 73;
 export const ALLY_NONE = 255;
 
 export interface InputMsg {
@@ -59,6 +59,15 @@ export interface InputMsg {
   shots: number;
   /** The latest shot's button, 0 left or 1 right; HELD_FIRE (255) leaves firing to the host's own timer. */
   shotButton: number;
+  /**
+   * The latest shot's aim and view, repeated by every input until the next shot (netcode stage 4): a shot
+   * the host learns of from a later input, its own lost or late, still fires as it was aimed.
+   */
+  shotYaw: number;
+  shotPitch: number;
+  shotViewTick: number;
+  shotViewGap: number;
+  shotViewFrac: number;
 }
 
 export function encodeInput(m: InputMsg): ArrayBuffer {
@@ -86,6 +95,11 @@ export function encodeInput(m: InputMsg): ArrayBuffer {
   v.setUint8(56, Math.round(Math.max(0, Math.min(1, m.viewFrac)) * 255));
   v.setUint8(57, m.shots & 0xff);
   v.setUint8(58, m.shotButton & 0xff);
+  v.setFloat32(59, m.shotYaw, true);
+  v.setFloat32(63, m.shotPitch, true);
+  v.setUint32(67, m.shotViewTick < 0 ? 0xffffffff : m.shotViewTick >>> 0, true);
+  v.setUint8(71, Math.max(0, Math.min(255, m.shotViewGap | 0)));
+  v.setUint8(72, Math.round(Math.max(0, Math.min(1, m.shotViewFrac)) * 255));
   return buf;
 }
 
@@ -98,7 +112,7 @@ export function decodeInput(buf: ArrayBuffer, expectedRunId: string): InputMsg |
   const fire = v.getUint8(24);
   const shotButton = v.getUint8(58);
   if ((flags & ~7) !== 0 || (fire & ~7) !== 0 || (shotButton > 1 && shotButton !== 255)) return null;
-  for (const offset of [4, 8, 12, 16, 20]) if (!Number.isFinite(v.getFloat32(offset, true))) return null;
+  for (const offset of [4, 8, 12, 16, 20, 59, 63]) if (!Number.isFinite(v.getFloat32(offset, true))) return null;
   return {
     runId,
     seq: v.getUint32(0, true),
@@ -124,6 +138,11 @@ export function decodeInput(buf: ArrayBuffer, expectedRunId: string): InputMsg |
     viewFrac: v.getUint8(56) / 255,
     shots: v.getUint8(57),
     shotButton,
+    shotYaw: v.getFloat32(59, true),
+    shotPitch: v.getFloat32(63, true),
+    shotViewTick: v.getUint32(67, true) === 0xffffffff ? -1 : v.getUint32(67, true),
+    shotViewGap: v.getUint8(71),
+    shotViewFrac: v.getUint8(72) / 255,
   };
 }
 
@@ -138,7 +157,10 @@ export const PLAYER_BYTES = 41;
 export const ENEMY_BYTES = 16;
 /** An enemy HP above this is sent as it. */
 export const HP_WIRE_MAX = 0xffff;
-export const PROJECTILE_BYTES = 9;
+/** Netcode stage 4 added the owner's player ID (1 byte), so the Heretic's screen knows its own censers. */
+export const PROJECTILE_BYTES = 10;
+/** A projectile no player owns (an enemy's). */
+export const PROJ_NO_OWNER = 255;
 export const PICKUP_BYTES = 9;
 export const MAX_SNAPSHOT_BYTES = 16000;
 /** Positions of enemies and projectiles are sent in 1/64 m. */
@@ -244,6 +266,8 @@ export interface SnapshotEntities {
   projectileCount: number;
   projSlot: Uint16Array;
   projKind: Uint8Array;
+  /** The owner's player ID, PROJ_NO_OWNER for an enemy's. */
+  projOwner: Uint8Array;
   projX: Float32Array;
   projY: Float32Array;
   projZ: Float32Array;
@@ -385,6 +409,7 @@ export function encodeSnapshot(
       v.setUint16(o + 3, pos16(e.projX[i]), true);
       v.setUint16(o + 5, pos16(e.projY[i]), true);
       v.setUint16(o + 7, pos16(e.projZ[i]), true);
+      v.setUint8(o + 9, e.projOwner[i]);
       o += PROJECTILE_BYTES;
     }
     for (let i = 0; i < nk; i++) {
@@ -429,6 +454,8 @@ export interface Snapshot extends SnapshotHeader {
   projectileCount: number;
   projSlot: Uint16Array;
   projKind: Uint8Array;
+  /** The owner's player ID, PROJ_NO_OWNER for an enemy's (netcode stage 4). */
+  projOwner: Uint8Array;
   projX: Float32Array;
   projY: Float32Array;
   projZ: Float32Array;
@@ -500,6 +527,7 @@ export function decodeSnapshot(buf: ArrayBuffer, expectedRunId?: string): Snapsh
     projectileCount: np,
     projSlot: new Uint16Array(np),
     projKind: new Uint8Array(np),
+    projOwner: new Uint8Array(np),
     projX: new Float32Array(np),
     projY: new Float32Array(np),
     projZ: new Float32Array(np),
@@ -565,6 +593,7 @@ export function decodeSnapshot(buf: ArrayBuffer, expectedRunId?: string): Snapsh
     s.projX[i] = v.getUint16(o + 3, true) / POS_SCALE;
     s.projY[i] = v.getUint16(o + 5, true) / POS_SCALE;
     s.projZ[i] = v.getUint16(o + 7, true) / POS_SCALE;
+    s.projOwner[i] = v.getUint8(o + 9);
     if (s.projSlot[i] >= PROJECTILE_SLOTS) return null;
     o += PROJECTILE_BYTES;
   }
@@ -602,6 +631,7 @@ function concatParts(parts: Snapshot[]): Snapshot {
     projectileCount: np,
     projSlot: new Uint16Array(np),
     projKind: new Uint8Array(np),
+    projOwner: new Uint8Array(np),
     projX: new Float32Array(np),
     projY: new Float32Array(np),
     projZ: new Float32Array(np),
@@ -621,6 +651,7 @@ function concatParts(parts: Snapshot[]): Snapshot {
     eo += p.enemyCount;
     s.projSlot.set(p.projSlot, po);
     s.projKind.set(p.projKind, po);
+    s.projOwner.set(p.projOwner, po);
     s.projX.set(p.projX, po);
     s.projY.set(p.projY, po);
     s.projZ.set(p.projZ, po);

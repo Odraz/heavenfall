@@ -101,6 +101,7 @@ import {
   PHASE_COMBAT,
   PHASE_COUNTDOWN,
   PHASE_IDLE,
+  PROJ_NO_OWNER,
   type InputMsg,
   type SnapshotEntities,
   type SnapshotHeader,
@@ -127,7 +128,7 @@ import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } fr
 import { directStepAllowed, FlowField, UNREACHABLE } from './flowfield';
 import { DryNavigation, FIRE_ENEMY_DAMAGE, FIRE_PLAYER_DAMAGE, Hazards } from './hazards';
 import { SpawnWarnings } from './spawnWarnings';
-import { EnemyHistory, NO_VIEW, viewLag, type ViewTick } from './lagComp';
+import { EnemyHistory, NO_VIEW, viewAt, viewLag, type ViewTick } from './lagComp';
 import { lateStretch, stretchHit, type LateShot } from './lateShots';
 import { shotSpread } from './shotSpread';
 import { HELD_FIRE, latchBits, latchClear, latchFired, latchPress, newFireLatch, nextShot, pressDelta, queueShots, SHOT_EARLY_TICKS, shotsDone, type ClientShot, type FireLatch } from './fireLatch';
@@ -443,7 +444,7 @@ export const PROJ_CENSER = 0;
 export const PROJ_GLOBE = 1;
 export const PROJ_ARROW = 2;
 const MAX_PROJECTILES = 400;
-const PROJECTILE_RANGE = 60;
+export const PROJECTILE_RANGE = 60;
 
 const round1 = (v: number): number => Math.round(v * 10) / 10;
 /** Close-quarters charge (R06 follow-up §9 option 5): range in meters, refund per kill and the per-second budget in seconds. */
@@ -738,6 +739,11 @@ export class Simulation {
   private readonly tickBursts: number[] = [];
   /** This tick's credited damage per human player index, then per enemy slot: [amount, killed] (R06 follow-up §8). */
   private readonly tickDamage = new Map<number, Map<number, [number, number]>>();
+  /**
+   * Each player's kills this tick, slot and incarnation pairs (netcode stage 4): every one, a client-timed
+   * shot's too, whose own hits leave the damage numbers (its screen skips the kills it predicted).
+   */
+  private readonly tickKills = new Map<number, number[]>();
   /** This tick's accepted hits on each human, by player index: [source x, y, amount, kind] (R06 follow-up §9). */
   private readonly tickHurt = new Map<number, number[][]>();
   // Casts and melee (§7.1).
@@ -808,6 +814,12 @@ export class Simulation {
   private readonly pHostileBudget = new Uint8Array(PROJECTILE_SLOTS);
   private readonly pOrigin = new Float64Array(PROJECTILE_SLOTS * 3);
   private readonly pRoom = new Uint8Array(PROJECTILE_SLOTS);
+  /**
+   * A player's censer flies against the enemies where its thrower's screen draws them (netcode stage 4):
+   * this many ticks behind the host, the thrower's view lag when it was thrown; 0 for the present.
+   */
+  private readonly pViewLag = new Float32Array(PROJECTILE_SLOTS);
+  private readonly drawnAt: [number, number, number] = [0, 0, 0];
   private readonly pReflectOwner = new Map<number, SimPlayer>();
   private readonly pFreedTick = new Int32Array(PROJECTILE_SLOTS).fill(-SLOT_REUSE_TICKS);
   /** Living projectile slots, oldest first. */
@@ -865,6 +877,7 @@ export class Simulation {
     projectileCount: 0,
     projSlot: new Uint16Array(MAX_PROJECTILES),
     projKind: new Uint8Array(MAX_PROJECTILES),
+    projOwner: new Uint8Array(MAX_PROJECTILES),
     projX: new Float32Array(MAX_PROJECTILES),
     projY: new Float32Array(MAX_PROJECTILES),
     projZ: new Float32Array(MAX_PROJECTILES),
@@ -1125,7 +1138,9 @@ export class Simulation {
     p.fire = m.fire;
     p.allyTargetId = m.allyTargetId;
     // Each with the aim and view of this input, sent in the frame the shot was fired.
-    if (newShots) queueShots(p.shotQueue, newShots, { button: m.shotButton === 1 ? 1 : 0, yaw: m.yaw, pitch: m.pitch, view: p.view, tick: this.tick }, m.shots);
+    // With the latest shot's own aim and view, which every input repeats (netcode stage 4).
+    const shotView: ViewTick = m.shotViewTick >= 0 ? { tick: m.shotViewTick, gap: m.shotViewGap, frac: m.shotViewFrac } : NO_VIEW;
+    if (newShots) queueShots(p.shotQueue, newShots, { button: m.shotButton === 1 ? 1 : 0, yaw: m.shotYaw, pitch: m.shotPitch, view: shotView, tick: this.tick }, m.shots);
     // Any increase of a press counter is one press (§9.3).
     if (qPressed) p.pendingQ = true;
     if (ePressed) {
@@ -1415,17 +1430,20 @@ export class Simulation {
    * DAMAGE_HITS_MAX largest per-enemy totals, positioned above the enemy as the host has it now.
    */
   flushDamage(): void {
-    for (const [index, hits] of this.tickDamage) {
+    for (const index of new Set([...this.tickDamage.keys(), ...this.tickKills.keys()])) {
       const p = this.slots[index];
       if (!p?.connected) continue;
       const list: number[] = [];
-      for (const [slot, [amount, killed]] of [...hits].sort((a, b) => b[1][0] - a[1][0]).slice(0, DAMAGE_HITS_MAX)) {
+      for (const [slot, [amount, killed]] of [...(this.tickDamage.get(index) ?? [])].sort((a, b) => b[1][0] - a[1][0]).slice(0, DAMAGE_HITS_MAX)) {
         const top = ENEMIES[this.eType[slot]].shot.top;
         list.push(slot, round1(this.eX[slot]), round1(this.eY[slot]), round1(this.eZ[slot] + top + 0.3), round1(amount), killed);
       }
-      this.emit(p.id, { type: 'damage', hits: list });
+      // Every kill, past the numbers' limit too: the player's screen plays them at once (netcode stage 4).
+      const kills = this.tickKills.get(index);
+      this.emit(p.id, { type: 'damage', hits: list, ...(kills ? { kills } : {}) });
     }
     this.tickDamage.clear();
+    this.tickKills.clear();
     for (const [index, hits] of this.tickHurt) {
       const p = this.slots[index];
       if (p?.connected) this.emit(p.id, { type: 'hurt', hits: hits.sort((a, b) => b[2] - a[2]).slice(0, HURT_HITS_MAX).flat() });
@@ -2621,7 +2639,8 @@ export class Simulation {
     this.eHp[slot] -= amount;
     this.eHurtTick[slot] = this.tick;
     // A client-timed shot's own hits already showed their numbers on the shooter's screen (netcode stage 3).
-    if (shooter && !shooter.bot && !(origin && shooter.shotIndex >= 0)) {
+    // Bots get theirs too: the lag test's bot guest plays its reported kills like a player (netcode stage 4).
+    if (shooter && !(origin && shooter.shotIndex >= 0)) {
       let own = this.tickDamage.get(source);
       if (!own) { own = new Map(); this.tickDamage.set(source, own); }
       const hit = own.get(slot) ?? [0, 0];
@@ -2637,6 +2656,9 @@ export class Simulation {
       this.rewards.enemyKilled(slot);
       if (shooter) {
         shooter.kills++;
+        let kills = this.tickKills.get(source);
+        if (!kills) { kills = []; this.tickKills.set(source, kills); }
+        kills.push(slot, this.eIncarnation[slot]);
         if (origin === 'LMB' || origin === 'RMB') shooter.weaponKills++;
         this.closeQuarters(shooter, slot);
         this.noteBurst(slot, shooter, fromX, fromY);
@@ -3281,7 +3303,10 @@ export class Simulation {
       case 'censer': {
         const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
         const censer = this.spawnProjectile(PROJ_CENSER, ex, ey, ez, dx, dy, dz, CENSER_SPEED, CENSER_RADIUS, w.damage, w.range, p.index);
-        if (censer >= 0) this.talents.heretic.censerThrown(censer, p);
+        if (censer >= 0) {
+          this.pViewLag[censer] = viewLag(p.view, this.tick - 1);
+          this.talents.heretic.censerThrown(censer, p);
+        }
         return;
       }
       case 'sacrament': {
@@ -3896,6 +3921,7 @@ export class Simulation {
     this.pTraveled[slot] = 0;
     this.pMaxDist[slot] = Math.min(maxDist, PROJECTILE_RANGE);
     this.pOwner[slot] = owner;
+    this.pViewLag[slot] = 0;
     this.pReflected[slot] = 0; this.pHostileBudget[slot] = owner < 0 ? 1 : 0;
     this.pOrigin.set([x, y, z], slot * 3); this.pRoom[slot] = this.pickups.roomAt(x, y);
     this.projectiles.push(slot);
@@ -3937,12 +3963,15 @@ export class Simulation {
     let hitKey = Infinity;
     if (owner >= 0) {
       const thrower = this.slots[owner];
+      // Each enemy where the thrower's screen draws it as the censer passes (netcode stage 4).
+      const lag = this.pViewLag[slot], view = lag > 0 ? viewAt(this.tick - 1 - lag) : NO_VIEW, at = this.drawnAt;
       for (let k = 0; k < this.activeCount; k++) {
         const s = this.active[k];
         // The Long Chain: the censer flies through Blessed (classes-heretic.md `a.3b`).
         if (this.talents.heretic.passesBlessed(thrower, this.eType[s])) continue;
         const shot = ENEMIES[this.eType[s]].shot;
-        const t = rayCylinder(x, y, z, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s] + shot.base - pr, shot.radius + pr, shot.top - shot.base + 2 * pr);
+        if (!this.enemyHistory.positionAt(s, view, at)) { at[0] = this.eX[s]; at[1] = this.eY[s]; at[2] = this.eZ[s]; }
+        const t = rayCylinder(x, y, z, dx, dy, dz, at[0], at[1], at[2] + shot.base - pr, shot.radius + pr, shot.top - shot.base + 2 * pr);
         if (t <= terrainT && t < hitT) {
           hitT = t;
           hitSlot = s;
@@ -4842,6 +4871,7 @@ export class Simulation {
     this.projectiles.forEach((slot, i) => {
       e.projSlot[i] = slot;
       e.projKind[i] = this.pKind[slot];
+      e.projOwner[i] = this.pOwner[slot] >= 0 ? this.slots[this.pOwner[slot]]?.id ?? PROJ_NO_OWNER : PROJ_NO_OWNER;
       e.projX[i] = this.pX[slot];
       e.projY[i] = this.pY[slot];
       e.projZ[i] = this.pZ[slot];

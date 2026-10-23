@@ -9,6 +9,7 @@ export const INPUT_DEFAULTS = {
   runId: '00000000000000000000000000000000',
   item1Presses: 0, item2Presses: 0, mapHeld: false, qHeld: false, eHeld: false,
   leftPresses: 0, rightPresses: 0, viewTick: -1, viewGap: 0, viewFrac: 0, shots: 0, shotButton: 255,
+  shotYaw: 0, shotPitch: 0, shotViewTick: -1, shotViewGap: 0, shotViewFrac: 0,
 };
 
 /** An open room of floor 0, `w` × `h` cells inside a wall border. */

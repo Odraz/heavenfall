@@ -1,8 +1,62 @@
 # Netcode stage report: smooth co-op shooting
 
-Status: **implemented, awaiting the human multiplayer session**, 2026-10-22, on `rogue` from `fd437e4`; stage 2 (below) from `f7f477d`; stage 3 (2026-10-23) from `bff1ece`. Done before R07 at Tomas's request ("multiplayer is the highest priority"), after the audit of the same day. Tomas delegated every networking decision.
+Status: **implemented, awaiting the human multiplayer session**, 2026-10-22, on `rogue` from `fd437e4`; stage 2 (below) from `f7f477d`; stage 3 (2026-10-23) from `bff1ece`; stage 4 (2026-10-23) from `9c7aeda`. Done before R07 at Tomas's request ("multiplayer is the highest priority"), after the audit of the same day. Tomas delegated every networking decision.
 
-**Versions:** protocol 16 → 17 → 18 → **19** (the input message grew from 49 to 57, then 59 bytes; stage 3 grew each snapshot enemy from 14 to 16 bytes and each player from 40 to 41), rules unchanged at 27. Builds with different versions cannot join each other, so **everyone must load the same build** for the session.
+**Versions:** protocol 16 → 17 → 18 → 19 → **20** (the input message grew from 49 to 57, 59, then 73 bytes; stage 3 grew each snapshot enemy from 14 to 16 bytes and each player from 40 to 41; stage 4 each projectile from 9 to 10), rules unchanged at 27. Builds with different versions cannot join each other, so **everyone must load the same build** for the session.
+
+## Stage 4: the Heretic's censer, and every other kill, at once
+
+The audit before the friends' session (2026-10-23) rated the netcode 8/10 and found three things left.
+
+### What was still wrong
+
+1. **The Heretic's censer lagged.** Its Censer Launcher is a projectile, so nothing predicted it: the thrower saw its own censer only when a snapshot carried it, a round trip and the render delay after the click (about 0.3 s, 6 m of flight, at a 100 ms ping). It also flew on the host against the enemies' present positions, not where the thrower saw them.
+2. **Kills that weren't shots came late.** Q and E, fire, incense, censers, talents and relics: the host's snapshot dropped the enemy and its death waited for the render delay (about 0.15 s more) on top of the round trip.
+3. **A shot whose own input was late lost its aim.** The host fired a client-timed shot with the aim of the input that first counted it. If that input was lost or late (on a real line a retransmitted input arrives after a newer one, which wins), the next input counted the shot with its own newer aim. The lag test's Betrayer had 5–7 predicted kills reappear in some runs.
+
+### What changed, as players feel it
+
+| # | Change | Effect in play |
+|---|---|---|
+| 1 | **Your censer flies on your screen from the click.** The screen throws its own from the eye along the aim at the host's speed and range, the painted muzzle offset fading as before. It breaks on the first enemy, soul, standing prop or wall it meets as this screen draws them, with its burst, sound, hit marker and flinch at once. The snapshots name each projectile's owner (1 byte); the host's censer of yours is matched to your throw by its path and isn't drawn, and its vanishing plays nothing. | The Heretic's weapon responds like the guns. |
+| 2 | **The host flies your censer where you saw the enemies.** Each tick of a player's censer meets the enemies where its thrower's screen drew them, by the thrower's view lag at the throw (the enemy history of stage 1). | Your censer breaks on the host where it broke on your screen. |
+| 3 | **Your other kills die when the host's report arrives.** The host's damage event to each player now lists every kill credited to them that tick (slot and incarnation), past the 24-number limit and a client-timed shot's own kills too. The screen plays each at once where it's drawn, like a predicted kill, skipping the ones it predicted; a burst's ripple still delays it once. Teammates' kills keep the render delay, so they stay in time with their drawn shots. Bots get the event too, so the lag test's bot guests measure it. | Blasphemy, Falling Star, fire and incense kills pop about 0.15 s sooner. |
+| 4 | **Every input repeats the latest shot's aim and view** (14 bytes). The host fires a shot with them, whichever input counted it. | A late or lost input no longer moves your shot. |
+
+### Evidence
+
+**The lag test** ([e2e/lag.spec.ts](../../e2e/lag.spec.ts)), now with a Heretic guest. It also requires at least 80% of each guest's kills, of any kind, to have died on its screen at once (predicted, or on the host's report), and for the Heretic at most 10% of its own host censers unmatched to a throw and at least 80% of the matched ones ending where its screen's broke. The host's kills are read before the guest's, with a second for their reports to arrive: one Blasphemy can kill dozens between two reads. Two runs during the stage, then the regression run (below):
+
+| Guest | Kills at once (of all its kills) | Predicted kills that reappeared | Heretic's censers |
+|---|---|---|---|
+| Betrayer | 80 of 80 · 102 of 119\* | 0 · 1 | |
+| Fallen | 140 of 141 · 91 of 122\* | 0 · 1 | |
+| Binder | 120 of 133 · 124 of 124 | 1 · 1 | |
+| Heretic | 116 of 116 · 109 of 114 | | 37 thrown, 28 matched, 27 agreed · 39, 29, 26 |
+
+\* Before the read order was fixed: in that Fallen run a Blasphemy fell between the two reads. Eight more Fallen runs with temporary diagnostics showed every kill the host credited reaching the screen's report (126 of 126, 109 of 109, 145 of 145, 149 of 149 and so on) and 0–2 predicted kills reappearing. One run in about ten had 18 reappear; it didn't recur and isn't explained.
+
+Of the Heretic's 37 censers, 9 never appeared in a snapshot: at point-blank in the crowd the host's broke within the 3 ticks between two snapshots. Nothing shows wrong on screen (the local censer broke, the host's was never drawn); it's why the matching uses the path and not the order of the throws.
+
+**Unit tests:** [censerFlight.test.ts](../../src/sim/censerFlight.test.ts) flies the host's censer and the screen's against the same moving Blessed: one crossing the line is hit on both where the thrower saw it cross, at view lags of 3, 6 and 9 ticks, and missed by the host without the thrower's view; one walking at the Heretic breaks on both within 0.4 m at lags 0, 6 and 12, the host's more than 0.8 m short without the view. [ownCensers.test.ts](../../src/client/ownCensers.test.ts) covers the screen's flight (speed, the first enemy's near side, the Long Chain, a wall, a soul, a standing and a broken prop, the range, the border, the muzzle offset) and the matching (by path, the window, hiding while drawn, agreement). Also: the kill list past the numbers' limit and a bot's event in [damageNumbers.test.ts](../../src/sim/damageNumbers.test.ts), a client-timed shot's kill in the list without its number in [shotAgreement.test.ts](../../src/sim/shotAgreement.test.ts), a shot whose input was lost firing with the repeated aim (and not without it) in [clientShots.test.ts](../../src/sim/clientShots.test.ts), and the new input and projectile bytes in [protocol.test.ts](../../src/net/protocol.test.ts).
+
+### Not done, and why
+
+- **The censer's incense cloud still comes from the host**, a round trip after the screen's break. Its burst and sound are at once; the cloud's shape depends on talents the host resolves.
+- **Teammates' kills keep the render delay**, so a friend's kill lines up with the friend's drawn shot.
+- **Damage numbers of a client-timed shot's side effects** (a proc or the close-quarters charge inside the shot) still don't show on the shooter's screen; only their kills were added to the report.
+- **Unpredicted shot kills** (about 1 in 10 of the Binder's in the lag test) keep the snapshot path.
+
+### Checks (stage 4)
+
+| Command | Result |
+|---|---|
+| `npx tsc --noEmit -p .` | clean |
+| `npx vitest run` | **138 files, 1,702 tests passed** |
+| `npx vitest run src/sim/perf.test.ts src/sim/hazards.perf.test.ts src/sim/bench.test.ts --no-file-parallelism` | 5/5 passed, thresholds unchanged |
+| `npm run build` | built |
+| `npx playwright test --config playwright.hardware.config.ts e2e/lag.spec.ts --workers=1` | first run 4/4 passed; second run 3 passed, the Fallen failed its kill share (91 of 122) before the read order was fixed |
+| The stage 1 regression set (same 15 files) | **56/56 passed** (27.4 min), including four-client multiplayer, the compressed crest snapshots at the upload limit, the Dominion and commander late entries and the solo autopilot floor. Its lag tests: Betrayer 81 of 79 kills at once, Fallen 171 of 165, Binder 114 of 111, Heretic 129 of 123 with 34 of 38 censers matched and 31 agreed; 0–1 predicted kills reappeared each. (Above 100%: the guest is read a second after the host, and goes on killing.) |
 
 ## Stage 3: every weapon kill at once
 
@@ -177,7 +231,7 @@ Result: **53/53 passed** (22.5 min), including four-client multiplayer with late
 
 ## For the session
 
-- **Everyone loads the same build** (protocol 19).
+- **Everyone loads the same build** (protocol 20).
 - **The host is whoever has the best upload**, ideally wired, with no streaming or screen sharing while playing. Full crowds need about 2.1 Mbit/s of upload for three friends.
 - **Press F3 as host:** each friend's ping and route. `relay` means their network forced the TURN relay. Check the Metered account's monthly quota beforehand: about 300 MB per relayed player per hour.
 - **Ask a friend to press F3** if shooting feels off. *Reappeared* is the number to watch: predicted kills the host didn't agree with. More than about one in ten of the confirmed count means something other than lag is disagreeing, which is worth a note in the playtest log, with the class and weapon.

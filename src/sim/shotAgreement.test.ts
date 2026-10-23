@@ -23,6 +23,9 @@ let seq = 0;
 function input(sim: Simulation, p: SimPlayer, m: Partial<InputMsg>): void {
   const full: InputMsg = { ...INPUT_DEFAULTS, runId: RUN, seq: ++seq, x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fire: 0,
     qPresses: p.qPresses, ePresses: p.ePresses, allyTargetId: 255, lastTeleportId: p.teleportId, shots: p.shotsSeen, shotButton: 0, ...m };
+  // The latest shot's aim and view: this input's, as when it carries the shot (netcode stage 4).
+  full.shotYaw = m.shotYaw ?? full.yaw; full.shotPitch = m.shotPitch ?? full.pitch;
+  full.shotViewTick = m.shotViewTick ?? full.viewTick; full.shotViewGap = m.shotViewGap ?? full.viewGap; full.shotViewFrac = m.shotViewFrac ?? full.viewFrac;
   sim.applyInput(p.id, decodeInput(encodeInput(full), RUN)!, sim.nowMs);
 }
 
@@ -165,6 +168,20 @@ describe("damage numbers of the shooter's own shots (netcode stage 3)", () => {
       expect(sim.eHp[w]).toBe(ENEMIES[WATCHMAN].hp - WEAPONS.betrayer.damage);
       expect(damage(sim, p.id)).toHaveLength(clientTimed ? 0 : 1);
     }
+  });
+
+  it("a client-timed shot's kill is still listed among the kills, without its number (netcode stage 4)", () => {
+    const { sim, p } = setup('betrayer');
+    const b = enemyAt(sim, BLESSED, 12.5, 10.5);
+    const incarnation = sim.eIncarnation[b];
+    p.yaw = Math.atan2(sim.eY[b] - p.y, sim.eX[b] - p.x);
+    p.pitch = Math.atan2(sim.eZ[b] + 0.8 - (p.z + PLAYER_EYE), Math.hypot(sim.eX[b] - p.x, sim.eY[b] - p.y));
+    sim.events.length = 0;
+    input(sim, p, { fire: FIRE_LEFT, shots: 1 });
+    sim.step();
+    expect(sim.eAlive[b]).toBe(0);
+    const events = damage(sim, p.id).map((e) => e.event as { hits: number[]; kills?: number[] });
+    expect(events).toEqual([{ type: 'damage', hits: [], kills: [b, incarnation] }]);
   });
 
   it('damage the shot causes beyond its own hits (a world source here) still arrives in the event', () => {

@@ -178,7 +178,7 @@ export class HostNet {
   }
 
   /**
-   * Sends a snapshot part, unless the client's `snap` channel has more than 64 KB buffered, so a slow
+   * Sends a snapshot part, unless the client's `snap` channel would then hold more than SNAP_BUFFER_LIMIT, so a slow
    * connection can't build up lag (§9.1).
    */
   sendSnaps(conn: number, parts: readonly ArrayBuffer[]): void {
