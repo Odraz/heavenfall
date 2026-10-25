@@ -2,6 +2,10 @@
 
 Revision 9, 2026-10-11. The development sequence for the one-dungeon Pearly Gates slice. [game.md](game.md), its catalogs and [slice-acceptance.md](slice-acceptance.md) remain the gameplay authority; this file decides **order**, not rules.
 
+**R9 prepared, 2026-10-25:** the acceptance milestone is ready to implement: a content census, the review against `main` with four known fixes (assists, the Gatebreaker's turn limit, the intermittent lag test, the wall-stop sound), evidence tools, the first rogue benchmark workload, then your sessions; see [r09.md](r09.md).
+
+**R8 checkpoint, 2026-10-25:** every required event has its own cue and boss/elite warnings outrank gunfire, awaiting your listening; see the [R08 report](r08-report.md).
+
 **R7 checkpoint, 2026-10-23:** the authored Gatekeeper replaces the inherited fixture: its cycle, Judgment, the Toll, Called to the Gate, the 50% transition and the Watchers, with bots, co-op setups and view-time resolution for multiplayer, awaiting your play; see the [R07 report](r07-report.md) for the per-class and co-op checklist.
 
 **R6 checkpoint, 2026-10-18:** relics and combos, the key and the Reliquary, the bargain, the Bells, the Sundial, Pilgrim's Return, deeds, Edicts and streaks are implemented and verified, awaiting your play; see the [R06 report](r06-report.md) for the routes and tradeoffs to compare.
