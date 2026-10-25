@@ -690,54 +690,7 @@ This is not a game screenshot and not a scene. A first-person view of only the p
 
 ## Pro character models (Meshy)
 
-The images Meshy turns into 3D models, for the sprites rendered from professional models (milestone not numbered yet). The whole process is in [meshy-guide.md](meshy-guide.md). The Blessed is the pilot; the other characters follow once it works.
-
-These images are **inputs for Meshy, not art**. Meshy paints the image's colors onto the model, so the views must be flat (no light, no shadows) and the background a plain grey it can remove. Save them in `assets/art-src/reference/`.
-
-- [ ] `blessed-design.png`: the upgraded look
-- [ ] `blessed-turnaround.png`: front, side and back for Meshy (Claude cuts it into `blessed-mv-front.png`, `blessed-mv-side.png`, `blessed-mv-back.png`)
-- [ ] `blessed-sword.png`: the sword on its own
-
-### The Blessed's design — `blessed-design.png` · 9:16
-
-Attach: `blessed-front.jpg`, `concept-4.jfif`
-
-Raises the Blessed to the concept's level of detail while keeping who he is. Two changes on purpose: the robe becomes a **tabard that ends above the knee** (Meshy's rigging gives legs bones but not a long robe, which would stretch like rubber between the legs), and there is **no halo** (the game draws it in code, so it always faces the camera).
-
-```text
-A redesign of the first attached character, the Blessed, a holy pilgrim-soldier of Heaven and the most common enemy, keeping his identity: a gaunt, bald old man with a short white beard and blind, pale white eyes, ivory cloth with sky-blue trim and polished gold, a straight longsword. Raise the detail and craftsmanship to the level of the soldiers in the second attached image: fitted white plate armor with engraved gold filigree edges over an ivory padded gambeson; layered white pauldrons with gold rims; a gold-trimmed ivory cowl draped over the shoulders; a sky-blue sash at the waist with a gold buckle; an ivory tabard with sky-blue borders and a small gold sunburst on the chest, split at the front, back and sides and reaching just above the knees, so the armored legs are fully visible: white greaves, gold-rimmed knee cops, steel sabatons; gold bracers. No halo, no helmet, no cape, no floor-length robe. He holds the longsword in the right hand, low and diagonally across the body, point down. Art style: stylized 3D game art with a hand-inked graphic-novel finish, matching the attached reference images: bold black ink outlines (a thick outer contour, thinner inner lines), cel shading in 2–3 tones softened with painterly brush texture, light ink hatching in the deepest shadows, warm golden key light from the upper left, crisp clean edges. Palette: ivory, white and polished gold with pastel sky-blue accents. Full body, front view facing the viewer, centered, the whole figure inside the frame with the feet on the bottom edge. Isolated on a flat pure green (#00FF00) background: no floor, no cast shadow, no scenery, no text, no glow or haze outside the outline. Aspect ratio 9:16.
-```
-
-**Check before saving:** the same face (bald, white beard, pale eyes); the legs visible below the tabard from the knee down; no halo; the sword in the right hand. Generate again until you like the look: everything after this copies it.
-
-**The Blessed keeps the sword.** The concept's golden scepter-mace is reserved for a future enemy: bigger, slower, armored and stronger than the Blessed.
-
-### The Blessed for Meshy — `blessed-turnaround.png` · 16:9
-
-Attach: `blessed-design.png` only. Start a new chat.
-
-```text
-Character model sheet for 3D modeling, copying the character in the attached image: three full-body views side by side, from left to right: front, right side profile, back. Copy the attached design exactly: same face, proportions, armor, clothing and colors in every view. Pose in every view: a neutral A-pose: standing straight, feet apart at shoulder width and pointing forward, arms straight and angled down and away from the body at about 45 degrees, palms facing the thighs, so the arms, hands and legs are clearly separated from the body and from each other; both hands empty, the fingers loosely curled as if around a sword grip; neutral face, mouth closed, looking straight ahead. No sword, no weapon, nothing held, no halo. All three views at the same scale, standing on one shared baseline, orthographic with no perspective, evenly spaced with a wide gap between them, nothing overlapping. Colors as a flat color reference for texturing: every surface in its own true color, evenly lit, with no cast shadows, no shading, no hatching, no highlights, no rim light, no glow and no light direction at all; thin dark lines only where two colors or parts meet, no thick outer contour. Plain flat medium grey (#808080) background, no floor, no shadows, no text, no labels, no arrows, no extra views or characters. Aspect ratio 16:9.
-```
-
-**Check before saving:**
-- three views, the same character in each (same armor, same tabard length, same trim);
-- arms clearly away from the body, both hands empty, feet apart;
-- the side view is a true profile and the back view really shows the back (a cowl and tabard back, not a second front);
-- no shadows or shading: the ivory looks the same color on the left and right sides of the body;
-- the whole figure inside each view, feet included, with grey around it.
-
-If one view is wrong, reply *"Fix only the <side/back> view: …"* rather than starting over.
-
-### The Blessed's sword — `blessed-sword.png` · 16:9
-
-Attach: `blessed-design.png` only. Start a new chat.
-
-```text
-Weapon model sheet for 3D modeling: the longsword carried by the character in the attached image, alone, in exact side profile, horizontal, the blade pointing right, the whole sword inside the frame with a margin around it. Copy the attached design: a straight double-edged steel blade with a central fuller and fine gold filigree near the guard, a straight gold crossguard with flared ends, a grip wrapped in brown leather, a round gold pommel. Orthographic with no perspective. Colors as a flat color reference for texturing: every surface in its own true color, evenly lit, with no cast shadows, no shading, no highlights, no reflections, no glow; thin dark lines only where two parts meet. Plain flat medium grey (#808080) background, no hands, no text, no labels. Aspect ratio 16:9.
-```
-
-**Check before saving:** the whole sword, straight and horizontal, matching the design image; no hands; no shine or reflections painted on the blade.
+Moved to the look overhaul (2026-10-25): the Blessed's design, Meshy sheet and sword prompts, and those of every other character, are in [look/prompts.md](look/prompts.md#c-characters-for-meshy); the Meshy process is in [look/meshy.md](look/meshy.md). The file names changed: `blessed-turnaround.png` is now `blessed-meshy.png`.
 
 ---
 

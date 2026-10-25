@@ -4,7 +4,7 @@ Revision 9, 2026-10-11. **What to make and when.** The prompts are in [art-promp
 
 ## Reuse first
 
-The four players, the Blessed, Chorister, Cherub and Gatekeeper, the first-person weapons, the marble/gold architecture kit, the sky, the decorations, the base ability and class icons, the UI frames, the loading cards and the seven music tracks all stay. The twenty rooms are built from the existing modular kit; no room paintings. Moving characters are 3D models rendered into sprites by Claude (the [Meshy guide](../meshy-guide.md) pipeline or Blender), never generated frame by frame.
+The four players, the Blessed, Chorister, Cherub and Gatekeeper, the first-person weapons, the marble/gold architecture kit, the sky, the decorations, the base ability and class icons, the UI frames, the loading cards and the seven music tracks all stay. The twenty rooms are built from the existing modular kit; no room paintings. Moving characters are 3D models rendered into sprites by Claude (the [Meshy guide](../look/meshy.md) pipeline or Blender), never generated frame by frame.
 
 ## What to make, in order
 

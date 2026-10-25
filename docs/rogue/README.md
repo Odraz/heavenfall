@@ -10,6 +10,8 @@ The slice ships every system below in the Pearly Gates. It does not ship the oth
 
 Making assets: [asset-plan.md](asset-plan.md) says what to make when; [art-prompts.md](art-prompts.md) and [audio-prompts.md](audio-prompts.md) give each prompt with its attachments, file name and checks.
 
+After R9: the graphics overhaul toward the concept look (V1–V5) is planned in [docs/look/](../look/README.md).
+
 In the walkthroughs (game.md Appendix A, rooms.md §5) R0–R10 are **room numbers**, not milestones.
 
 ## Read the specification

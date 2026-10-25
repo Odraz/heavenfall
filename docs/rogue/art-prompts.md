@@ -4,7 +4,7 @@ Every new image the Pearly Gates roguelite needs, each with a ready-to-paste pro
 
 There are two kinds of images, as before:
 
-- **Part A, model references (16 images).** For the three commanders (the Dominion, the Lectern Cantor and the Stray-Carrier), the Watchman and the Gatekeeper's trumpet. Claude builds them as 3D models and renders them into sprites; these images are never shown in the game. They follow the [Meshy guide](../meshy-guide.md) format (flat colors, grey background, A-pose), which also works for Claude's own Blender modeling.
+- **Part A, model references (16 images).** For the three commanders (the Dominion, the Lectern Cantor and the Stray-Carrier), the Watchman and the Gatekeeper's trumpet. Claude builds them as 3D models and renders them into sprites; these images are never shown in the game. They follow the [Meshy guide](../look/meshy.md) format (flat colors, grey background, A-pose), which also works for Claude's own Blender modeling.
 - **Part B, game assets.** Used in the game directly after Claude cuts out the background, crops and resizes them.
 
 Map icons, door sigils, reward plates, state markers, rings, lanes, timers, text and numbers are **drawn in code**, not generated. Do not make images for them.
@@ -139,7 +139,7 @@ Every prompt below already contains its style sentence in full, so you can paste
 | **Item / relic** | item and relic icons | new: the B1 sentence at icon size, isolated, so one image serves as the world pickup and the HUD/card icon |
 | **Ability** | new ability icons, optional talent and combo icons | the original B3 *Ability icons* sentence, unchanged, so the new icons match the eight existing ones |
 | **Texture / effect** | textures, effect textures | the original B4 and B5 sentences |
-| **Model sheet** | Part A | the [Meshy guide](../meshy-guide.md)'s flat-color sentence, as in the original *Pro character models* section |
+| **Model sheet** | Part A | the [Meshy guide](../look/meshy.md)'s flat-color sentence, as in the original *Pro character models* section |
 
 ---
 
@@ -171,7 +171,7 @@ Green is used only for healing and blue only for shields, everywhere in the game
 
 The new elite enemy ([rooms.md](rooms.md) §6): *"Its mace strikes everything around it, angels too."* It is the "bigger, slower, armored and stronger than the Blessed" enemy with the golden scepter-mace that the original file reserved from `concept-4.jfif`. Twice a Blessed's height (3.4 m drawn), broad, slow (3.5 m/s), wings folded down like a cloak (it doesn't fly), a flanged gold mace held upright so its head stands **above every crowd, about 4 m up**, a dark bronze face plate.
 
-Four images, in this order. The design sets the look; the other three copy it for modeling. As for the Blessed, the model has **no wings and no weapon**: the wings and mace are separate references that Claude attaches in Blender, because rigging can't handle them on the body ([Meshy guide](../meshy-guide.md) §2).
+Four images, in this order. The design sets the look; the other three copy it for modeling. As for the Blessed, the model has **no wings and no weapon**: the wings and mace are separate references that Claude attaches in Blender, because rigging can't handle them on the body ([Meshy guide](../look/meshy.md) §2).
 
 #### The Dominion's design — `dominion-design.png` · 2:3
 
