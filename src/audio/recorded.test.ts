@@ -21,6 +21,11 @@ describe('recorded sound effects', () => {
     ]);
   });
 
+  it('matches hyphenated prompt IDs, so a recording replaces its cue by file name (R8)', () => {
+    const g = groupTakes({ '../../assets/sfx/relic-rune-01.wav': 'a', '../../assets/sfx/relic-rune-02.wav': 'b', '../../assets/sfx/relicRune-01.wav': 'old' });
+    expect([...g.entries()]).toEqual([['relic-rune', ['a', 'b']]]);
+  });
+
   it('finds the S1 takes in assets/sfx', () => {
     const names = ['chaingun', 'shotgun', 'slug', 'censerLaunch', 'censerBreak', 'revolver', 'silverBullet', 'scourge', 'daggerCut', 'hitTick', 'killTick', 'burstPop', 'blessedDeath', 'massKill', 'porcelainBreak', 'blastLampCrack', 'blastLampBurst'] as const;
     expect(TAKES.size).toBe(17);

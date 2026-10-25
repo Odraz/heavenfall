@@ -276,7 +276,7 @@ export class GameSounds {
 
   /** Relic sounds batch by kind: at most one per kind per 0.25 s (items-relics.md §2.4 rule 10). */
   private readonly relicAt = new Map<string, number>();
-  private relicSound(name: 'relicRune' | 'relicEmber' | 'relicWheel' | 'relicStamp' | 'relicChorus' | 'relicRing' | 'chains' | 'shieldUp', at: SoundPos): void {
+  private relicSound(name: 'relic-rune' | 'relic-ember' | 'relic-wheel' | 'relic-stamp' | 'relic-chorus' | 'relicRing' | 'chains' | 'shieldUp', at: SoundPos): void {
     const now = performance.now();
     if (now - (this.relicAt.get(name) ?? -Infinity) < 250) return;
     this.relicAt.set(name, now);
@@ -301,14 +301,14 @@ export class GameSounds {
         sfx('crest');
         break;
       case 'relicArea':
-        if (!e.end) this.relicSound('relicRune', { x: e.area.x, y: e.area.y });
+        if (!e.end) this.relicSound('relic-rune', { x: e.area.x, y: e.area.y });
         break;
       case 'relicShot':
-        if (!e.end) this.relicSound(e.shot.effect === 'sentence3' ? 'relicStamp' : e.shot.effect === 'wheel' || e.shot.effect === 'harrow' ? 'relicWheel' : 'relicEmber', { x: e.shot.x, y: e.shot.y });
+        if (!e.end) this.relicSound(e.shot.effect === 'sentence3' ? 'relic-stamp' : e.shot.effect === 'wheel' || e.shot.effect === 'harrow' ? 'relic-wheel' : 'relic-ember', { x: e.shot.x, y: e.shot.y });
         break;
       case 'relicFx':
         if (e.kind === 'shield') this.relicSound('shieldUp', { x: e.x, y: e.y });
-        else if (e.kind === 'burst') this.relicSound(e.effect === 'appeal' ? 'relicStamp' : e.effect === 'sentence3' ? 'relicStamp' : 'relicChorus', { x: e.x, y: e.y });
+        else if (e.kind === 'burst') this.relicSound(e.effect === 'appeal' ? 'relic-stamp' : e.effect === 'sentence3' ? 'relic-stamp' : 'relic-chorus', { x: e.x, y: e.y });
         else this.relicSound(e.effect === 'tile' ? 'chains' : 'relicRing', { x: e.x, y: e.y });
         break;
       case 'streak':
@@ -394,18 +394,18 @@ export class GameSounds {
         // Judgment keeps its drone, blast and breaking glass; the Toll and the Call have their own wind-ups.
         const cast = e.cast ?? BOSS_CAST_JUDGMENT;
         if (cast === BOSS_CAST_JUDGMENT) sfx(e.phase === 'start' ? 'judgmentCharge' : e.phase === 'completed' ? 'judgmentBlast' : 'interrupted');
-        else if (cast === BOSS_CAST_TOLL) { if (e.phase === 'start') sfx('tollWindup'); else if (e.phase === 'completed') sfx('tollStrike'); }
+        else if (cast === BOSS_CAST_TOLL) { if (e.phase === 'start') sfx('tollTell'); else if (e.phase === 'completed') sfx('tollImpact'); }
         break;
       }
       case 'called':
-        if (e.phase === 'tell') sfx('callWindup');
+        if (e.phase === 'tell') sfx('callTell');
         break;
       case 'sealBroken': sfx('sealBreak', pose(e.playerId) ?? null); break;
-      case 'judged': if (e.by === 'seal') sfx('sealJudged'); break;
+      case 'judged': if (e.by === 'seal') sfx('callReleased'); break;
       case 'hostDescend': sfx('hostDescend'); break;
-      case 'watchersOpen': sfx('watchersOpen'); break;
+      case 'watchersOpen': sfx('watcherOpen'); break;
       case 'watcherBreak': sfx('watcherBreak', { x: e.x, y: e.y }); break;
-      case 'bossPhase': if (e.phase === 2) sfx('phaseChoirThreat'); break;
+      case 'bossPhase': if (e.phase === 2) sfx('bossTransition'); break;
       case 'gameOver':
         // The playing track fades and the sting plays; without one, the synthesized sting.
         if (!audio()?.music.sting(e.result)) sfx(e.result);
@@ -441,7 +441,7 @@ export class GameSounds {
   }
 
   /** A Gatekeeper cue the client decides itself (the ring's whoosh, Judgment's pre-warning). */
-  bossCue(name: 'ringWhoosh' | 'judgmentPrewarn'): void {
+  bossCue(name: 'tollPersonalWhoosh' | 'judgmentPrewarn'): void {
     sfx(name);
   }
 

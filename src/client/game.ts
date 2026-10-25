@@ -1188,7 +1188,7 @@ export class Game {
   /** The host's route state: the chest and Bells drawn, the key holder named under the minimap. */
   private applyRoute(state: RouteState): void {
     // A Bell rung: its toll, heard by everyone (rogue game.md §4.12).
-    for (const b of state.bells) if (b.state === 'pending' && this.routeView.state.bells.find((o) => o.room === b.room)?.state === 'available') sfx('bellToll', { x: b.x, y: b.y });
+    for (const b of state.bells) if (b.state === 'pending' && this.routeView.state.bells.find((o) => o.room === b.room)?.state === 'available') sfx('judgmentBell', { x: b.x, y: b.y });
     this.routeView.set(state);
     debugState.route = { keyHolder: state.keyHolder, keyUsed: state.keyUsed, chest: state.chest ? { open: state.chest.open } : null, bells: state.bells.map((b) => b.state), sundial: state.sundial };
     this.mapView.setRoute(state, state.keyHolder < 0 && !state.keyUsed && [...this.pickups.model.records.values()].some((r) => r.pickup.kind === KEY && r.pickup.room === this.o.floor?.keyRoom));
@@ -1869,7 +1869,7 @@ export class Game {
     if (boss && me && impact > 0 && impact !== this.whooshed && !this.player.held) {
       const d = Math.hypot(me.x - boss.x, me.y - boss.y);
       const floor = this.map.floor[Math.floor(me.y) * this.map.w + Math.floor(me.x)];
-      if (floor <= base + 1 + 1e-6 && ringContactIn(impact, tick, d) <= 1) { this.whooshed = impact; this.sounds.bossCue('ringWhoosh'); }
+      if (floor <= base + 1 + 1e-6 && ringContactIn(impact, tick, d) <= 1) { this.whooshed = impact; this.sounds.bossCue('tollPersonalWhoosh'); }
     }
   }
 
