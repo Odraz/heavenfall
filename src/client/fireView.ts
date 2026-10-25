@@ -26,9 +26,11 @@ export class FireView {
   private readonly s = new THREE.Vector3();
   private readonly c = new THREE.Color();
 
-  constructor(private readonly map: GameMap, glow: THREE.Texture) {
-    // Normal blending: additive washes out to white over the bright marble; the glow's alpha shapes each tongue.
-    const flameMaterial = new THREE.MeshBasicMaterial({ map: glow, color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide, fog: false });
+  constructor(private readonly map: GameMap, glow: THREE.Texture, flames: THREE.Texture = glow) {
+    // Normal blending: additive washes out to white over the bright marble. The painted flames (B10)
+    // shape each tongue; the floor keeps the soft glow.
+    const flameMaterial = new THREE.MeshBasicMaterial({ map: flames, color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const glowMaterial = new THREE.MeshBasicMaterial({ map: glow, color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide, fog: false });
     // Two crossed upright quads per cell, so the flame reads from every side.
     const a = new THREE.PlaneGeometry(1, 1), b = new THREE.PlaneGeometry(1, 1);
     b.rotateY(Math.PI / 2);
@@ -42,7 +44,7 @@ export class FireView {
     this.flames = new THREE.InstancedMesh(merged, flameMaterial, MAX);
     const floor = new THREE.PlaneGeometry(1.25, 1.25);
     floor.rotateX(-Math.PI / 2);
-    this.glows = new THREE.InstancedMesh(floor, flameMaterial.clone(), MAX);
+    this.glows = new THREE.InstancedMesh(floor, glowMaterial, MAX);
     for (const m of [this.flames, this.glows]) { m.count = 0; m.frustumCulled = false; m.renderOrder = 3; this.group.add(m); }
   }
 

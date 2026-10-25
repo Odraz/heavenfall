@@ -1,14 +1,15 @@
 /**
- * The Advocate behind the Confessional's grille (rogue game.md §9.6): the received grille painting
- * mounted flat on the wall beside the template's `advocate` point, facing the room. A coded stand-in
- * until the B4 Advocate art is accepted; F within 2.5 m of the point opens the Talents view.
+ * The Advocate behind the Confessional's grille (rogue game.md §9.6): the B4 grille painting, cut to its
+ * frame and grille (scripts/cutout.py CROPS), mounted flat on the wall beside the template's `advocate`
+ * point, facing the room. F within 2.5 m of the point opens the Talents view.
  */
 import * as THREE from 'three';
 import type { GameMap } from '../sim/map';
 import { RELIEF } from '../render/relief';
 
 const WIDTH = 2.2;
-const HEIGHT = WIDTH * 429 / 640;
+/** The B4 panel export is 640 × 550 (scripts/cutout.py CROPS). */
+const HEIGHT = WIDTH * 550 / 640;
 /** The painting's center above the floor. */
 const CENTER_Z = 1.6;
 /** In front of the wall's pilaster strips, so none of them cuts through the painting. */

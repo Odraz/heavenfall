@@ -43,7 +43,7 @@ export class GameScene {
     this.scene.background = new THREE.Color(FOG_COLOR);
     this.scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR, FOG_FAR);
     this.scene.add(this.sky);
-    this.terrain = buildTerrain(map, textures);
+    this.terrain = buildTerrain(map, textures, floor?.confessional ?? -1);
     this.scene.add(this.terrain.mesh);
     this.scene.add(this.terrain.painted, this.terrain.paintedAlpha);
     if (this.terrain.gate) this.scene.add(this.terrain.gate.mesh);

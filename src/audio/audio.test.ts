@@ -20,7 +20,7 @@ function playback() {
     },
   };
   const engine = Object.assign(Object.create(AudioEngine.prototype) as Record<string, unknown>, {
-    ctx, sfxBus: {}, recordedOn: true, lx: 0, ly: 0, lyaw: 0, voices, lastStart: new Map(),
+    ctx, sfxBus: {}, recordedOn: true, lx: 0, ly: 0, lyaw: 0, voices, lastStart: new Map(), started: {}, refused: {},
     buffers: new Map([['porcelainBreak', synth], ['shotgun', synth], ['refinerFire', synth], ['dominionTell', synth]]),
     takes: new Map([['porcelainBreak', { bufs: buffers, gains: [1, 2, 3], bag }]]),
   }) as unknown as AudioEngine;
@@ -82,6 +82,9 @@ describe('recorded playback admission', () => {
     h.ctx.currentTime++;
     expect(h.engine.play('porcelainBreak', null, 1, 0, PRIO_OWN)).toBeUndefined();
     expect(h.voices.filter((v) => v.name === 'dominionTell')).toHaveLength(1);
+    // The census counts what started and what found no voice.
+    expect(h.engine.started).toEqual({ dominionTell: 1 });
+    expect(h.engine.refused).toEqual({ porcelainBreak: 1 });
   });
 
   it('retains per-sound limits and positional attenuation for recorded takes', () => {

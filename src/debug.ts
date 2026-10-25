@@ -60,7 +60,7 @@ export interface DebugState {
   /** The latest snapshot's Watchman aim records (rogue rooms.md §6.4). */
   watchmen: WatchmanAim[];
   /** The Gatekeeper fight as this screen draws it (rogue bosses.md §3); null outside it. */
-  boss: { phase: number; cast: number; cycle: number; held: number; heldLocal: boolean; eyes: number; seals: number; sight: string; rings: number[]; hp: number; maxHp: number; flags: number; at: [number, number, number]; seal: [number, number, number] | null } | null;
+  boss: { phase: number; cast: number; cycle: number; held: number; heldLocal: boolean; eyes: number; seals: number; sight: string; rings: number[]; hp: number; maxHp: number; flags: number; at: [number, number, number]; eyesAt: Array<[number, number, number]>; seal: [number, number, number] | null } | null;
   /** ...and every Watchman's accepted feet in that snapshot. */
   watchmanBodies: Array<{ slot: number; incarnation: number; x: number; y: number; z: number }>;
   carrierChecks: CarrierCheck[];
@@ -130,10 +130,13 @@ export interface DebugState {
   casterAim: { yaw: number; pitch: number } | null;
   /** Every cue the game's sounds played, by name (R8 stage 5's repetition census). */
   cues: Record<string, number>;
+  /** The mixer's voices started and refused (no voice of lower or equal priority to take over), by sound. */
+  voices: { started: Record<string, number>; refused: Record<string, number> };
 }
 
 export const debugState: DebugState = {
   cues: {},
+  voices: { started: {}, refused: {} },
   screen: 'title',
   paused: false,
   fps: 0,

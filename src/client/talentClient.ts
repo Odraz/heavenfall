@@ -24,6 +24,8 @@ interface Pose { x: number; y: number; z: number }
 export interface TalentDeps {
   vfx: Vfx;
   glow: THREE.Texture;
+  /** The painted flames for class floor fire (B10); the glow when absent. */
+  flames?: THREE.Texture;
   localId: number;
   classOf: (id: number) => ClassId | undefined;
   pose: (id: number) => Pose | undefined;
@@ -63,7 +65,7 @@ export class TalentClient {
 
   constructor(private readonly d: TalentDeps) {
     this.outlineMaterial = new THREE.SpriteMaterial({ map: d.glow, color: 0xe8f0ff, transparent: true, opacity: 0.55, depthTest: false, depthWrite: false, fog: false });
-    this.fire = new FireView(d.map, d.glow);
+    this.fire = new FireView(d.map, d.glow, d.flames);
     this.group.add(this.fire.group);
   }
 

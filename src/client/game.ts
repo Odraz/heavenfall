@@ -606,6 +606,8 @@ export class Game {
   private readonly playerAnimator = new PlayerAnimator();
   /** The Gatekeeper's cast and its progress (0–1) in the newest snapshot. */
   private bossCast = 0;
+  /** The Gatekeeper's 50% transition: his sprite holds the first trumpet aloft. */
+  private bossTransition = false;
   private bossCastProgress = 0;
   private resultAt = -1;
   private resultData: ResultsData | null = null;
@@ -646,7 +648,7 @@ export class Game {
     this.spawnWarnings = new SpawnProjection(o.runId, this.map);
     this.scene.scene.add(this.spawnView.group);
     this.scene.scene.add(this.dominionView.group);
-    this.hazards = new HazardView(this.map, o.textures.terrain.refiner); this.scene.scene.add(this.hazards.group);
+    this.hazards = new HazardView(this.map, o.textures.terrain.refiner, o.textures.fx.flames); this.scene.scene.add(this.hazards.group);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
     for (const [type, set] of Object.entries(o.enemyAnims)) {
@@ -701,11 +703,13 @@ export class Game {
       return ab && Object.hasOwn(ALT_ABILITIES, ab) ? ab : undefined;
     }, () => this.snaps.estimatedTick(performance.now()));
     debugState.cues = this.sounds.census;
+    // Read through, since the mixer may start after the game (the first user gesture).
+    debugState.voices = { get started() { return audio()?.started ?? {}; }, get refused() { return audio()?.refused ?? {}; } };
     this.hud.onReady = () => this.sounds.abilityReady();
     this.overlay = new DebugOverlay(o.root, this.params.dev);
     this.pause = new PauseOverlay(o.root, () => this.resume(), () => this.leave());
     this.talents = new TalentClient({
-      vfx: this.vfx, glow: o.textures.fx.glow, localId: this.localId,
+      vfx: this.vfx, glow: o.textures.fx.glow, flames: o.textures.fx.flames, localId: this.localId,
       classOf: (id) => this.classOf(id), pose: (id) => this.playerPose(id),
       later: (id, run) => this.later(id, run),
       map: this.map, tick: () => this.snaps.estimatedTick(performance.now()),
@@ -1880,7 +1884,7 @@ export class Game {
     this.hud.setSight(sight);
     debugState.boss = s && boss ? { phase: s.bossPhase, cast: s.bossCast, cycle: tick - s.bossCycleStart, held: s.heldPlayer, heldLocal: !!this.player.held,
       eyes: parts.filter((p) => !p.seal).length, seals: parts.filter((p) => p.seal).length, sight: sight ?? 'off', rings: [...this.tollImpacts], hp: s.bossHp, maxHp: s.bossMaxHp, flags: s.bossFlags,
-      at: [boss.x, boss.y, boss.z], seal: ((q) => q ? [q.x, q.y, q.z] as [number, number, number] : null)(parts.find((p) => p.seal)) } : null;
+      at: [boss.x, boss.y, boss.z], eyesAt: parts.filter((p) => !p.seal).map((p) => [p.x, p.y, p.z] as [number, number, number]), seal: ((q) => q ? [q.x, q.y, q.z] as [number, number, number] : null)(parts.find((p) => p.seal)) } : null;
     // Judgment's pre-warning at c 22: six seconds to its impact, the drone starts quietly.
     if (s && boss && !this.dead) {
       const c = tick - s.bossCycleStart;
@@ -2308,6 +2312,7 @@ export class Game {
     if (s.bossMaxHp <= 0) this.tollImpacts = [];
     this.syncHold(s);
     this.bossCast = s.bossCast;
+    this.bossTransition = s.bossTransitionUntil > s.tick;
     this.bossCastProgress = s.bossCastProgress / 255;
     this.bench?.onSnapshot(s);
     this.sounds.snapshot(s, prev, beamed);
@@ -3368,7 +3373,7 @@ export class Game {
       this.animator.update(slot, x, y, ents.state[i], now, dt, t.x, t.y, type);
       const stunned = (ents.flags[i] & FLAG_STUNNED) !== 0;
       this.animator.setStunned(slot, stunned, now);
-      const pick = this.animator.pick(slot, now, this.bossCast);
+      const pick = this.animator.pick(slot, now, this.bossCast, this.bossTransition);
       if (type === DOMINION && ents.state[i] === ST_WINDUP && !stunned) {
         const cast = this.dominion.active.get(slot);
         if (cast && cast.incarnation === this.snaps.newest?.enemyIncarnation[this.snaps.newest.enemySlot.indexOf(slot)]) {

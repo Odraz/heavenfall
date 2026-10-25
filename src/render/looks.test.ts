@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { DUNGEONS } from '../data/dungeons/index';
 import { K_DOOR, K_FLOOR, K_WALL } from '../sim/heights';
 import { loadMap } from '../sim/map';
-import { BAND_MAX, bandTop, CORNICE, floorLooks, FRIEZE, FRIEZE_V, L_CORNICE, L_FLOOR, L_FLOOR_PLAIN, L_MEDALLION, L_PILASTER, L_WALL, L_WINDOW, segmentLook, TILE, wallPieces } from './looks';
+import { BAND_MAX, bandTop, CORNICE, floorLooks, FRIEZE, FRIEZE_V, L_CONFESSIONAL, L_CORNICE, L_FLOOR, L_FLOOR_PLAIN, L_MEDALLION, L_PILASTER, L_WALL, L_WINDOW, segmentLook, TILE, wallPieces } from './looks';
+import { generateFloor } from '../gen';
+import { PINNED } from '../gen/pinned';
+import { PEARLY_POOL } from '../data/rooms/1';
 
 const MAPS = ['sandbox', 'pearly-gates'] as const;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
@@ -145,4 +148,28 @@ describe('the decorated band (M10 §5.1)', () => {
       expect(cornice.v1).toBeCloseTo(1);
     });
   }
+});
+
+describe('the Confessional wood walls (R8, art-prompts B4)', () => {
+  it('panels exactly the decorated wall segments that look into the Confessional', () => {
+    const { map, floor } = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
+    const { w, h } = map;
+    let wood = 0, decoratedInside = 0;
+    for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
+      if (map.heights.kind[r * w + c] !== K_WALL) continue;
+      for (const [dx, dy] of DIRS) {
+        const fc = c + dx, fr = r + dy;
+        if (fc < 0 || fr < 0 || fc >= w || fr >= h || map.heights.kind[fr * w + fc] !== K_FLOOR) continue;
+        const plain = segmentLook(map, c, r, dx, dy), look = segmentLook(map, c, r, dx, dy, floor.confessional);
+        if (look === L_CONFESSIONAL) {
+          wood++;
+          expect(map.roomOf[fr * w + fc]).toBe(floor.confessional);
+          expect([L_WINDOW, L_PILASTER]).toContain(plain);
+        } else expect(look).toBe(plain);
+        if (plain !== L_WALL && map.roomOf[fr * w + fc] === floor.confessional) decoratedInside++;
+      }
+    }
+    expect(wood).toBeGreaterThan(0);
+    expect(wood).toBe(decoratedInside);
+  });
 });

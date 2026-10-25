@@ -35,7 +35,7 @@ export const ANIM_NAMES = ['idle', 'walk', 'attack', 'pain', 'death'] as const;
 export type AnimName = (typeof ANIM_NAMES)[number];
 export const CHORISTER_ANIM_NAMES = ['idle', 'walk', 'cast', 'pain', 'death'] as const;
 export const CHERUB_ANIM_NAMES = ['fly', 'cast', 'pain', 'death'] as const;
-export const GATEKEEPER_ANIM_NAMES = ['idle', 'volley', 'judgment', 'death'] as const;
+export const GATEKEEPER_ANIM_NAMES = ['idle', 'volley', 'judgment', 'death', 'trumpet'] as const;
 /** The Watchman's (scripts/blender/watchman.py): `cast` aims and fires, `reload` lowers the Clarion. */
 export const WATCHMAN_ANIM_NAMES = ['idle', 'walk', 'cast', 'reload', 'pain', 'death'] as const;
 export const PLAYER_ANIM_NAMES = ['idle', 'walk'] as const;

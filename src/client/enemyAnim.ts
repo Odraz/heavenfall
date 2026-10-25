@@ -11,7 +11,7 @@ import { BOSS_CAST_CALL, BOSS_CAST_JUDGMENT, BOSS_CAST_TOLL, BOSS_CAST_VOLLEY } 
 import { ENEMY_SLOTS } from '../sim/constants';
 import { CANTOR_TELL } from '../data/commanders';
 
-export type EnemyAnimName = 'sing' | 'close' | 'mark' | 'swoop' | 'carry' | 'idle' | 'walk' | 'fly' | 'attack' | 'cast' | 'reload' | 'volley' | 'judgment' | 'pain' | 'death';
+export type EnemyAnimName = 'sing' | 'close' | 'mark' | 'swoop' | 'carry' | 'idle' | 'walk' | 'fly' | 'attack' | 'cast' | 'reload' | 'volley' | 'judgment' | 'trumpet' | 'pain' | 'death';
 
 /** Meters walked per walk cycle (two steps), so the feet keep pace with the ground: the Blessed's. */
 export const WALK_CYCLE_M = 1.6;
@@ -182,14 +182,17 @@ export class EnemyAnimator {
     this.stunned[slot] = on ? 1 : 0;
   }
 
-  /** The animation and frame to show for a slot at `now`; `bossCast` is the snapshot's (BOSS_CAST_*). */
-  pick(slot: number, now: number, bossCast = 0): AnimPick {
+  /**
+   * The animation and frame to show for a slot at `now`; `bossCast` is the snapshot's (BOSS_CAST_*), and
+   * `bossTransition` whether the Gatekeeper is in his 50% transition (he lifts the first trumpet).
+   */
+  pick(slot: number, now: number, bossCast = 0, bossTransition = false): AnimPick {
     const sincePain = now - this.painStart[slot];
     if (this.stunned[slot]) return { anim: 'pain', frame: Math.min(PAIN_FRAMES - 1, Math.floor((Math.max(0, sincePain) / PAIN_MS) * PAIN_FRAMES)) };
     if (sincePain >= 0 && sincePain < PAIN_MS) return { anim: 'pain', frame: Math.min(PAIN_FRAMES - 1, Math.floor((sincePain / PAIN_MS) * PAIN_FRAMES)) };
     const state = this.state[slot];
     const type = this.type[slot];
-    if (type === GATEKEEPER) return this.pickBoss(slot, now, bossCast);
+    if (type === GATEKEEPER) return bossTransition ? { anim: 'trumpet', frame: 0 } : this.pickBoss(slot, now, bossCast);
     const cast = CAST_TIMINGS[type];
     if (cast) {
       // The release plays out even though `attacking` lasts only the tick the shot fires.

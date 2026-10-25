@@ -14,6 +14,8 @@ import { spriteUrl } from '../render/atlas';
 const PEDESTAL_HEIGHT = 1;
 /** Half the Pardoner sprite's width plus a margin: no raised cell may come this close. */
 const PARDONER_CLEARANCE = 0.9;
+/** The indulgence plinth at the Pardoner room's center (pg-s-pardoner-01). */
+const PLINTH_HEIGHT = 1.5;
 
 /**
  * Where the Pardoner stands: on the room's base floor just beside the central plinth (rooms.md
@@ -50,6 +52,13 @@ export class ShopView {
     const portrait = loader.load(new URL('../../assets/items/npc-pardoner.png', import.meta.url).href); portrait.colorSpace = THREE.SRGBColorSpace;
     const pardoner = new THREE.Sprite(new THREE.SpriteMaterial({ map: portrait, alphaTest: .05, depthWrite: false }));
     pardoner.position.set(spot.x, spot.z + 1.4, spot.y); pardoner.scale.set(1.6, 2.8, 1); this.group.add(pardoner);
+    // His stall (B3 pardoner-box): the indulgence box on the room's 1.5 m plinth at its center
+    // (pg-s-pardoner-01's landmark), which he stands behind.
+    const rect = map.rooms[floor.pardoner].rect, boxArt = loader.load(new URL('../../assets/items/pardoner-box.png', import.meta.url).href);
+    boxArt.colorSpace = THREE.SRGBColorSpace;
+    const box = new THREE.Sprite(new THREE.SpriteMaterial({ map: boxArt, alphaTest: .05, depthWrite: false }));
+    box.position.set((rect.x0 + rect.x1 + 1) / 2, spot.z + PLINTH_HEIGHT + 0.6, (rect.y0 + rect.y1 + 1) / 2); box.scale.set(1.2, 1.2, 1); box.name = 'pardoner-box';
+    this.group.add(box);
     // The painted stall pedestal (unlit, like every billboard); a lit mesh rendered black here.
     const pedestalArt = loader.load(spriteUrl('shop-pedestal')); pedestalArt.colorSpace = THREE.SRGBColorSpace;
     const pedestalMaterial = new THREE.SpriteMaterial({ map: pedestalArt, alphaTest: .05, depthWrite: false });

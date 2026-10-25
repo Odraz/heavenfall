@@ -114,18 +114,44 @@ class Band {
   dispose(): void { this.mesh.geometry.dispose(); this.material.dispose(); }
 }
 
-function canvasTexture(draw: (g: CanvasRenderingContext2D) => void): THREE.Texture {
+const WATCHER_OPEN_ART = new URL('../../assets/items/watcher-open.png', import.meta.url).href;
+const WATCHER_CLOSED_ART = new URL('../../assets/items/watcher-closed.png', import.meta.url).href;
+const SEAL_ART = new URL('../../assets/items/judgment-seal.png', import.meta.url).href;
+const ART_SIZE = 256;
+
+/**
+ * A part's texture: the coded drawing at once (it stays if the art fails to load), replaced by the B6
+ * art (rogue art-prompts.md) with its coded rim on top when the image arrives.
+ */
+function partTexture(coded: (g: CanvasRenderingContext2D) => void, art: string, rim: ((g: CanvasRenderingContext2D) => void) | null, grey: boolean): THREE.Texture {
   const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  draw(c.getContext('2d')!);
+  c.width = c.height = ART_SIZE;
+  const g = c.getContext('2d')!;
+  g.save(); g.scale(ART_SIZE / 128, ART_SIZE / 128); coded(g); g.restore();
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  const img = new Image();
+  img.onload = () => {
+    g.clearRect(0, 0, ART_SIZE, ART_SIZE);
+    if (grey) g.filter = 'grayscale(1) brightness(0.8)';
+    g.drawImage(img, 0, 0, ART_SIZE, ART_SIZE);
+    g.filter = 'none';
+    rim?.(g);
+    t.needsUpdate = true;
+  };
+  img.src = art;
   return t;
 }
 
-/** Coded fallbacks until the A2 Watcher/Seal atlas: a gold eye in a ring of feathers with the red "vulnerable" rim, grey while opening; a gold padlock. */
-function eyeTexture(open: boolean): THREE.Texture {
-  return canvasTexture((g) => {
+/** The "vulnerable now" rim over an open eye's round frame: red, so the eye reads as a target. */
+function redRim(g: CanvasRenderingContext2D): void {
+  g.strokeStyle = 'rgba(216, 30, 30, 0.86)'; g.lineWidth = 9;
+  g.beginPath(); g.arc(ART_SIZE / 2, ART_SIZE / 2, 74, 0, Math.PI * 2); g.stroke();
+}
+
+/** Coded fallbacks: a gold eye in a ring of feathers with the red "vulnerable" rim, grey while opening; a gold padlock. */
+function codedEye(open: boolean): (g: CanvasRenderingContext2D) => void {
+  return (g) => {
     for (let i = 0; i < 12; i++) {
       const a = (i / 12) * Math.PI * 2;
       g.fillStyle = open ? '#fff3cf' : '#c9c9c9';
@@ -139,17 +165,15 @@ function eyeTexture(open: boolean): THREE.Texture {
       g.fillStyle = '#3a1d05'; g.beginPath(); g.arc(64, 64, 11, 0, Math.PI * 2); g.fill();
       g.fillStyle = '#ffffff'; g.beginPath(); g.arc(58, 58, 4, 0, Math.PI * 2); g.fill();
     }
-  });
+  };
 }
 
-function sealTexture(): THREE.Texture {
-  return canvasTexture((g) => {
-    g.lineWidth = 12; g.strokeStyle = '#ffd24a';
-    g.beginPath(); g.arc(64, 50, 24, Math.PI, 0); g.stroke();
-    g.fillStyle = '#d81e1e'; g.fillRect(24, 46, 80, 66);
-    g.fillStyle = '#ffd24a'; g.fillRect(31, 53, 66, 52);
-    g.fillStyle = '#3a1d05'; g.beginPath(); g.arc(64, 74, 8, 0, Math.PI * 2); g.fill(); g.fillRect(60, 76, 8, 18);
-  });
+function codedSeal(g: CanvasRenderingContext2D): void {
+  g.lineWidth = 12; g.strokeStyle = '#ffd24a';
+  g.beginPath(); g.arc(64, 50, 24, Math.PI, 0); g.stroke();
+  g.fillStyle = '#d81e1e'; g.fillRect(24, 46, 80, 66);
+  g.fillStyle = '#ffd24a'; g.fillRect(31, 53, 66, 52);
+  g.fillStyle = '#3a1d05'; g.beginPath(); g.arc(64, 74, 8, 0, Math.PI * 2); g.fill(); g.fillRect(60, 76, 8, 18);
 }
 
 export interface GatekeeperFrame {
@@ -188,9 +212,9 @@ export class GatekeeperView {
   constructor(beamTexture: THREE.Texture) {
     this.group.add(this.tell.mesh);
     for (const b of [...this.bands, ...this.wisps]) this.group.add(b.mesh);
-    this.eyeOpen = new THREE.SpriteMaterial({ map: eyeTexture(true), transparent: true, depthWrite: false, fog: false });
-    this.eyeGrey = new THREE.SpriteMaterial({ map: eyeTexture(false), transparent: true, depthWrite: false, fog: false });
-    this.lock = new THREE.SpriteMaterial({ map: sealTexture(), transparent: true, depthWrite: false, fog: false });
+    this.eyeOpen = new THREE.SpriteMaterial({ map: partTexture(codedEye(true), WATCHER_OPEN_ART, redRim, false), transparent: true, depthWrite: false, fog: false });
+    this.eyeGrey = new THREE.SpriteMaterial({ map: partTexture(codedEye(false), WATCHER_CLOSED_ART, null, true), transparent: true, depthWrite: false, fog: false });
+    this.lock = new THREE.SpriteMaterial({ map: partTexture(codedSeal, SEAL_ART, null, false), transparent: true, depthWrite: false, fog: false });
     for (let i = 0; i < MAX_EYES + 1; i++) { const s = new THREE.Sprite(this.eyeOpen); s.visible = false; this.sprites.push(s); this.group.add(s); }
     const chainMat = new THREE.MeshBasicMaterial({ map: beamTexture, color: 0xfff0b8, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false, depthTest: false });
     this.chain = new Ribbon([[0, 0, 0], [0, 0, 1], [0, 0, 1], [0, 0, 2]], 0.14, chainMat, 1);

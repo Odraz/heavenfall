@@ -191,6 +191,15 @@ describe('EnemyAnimator, Gatekeeper', () => {
     expect(a.pick(1, start + 760, BOSS_CAST_JUDGMENT)).toEqual({ anim: 'judgment', frame: 3 });
     expect(a.pick(1, start + 1010, BOSS_CAST_JUDGMENT)).toEqual({ anim: 'judgment', frame: 0 });
   });
+
+  it('holds the first trumpet aloft through the 50% transition, whatever was cast (R8, art-prompts A2)', () => {
+    const a = new EnemyAnimator();
+    let s = run(a, 1, { x: 0, y: 0, t: 0 }, 2, 0, 0, ST_IDLE, GATEKEEPER);
+    s = run(a, 1, s, 1, 0, 0, ST_WINDUP, GATEKEEPER);
+    expect(a.pick(1, s.t + 10, BOSS_CAST_JUDGMENT, true)).toEqual({ anim: 'trumpet', frame: 0 });
+    expect(a.pick(1, s.t + 10, BOSS_CAST_NONE, true)).toEqual({ anim: 'trumpet', frame: 0 });
+    expect(a.pick(1, s.t + 10, BOSS_CAST_JUDGMENT, false)).toEqual({ anim: 'judgment', frame: 0 });
+  });
 });
 
 describe('corpseFrame', () => {

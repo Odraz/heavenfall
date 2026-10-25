@@ -14,21 +14,21 @@ Revision 10, 2026-10-13. **Which game feature or event uses which file.** For im
 | Blessing prop | `blessing-chalice` (B1); heal ring = `fx-ring` green | R2 | Original cutout, green liquid fill/overflow and active glow; 15-second recharge. |
 | Halos (ordinary coin 1, vase coin 3, gold halo 6) | `gold-halo` (B2), coin drawn smaller and paler | R2 | Original cutout with soft alpha, gentle bob/shrink and no additive glow. |
 | Heal mote | `heal-mote` (B2, magenta background) | R2 | Magenta-keyed original cutout, bobbing and pooled green glow integrated. |
-| Refiner's Fire | `tex-refiner-channel` (B10); gold rim = existing riser texture; pooled flames/embers = existing effects | R2 | Painted channel texture integrated; supplied `fx-flames` remains a future refinement. |
-| All fire effects (Rain/Trial by Fire, burning floor, fire talents) | `fx-flames` + `ember` + `fx-glow`, tinted red-orange | R4–R5 | `fx-glow` |
+| Refiner's Fire | `tex-refiner-channel` (B10); gold rim = existing riser texture; pooled flames/embers = existing effects | R2 | Painted channel texture integrated; since R8 `fx-flames` breaks up the coded tongues, a different stretch per cell. |
+| All fire effects (Rain/Trial by Fire, burning floor, fire talents) | `fx-flames` + `ember` + `fx-glow`, tinted red-orange | R4–R5 | R8: `fx-flames` on the class floor fire tongues, `fx-glow` on the floor |
 | Incense (Cloud of Witnesses, talents) | existing `fx-smoke` tinted rusty gold | R2–R5 | — |
-| The Pardoner's stall | `npc-pardoner`, `pardoner-box`, `shop-pedestal`, `chart-scroll` (B3); item on pedestal = the item's B7 sprite | R3 | coded pedestal; no figure |
+| The Pardoner's stall | `npc-pardoner`, `pardoner-box`, `shop-pedestal`, `chart-scroll` (B3); item on pedestal = the item's B7 sprite | R3 | all four integrated (the box since R8, in front of him) |
 | Items (world pickup, pedestal, HUD slot) | `item-<id>` (B7): one cutout per item; Claude composites the HUD icon on the ability-slot background | R3 | the item's name in the slot |
 | Rite page | `rite-page` (B2); door/map plate "burning page" glyph is coded | R3 (plate), R4 (page) | coded page glyph |
-| Confessional | `confessional-grille`, `tex-confessional-wood` (B4); the Advocate = the two ember eyes in the grille | R1 (shell), R4 | existing wall texture; a dark panel |
+| Confessional | `confessional-grille`, `tex-confessional-wood` (B4); the Advocate = the two ember eyes in the grille | R1 (shell), R4 | R8: the grille cropped to its frame on the wall; the wood as the Confessional's wall band (`L_CONFESSIONAL`) |
 | Sundial | `sundial` (B5): HUD icon under the minimap and a Confessional prop | R6 | coded gnomon glyph |
 | Key, Reliquary chest | `shared-key`, `reliquary-chest`, `-open` (B5); key beam and the chest's white/blue beam = `fx-beam` | R6 | coded key glyph; coded box |
 | Bell of Judgment | `judgment-bell` (B5); chain and light shaft coded (`fx-chain` gold, `fx-lightshaft`) | R6 | coded bell glyph |
 | Relics, combos | `relic-<id>` (B8); combo badge = its two relic icons + name, optional `combo-<id>` (B11) | R6 | name on the card |
 | New abilities (Q/E slot) | `icon-<ability>` (B9), existing ability-icon style | R4 (Betrayer), R5 | ability name in the slot |
 | Talent cards | optional `talent-<class>-<tree>-<node>` (B11); else tree glyph + name | R4–R5 | tree glyph + name |
-| Gatekeeper's trumpet | `gatekeeper-trumpet`, `-trumpet-raised` (A2) → added to the Gatekeeper model, new raised pose | R7 | the existing Gatekeeper with a coded gold bar raised |
-| Watchers, Seal | `watcher-open`, `watcher-closed`, `judgment-seal` (B6); red/grey rims, tethers and the held player's lift are coded | R7 | coded eye/lock glyphs |
+| Gatekeeper's trumpet | `gatekeeper-trumpet`, `-trumpet-raised` (A2) → added to the Gatekeeper model, new raised pose | R7 | R8: modeled in `scripts/blender/gatekeeper.py`; the `trumpet` frame shows through the 50% transition |
+| Watchers, Seal | `watcher-open`, `watcher-closed`, `judgment-seal` (B6); red/grey rims, tethers and the held player's lift are coded | R7 | R8: the art over the coded rims; coded eye/lock glyphs if the image fails to load |
 | Rings, lanes, decals, timers, boundaries, telegraphs, seven state looks | runtime primitives and existing `fx-ring`, `fx-beam`, `fx-chain`, `fx-glow`, `fx-smoke`, `feather`, `spark`, `ember` | every milestone | — |
 | Map, door sigils, reward plates, Edict/state/dormancy marks | coded vector glyphs: Breach broken chain; horde three heads; ranged orb; flyers wing; elite star; hazard flame; boss trumpet; Pardoner halo coin; Confessional horned eye behind a grille; Reliquary chest (gold closed, grey open); key; bell; Sundial gnomon. Edicts: Host mace and ranks; Penance crossed droplet; Swift Hymns fast orb; Poverty fading halo; Trumpet eye on a trumpet. Ground hoof is reserved for later heavens. | R1 (rooms), R3 (rewards), R6 (rest) | — |
 | Door leaves | existing `tex-door`; the Reliquary leaf tinted white-gold; the Confessional leaf `tex-confessional-wood`; the boss leaf the existing gate art | R1 | — |

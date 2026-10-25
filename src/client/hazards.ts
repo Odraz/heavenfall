@@ -16,7 +16,7 @@ const vertex = `
  }`;
 const fragment = `
  uniform float tick; uniform float activeRoom; uniform float sealTick; uniform float upright;
- uniform sampler2D channel;
+ uniform sampler2D channel; uniform sampler2D flames;
  varying vec2 vUv; varying float vRoom; varying float vSeed; varying vec2 vWorld;
  void main() {
    float isHot = abs(vRoom - activeRoom) < 0.1 ? 1.0 : 0.0;
@@ -28,6 +28,9 @@ const fragment = `
      if (isHot < 0.5) discard;
      float tongue = (1.0 - vUv.y) * (0.42 + 0.1 * wave);
      alpha = (1.0 - smoothstep(tongue, tongue + 0.06, abs(vUv.x - 0.5))) * (1.0 - vUv.y) * 0.65;
+     // The painted flames (B10), a different stretch per cell drifting sideways, break up each tongue.
+     float lick = texture2D(flames, vec2(fract(vUv.x * 0.35 + vSeed * 0.137 + tick * 0.004), vUv.y)).a;
+     alpha *= 0.45 + 0.9 * lick;
      color = mix(vec3(1.0, 0.16, 0.015), vec3(1.0, 0.88, 0.24), vUv.y + flare * 0.4);
    } else {
      float edge = max(abs(vUv.x - 0.5), abs(vUv.y - 0.5));
@@ -51,7 +54,7 @@ export class HazardView {
   private nearestRoom = -1;
   private nearestAt: { x: number; y: number } | null = null;
   private readonly right = new THREE.Vector3();
-  constructor(readonly map: GameMap, channel = new THREE.Texture()) {
+  constructor(readonly map: GameMap, channel = new THREE.Texture(), flames = new THREE.Texture()) {
     this.seals = new Float64Array(map.rooms.length).fill(-10_000);
     const indices: number[] = [];
     for (let i = 0; i < map.hazard.length; i++) if (map.hazard[i] && map.roomOf[i] !== 255) {
@@ -61,7 +64,7 @@ export class HazardView {
     this.geometry.setAttribute('iRoom', new THREE.InstancedBufferAttribute(Float32Array.from(indices, (i) => map.roomOf[i]), 1));
     this.geometry.setAttribute('iSeed', new THREE.InstancedBufferAttribute(Float32Array.from(indices, (i) => (i * 0.618034) % 100), 1));
     this.materials = [0, 1].map((upright) => new THREE.ShaderMaterial({ vertexShader: vertex, fragmentShader: fragment,
-      uniforms: { channel: { value: channel }, tick: { value: 0 }, activeRoom: { value: -1 }, sealTick: { value: -10_000 }, upright: { value: upright }, cameraRight: { value: new THREE.Vector3(1, 0, 0) } },
+      uniforms: { channel: { value: channel }, flames: { value: flames }, tick: { value: 0 }, activeRoom: { value: -1 }, sealTick: { value: -10_000 }, upright: { value: upright }, cameraRight: { value: new THREE.Vector3(1, 0, 0) } },
       transparent: true, depthWrite: false, side: THREE.DoubleSide }));
     const matrix = new THREE.Matrix4();
     for (const material of this.materials) {

@@ -127,6 +127,8 @@ TEXTURES = {
     'tex-wall-window': 1024,
     'tex-wall-pilaster': 1024,
     'tex-cornice': 1024,
+    # R8 (rogue art-prompts B4): the Confessional's walls; the wall band stretches it over the full height.
+    'tex-confessional-wood': 1024,
 }
 
 # M10 §5.1 preparation. tex-wall's frieze: its bottom rows, from the gold line above the carved band
@@ -151,6 +153,8 @@ EFFECTS = {
     'fx-chain': (512, True, 2.5),
     # M10 §7.1: the light shaft through an arch, tinted warm gold in the shader.
     'fx-lightshaft': (256, False, 1),
+    # R8 (rogue art-prompts B10): white flames on black, tinted by the fire shaders.
+    'fx-flames': (512, False, 1),
 }
 
 # Transparent margin around the cropped subject, in output pixels.
@@ -215,7 +219,19 @@ ITEMS = {f'item-{n}': 512 for n in ('balm', 'seal', 'feather', 'mirror', 'venom'
 # cut out the same way into assets/items/.
 ITEMS.update({f'relic-{n}': 256 for n in ('usher', 'thurible', 'link', 'tile', 'qseal', 'eseal', 'comb', 'wheel', 'unbroken', 'mercy', 'armageddon', 'sentence3')})
 ITEMS.update({'shared-key': 256, 'reliquary-chest': 512, 'reliquary-chest-open': 512, 'judgment-bell': 512, 'sundial': 256})
+# R8 (rogue art-prompts B6, B3): the Gatekeeper's Watchers and Seal, drawn at most 1.2 m wide; the
+# Pardoner's stall box behind his portrait.
+ITEMS.update({'watcher-open': 256, 'watcher-closed': 256, 'judgment-seal': 256, 'pardoner-box': 512})
 ITEM_OUT = ROOT / 'assets' / 'items'
+
+# Opaque paintings cut to a rectangle (x0, y0, x1, y1 in source pixels) and resized to a width, written
+# to assets/items/<name>.png. confessional-grille (B4): the wooden frame and grille only, without the
+# painted stone wall around it (art-prompts' panel-only check), so it hangs on the room's own wall.
+CROPS = {'confessional-grille': ((410, 100, 2112, 1562), 640)}
+
+# Source defects repaired from a matching image before keying: name -> (donor, (x0, y0, x1, y1)).
+# watcher-open's bottom gold point is smeared; watcher-closed is the same frame at the same pixels.
+PATCH_FROM = {'watcher-open': ('watcher-closed', (740, 1440, 1310, 1890))}
 OWN_GREEN = 0.15
 
 
@@ -240,6 +256,14 @@ def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN, ro
     centered on a transparent `height` square (ITEMS).
     """
     rgb = np.asarray(Image.open(source(name)).convert('RGB')).astype(np.float32)
+    if name in PATCH_FROM:
+        donor, (x0, y0, x1, y1) = PATCH_FROM[name]
+        other = np.asarray(Image.open(source(donor)).convert('RGB')).astype(np.float32)
+        # A feathered rectangle (24 px ramps), so the seam has no edge.
+        ys, xs = np.mgrid[y0:y1, x0:x1]
+        w = np.minimum.reduce([ys - y0, y1 - 1 - ys, xs - x0, x1 - 1 - xs]).clip(0, 24)[..., None] / 24
+        rgb = rgb.copy()
+        rgb[y0:y1, x0:x1] = rgb[y0:y1, x0:x1] * (1 - w) + other[y0:y1, x0:x1] * w
 
     # The background color, from the corners.
     k = 16
@@ -965,8 +989,15 @@ def gate() -> None:
     print(f'wrote {GATE_GEN.relative_to(ROOT)}')
 
 
+def crop(name: str, box: tuple[int, int, int, int], width: int) -> None:
+    img = Image.open(source(name)).convert('RGB').crop(box)
+    img = img.resize((width, round(img.height * width / img.width)), Image.LANCZOS)
+    img.save(ITEM_OUT / f'{name}.png', optimize=True)
+    print(f'{name}: {img.width}x{img.height}')
+
+
 def main() -> None:
-    known = [*SPRITES, *ROTATED, *ICONS, *ITEMS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere', 'gate', 'weapons']
+    known = [*SPRITES, *ROTATED, *ICONS, *ITEMS, *CROPS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere', 'gate', 'weapons']
     for name in sys.argv[1:] or known:
         if name in SPRITES:
             cutout(name, SPRITES[name])
@@ -976,6 +1007,8 @@ def main() -> None:
             icon(name, ICONS[name])
         elif name in ITEMS:
             cutout(name, ITEMS[name], ITEM_OUT, 8, square=True)
+        elif name in CROPS:
+            crop(name, *CROPS[name])
         elif name in TEXTURES:
             texture(name, TEXTURES[name])
         elif name in EFFECTS:

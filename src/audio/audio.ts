@@ -61,6 +61,9 @@ export class AudioEngine {
   private recordedOn = loadRecordedSetting();
   private readonly voices: Voice[] = [];
   private readonly lastStart = new Map<SfxName, number>();
+  /** Voices started, and voices refused for lack of a voice to take over, by sound (R8's census). */
+  readonly started: Record<string, number> = {};
+  readonly refused: Record<string, number> = {};
   private readonly volumes: Record<VolumeKey, number>;
   /** The listener: the local player's position and yaw. */
   private lx = 0;
@@ -188,10 +191,11 @@ export class AudioEngine {
     if (same.length >= MAX_PER_SOUND) this.steal(same[0]);
     else if (this.voices.length >= MAX_VOICES) {
       const victim = this.voices.find((v) => v.priority <= prio);
-      if (!victim) return;
+      if (!victim) { this.refused[name] = (this.refused[name] ?? 0) + 1; return; }
       this.steal(victim);
     }
     this.lastStart.set(name, start);
+    this.started[name] = (this.started[name] ?? 0) + 1;
     if (recorded) recorded.bag.take();
     const src = this.ctx.createBufferSource();
     src.buffer = buffer;

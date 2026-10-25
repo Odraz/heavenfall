@@ -140,7 +140,7 @@ export interface Terrain {
   doors: Array<Array<THREE.Mesh | null>>;
 }
 
-export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
+export function buildTerrain(map: GameMap, textures: TerrainTextures, woodRoom = -1): Terrain {
   const g = new GeometryBuilder();
   const { w, h } = map;
   const hz = map.heights;
@@ -258,7 +258,7 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
           g.side(x0, y0, x1, y1, cliffBottom + CLIFF_FADE, t, u0, u1, (cliffBottom + CLIFF_FADE) / TILE, t / TILE, normal, s, L_WALL, face);
         } else if ((nk === K_FLOOR || nk === K_DOOR) && k !== K_OPEN) {
           // A wall or pillar looking onto floor: the decorated band, tex-wall above it, the cornice.
-          const band = k === K_PILLAR ? L_PILASTER : segmentLook(map, c, r, edge.dx, edge.dy);
+          const band = k === K_PILLAR ? L_PILASTER : segmentLook(map, c, r, edge.dx, edge.dy, woodRoom);
           let fu0 = u0;
           let fu1 = u1;
           if (k === K_PILLAR) {

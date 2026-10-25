@@ -17,6 +17,8 @@ export const L_PILASTER = 6;
 export const L_CORNICE = 7;
 export const L_ARCADE_LOWER = 8;
 export const L_ARCADE_UPPER = 9;
+/** The Confessional's dark wood panels (rogue art-prompts B4), on the walls of that room only. */
+export const L_CONFESSIONAL = 10;
 
 /** Every tiling texture covers this many meters. */
 export const TILE = 4;
@@ -201,7 +203,11 @@ export function floorLooks(map: GameMap): FloorLooks {
  * on its face with normal (dx, dy), toward the floor: window and pilaster alternate; a segment that isn't 4 whole wall cells whose faces all
  * look onto floor at one height (cut by a corner or a door, beside stairs) is plain.
  */
-export function segmentLook(map: GameMap, c: number, r: number, dx: number, dy: number): number {
+/**
+ * The decorated band's layer for a wall segment; walls looking into room `woodRoom` (the Confessional)
+ * take its wood panels instead of the window and pilaster rhythm.
+ */
+export function segmentLook(map: GameMap, c: number, r: number, dx: number, dy: number, woodRoom = -1): number {
   const { w, h } = map;
   const hz = map.heights;
   const alongX = dy !== 0;
@@ -218,5 +224,6 @@ export function segmentLook(map: GameMap, c: number, r: number, dx: number, dy: 
     if (j === 0) floor = f;
     else if (f !== floor) return L_WALL;
   }
+  if (woodRoom >= 0 && map.roomOf[(alongX ? r + dy : k * TILE + dy) * w + (alongX ? k * TILE + dx : c + dx)] === woodRoom) return L_CONFESSIONAL;
   return k % 2 === 0 ? L_WINDOW : L_PILASTER;
 }
