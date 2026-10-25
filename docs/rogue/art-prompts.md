@@ -30,7 +30,7 @@ Save every image as PNG with exactly this name: Part A in `assets/art-src/refere
 - [x] B3 The Pardoner's stall, needed by R3, required: `npc-pardoner.png`, `pardoner-box.png`, `shop-pedestal.png`, `chart-scroll.png`.
 - [x] B4 The Confessional, needed by R1 (shell) and R4 (Advocate), required: `confessional-grille.png`, `tex-confessional-wood.png`
 - [x] B5 Rewards and challenges, needed by R6, required: `shared-key.png`, `reliquary-chest.png`, `reliquary-chest-open.png`, `judgment-bell.png`, `sundial.png`
-- [ ] B6 Boss parts, needed by R7, required: `watcher-open.png`, `watcher-closed.png`, `judgment-seal.png`
+- [x] B6 Boss parts, needed by R7, required, **received 2026-10-25 as JPEG** (conversion and cutout in R8 stage 4): `watcher-open.png`, `watcher-closed.png`, `judgment-seal.png`
 - [x] B7 Item icons, **redo by shape (2026-10-15), received and integrated the same day**: tubes `item-balm.png` (pilot), `item-seal.png`, `item-feather.png`; jars `item-venom.png` (pilot), `item-frost.png`, `item-chain.png`, `item-plume.png`. `item-mirror.png` stays.
 - [x] B8 Relic icons, needed by R6, required: `relic-usher.png` (pilot), `relic-thurible.png`, `relic-link.png`, `relic-tile.png`, `relic-qseal.png`, `relic-eseal.png`, `relic-comb.png`, `relic-wheel.png`, `relic-unbroken.png`, `relic-mercy.png`, `relic-armageddon.png`, `relic-sentence3.png`
 - [x] B9 New ability icons, needed by R4 (Betrayer's three) and R5 (the other nine), required: `icon-judas-coin.png` (pilot), `icon-way-back.png`, `icon-silver-wire.png`, `icon-gatebreaker.png`, `icon-rain-of-fire.png`, `icon-cast-out.png`, `icon-bread-of-angels.png`, `icon-trial-by-fire.png`, `icon-cloud-of-witnesses.png`, `icon-well-of-giants.png`, `icon-ring-of-giants.png`, `icon-boundary-chain.png`.
@@ -39,7 +39,7 @@ Save every image as PNG with exactly this name: Part A in `assets/art-src/refere
 
 **Totals:** 16 model references + 57 required game assets + 78 optional icons (A5's three added 2026-10-16). Earlier drafts also listed `fx-embers`, `fx-incense-wisp` and `silent-trumpet`; the first two are covered by the existing `ember.png` and `fx-smoke.png`, and the trumpet is now the A2 model reference.
 
-**Current receipt status — 2026-10-16:** 70/73 required sources received (all 16 model references, including A5, and 54 game assets). Only B6, the boss parts (`watcher-open.png`, `watcher-closed.png`, `judgment-seal.png`), is still missing, along with the optional B11 icons. The dated receipts below record each batch.
+**Current receipt status — 2026-10-25:** 73/73 required sources received (all 16 model references and 57 game assets). B6 arrived on 2026-10-25 as `assets/art-src/{watcher-open,watcher-closed,judgment-seal}.jpeg` (2048 × 2048, flat green). All three pass their checks; the open eye has a faint smear on the bottom gold point to clean while cutting. Only the optional B11 icons remain. The dated receipts below record each batch.
 
 ### Received sources — 2026-10-12
 
