@@ -128,9 +128,12 @@ export interface DebugState {
   chainsAt: number;
   /** With `dev=1`: the yaw and pitch (radians) from the eye to the nearest Chorister's body center within 30 m, or null. */
   casterAim: { yaw: number; pitch: number } | null;
+  /** Every cue the game's sounds played, by name (R8 stage 5's repetition census). */
+  cues: Record<string, number>;
 }
 
 export const debugState: DebugState = {
+  cues: {},
   screen: 'title',
   paused: false,
   fps: 0,

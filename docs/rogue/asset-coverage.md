@@ -53,6 +53,8 @@ If another event turns out to repeat as often (likely `meleeHit`, `orbFired`, `a
 
 One game event plays one sound family; an alias is not a second event. New event names are finalized in their milestone.
 
+**In code since R8 (2026-10-25):** `EVENT_CUES` in `src/client/cueMap.ts` maps every `GameEvent` type to its cues or states why it is silent, and `TALENT_FX_CUE`, `ITEM_USE_CUE`, `ITEM_LAND_CUE` and `ALT_START_CUE` resolve payloads, items and alternatives; a unit test checks every S1–S7 prompt ID exists as a cue. Each cue's name **is** its prompt ID, so a recording `assets/sfx/<id>-NN.wav` replaces the synthesized cue by file name. Status per cue: `recorded` for the 17 S1 families; every other row plays its own synthesized cue until a recording arrives. Warnings of incoming damage play at `PRIO_WARNING` and can't be stolen in a crest; state and relic cues are limited to 4 per second per family.
+
 | Game event (catalog or existing) | Sound family | Milestone |
 |---|---|---|
 | Room seals / clears | `doorsSeal` / `arenaCleared` | R1 |
@@ -67,12 +69,12 @@ One game event plays one sound family; an alias is not a second event. New event
 | Item used: Balm, Seal, Feather | `item-balm`, `item-seal`, `item-feather` | R3 |
 | Item thrown (Bitter Water, Ash, Plume) / landed | `item-throw` / `item-water-land`, `item-ash-land`, `item-plume-land` | R3 |
 | Item placed: Mirror, Chain / Mirror returns a projectile | `item-mirror-place`, `item-chain-place` / `item-mirror-return` | R3 |
-| Level up / low health / revive in progress / revive done | `levelUp` / `lowHealth` loop (replaces `heartbeat`) / `reviveHum` / `revive` | R3 |
+| Level up / low health / revive in progress / revive done | `levelUp` / `heartbeat` (kept in R8 instead of a `lowHealth` loop) / `reviveHum` / `revive` | R3 |
 | Rite page opened / Rite taken | `riteOffer` / `riteTaken` | R4 |
 | A talent, item or relic **applies** a state: bound / airborne / lands / fire patch / fire area ends | `state-bind` / `state-launch` / `state-land` / `state-fire` / `fireOut`; never a sound per tick of membership | R3–R5 |
 | Incense cloud | `incense` loop | R2 |
 | Confessional | `confessionalAmbience` loop | R4 |
-| The twelve alternatives | their S6 one-shots and S8 loops; Bread of Angels harvest = `motePickup`; Gatebreaker bursts = `burstPop`; Cast Out landings = `state-land`; Boundary Chain/Silver Wire binds = `state-bind` (≤4 per second); Way Back cuts = `daggerCut`; endings of fire = `fireOut` | R4–R5 |
+| The twelve alternatives | their S6 one-shots (R8: no S8 loops for alternatives; Bread of Angels' cast keeps `chaliceHeal`; `gatebreakerWall` waits for a wall-stop event); Bread of Angels harvest = `motePickup`; Gatebreaker bursts = `burstPop`; Cast Out landings = `state-land`; Boundary Chain/Silver Wire binds = `state-bind` (≤4 per second); Way Back cuts = `daggerCut`; endings of fire = `fireOut` | R4–R5 |
 | Talent shape changes (more pellets, wider cones, longer chains) | the native attack's own sound; no new event | R4–R5 |
 | Talent payloads | fire → `state-fire`; bind → `state-bind`; launch/land → `state-launch`/`state-land`; incense → `incense`; revive/mote reactions → `revive`/`motePickup`; native damage → its attack family | R4–R5 |
 | Key / chest / relic claim / bargain | `keyPickup` / `chestOpen` / `relicClaim` / `bargainAccept` | R6 |
@@ -87,7 +89,7 @@ One game event plays one sound family; an alias is not a second event. New event
 | Relics: Last Link, Petitioner's Tile, Last Plea, Unbroken Quill, Order of Expulsion, Reversal | `state-bind` / `state-launch` | R6 |
 | Relic: Mercy's Wax | `shieldUp` | R6 |
 | A combo replaces relic b's effect | relic b's sound is replaced too; never both | R6 |
-| Gatekeeper: Judgment, Volley, Toll, Call, Seal, release, Watchers, Host, 50%, death | `judgmentCharge`/`judgmentBlast`, `volleyWindup`/`volleyFired`, `tollTell`/`tollImpact`/`tollPersonalWhoosh`, `callTell`, `sealBreak`, `callReleased`, `watcherOpen`/`watcherBreak`, `hostDescend`, `bossTransition`, `bossDefeat`; `interrupted` stays | R7 |
+| Gatekeeper: Judgment and its c 22 pre-warning, Volley, Toll, Call, Seal, release, Watchers, Host, 50%, death | `judgmentPrewarn`, `judgmentCharge`/`judgmentBlast`, `volleyWindup`/`volleyFired`, `tollTell`/`tollImpact`/`tollPersonalWhoosh`, `callTell`, `sealBreak`, `callReleased`, `watcherOpen`/`watcherBreak`, `hostDescend`, `bossTransition`, `bossDefeat`; `interrupted` stays | R7 |
 | Existing base abilities, enemy attacks, player state, UI | the existing synthesized cues, replaced by S9 recordings when they arrive | R8 |
 | Existing `victory`, `defeat`, `buttonHover`, `fieldEntered`, `sacrament` | kept | — |
 

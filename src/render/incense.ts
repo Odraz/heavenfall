@@ -104,6 +104,13 @@ export class IncenseClouds {
     return [c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, c.base[p] + 0.2];
   }
 
+  /** The nearest cloud's centre within `range` m of (x, y), or null. */
+  nearest(x: number, y: number, range: number): { x: number; y: number } | null {
+    let best: Cloud | null = null, bestD = range;
+    for (const c of this.clouds) { const d = Math.hypot(c.x - x, c.y - y); if (d <= bestD) { best = c; bestD = d; } }
+    return best && { x: best.x, y: best.y };
+  }
+
   get count(): number {
     return this.clouds.length;
   }

@@ -111,10 +111,11 @@ import { Input, MOUSE_SENSITIVITY } from './input';
 import { WADE_LAUNCH_MS, wadeCount, Wading } from './wading';
 import { ARC_SEGMENTS, arcPoint, StarAim, starLanding, walkableCells, type Landing, type StarAlly } from './fallingStarAim';
 import { HEAL_FADE_MS, HEAL_VIGNETTE, HURT_FADE_MS, hurtVignette, LowHp, SHIELD_EDGE, SHIELD_FADE_MS, SHIELD_GONE_FLASH, SHIELD_UP_FLASH } from './lowHp';
-import { audio, sfx, type LoopHandle } from '../audio/audio';
+import { audio, type LoopHandle } from '../audio/audio';
 import { SOUL_HEIGHT, SOUL_RADIUS } from '../sim/souls';
 import { pickAllyTarget } from './allyTarget';
 import { GameSounds } from './sounds';
+import type { InteractKind } from './cueMap';
 import { ViewBob } from './bob';
 import { SoulView } from './soulView';
 import { LocalPlayer, MAX_FRAME_DT, wasdDirection } from './localPlayer';
@@ -140,6 +141,8 @@ import { riteOverlay, talentPanel, type RiteOverlay, type TalentPanel } from '..
 import { ALT_ABILITIES, BINDER, GATEBREAKER, RAIN, hasCatalog } from '../data/talents';
 import { aimedWalk, rainPoint } from '../sim/talentGeometry';
 /** Alternatives whose `abilityUsed` the base class key must not draw or sound (R5). */
+/** The incense loop is heard from clouds within this distance (m). */
+const INCENSE_HEARD = 12;
 const ALT_SFX_KEYS = new Set(['castOut', 'gatebreaker', 'rainOfFire', 'breadOfAngels', 'trialByFire', 'cloudOfWitnesses', 'well', 'ring', 'boundary']);
 import { ADVOCATE_REACH } from '../sim/sim';
 import type { RiteOffer } from '../net/messages';
@@ -151,6 +154,7 @@ import { advocateHub, relicOfferOverlay, relicPanel, type RelicOfferOverlay, typ
 import { relicDormancy } from '../sim/relicUse';
 import { resolveKit } from '../sim/build';
 import { SOURCE_BELL_FIRST, SOURCE_CHEST } from '../sim/route';
+import { SOURCE_CHART } from '../sim/shop';
 import { KEY } from '../data/pickups';
 import type { RelicOfferState, RouteState } from '../net/messages';
 import type { RelicId } from '../data/relics';
@@ -383,6 +387,11 @@ export class Game {
   private readonly shopHint = document.createElement('div');
   private inventory: InventoryState | null = null;
   private nextRequestId = 1;
+  /** What each own interact request was for, so its result plays the right cue (R8). */
+  private readonly interactKinds = new Map<number, InteractKind>();
+  /** Own Rite offers already announced, and the taken Rites' count (-1 before the first kit). */
+  private readonly ritesOffered = new Set<number>();
+  private ritesTaken = -1;
   private victory: VictoryState | null = null;
   private readonly victoryHint = document.createElement('div');
   private readonly pause: PauseOverlay;
@@ -689,8 +698,9 @@ export class Game {
     this.party = o.singleplayer ? null : new PartyFrames(this.hud.leftColumn, this.hud.ownFrame);
     this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id), (id, slot) => {
       const ab = this.talents?.ability(id, slot);
-      return ab && ALT_SFX_KEYS.has(ab) ? ab : undefined;
-    });
+      return ab && Object.hasOwn(ALT_ABILITIES, ab) ? ab : undefined;
+    }, () => this.snaps.estimatedTick(performance.now()));
+    debugState.cues = this.sounds.census;
     this.hud.onReady = () => this.sounds.abilityReady();
     this.overlay = new DebugOverlay(o.root, this.params.dev);
     this.pause = new PauseOverlay(o.root, () => this.resume(), () => this.leave());
@@ -806,8 +816,13 @@ export class Game {
     else if (code === 'KeyF' && !this.dead) {
       const sourceId = this.shop.target(this.player.body, this.player.yaw, this.player.pitch);
       const route = sourceId < 0 ? this.routeView.target(this.player.body) : null;
-      if (sourceId >= 0) this.o.transport.sendCtrl({ type: 'interact', runId: this.o.runId, requestId: this.nextRequestId++, sourceId });
-      else if (route) this.o.transport.sendCtrl({ type: 'interact', runId: this.o.runId, requestId: this.nextRequestId++, sourceId: route.kind === 'chest' ? SOURCE_CHEST : SOURCE_BELL_FIRST + route.room });
+      if (sourceId >= 0) {
+        this.interactKinds.set(this.nextRequestId, sourceId === SOURCE_CHART ? 'chart' : 'buy');
+        this.o.transport.sendCtrl({ type: 'interact', runId: this.o.runId, requestId: this.nextRequestId++, sourceId });
+      } else if (route) {
+        this.interactKinds.set(this.nextRequestId, 'other');
+        this.o.transport.sendCtrl({ type: 'interact', runId: this.o.runId, requestId: this.nextRequestId++, sourceId: route.kind === 'chest' ? SOURCE_CHEST : SOURCE_BELL_FIRST + route.room });
+      }
       // The Advocate within 2.5 m, else the oldest pending offer (rogue game.md §1.4, §9.6).
       else if (this.advocateInReach()) this.openAdvocate();
       else this.openPendingOffer();
@@ -1091,11 +1106,17 @@ export class Game {
   /** A talent event's game-side effects: the own kit, offers, launched enemies, the hidden mark. */
   private talentEvent(e: GameEvent, now: number): void {
     if (e.type === 'kit' && e.kit.playerId === this.localId) {
+      // A Rite taken sounds once per accepted change, never on the first kit after joining.
+      if (this.ritesTaken >= 0 && e.kit.rites.length > this.ritesTaken) this.sounds.riteTaken();
+      this.ritesTaken = e.kit.rites.length;
       this.applyOwnKit();
       if (this.overlayView?.kind === 'talents') this.overlayView.view.setBuild({ talents: e.kit.learned, q: e.kit.q, e: e.kit.e }, e.kit.rites);
     }
     if (e.type === 'hidden' && e.playerId === this.localId) this.hud.setHidden(e.hidden);
     if (e.type === 'riteOffers') {
+      // A new own Rite page: its cue once per offer.
+      if (e.offers.some((o) => !this.ritesOffered.has(o.offerId))) this.sounds.riteOffer();
+      for (const o of e.offers) this.ritesOffered.add(o.offerId);
       const open = this.overlayView;
       if (open?.kind === 'rite') {
         const current = e.offers.find((o) => o.offerId === open.offerId);
@@ -1188,7 +1209,10 @@ export class Game {
   /** The host's route state: the chest and Bells drawn, the key holder named under the minimap. */
   private applyRoute(state: RouteState): void {
     // A Bell rung: its toll, heard by everyone (rogue game.md §4.12).
-    for (const b of state.bells) if (b.state === 'pending' && this.routeView.state.bells.find((o) => o.room === b.room)?.state === 'available') sfx('judgmentBell', { x: b.x, y: b.y });
+    for (const b of state.bells) if (b.state === 'pending' && this.routeView.state.bells.find((o) => o.room === b.room)?.state === 'available') this.sounds.bell({ x: b.x, y: b.y });
+    // The Reliquary opening, heard by everyone near it; a join that finds it open stays quiet.
+    const was = this.routeView.state.chest;
+    if (state.chest?.open && was && !was.open) this.sounds.chestOpen({ x: state.chest.x, y: state.chest.y });
     this.routeView.set(state);
     debugState.route = { keyHolder: state.keyHolder, keyUsed: state.keyUsed, chest: state.chest ? { open: state.chest.open } : null, bells: state.bells.map((b) => b.state), sundial: state.sundial };
     this.mapView.setRoute(state, state.keyHolder < 0 && !state.keyUsed && [...this.pickups.model.records.values()].some((r) => r.pickup.kind === KEY && r.pickup.room === this.o.floor?.keyRoom));
@@ -1207,11 +1231,11 @@ export class Game {
     const at = e.playerId === this.localId ? this.player.body : this.playerPose(e.playerId);
     if (e.phase === 'start') {
       if (at) for (let i = 0; i < 3; i++) this.vfx.ring(now, at.x, at.y, at.z + 0.05, 0xffd27a, 2.2 - i * 0.6, 0.3, 1500 - i * 300, i * 300);
-      sfx('chaliceHeal', at ? { x: at.x, y: at.y } : null, 0.6, 0, undefined, 0.8);
+      this.sounds.teleport('start', e.playerId === this.localId || !at ? null : { x: at.x, y: at.y });
       if (e.playerId === this.localId) this.mapView.returnTarget = e.room;
     } else {
       if (e.playerId === this.localId) this.mapView.returnTarget = -1;
-      if (e.phase === 'arrive' && at) { this.vfx.pillar(now, at.x, at.y, at.z); sfx('goldPickup', null, 0.6); }
+      if (e.phase === 'arrive' && at) { this.vfx.pillar(now, at.x, at.y, at.z); this.sounds.teleport('arrive', e.playerId === this.localId ? null : { x: at.x, y: at.y }); }
     }
   }
 
@@ -1451,7 +1475,7 @@ export class Game {
     }
     // A relic became yours (claimed, pawned or a deed's): a bright chime with its line.
     const had = (this.inventory?.ownedRelics?.length ?? 0) + (this.inventory?.pawnedRelics?.length ?? 0);
-    if (this.inventory && (state.ownedRelics?.length ?? 0) + (state.pawnedRelics?.length ?? 0) > had) { sfx('goldPickup', null, 0.9, 0, undefined, 0.75); this.sounds.levelUp(); }
+    if (this.inventory && (state.ownedRelics?.length ?? 0) + (state.pawnedRelics?.length ?? 0) > had) this.sounds.relicClaim();
     this.inventory = state; this.nextRequestId = Math.max(this.nextRequestId, state.nextRequestId);
     if (state.maxHp !== undefined) { this.hpCut = Math.max(0, CLASSES[this.classId].hp - state.maxHp); this.maxHp = state.maxHp; }
     this.hud.setInventory(state); this.shop.update(state);
@@ -1512,6 +1536,8 @@ export class Game {
         if (e.state.playerId === this.localId) this.setInventory(e.state);
         break;
       case 'interactionResult':
+        this.sounds.interaction(e.accepted, this.interactKinds.get(e.requestId));
+        this.interactKinds.delete(e.requestId);
         this.hud.centerText(e.reason, 1800, now);
         if (this.overlayView) this.overlayView.view.setMessage(e.reason);
         break;
@@ -3196,6 +3222,8 @@ export class Game {
     const fireRoom = fireCells > 0 ? this.snaps.newest!.activeRoom : -1;
     const fireOwnRoom = this.rooms.roomAt(p.body.x, p.body.y);
     this.sounds.hazard(fireOwnRoom === fireRoom && !this.paused ? this.hazards.nearest(fireRoom, p.body.x, p.body.y, now) : null);
+    this.sounds.incense(this.paused ? null : this.incense.nearest(p.body.x, p.body.y, INCENSE_HEARD));
+    this.sounds.confessional(!this.paused && !this.over && fireOwnRoom >= 0 && fireOwnRoom === this.o.floor?.confessional);
     debugState.hazards = { activeRoom: fireRoom, activeCells: fireCells };
     const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
     this.hud.setHealing(this.ownBeamOn, now);

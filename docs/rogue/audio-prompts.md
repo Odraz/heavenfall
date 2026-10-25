@@ -15,9 +15,11 @@ Save each file as `<id>-01.wav`, `-02`, `-03` in `assets/audio-src/sfx/` (loops 
 **S1 Required: frequent combat sounds** (keep 3 of each, needed by R2; `chaingun` is the repetition pilot; compare providers on a small batch first)
 - [x] `chaingun` · [x] `shotgun` · [x] `slug` · [x] `censerLaunch` · [x] `censerBreak` · [x] `revolver` · [x] `silverBullet` · [x] `scourge` · [x] `daggerCut`
 - [x] `hitTick` · [x] `killTick` · [x] `burstPop` · [x] `blessedDeath` · [x] `massKill`
-- [ ] `porcelainBreak` · [ ] `blastLampCrack` · [ ] `blastLampBurst` (3 Suno source takes each available; heard only once the props exist)
+- [x] `porcelainBreak` · [x] `blastLampCrack` · [x] `blastLampBurst` (3 Suno takes each, cut and connected to `propBroken`/`propBlast` since R2.3)
 
 **Current installed audio (2026-10-12): Suno.** The full ElevenLabs S1 trial was rejected as worse and rolled back: all 51 original Suno source takes and all 42 previous combat runtime WAVs were restored byte-for-byte. The ElevenLabs local audio, downloads and audition preview were removed; its generation/provenance records remain historical records. The three prop families retain their Suno sources and await their event connections. Future keepers may come from **either provider**, including a mixture within one family if they sound consistent. A checklist tick identifies an existing combat event connection; each new take still needs listening approval.
+
+**S2–S7 status (R8, 2026-10-25):** every ID below except `gatebreakerWall` (no host event yet) has a synthesized cue of the same name in `src/audio/sfx.ts`, connected through `src/client/cueMap.ts`. A tick here means a recording was received; until then the synthesized cue plays. A file `assets/sfx/<id>-01.wav` replaces it with no code change.
 
 **S2 Rooms, the Dominion and the fire** (R1–R2)
 - [ ] `doorsSeal` (1) · [ ] `arenaCleared` (1) · [ ] `dominionStep` (2) · [ ] `dominionTell` (1) · [ ] `dominionSlam` (2) · [ ] `refinerIgnite` (1) · [ ] `chaliceHeal` (1)

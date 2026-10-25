@@ -6,8 +6,9 @@ import { WATCHMAN_AIM_TICKS, type WatchmanAim } from '../data/watchman';
  */
 import { audio, setMusic, sfx, type SoundPos, type VoiceHandle } from '../audio/audio';
 import { PRIO_ABILITY, PRIO_OTHERS } from '../audio/sfx';
+import { ALT_START_CUE, CueLimiter, interactionCue, ITEM_LAND_CUE, ITEM_USE_CUE, LIMITED_CUES, TALENT_FX_CUE, type InteractKind } from './cueMap';
 import type { ClassId } from '../data/classes';
-import { COIN, GOLD_HALO } from '../data/pickups';
+import { COIN, GOLD_HALO, KEY } from '../data/pickups';
 import { BLESSED, CARRIER, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_WINDUP } from '../data/enemies';
 import type { DominionRing } from './dominionView';
 import type { SpawnWarning } from '../data/spawns';
@@ -32,18 +33,11 @@ const ABILITY_SFX: Record<string, SfxName> = {
   'betrayer:Q': 'fieldOfBlood',
   'betrayer:E': 'shadowstep',
 };
-/** The R5 alternatives' synthesized stand-ins until their recordings (audio-prompts.md) arrive. */
-const ALT_SFX: Record<string, SfxName> = {
-  castOut: 'fallingStarLand', gatebreaker: 'fallingStarLeap', rainOfFire: 'refinerIgnite',
-  breadOfAngels: 'chaliceHeal', trialByFire: 'refinerIgnite', cloudOfWitnesses: 'incense',
-  well: 'chains', ring: 'chains', boundary: 'chains',
-};
 /** An enemy melee blow: a Blessed attacking within this horizontal distance. */
 const MELEE_REACH = 1.6;
 const NO_STATE = 255;
 
 export class GameSounds {
-  private lastReflection = -Infinity;
   private readonly lastShots = new Map<number, number>();
   private readonly lastShots2 = new Map<number, number>();
   /** Others' events play after the render delay, like their effects (seconds). */
@@ -53,11 +47,50 @@ export class GameSounds {
   private readonly tells = new Map<number, VoiceHandle>();
   private readonly arrivalTells = new Map<number, VoiceHandle>();
   private fireAmbient: VoiceHandle | undefined;
+  private incenseAmbient: VoiceHandle | undefined;
+  private confessionalAmbient: VoiceHandle | undefined;
+  /** State and relic cue families: at most four per second each (cueMap.ts). */
+  private readonly limiter = new CueLimiter();
+  /** Every cue this class played, by name: the repetition census (R8 stage 5). */
+  readonly census: Record<string, number> = {};
   /** Ambient fire uses an admitted finite voice, so it shares the unchanged caps/stealing rules. */
   hazard(at: SoundPos | null): void {
     if (!at) { this.fireAmbient?.stop(); this.fireAmbient = undefined; return; }
     if (!this.fireAmbient?.playing()) this.fireAmbient = sfx('refinerFire', at, 0.55, 0, 0);
   }
+
+  /** The nearest incense cloud within 12 m: one looped voice for all of them (asset-coverage.md). */
+  incense(at: SoundPos | null): void {
+    if (!at) { this.incenseAmbient?.stop(); this.incenseAmbient = undefined; return; }
+    if (!this.incenseAmbient?.playing()) this.incenseAmbient = sfx('incense', at, 0.5, 0, 0);
+  }
+
+  /** The Confessional's air while the local player stands inside it. */
+  confessional(inside: boolean): void {
+    if (!inside) { this.confessionalAmbient?.stop(); this.confessionalAmbient = undefined; return; }
+    if (!this.confessionalAmbient?.playing()) this.confessionalAmbient = sfx('confessionalAmbience', null, 1, 0, 0);
+  }
+
+  /** Plays a cue, applying the state/relic rate limit, and counts it for the census. */
+  private play(name: SfxName, at: SoundPos | null = null, gain = 1, when = 0, priority?: number): void {
+    if (LIMITED_CUES.has(name) && !this.limiter.admit(name, performance.now())) return;
+    this.census[name] = (this.census[name] ?? 0) + 1;
+    sfx(name, at, gain, when, priority);
+  }
+
+  /** The own interaction's result: purchase, Chart or refusal (never a success sound on refusal). */
+  interaction(accepted: boolean, kind: InteractKind | undefined): void {
+    const name = interactionCue(accepted, kind);
+    if (name) this.play(name);
+  }
+
+  /** Own progression and route moments, each its own cue (asset-coverage.md R3–R6 rows). */
+  riteOffer(): void { this.play('riteOffer'); }
+  riteTaken(): void { this.play('riteTaken'); }
+  relicClaim(): void { this.play('relicClaim'); }
+  chestOpen(at: SoundPos): void { this.play('chestOpen', at); }
+  bell(at: SoundPos): void { this.play('judgmentBell', at); }
+  teleport(phase: 'start' | 'arrive', at: SoundPos | null): void { this.play(phase === 'start' ? 'teleportStart' : 'teleportArrive', at); }
   private readonly steps = new Map<number, { incarnation: number; x: number; y: number; distance: number }>();
 
   /** Resume only the remaining tell; snapshot omission/control/disposal stops the actual voice. */
@@ -65,7 +98,7 @@ export class GameSounds {
     for (const [id, handle] of this.tells) if (!rings.some((c) => c.castId === id)) { handle.stop(); this.tells.delete(id); }
     for (const c of rings) {
       if (this.tells.get(c.castId)?.playing()) continue;
-      const handle = sfx('dominionTell', c, 1, 0, PRIO_ABILITY, 1, { elapsed: (tick - c.startTick) / 30, duration: (c.impactTick - c.startTick) / 30 });
+      const handle = sfx('dominionTell', c, 1, 0, undefined, 1, { elapsed: (tick - c.startTick) / 30, duration: (c.impactTick - c.startTick) / 30 });
       if (handle) this.tells.set(c.castId, handle);
     }
   }
@@ -80,7 +113,7 @@ export class GameSounds {
     for (const [slot, v] of this.aimVoices) if (!aims.some(({ aim }) => aim.slot === slot && aim.phase === 'aim' && key(aim) === v.key)) { v.handle?.stop(); this.aimVoices.delete(slot); }
     for (const { aim, at } of aims) {
       if (aim.phase !== 'aim' || this.aimVoices.get(aim.slot)?.key === key(aim)) continue;
-      const handle = sfx('watchmanAim', at, 1, 0, PRIO_ABILITY, 1, { elapsed: Math.max(0, tick - (aim.fireTick - WATCHMAN_AIM_TICKS)) / 30, duration: WATCHMAN_AIM_TICKS / 30 });
+      const handle = sfx('watchmanAim', at, 1, 0, undefined, 1, { elapsed: Math.max(0, tick - (aim.fireTick - WATCHMAN_AIM_TICKS)) / 30, duration: WATCHMAN_AIM_TICKS / 30 });
       this.aimVoices.set(aim.slot, { key: key(aim), handle });
     }
   }
@@ -101,7 +134,7 @@ export class GameSounds {
       const name: SfxName = c.kind === 'beam' ? c.phase === 'tell' ? 'cantorTell' : c.phase === 'active' ? 'cantorBeam' : c.phase === 'recover' ? 'cantorBook' : 'cantorHum'
         : c.phase === 'tell' ? 'carrierMark' : c.phase === 'active' ? 'carrierSwoop' : c.phase === 'carry' ? 'carrierWings' : c.phase === 'recover' ? 'carrierRelease' : 'carrierHum';
       const duration = c.phase === 'idle' ? 1 : Math.max(0.01, (c.endTick - c.phaseTick) / 30);
-      const handle = sfx(name, c, c.phase === 'idle' ? 0.35 : 1, 0, c.phase === 'idle' ? 0 : PRIO_ABILITY, 1,
+      const handle = sfx(name, c, c.phase === 'idle' ? 0.35 : 1, 0, c.phase === 'idle' ? 0 : undefined, 1,
         c.phase === 'idle' || c.phase === 'carry' ? undefined : { elapsed: (tick - c.phaseTick) / 30, duration });
       this.familyVoices.set(c.slot, { key, handle });
     }
@@ -122,6 +155,8 @@ export class GameSounds {
     private readonly classOf: (playerId: number) => ClassId | undefined,
     /** A player's assigned alternative ability in a slot, if it holds one (R4–R5). */
     private readonly altOf: (playerId: number, slot: 'Q' | 'E') => string | undefined = () => undefined,
+    /** The drawn tick, so a fire update that only puts cells out stays silent. */
+    private readonly tick: () => number = () => 0,
   ) {
     audio()?.music.keepStings(true);
   }
@@ -185,7 +220,7 @@ export class GameSounds {
     sfx('abilityReady');
   }
 
-  levelUp(): void { sfx('abilityReady'); sfx('goldPickup', null, .6, .12); }
+  levelUp(): void { this.play('levelUp'); }
   /** A clear reward arriving from the sky (audit batch 3); heard room-wide, not positional. */
   rewardArrived(): void { sfx('rewardArrive'); }
 
@@ -275,28 +310,26 @@ export class GameSounds {
   }
 
   /** Relic sounds batch by kind: at most one per kind per 0.25 s (items-relics.md §2.4 rule 10). */
-  private readonly relicAt = new Map<string, number>();
-  private relicSound(name: 'relic-rune' | 'relic-ember' | 'relic-wheel' | 'relic-stamp' | 'relic-chorus' | 'relicRing' | 'chains' | 'shieldUp', at: SoundPos): void {
-    const now = performance.now();
-    if (now - (this.relicAt.get(name) ?? -Infinity) < 250) return;
-    this.relicAt.set(name, now);
-    sfx(name, at, 0.6);
+  private relicSound(name: SfxName, at: SoundPos): void {
+    this.play(name, at, 0.6);
   }
 
   /** A game event's sound. `pose` gives a player's position. */
   event(e: GameEvent, pose: (id: number) => SoundPos | undefined): void {
     switch (e.type) {
-      case 'itemUsed':
-        sfx(e.item === 'balm' ? 'motePickup' : e.item === 'seal' ? 'shroud' : e.item === 'feather' ? 'fallingStarLeap' : 'porcelainBreak', { x: e.x, y: e.y }, .55);
-        break;
-      case 'itemEffectActivated':
-        sfx(e.effect.item === 'chain' ? 'chains' : e.effect.item === 'mirror' ? 'shroud' : 'censerBreak', { x: e.effect.x, y: e.effect.y }, .45);
-        break;
-      case 'itemReflected': {
-        const now = performance.now();
-        if (now - this.lastReflection >= 250) { sfx('goldPickup', { x: e.x, y: e.y }, .5); this.lastReflection = now; }
+      case 'itemUsed': {
+        const name = ITEM_USE_CUE[e.item];
+        if (name) this.play(name, e.playerId === this.localId ? null : { x: e.x, y: e.y });
         break;
       }
+      case 'itemEffectActivated': {
+        const name = ITEM_LAND_CUE[e.effect.item];
+        if (name) this.play(name, { x: e.effect.x, y: e.effect.y });
+        break;
+      }
+      case 'itemReflected':
+        this.play('item-mirror-return', { x: e.x, y: e.y }, .6);
+        break;
       case 'crest':
         sfx('crest');
         break;
@@ -309,35 +342,49 @@ export class GameSounds {
       case 'relicFx':
         if (e.kind === 'shield') this.relicSound('shieldUp', { x: e.x, y: e.y });
         else if (e.kind === 'burst') this.relicSound(e.effect === 'appeal' ? 'relic-stamp' : e.effect === 'sentence3' ? 'relic-stamp' : 'relic-chorus', { x: e.x, y: e.y });
-        else this.relicSound(e.effect === 'tile' ? 'chains' : 'relicRing', { x: e.x, y: e.y });
+        else this.relicSound(e.effect === 'tile' ? 'state-bind' : 'relicRing', { x: e.x, y: e.y });
         break;
       case 'streak':
         // Your own tier only, rising with the tier (m12-followup-2.md §3.2).
         if (e.playerId === this.localId) sfx('streakTier', null, 1, 0, undefined, 2 ** (2 * e.tier / 12));
         break;
 
-      // R4 Betrayer talents: synthesized stand-ins until the S6 recordings (asset-manifest.md).
+      // The Betrayer's three alternatives sound from their areas; fire areas go out with a hiss.
       case 'talentArea': {
         const at = { x: e.area.x, y: e.area.y };
-        if (!e.end && e.area.kind === 'coin') sfx('goldPickup', at, 0.6);
-        else if (!e.end && e.area.kind === 'wire') sfx('chains', at, 0.5);
-        else if (!e.end && e.area.kind === 'shadow') sfx('shadowstep', at, 0.4);
-        else if (e.end && e.reason === 'split') sfx('goldPickup', at, 1, 0, undefined, 1.5);
-        else if (e.end && e.reason === 'spent') sfx('chains', at, 0.35);
+        if (!e.end && e.area.kind === 'coin') this.play('judasCoinSpin', at);
+        else if (!e.end && e.area.kind === 'wire') this.play('silverWirePlace', at);
+        else if (!e.end && e.area.kind === 'shadow') this.play('wayBackMarker', at, 0.8);
+        else if (e.end && e.reason === 'split') this.play('judasCoinSplit', at);
+        else if (e.end && (e.area.kind === 'rain' || e.area.kind === 'furrow')) this.play('fireOut', at);
         break;
       }
       case 'wayBack':
-        sfx('shadowstep', e.playerId === this.localId ? null : { x: e.x0, y: e.y0 }, 0.9);
+        this.play('wayBackReturn', e.playerId === this.localId ? null : { x: e.x0, y: e.y0 }, 0.9);
         break;
-      case 'talentFx':
-        if (e.kind === 'clay' && e.pts.length) sfx('porcelainBreak', { x: e.pts[0], y: e.pts[1] }, 0.4, this.renderDelay);
-        else if (e.kind === 'nail' && e.slots.length) sfx('chains', { x: e.pts[0], y: e.pts[1] }, 0.4, this.renderDelay);
+      case 'talentFx': {
+        // Payload cues, once per effect (never per enemy reached), at its first point after the render delay.
+        const name = TALENT_FX_CUE[e.kind];
+        if (name && e.pts.length >= 2) this.play(name, { x: e.pts[0], y: e.pts[1] }, 0.6, this.renderDelay);
+        break;
+      }
+      case 'fire': {
+        // A patch catches fire: only an update that adds burning cells, not one that puts cells out.
+        const live = e.cells.findIndex((_, i) => e.ends[i] > this.tick());
+        if (live >= 0) this.play('state-fire', { x: e.cells[live] % this.map.w + 0.5, y: Math.floor(e.cells[live] / this.map.w) + 0.5 }, 0.6, this.renderDelay);
+        break;
+      }
+      case 'launched':
+        if (e.slots.length) this.play('state-launch', e.playerId === this.localId ? null : (pose(e.playerId) ?? null), 0.7, e.playerId === this.localId ? 0 : this.renderDelay);
+        break;
+      case 'bargain':
+        this.play('bargainAccept', e.playerId === this.localId ? null : (pose(e.playerId) ?? null));
         break;
       case 'abilityUsed': {
         const key = `${this.classOf(e.playerId)}:${e.slot}`;
         const at = { x: e.x, y: e.y };
         const alt = this.altOf(e.playerId, e.slot);
-        if (alt) { if (ALT_SFX[alt]) sfx(ALT_SFX[alt], e.playerId === this.localId ? null : at); break; }
+        if (alt) { if (ALT_START_CUE[alt]) this.play(ALT_START_CUE[alt], e.playerId === this.localId ? null : at); break; }
         if (key === 'fallen:E') {
           // The leap from where the Fallen is; the landing sounds when it lands (M12 §5.2).
           sfx('fallingStarLeap', e.playerId === this.localId ? null : (pose(e.playerId) ?? at));
@@ -378,7 +425,7 @@ export class GameSounds {
         else if (e.phase === PHASE_CLEARED && this.map.rooms[e.room].kind === 'combat') sfx('arenaCleared');
         break;
       case 'pickupCollected':
-        sfx(e.kind === COIN || e.kind === GOLD_HALO ? 'goldPickup' : 'motePickup', { x: e.x, y: e.y });
+        this.play(e.kind === COIN || e.kind === GOLD_HALO ? 'goldPickup' : e.kind === KEY ? 'keyPickup' : 'motePickup', { x: e.x, y: e.y });
         break;
       case 'propBroken':
         sfx(e.family === 'loot' ? 'porcelainBreak' : e.family === 'blast' ? 'blastLampCrack' : 'chaliceHeal', { x: e.x, y: e.y });
@@ -405,7 +452,7 @@ export class GameSounds {
       case 'hostDescend': sfx('hostDescend'); break;
       case 'watchersOpen': sfx('watcherOpen'); break;
       case 'watcherBreak': sfx('watcherBreak', { x: e.x, y: e.y }); break;
-      case 'bossPhase': if (e.phase === 2) sfx('bossTransition'); break;
+      case 'bossPhase': if (e.phase === 2) this.play('bossTransition'); else if (e.phase === 0) this.play('bossDefeat'); break;
       case 'gameOver':
         // The playing track fades and the sting plays; without one, the synthesized sting.
         if (!audio()?.music.sting(e.result)) sfx(e.result);
@@ -449,6 +496,8 @@ export class GameSounds {
     for (const v of this.familyVoices.values()) v.handle?.stop(); this.familyVoices.clear();
     for (const v of this.aimVoices.values()) v.handle?.stop(); this.aimVoices.clear();
     this.fireAmbient?.stop(); this.fireAmbient = undefined;
+    this.incenseAmbient?.stop(); this.incenseAmbient = undefined;
+    this.confessionalAmbient?.stop(); this.confessionalAmbient = undefined;
     for (const handle of this.tells.values()) handle.stop(); this.tells.clear(); this.steps.clear();
     for (const handle of this.arrivalTells.values()) handle.stop(); this.arrivalTells.clear();
     audio()?.music.keepStings(false);

@@ -67,6 +67,7 @@ test('the key lies in the key room once it clears; touching it puts the holder u
   await teleport(page, rx + 2, ry + 2);
   await page.waitForFunction(() => window.__heavenfall.route?.keyHolder === 0, null, { timeout: 10_000 });
   await expect(page.locator('.key-line')).toContainText('Key · Dev');
+  expect((await state(page)).cues.keyPickup).toBe(1);
 });
 
 test('a Bell hangs after its room clears; F under it rings the Judgment countdown', async ({ page }) => {
@@ -84,6 +85,31 @@ test('a Bell hangs after its room clears; F under it rings the Judgment countdow
     return (await state(page)).route?.bells.includes('pending');
   }, { timeout: 20_000, intervals: [700] }).toBe(true);
   await page.waitForFunction(() => window.__heavenfall.activePhase === 'countdown' || window.__heavenfall.activePhase === 'combat');
+  expect((await state(page)).cues.judgmentBell).toBe(1);
+});
+
+test('a pedestal purchase or refusal plays its own cue, never a success sound on refusal (R8)', async ({ page }) => {
+  await page.goto(url(g.floor.pardoner));
+  await ready(page);
+  const [px, py] = g.def.rooms[g.floor.pardoner].points!.pedestals![0];
+  // Stand 1.5 m from the first pedestal on an open side, looking down at its item.
+  for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    await teleport(page, px + 0.5 - Math.cos(a) * 1.5, py + 0.5 - Math.sin(a) * 1.5);
+    await page.evaluate((a) => window.__heavenfallLook!(a, -0.38), a);
+    if (await page.locator('.shop-hint').textContent({ timeout: 1000 }).then((t) => /halos/.test(t ?? ''), () => false)) break;
+  }
+  await expect(page.locator('.shop-hint')).toContainText('halos');
+  const before = (await state(page)).wallet;
+  await expect.poll(async () => {
+    await page.keyboard.press('KeyF');
+    const c = (await state(page)).cues;
+    return (c.purchase ?? 0) + (c.interactionReject ?? 0);
+  }, { timeout: 20_000, intervals: [700] }).toBeGreaterThan(0);
+  // A purchase spends halos; a refusal spends none and never plays the purchase cue.
+  await page.waitForTimeout(1000);
+  const after = await state(page), c = after.cues;
+  expect((c.purchase ?? 0) > 0).toBe(after.wallet < before);
+  if (after.wallet === before) expect(c.interactionReject).toBeGreaterThan(0);
 });
 
 test('Edicts set the Sentence shown under the XP bar', async ({ page }) => {

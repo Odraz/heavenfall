@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AudioEngine } from './audio';
 import { ShuffleBag } from './recorded';
-import type { SfxName } from './sfx';
+import { PRIO_OWN, PRIO_WARNING, SFX, type SfxName } from './sfx';
 
 /** Exercise actual admission/playback with injected decoded buffers and WebAudio nodes. */
 function playback() {
@@ -21,7 +21,7 @@ function playback() {
   };
   const engine = Object.assign(Object.create(AudioEngine.prototype) as Record<string, unknown>, {
     ctx, sfxBus: {}, recordedOn: true, lx: 0, ly: 0, lyaw: 0, voices, lastStart: new Map(),
-    buffers: new Map([['porcelainBreak', synth], ['shotgun', synth], ['refinerFire', synth]]),
+    buffers: new Map([['porcelainBreak', synth], ['shotgun', synth], ['refinerFire', synth], ['dominionTell', synth]]),
     takes: new Map([['porcelainBreak', { bufs: buffers, gains: [1, 2, 3], bag }]]),
   }) as unknown as AudioEngine;
   return { engine, bag, ctx, voices, started, synth, buffers, windows, stopped };
@@ -69,6 +69,19 @@ describe('recorded playback admission', () => {
     h.engine.setRecorded(true); h.engine.play('porcelainBreak');
     h.engine.play('shotgun');
     expect(h.started[1].buffer).toBe(h.buffers[0]); expect(h.started[2].buffer).toBe(h.synth);
+  });
+
+  it('admits a warning over 24 busy own-weapon voices, and the weapons cannot steal it back (game.md §1.3)', () => {
+    const h = playback();
+    for (let i = 0; i < 24; i++) h.voices.push({ name: 'shotgun', priority: PRIO_OWN, ended: false, src: { stop() {} } });
+    expect(SFX.dominionTell.priority).toBe(PRIO_WARNING);
+    expect(h.engine.play('dominionTell' as SfxName)).toBeDefined();
+    expect(h.voices.filter((v) => v.name === 'dominionTell')).toHaveLength(1);
+    // The rest of the crest holds voices nothing may steal; an own-priority shot then finds only the warning.
+    for (const v of h.voices) if (v.name !== 'dominionTell') v.priority = PRIO_WARNING;
+    h.ctx.currentTime++;
+    expect(h.engine.play('porcelainBreak', null, 1, 0, PRIO_OWN)).toBeUndefined();
+    expect(h.voices.filter((v) => v.name === 'dominionTell')).toHaveLength(1);
   });
 
   it('retains per-sound limits and positional attenuation for recorded takes', () => {
