@@ -580,7 +580,7 @@ export class Hud {
     if (!lines.length) {
       const line = el('div', 'hint hint-general', this.carried);
       el('span', 'hint-icon', line);
-      el('span', 'hint-text', line).textContent = 'Nothing carried. Buy items from the Pardoner or pick them up.';
+      el('span', 'hint-text', line).textContent = 'Nothing carried. You carry two kinds of item, used with 1 and 2: buy them from the Pardoner or pick them up.';
     }
   }
 

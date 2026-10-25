@@ -45,7 +45,7 @@ test('a build learned in the Lobby is saved and enters the run', async ({ page }
   const hints = page.locator('.hints');
   await expect(hints).toBeVisible();
   await expect(hints.locator('.hint-section')).toHaveText(['Carried']);
-  await expect(hints).toContainText('Nothing carried. Buy items from the Pardoner or pick them up.');
+  await expect(hints).toContainText('Nothing carried. You carry two kinds of item, used with 1 and 2: buy them from the Pardoner or pick them up.');
   for (const gone of ['Glancing Silver', 'The Nail', '1 / 2:', 'F: buy', 'Esc:', 'T: read']) await expect(hints).not.toContainText(gone);
   await page.keyboard.press('KeyH');
   await expect(hints).toBeHidden();

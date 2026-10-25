@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHART_PRICE, buyItem } from './shop';
 import { ScopedRequests } from '../net/requests';
-import { ITEMS, type Inventory } from '../data/items';
+import { BALM_HEAL_FRACTION, CHAIN_BIND_SECONDS, FEATHER_SPEED, ITEMS, PLUME_DAMAGE, SEAL_SHIELD, VENOM_DAMAGE, type Inventory } from '../data/items';
 import { generateFloor } from '../gen';
 import { PEARLY_POOL } from '../data/rooms/1';
 import { PINNED } from '../gen/pinned';
@@ -111,5 +111,19 @@ describe('R3 shop transactions', () => {
     }
     expect(p.wallet).toBe(expected); expect(expected).toBeGreaterThan(300);
     console.info(`R03 pinned all-room currency collected: ${p.wallet}; Chart + Balm + Ash: 360; drop rate 100% in controlled contact fixture.`);
+  });
+});
+
+describe('the pedestal labels describe what the items do (R8)', () => {
+  it('states each item rule with the numbers the simulation uses', () => {
+    const secs = (ticks: number) => `${ticks / 30} seconds`;
+    expect(ITEMS.balm.rule).toContain(`${BALM_HEAL_FRACTION * 100}% of your max HP`);
+    expect(ITEMS.seal.rule).toContain(`${SEAL_SHIELD} shield for ${secs(ITEMS.seal.duration)}`);
+    expect(ITEMS.feather.rule).toContain(`${FEATHER_SPEED} m/s faster for ${secs(ITEMS.feather.duration)}`);
+    expect(ITEMS.mirror.rule).toContain(`${ITEMS.mirror.radius} m dome for ${secs(ITEMS.mirror.duration)}`);
+    expect(ITEMS.venom.rule).toContain(`${ITEMS.venom.radius} m pool: ${VENOM_DAMAGE} damage every half second`);
+    expect(ITEMS.frost.rule).toContain(`${ITEMS.frost.radius} m circle for ${secs(ITEMS.frost.duration)}`);
+    expect(ITEMS.chain.rule).toContain(`${CHAIN_BIND_SECONDS} seconds in a ${ITEMS.chain.radius} m circle`);
+    expect(ITEMS.plume.rule).toContain(`${ITEMS.plume.radius} m circle for ${PLUME_DAMAGE} damage`);
   });
 });

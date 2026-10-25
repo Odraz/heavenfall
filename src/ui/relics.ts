@@ -9,6 +9,7 @@ import { COMBOS, COMBO_IDS, RELICS, RELIC_IDS, activeCombo, effectText, relicEff
 import { RELIC_ART } from '../client/itemArt';
 import { attachTooltip } from './tooltip';
 import type { RelicOfferState } from '../net/messages';
+import { BARGAIN_SHARE } from '../sim/bargain';
 
 const RARITY_NAMES = { common: 'Common', rare: 'Rare', legendary: 'Legendary' } as const;
 
@@ -211,7 +212,7 @@ export function advocateHub(o: { bargain: boolean; sundial: string | null; onTal
   };
   row('Talents', 'Learn, respec and assign Q and E.', o.onTalents);
   row('Relics', 'Equip two relics, pawned ones included.', o.onRelics);
-  row('The bargain', o.bargain ? 'A second relic for 30% of your max HP, kept if you win.' : 'Your bargain for this floor is settled.', o.onBargain, o.bargain);
+  row('The bargain', o.bargain ? `A second relic for ${Math.round(BARGAIN_SHARE * 100)}% of your max HP, kept if you win.` : 'Your bargain for this floor is settled.', o.onBargain, o.bargain);
   row('The Sundial', o.sundial ?? 'The Sundial has gone dark.', o.onSundial, o.sundial !== null);
   const message = el('div', 'message talent-message', panel);
   const footer = el('div', 'buttons talent-footer', panel);

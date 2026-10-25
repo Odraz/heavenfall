@@ -287,7 +287,7 @@ export function riteOverlay(o: RiteOverlayOptions): RiteOverlay {
         : offer.source === 'sundial'
           ? offer.fallback ? 'No talent can be offered: seal the Gatekeeper before the Sundial goes dark for 6 halos instead.'
             : 'Select one now. It becomes a Rite only if the Gatekeeper’s doors seal before 14:00; nothing is spent until then.'
-          : `One of your talents until this run ends.${more} Pass keeps your kit as it is.`;
+          : `One of your talents until this run ends.${more} Pass spends this page and keeps your kit as it is.`;
       pass.textContent = offer.source === 'bargain' ? 'Decline' : offer.source === 'sundial' ? 'Unselect' : 'Pass';
       pass.hidden = offer.source === 'sundial' && !offer.selected;
       message.textContent = '';
