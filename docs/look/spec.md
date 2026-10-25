@@ -6,13 +6,12 @@ This file is Claude's reference. Tomas follows [guide.md](guide.md); the decisio
 
 ## 1. Goal
 
-Make a screenshot of the game read as the same world as the right half of `assets/art-src/reference/look-compare.webp` (`look-concept-arena.png`), and as the concept pack made in V1 (`look-concept-<view>.png`):
+Make a screenshot of the game read as the same world as the right half of `assets/art-src/reference/look-compare.webp` (`look-concept-arena.png`; the same target at 1 376 × 768 in `look-compare-full.jpeg`, not pixel-aligned with the webp's left half), and as the concept pack made in V1 (`look-concept-<view>.png`):
 
-- **Architecture with real depth.** Pointed arcades on clustered columns with carved capitals, recessed bays, tracery windows, vaulted ceilings over corridors and aisles, molded doorways, worn marble and gold. Today the walls are flat painted boxes.
+- **Architecture with real depth.** Pointed arcades on clustered columns with carved capitals, recessed and varied bays, tracery windows, arches closed by locked iron gates with an aisle glimpsed beyond, vaulted ceilings over corridors and gated aisles, molded doorways, worn marble and gold. Today the walls are flat painted boxes.
 - **Light with range.** Warm sun and cool shade, visible light shafts and dust, bright highlights that bloom, a warm color grade, and lava that lights its surroundings.
 - **Detailed characters.** Armor, cloth and props modeled, not assembled from primitives, rendered in the inked cel style at a higher resolution.
 - **Effects with body.** Lava that flows and burns with flames and embers; sparks, dust and debris on hits; muzzle flashes that light the room.
-- **A finished HUD** matching the concept: portrait, HP and shield bars, weapon panel with ammo.
 
 The target is a stylized, inked look of AA quality, not photorealism and not the painting pixel for pixel. Success is judged by Tomas on fixed screenshot views placed beside the concepts ([§9](#9-acceptance-views)) and in play.
 
@@ -23,6 +22,7 @@ The target is a stylized, inked look of AA quality, not photorealism and not the
 - **Characters stay billboard sprites** rendered offline from 3D models into atlases, so 1 500 enemies cost the same however detailed a model is. Same animation names, frame counts, direction counts and anchor rules, so the game code that plays them doesn't change.
 - **Readability rules** ([art-prompts.md](../art-prompts.md#telling-enemies-apart), [rogue art-prompts](../rogue/art-prompts.md#telling-things-apart), M10 §1): white and gold enemies with dark outlines stand out against everything; state colors stay fixed (bound: red-hot chains; slowed: violet; taunted: trembling red; censed: rusty gold); green only for healing, blue only for shields; floors mid-to-light and low in contrast. A grade, glow, texture or fog that makes an enemy, projectile, hazard edge or state hard to read is wrong.
 - **First-person weapons** (painted, M11) stay; only their light tint follows the new grade.
+- **The HUD** stays as it is today (decision D7): layout, frames and information. The concept's HUD is not adopted.
 - **Determinism.** Every client builds the same world from the level data, as `looks.ts` does today. No randomness without the floor seed.
 
 ## 3. Rules that replace M10's
@@ -38,7 +38,7 @@ M10 §1 forbade post-processing and real-time lights to stay cheap. This overhau
 | No large transparent areas | **Unchanged.** Arcades are modeled or alpha-tested, never blended. |
 | Ink outlines painted into textures | **Baked**: crease and cavity lines are baked into each kit piece's occlusion map in Blender; silhouette outlines of columns, ribs and arches are inverted hulls at LOD0. No screen-space outline pass. |
 
-New visibility rule, **deep aisles** (decision D2): behind a *Wall* run that faces void, the drawing may open an arcade into an aisle that lies entirely over void and wall cells of no other zone, with a closed back wall. Nothing in play can be there, so it hides nothing. The simulation's wall face is unchanged: a shot into an opening stops at that face, and the client draws its impact as a faint gold ripple on the opening's plane (the aisle's "ward"), never as an impact on stone behind it. The aisle and its ward ripple must be checked by a test that every aisle cell is void or wall of no other zone and that no aisle geometry lies in front of the wall face.
+New visibility rule, **gated aisles** (decision D2): nothing branches off a room and nothing new can be entered. A bay of a *Wall* run may be an arch closed by a locked wrought-iron gate standing in the wall face's plane: bars and lock within `RELIEF` of the face, alpha-tested, never blended. Behind the gate is a glimpse, never a space: a shallow recess inside the wall cell (up to 0.9 m, as any bay's recess) wherever the bay stands, or, only where the run faces void, a short aisle (floor, closed back wall with a window, vault) lying entirely over void and wall cells of no other zone. Nothing in play can be behind the gate, so it hides nothing. The simulation's wall face is unchanged and coincides with the gate: a shot stops at the face, and the client draws its impact as sparks on the gate's plane, never as an impact on stone behind it. Tests: every aisle cell is void or wall of no other zone; no gate or aisle geometry lies in front of the face beyond `RELIEF`; an impact on a gated bay is drawn on the gate's plane.
 
 ## 4. Paying for it
 
@@ -60,7 +60,7 @@ Limits at the end of V5, on the worst gate view, per quality tier:
 
 | Measure | Low | Medium | High |
 |---|---|---|---|
-| Capped FPS on the reference laptop | ≥ 58 | ≥ 58 | ≥ 58 on the High reference machine (D5); on the laptop the game may choose Medium |
+| Capped FPS on the reference laptop | ≥ 58 | ≥ 58 | ≥ 58 on the laptop too (D5: the laptop is the only reference machine); if High misses it there, the game recommends Medium on it |
 | Uncapped frame time | ≤ baseline | ≤ baseline + 20% | ≤ baseline + 45% |
 | Draw calls | ≤ baseline + 12 | ≤ baseline + 24 | ≤ baseline + 24 |
 | Visible triangles | ≤ 300 000 | ≤ 600 000 | ≤ 600 000 |
@@ -71,7 +71,7 @@ Limits at the end of V5, on the worst gate view, per quality tier:
 | Per-frame JavaScript | ≤ +0.5 ms (portal culling, light list, particle writes) |||
 | Simulation | unchanged: average ≤ 8 ms per tick (MVP §13.1) |||
 
-Allocation of the frame-time increase, so one milestone can't spend the rest: post chain 15% (High) / 8% (Medium); architecture 15% / 7% after culling's saving; characters 0% (same sprite cost); effects and lights 10% / 5%; HUD 0%; reserve 5%. Each milestone brief restates its share.
+Allocation of the frame-time increase, so one milestone can't spend the rest: post chain 15% (High) / 8% (Medium); architecture 15% / 7% after culling's saving; characters 0% (same sprite cost); effects and lights 10% / 5%; HUD 0% (unchanged, D7); reserve 5%. Each milestone brief restates its share.
 
 `renderStats()` assumes RGBA8; V1 stage 2 makes it count each texture's real bytes per pixel (compressed formats included).
 
@@ -79,7 +79,7 @@ Allocation of the frame-time increase, so one milestone can't spend the rest: po
 
 - **Every stage, automatically:** unit tests for placement, culling and determinism, plus an end-to-end **render budget test** that loads fixed seeds and views and asserts draw calls, triangles, texture MB and level build time against the limits above. Counts are deterministic, so this runs with the normal suites.
 - **Frame time only on request.** `npm run bench` is run only when Tomas asks, after playing the build (project rule). Each milestone names the recommended moments. Builds are compared back to back (the laptop drifts 5–10% between sessions), never two benchmarks at once.
-- **If a measured run misses its budget,** a miss within the run's spread is rerun first. Then cut in this order, recording each cut in the milestone report: grain and vignette → heat shimmer → bloom levels and resolution → dynamic light count → particle counts → outline hulls → LOD switch distance → deep aisles become recessed bays → surfaces 2 048 → 1 024 px → MSAA → FXAA. Never cut readability, culling or compression.
+- **If a measured run misses its budget,** a miss within the run's spread is rerun first. Then cut in this order, recording each cut in the milestone report: grain and vignette → heat shimmer → bloom levels and resolution → dynamic light count → particle counts → outline hulls → LOD switch distance → gated aisles become shallow gated recesses → surfaces 2 048 → 1 024 px → MSAA → FXAA. Never cut readability, culling or compression.
 
 ## 6. Quality tiers
 
@@ -112,7 +112,6 @@ One setting, **Graphics: Low / Medium / High**, in the existing Settings view (`
 | Ornaments | Gemini → Meshy (static) | `assets/art-src/models/orn-*/model.glb` | decimated, baked, joined to the kit | inside `assets/kit/*.glb` |
 | Characters | Gemini → Meshy (rigged) | `assets/art-src/models/<id>/` ([meshy.md](meshy.md) §6) | textured cel material, ink hull, 8 directions × frames (`scripts/blender/meshy_char.py` + `common.py`) | `assets/sprites/<id>/atlas.ktx2` + `atlas.json` |
 | Flipbooks | Blender simulation by Claude | | `scripts/blender/fx/*.py` | `assets/textures/look/fx-*.ktx2` |
-| HUD frames | Gemini | `assets/art-src/look/hud-*.png` | cut out, sliced | `assets/ui/` |
 
 Tools: Blender 5.2 (installed, headless as today); KTX-Software `toktx` or `basisu` and `@gltf-transform/cli` (Claude asks before installing; dev-only); three's `KTX2Loader` and `MeshoptDecoder` from `three/examples/jsm` (the Basis transcoder files copied into `public/`). Provenance goes into [asset-manifest.md](../rogue/asset-manifest.md) as for every asset. Git LFS already stores images and models (`.gitattributes`); `.ktx2` and `.glb` are added if missing.
 
@@ -129,7 +128,6 @@ Tools: Blender 5.2 (installed, headless as today); KTX-Software `toktx` or `basi
 | `src/render/terrainMaterial.ts`, `lightmap.ts` | one layer per vertex, luminance lightmap | V1: colored lightmap, glow sources; V2: normal maps, one directional sun term, dynamic lights |
 | `src/render/billboards.ts`, `contactShadows.ts` | lightmap tint per vertex | V1: HDR-aware tint, contact shadows in the target's alpha; V4: dynamic lights per vertex |
 | `src/render/particles.ts`, `vfx.ts`, `atmosphere.ts`, `incense.ts`, `src/client/fireView.ts`, `hazards.ts` | | V4 |
-| `src/client/hud.ts`, `partyFrames.ts`, `src/ui/` | | V5 |
 | `scripts/blender/common.py` and character scripts | primitive models | V3: `meshy_char.py` imports Meshy models; the primitive scripts stay until each character is replaced |
 | `scripts/views.mjs`, `views.json`, `scripts/bench.mjs` | M10 views on the fixed map | V1: rogue look views, tier flag |
 
@@ -152,4 +150,4 @@ Each milestone report shows before/after pairs of these views next to their conc
 
 As every stage of the project ([AGENTS.md](../../AGENTS.md)): new tests for changed behavior; `npm test`, `npm run typecheck` and `npm run build` every stage; the end-to-end suites when loading, sessions or player-facing behavior change (every V stage touches loading or presentation, so the render budget test and the loading tests run every stage). Reports state exact commands and results and separate passed, blocked and unrun checks. Automated checks never replace Tomas's look and feel acceptance.
 
-Tests worth having throughout: kit placement determinism (same input, identical buffers); the §2 geometry rules for every placed piece and aisle; portal culling conservativeness; LUT readability (each state color and the enemy palette through the grade stays within ΔE 6 of its intended color, and the luminance contrast of an ivory enemy against the graded floor and sky stays at least today's); KTX2 fallback when the format is missing; atlas JSON compatibility of re-rendered characters (same animation names, frame counts, directions).
+Tests worth having throughout: kit placement determinism (same input, identical buffers); the §2 geometry rules for every placed piece, gate and aisle; portal culling conservativeness; LUT readability (each state color and the enemy palette through the grade stays within ΔE 6 of its intended color, and the luminance contrast of an ivory enemy against the graded floor and sky stays at least today's); KTX2 fallback when the format is missing; atlas JSON compatibility of re-rendered characters (same animation names, frame counts, directions).

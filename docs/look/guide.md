@@ -23,12 +23,9 @@ Claude installs its own tools (texture compression, model compression) and asks 
 Do this once R9 is accepted and merged.
 
 - [ ] **0.1 Read [README.md](README.md)** (10 minutes): what you'll get, what stays the same, the decisions.
-- [ ] **0.2 Answer the decisions** D1–D7 in [README.md](README.md#decisions). Send them in one message; the defaults are fine if you agree with them:
-  ```text
-  Look decisions: D1 yes, D2 pilot first, D3 yes, D4 keep identities,
-  D5 the laptop only, D6 Meshy Pro, D7 yes.
-  ```
-- [ ] **0.3 Optional: the full-resolution concept.** Your comparison is saved as `assets/art-src/reference/look-compare.webp` (2 000 × 603). If you have the original at a higher resolution, save it as `assets/art-src/reference/look-compare-full.png`; the color grade fits better from more pixels.
+- [x] **0.2 Answer the decisions** D1–D7 in [README.md](README.md#decisions). Send them in one message; the defaults are fine if you agree with them:
+  Answered 2026-10-25: D1 yes; D2 pilot first, as locked gated arches with an aisle glimpsed behind, nothing enterable; D3 yes; D4 keep identities; D5 the laptop only; D6 Meshy Pro; D7 keep today's HUD.
+- [x] **0.3 Optional: the full-resolution concept.** Saved as `assets/art-src/reference/look-compare-full.jpeg` (the target half, 1 376 × 768); the comparison stays in `look-compare.webp` (2 000 × 603).
 - [ ] **0.4 Start V1:** send the preparation prompt from [v1.md](v1.md#start-this-milestone).
 
 ---
@@ -60,15 +57,16 @@ Claude builds the modeled walls, columns, doorways, arcades and vaults. Brief: [
 
 - [ ] **2.1 Texture pilots.** Make T1 `tex-marble-floor` and T4 `tex-ashlar` ([prompts.md](prompts.md#t-surface-textures)), save in `assets/art-src/look/`, tell Claude, and wait until you've seen them in the game.
 - [ ] **2.2 The rest of the textures:** T2, T3, T5, T6, T8, T9, T10 (T7 lava can wait for V4), each with the approved pilot attached.
-- [ ] **2.3 Kit sheet pilot.** Make K1 `kit-wall-bay` ([prompts.md](prompts.md#k-kit-reference-sheets)), save in `assets/art-src/reference/`, tell Claude. After approval: K2–K6.
+- [ ] **2.3 Kit sheet pilot.** Make K1 `kit-wall-bay` ([prompts.md](prompts.md#k-kit-reference-sheets)), save in `assets/art-src/reference/`, tell Claude. After approval: K7 `kit-gate` (needed for the gated arches), then K2–K6.
 - [ ] **2.4 Meshy: the capital.** Subscribe to Meshy ([meshy.md](meshy.md) §1). Make O1 `orn-capital` ([prompts.md](prompts.md#o-ornaments-and-decorations-for-meshy)), save it, and ask Claude to cut it:
   ```text
   I saved orn-capital.png. Please cut it into the three Meshy views.
   ```
   Then follow [meshy.md](meshy.md) §5 (static model) with the three views, download `model.glb` into `assets/art-src/models/orn-capital/`, and tell Claude. Then O2 `orn-boss` the same way.
-- [ ] **2.5 Review the pilot room.** Claude stops after building one room and sends before/after screenshots beside your concept. Say what's off (*"the columns are too thin"*, *"too much gold"*) until it looks right. Decide D2 here: keep the deep aisles or not.
-- [ ] **2.6 Benchmark** when Claude asks (pilot room, then the full floor).
-- [ ] **2.7 Play** ([v2.md](v2.md#play-checklist)), send feedback, **accept V2**.
+- [ ] **2.5 Review the pilot room.** Claude stops after building one room and sends before/after screenshots beside your concept. Say what's off (*"the columns are too thin"*, *"too much gold"*) until it looks right.
+- [ ] **2.6 Decide the gated arches (D2).** Claude adds the locked gates to the pilot room and stops again. Look through them and shoot them, then say: everywhere they fit, shallow gated recesses only, or none.
+- [ ] **2.7 Benchmark** when Claude asks (pilot room, then the full floor).
+- [ ] **2.8 Play** ([v2.md](v2.md#play-checklist)), send feedback, **accept V2**.
 
 ---
 
@@ -139,17 +137,16 @@ Lava, fire, sparks, lights. Brief: [v4.md](v4.md). Almost no images: Claude simu
 ---
 
 <a id="v5"></a>
-## Phase 5: V5 Props, HUD and finish
+## Phase 5: V5 Props and finish
 
 Brief: [v5.md](v5.md).
 
 - [ ] **5.1 Decorations:** O3–O7 ([prompts.md](prompts.md#o-ornaments-and-decorations-for-meshy)), each cut by Claude, made static in Meshy, downloaded into `assets/art-src/models/orn-<id>/`.
 - [ ] **5.2 Props:** P1 `prop-amphora-tall` first (pilot), then P2–P6 ([prompts.md](prompts.md#p-props-for-meshy)), the same way into `assets/art-src/models/prop-<id>/`.
-- [ ] **5.3 HUD frames:** H1 first (pilot), then H2–H3 ([prompts.md](prompts.md#h-hud-frames)), saved in `assets/art-src/look/`.
-- [ ] **5.4 Cancel Meshy** once every model is accepted.
-- [ ] **5.5 Final benchmark** on every quality setting (Claude asks).
-- [ ] **5.6 Acceptance sessions:** solo with each class, co-op with one player on Low and one on High, a full run to the Gatekeeper.
-- [ ] **5.7 Accept the look**, and separately tell Claude when to merge:
+- [ ] **5.3 Cancel Meshy** once every model is accepted.
+- [ ] **5.4 Final benchmark** on every quality setting (Claude asks).
+- [ ] **5.5 Acceptance sessions:** solo with each class, co-op with one player on Low and one on High, a full run to the Gatekeeper.
+- [ ] **5.6 Accept the look**, and separately tell Claude when to merge:
   ```text
   I accept the look at [SHA].
   ```
@@ -185,7 +182,7 @@ I saved [file names] in [folder].
 | While Claude builds | You make (ahead) | You review |
 |---|---|---|
 | V1 | L1–L4; then T1, T4, K1 pilots | the grade and light; V1 play |
-| V2 | T2–T10, K2–K6, O1–O2; the Blessed (C1) once V1 is accepted | the pilot room; V2 play |
+| V2 | T2–T10, K2–K7, O1–O2; the Blessed (C1) once V1 is accepted | the pilot room; V2 play |
 | V3 (alongside V2) | C2–C12 one by one; T7 | each character in the game |
 | V4 | O3–O7, P1–P6 | each class's effects |
-| V5 | H1–H3 | the whole game, acceptance |
+| V5 | nothing new | the whole game, acceptance |

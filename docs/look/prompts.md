@@ -16,7 +16,7 @@ The same routine as the [rogue art prompts](../rogue/art-prompts.md#how-to-use-g
 
 ## Checklist
 
-**Folders:** `L`, `K` and `C` sheets go in `assets/art-src/reference/`; `T` and `H` in `assets/art-src/look/`; `O` and `P` sheets in `assets/art-src/reference/`, their Meshy models in `assets/art-src/models/<id>/`.
+**Folders:** `L`, `K` and `C` sheets go in `assets/art-src/reference/`; `T` in `assets/art-src/look/`; `O` and `P` sheets in `assets/art-src/reference/`, their Meshy models in `assets/art-src/models/<id>/`.
 
 **L Concept views** (V1, for the color grade and as targets for everything after)
 - [x] `look-concept-arena.png` (exists: the right half of your comparison)
@@ -27,7 +27,7 @@ The same routine as the [rogue art prompts](../rogue/art-prompts.md#how-to-use-g
 - [ ] T2 `tex-marble-border.png` · T3 `tex-marble-medallion.png` · T5 `tex-limestone.png` · T6 `tex-gold-leaf.png` · T7 `tex-lava.png` · T8 `tex-vault.png` · T9 `tex-stained-glass.png` · T10 `tex-cliff-rock.png`
 
 **K Kit reference sheets** (V2; Claude models from them)
-- [ ] K1 `kit-wall-bay.png` (pilot) · K2 `kit-pillar.png` · K3 `kit-doorway.png` · K4 `kit-arcade.png` · K5 `kit-vault.png` · K6 `kit-profiles.png`
+- [ ] K1 `kit-wall-bay.png` (pilot) · K2 `kit-pillar.png` · K3 `kit-doorway.png` · K4 `kit-arcade.png` · K5 `kit-vault.png` · K6 `kit-profiles.png` · K7 `kit-gate.png`
 
 **O Ornaments and decorations for Meshy** (O1–O2 in V2, O3–O7 in V5)
 - [ ] O1 `orn-capital.png` (pilot) · O2 `orn-boss.png`
@@ -47,10 +47,7 @@ The same routine as the [rogue art prompts](../rogue/art-prompts.md#how-to-use-g
 **P Props for Meshy** (V5)
 - [ ] P1 `prop-amphora-tall.png` (pilot) · P2 `prop-amphora-squat.png` · P3 `prop-amphora-lily.png` · P4 `prop-amphora-marked.png` · P5 `prop-sanctuary-lamp.png` · P6 `prop-blessing-chalice.png`
 
-**H HUD frames** (V5)
-- [ ] H1 `hud-portrait-frame.png` (pilot) · H2 `hud-bars-frame.png` · H3 `hud-weapon-panel.png`
-
-**Totals:** 4 concept views, 10 textures, 6 kit sheets, 7 ornament sheets, about 20 character images, 6 prop sheets, 3 HUD frames.
+**Totals:** 4 concept views, 10 textures, 7 kit sheets, 7 ornament sheets, about 20 character images, 6 prop sheets. No HUD images: today's HUD stays (decision D7).
 
 ---
 
@@ -74,7 +71,7 @@ Claude saves a screenshot of today's game for each view (`look-today-<view>.png`
 All four use this prompt with the `<VIEW>` sentence of each. Attach, in this order: `look-today-<view>.png`, `look-today-arena.png`, `look-concept-arena.png`.
 
 ```text
-The first attached image is a screenshot of our game. The second attached image is another screenshot of the same game, and the third is that second screenshot repainted as a high-end version of the game. Repaint the first image in exactly the way the second image became the third: the same art style, level of detail, lighting, color and atmosphere as the third image. Keep the first image's layout exactly: the camera, every wall, floor edge, step, door, pit and opening stays where it is, the same size. You may add depth the way the third image does: recessed pointed arches and clustered columns with carved gold capitals set into the wall faces, tracery windows, molded cornices and bases, worn marble floors with gold inlays, light shafts and dust in the air. Do not move walls, do not open new passages, do not add rooms. Characters and effects in the first image stay where they are, in the third image's level of detail. <VIEW> No HUD, no interface, no text, no letters, no numbers. Aspect ratio 16:9.
+The first attached image is a screenshot of our game. The second attached image is another screenshot of the same game, and the third is that second screenshot repainted as a high-end version of the game. Repaint the first image in exactly the way the second image became the third: the same art style, level of detail, lighting, color and atmosphere as the third image. Keep the first image's layout exactly: the camera, every wall, floor edge, step, door, pit and opening stays where it is, the same size. You may add depth the way the third image does: recessed pointed arches and clustered columns with carved gold capitals set into the wall faces, tracery windows, here and there an arch closed by a locked iron gate, molded cornices and bases, worn marble floors with gold inlays, light shafts and dust in the air. Do not move walls, do not open new passages, do not add rooms. Characters and effects in the first image stay where they are, in the third image's level of detail. <VIEW> No HUD, no interface, no text, no letters, no numbers. Aspect ratio 16:9.
 ```
 
 | ID | File | `<VIEW>` |
@@ -160,7 +157,7 @@ Claude builds the architecture in Blender from these; they're never shown in the
 
 **Attach only `look-concept-arena.png`.** If Gemini draws a game scene instead of a sheet, start a new chat with no attachment at all. After the pilot is approved, also attach `kit-wall-bay.png` to the others.
 
-All six use this template with the `<PIECE>` and `<VIEWS>` of each:
+All seven use this template with the `<PIECE>` and `<VIEWS>` of each:
 
 ```text
 This is not a game screenshot and not a scene: no characters, no HUD, no floor, no sky, no landscape. Only one piece of architecture, drawn as a model sheet for a 3D artist. <VIEWS>, side by side on a plain light grey background, at exactly the same scale, aligned, orthographic with no perspective. The piece: <PIECE> The architecture's style matches the attached image: warm ivory stone with gold leaf on the capitals and moldings, gothic pointed arches, crisp carved detail. Clean architectural model sheet: flat even colors, thin dark lines along every edge and carved line, no shading, no cast shadows, no highlights. Every view complete and uncropped. No text, no letters, no numbers, no measurements, no arrows. Aspect ratio 16:9.
@@ -174,8 +171,9 @@ This is not a game screenshot and not a scene: no characters, no HUD, no floor, 
 | K4 | `kit-arcade.png` | Two views: the front elevation on the left and a vertical cross-section in the center, plus the plan seen from above on the right | one 4 m wide bay of an open arcade at the edge of a terrace, 8 m tall: a carved stone balustrade 1.4 m high with fat round balusters and a flat top rail across the bottom of the bay, two slender round columns with gold capitals rising from it, and a pointed arch between them, open to the sky, with a molded cornice on top. |
 | K5 | `kit-vault.png` | Three views: a cross-section across the corridor on the left, the plan of the vault seen from below in the center, and a long section along the corridor on the right | one 4 m long bay of a rib vault over a corridor 4 m wide: the vault springs from the tops of the walls at 6 m and rises in a pointed curve to 9 m; two diagonal ribs and two cross ribs of molded stone meet at a round carved keystone boss with a gold lily; the curved webs between the ribs are plain plaster. |
 | K6 | `kit-profiles.png` | Five cross-section profiles side by side, each a solid dark silhouette on the grey background, each with a matching small front view under it | the moldings of the walls: a base plinth 0.5 m tall, a string course 0.3 m, a frieze band 0.8 m with a simple leaf pattern on its front, a projecting cornice 1.5 m tall with dentils, and a balustrade rail 0.3 m. |
+| K7 | `kit-gate.png` | Two views: the front elevation on the left and the side view on the right | one closed gate of black wrought iron filling a pointed arch 3 m wide and 6.5 m high, as on the left of the attached image: two closed leaves of thin vertical bars with small spear-point tips, two horizontal rails with a band of gold quatrefoils between them at waist height, a panel of iron scrolls filling the pointed top, and a heavy lock plate with gold trim where the leaves meet, held shut by a short chain. The bars are thin with wide gaps between them, so one can see through. The gate is flat, only a hand's width deep. Iron and gold only, no stone around it. |
 
-**Check before saving:** one piece only, nothing else; views that match each other (the section really is a cut through the front); no text or numbers. For K1, the half-columns hug the wall and the arch is clearly set back into it.
+**Check before saving:** one piece only, nothing else; views that match each other (the section really is a cut through the front); no text or numbers. For K1, the half-columns hug the wall and the arch is clearly set back into it. For K7, the gate is closed, locked and see-through, with no stone frame.
 
 ---
 
@@ -319,21 +317,3 @@ The breakable props rendered from models in V5, so they share the characters' li
 | P6 | `prop-blessing-chalice.png` | `blessing-chalice.png` | the attached blessing chalice, 1.2 m tall: an all-gold cup on a slim white marble stand. |
 
 **Check:** each keeps its color family (red glass only for the lamp, all gold for the chalice, ivory for amphorae); no flame or glow.
-
----
-
-## H HUD frames
-
-The concept's HUD frames. Claude cuts them out and slices them so they stretch without distorting their corners; text and bars are drawn by the game. Attach: `look-concept-arena.png`, `ui-bar-frame.png`, `ui-slot-frame.png` (the existing frames, for the style). After the pilot is approved, also attach `hud-portrait-frame.png`.
-
-```text
-A single empty game interface frame, alone, front view, flat, centered, filling most of the image: <FRAME> In the style of the interface in the attached images: dark charred iron with polished gold edges and small engraved gold ornaments, crisp dark ink outlines, a little painterly texture. Everything inside the frame's opening and everything around the frame is flat pure green (#00FF00). No text, no letters, no numbers, no icons, no portrait, no bars, no glow outside the frame. Aspect ratio <RATIO>.
-```
-
-| ID | File | `<FRAME>` | Ratio |
-|---|---|---|---|
-| H1 *pilot* | `hud-portrait-frame.png` | a diamond-shaped portrait frame standing on one point, a thick dark iron border with a thin gold inner edge and a small gold ornament at each of the four points, the opening empty. | 1:1 |
-| H2 | `hud-bars-frame.png` | two long thin horizontal bar frames stacked one above the other with a small gap, the upper one a little longer, each a dark iron border with thin gold edges, ends cut at a slant, the openings empty. | 21:9 |
-| H3 | `hud-weapon-panel.png` | a wide rectangular panel frame with cut corners, a dark iron border with thin gold edges and a small gold ornament at the top center, the opening empty. | 16:9 |
-
-**Check:** the opening is pure green (it becomes transparent); corners crisp; the same metal and gold as the existing UI.
