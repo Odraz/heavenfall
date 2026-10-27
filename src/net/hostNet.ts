@@ -9,6 +9,7 @@ import type { CtrlMessage } from './messages';
 import { jsonBytes, NetStats } from './netStats';
 import { FLUSH_MS, PEER_OPTIONS, PEER_TIMEOUT_MS, SNAP_BUFFER_LIMIT, STALL_MS } from './peerConfig';
 import { SnapshotSender } from './snapshotCodec';
+import { CtrlJoiner, ctrlParts } from './ctrlParts';
 import { LinkQuality } from './linkQuality';
 
 /** How long the host waits for the signaling server to confirm a game ID. */
@@ -28,6 +29,8 @@ interface Remote {
   sender?: SnapshotSender;
   /** The round trip to this client and the route (F3). */
   link: LinkQuality;
+  /** Joins the client's `part` messages (ctrlParts.ts). */
+  joiner: CtrlJoiner;
 }
 
 /** Thrown when the game can't be created: `Couldn't reach the matchmaking server` (§3). */
@@ -82,6 +85,7 @@ export class HostNet {
   onClosed: (conn: number) => void = () => {};
   private readonly remotes = new Map<number, Remote>();
   private nextConn = 1;
+  private nextPart = 1;
   private destroyed = false;
   private lastBeat = performance.now();
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -119,7 +123,7 @@ export class HostNet {
     }
     let r = [...this.remotes.values()].find((q) => q.peer === dc.peer && !q.closed);
     if (!r) {
-      r = { conn: this.nextConn++, peer: dc.peer, ctrl: null, snap: null, lastHeard: performance.now(), closed: false, link: new LinkQuality() };
+      r = { conn: this.nextConn++, peer: dc.peer, ctrl: null, snap: null, lastHeard: performance.now(), closed: false, link: new LinkQuality(), joiner: new CtrlJoiner() };
       this.remotes.set(r.conn, r);
     }
     const remote = r;
@@ -147,7 +151,12 @@ export class HostNet {
     }
     if (typeof data !== 'object' || data === null || typeof (data as { type?: unknown }).type !== 'string') return;
     this.stats.received(jsonBytes(data), now);
-    const msg = data as CtrlMessage;
+    let msg = data as CtrlMessage;
+    if (msg.type === 'part') {
+      const joined = r.joiner.add(msg);
+      if (!joined) return;
+      msg = joined;
+    }
     if (msg.type === 'ping') {
       if (typeof msg.t === 'number') this.sendCtrl(r.conn, { type: 'pong', t: msg.t });
       return;
@@ -173,8 +182,10 @@ export class HostNet {
   sendCtrl(conn: number, msg: CtrlMessage): void {
     const dc = this.remotes.get(conn)?.ctrl;
     if (!dc?.open) return;
-    dc.send(msg);
-    this.stats.sent(jsonBytes(msg));
+    const bytes = jsonBytes(msg);
+    // Too large for one JSON message: ordered parts the client joins (R9 review N1).
+    for (const part of ctrlParts(msg, this.nextPart++, bytes)) dc.send(part);
+    this.stats.sent(bytes);
   }
 
   /**

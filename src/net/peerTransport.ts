@@ -11,6 +11,7 @@ import type { Transport } from './transport';
 import { SnapshotReceiver } from './snapshotCodec';
 import { LagLine, type NetLag } from './lagSim';
 import { LinkQuality } from './linkQuality';
+import { CtrlJoiner, ctrlParts } from './ctrlParts';
 import type { Profile } from '../profile/model';
 
 /** `Join` fails if there's no `welcome` within this long (§3). */
@@ -51,6 +52,9 @@ export class PeerTransport implements Transport {
   /** `ctrl` messages that arrived before anyone listened. */
   private readonly queued: CtrlMessage[] = [];
   private lastHeard = performance.now();
+  /** Joins the host's `part` messages, and numbers this side's (ctrlParts.ts). */
+  private readonly joiner = new CtrlJoiner();
+  private nextPart = 1;
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private lastBeat = 0;
   private closed = false;
@@ -83,11 +87,13 @@ export class PeerTransport implements Transport {
     }
   }
 
-  private receiveCtrl(data: unknown): void {
-    if (this.closed || !isCtrl(data)) return;
+  private receiveCtrl(raw: unknown): void {
+    if (this.closed || !isCtrl(raw)) return;
     const now = performance.now();
     this.lastHeard = now;
-    this.stats.received(jsonBytes(data), now);
+    this.stats.received(jsonBytes(raw), now);
+    const data = raw.type === 'part' ? this.joiner.add(raw) : raw;
+    if (!data) return;
     if (data.type === 'ping') {
       if (typeof data.t === 'number') this.sendCtrl({ type: 'pong', t: data.t });
       return;
@@ -161,9 +167,13 @@ export class PeerTransport implements Transport {
 
   sendCtrl(msg: CtrlMessage): void {
     if (this.closed || !this.ctrl.open) return;
-    this.stats.sent(jsonBytes(msg));
-    if (this.lagOut) this.lagOut.ordered(() => { if (this.ctrl.open) this.ctrl.send(msg); });
-    else this.ctrl.send(msg);
+    const bytes = jsonBytes(msg);
+    this.stats.sent(bytes);
+    // Too large for one JSON message: ordered parts the host joins (R9 review N1).
+    for (const part of ctrlParts(msg, this.nextPart++, bytes)) {
+      if (this.lagOut) this.lagOut.ordered(() => { if (this.ctrl.open) this.ctrl.send(part); });
+      else this.ctrl.send(part);
+    }
   }
 
   /** Closes the connection; messages already sent (such as `leave`) go out first. */

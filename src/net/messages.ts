@@ -328,4 +328,6 @@ export type CtrlMessage =
   /** `t`: the sender's performance.now(), echoed by a `pong` to measure the round trip. */
   | { type: 'ping'; t?: number }
   | { type: 'pong'; t: number }
-  | { type: 'leave' };
+  | { type: 'leave' }
+  /** One of `n` ordered parts of a message too large for the JSON channel (ctrlParts.ts, protocol 23). */
+  | { type: 'part'; id: number; i: number; n: number; data: string };
