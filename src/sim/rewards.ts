@@ -213,6 +213,8 @@ export class Rewards {
     if (drop.kind === COIN || drop.kind === GOLD_HALO) {
       this.halosCredited += drop.value;
       for (const human of sim.players) if (human.connected && !human.bot) human.wallet += drop.value;
+      // A human away to reconnect gets the party's halos too, as a late joiner does (R9 review P1).
+      for (const { player } of sim.retainedPlayers.values()) if (!player.bot) player.wallet += drop.value;
       // A world halo pickup is its human collector's relic event, never a bot's (items-relics.md §2.4 rule 9).
       if (!p.bot) sim.relics.pickup(p, 'halo');
     } else if (drop.kind === HEAL_MOTE) {

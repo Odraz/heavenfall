@@ -42,6 +42,21 @@ describe('R3 shop transactions', () => {
     Object.assign(sim.players[0], { x: gold.x, y: gold.y, z: sim.pickups.floor(gold.x, gold.y) }); sim.step();
     expect(sim.players.map(p => p.wallet)).toEqual([24, 24]);
   });
+  it('credits halos collected while a human is away to reconnect, as a late joiner gets them (R9 review P1)', () => {
+    const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL), room = g.floor.rewards.findIndex(r => r.kind === 'rite');
+    g.floor.rewards[room] = { kind: 'gold' }; g.def.rooms[room].waves = [];
+    const sim = new Simulation({ dungeon: g.def, floor: g.floor, seed: 1, startRoom: room, god: true,
+      players: [{ id: 0, name: 'A', classId: 'fallen' }, { id: 1, name: 'B', classId: 'heretic' }] });
+    sim.step(); sealNow(sim, room);
+    sim.playerById(1)!.wallet = 5; sim.removePlayer(1, true);
+    const gold = sim.pickups.live.find(p => p.kind === GOLD_HALO)!;
+    Object.assign(sim.players[0], { x: gold.x, y: gold.y, z: sim.pickups.floor(gold.x, gold.y) }); sim.step();
+    expect(sim.players[0].wallet).toBe(24);
+    const back = sim.addPlayer({ id: 1, name: 'B', classId: 'heretic' })!;
+    expect(back.wallet).toBe(5 + 24);
+    const late = sim.addPlayer({ id: 2, name: 'Late', classId: 'binder' })!;
+    expect(late.wallet).toBe(sim.rewards.halosCredited);
+  });
   it('free Chart contact reveals the party without spending a slot or wallet', () => {
     const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
     const sim = new Simulation({ dungeon: g.def, floor: g.floor, seed: 1, startRoom: 0,
