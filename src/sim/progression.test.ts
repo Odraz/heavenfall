@@ -1,7 +1,8 @@
 import { XP_GAIN } from './rewards';
 import { describe, expect, it } from 'vitest';
 import { BLESSED } from '../data/enemies';
-import { enemyAt, makeSim, room } from './testutil/sims';
+import type { InputMsg } from '../net/protocol';
+import { enemyAt, INPUT_DEFAULTS, makeSim, room } from './testutil/sims';
 
 describe('host XP and retained bodies', () => {
   it('pays accepted world deaths to connected humans once, excluding absent records and bots', () => {
@@ -18,6 +19,21 @@ describe('host XP and retained bodies', () => {
     const resumed = sim.addPlayer({ id: 1, name: 'Ignored replacement', classId: 'binder' })!;
     expect(resumed).toMatchObject({ hp: 17, deaths: 2, wallet: 22, cdQ: 6, cdE: 5, invulUntil: 0, runXp: 0 });
     expect(resumed.inventory[0]?.count).toBe(1); expect(resumed.lastSeq).toBe(-1);
+  });
+  it('adopts a reconnecting page\'s Q/E counters on its first input instead of casting (R9 review N2)', () => {
+    const sim = makeSim(room(20, 20), ['fallen', 'binder']); const p = sim.players[1];
+    Object.assign(p, { qPresses: 7, ePresses: 3, cdQ: 0, cdE: 0 });
+    sim.removePlayer(1, true); sim.tick += 90;
+    const resumed = sim.addPlayer({ id: 1, name: 'Back', classId: 'binder' })!;
+    const input = (seq: number, q: number, e: number): InputMsg => ({ ...INPUT_DEFAULTS, seq, x: resumed.x, y: resumed.y, z: resumed.z,
+      yaw: 0, pitch: 0, fire: 0, qPresses: q, ePresses: e, allyTargetId: 255, lastTeleportId: resumed.teleportId });
+    // The new page's counters start at 0: adopted, nothing cast.
+    sim.applyInput(1, input(1, 0, 0), sim.nowMs);
+    expect([resumed.qPresses, resumed.ePresses, resumed.pendingQ, resumed.pendingE]).toEqual([0, 0, false, false]);
+    sim.step(); expect([resumed.cdQ, resumed.cdE]).toEqual([0, 0]);
+    // A real press after that still casts.
+    sim.applyInput(1, input(2, 1, 0), sim.nowMs + 33);
+    expect(resumed.pendingQ).toBe(true);
   });
   it('dev key I fills both slots with full stacks, pair by pair, outside saved progression', () => {
     const sim = makeSim(room(20, 20), ['fallen']);

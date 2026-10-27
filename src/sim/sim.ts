@@ -1310,6 +1310,8 @@ export class Simulation {
         cdQ: Math.max(0, old.cdQ - elapsed), cdE: Math.max(0, old.cdE - elapsed),
         shield: 0, shieldCaster: null, featherUntil: 0, sealUntil: 0, speed: CLASSES[p.classId].speed, pendingItems: [false, false], invulUntil: 0, fire: 0, pendingQ: false, pendingE: false,
         dash: null, landingTick: -1, teleportId: p.teleportId, fireLatch: newFireLatch(), view: NO_VIEW, shotQueue: [], shotIndex: -1,
+        // The returning page's press counters start at 0, so a counter left over from before isn't a press (R9 review N2).
+        qPresses: 0, ePresses: 0,
         revive: old.dead ? Math.max(0, old.revive - elapsed * REVIVE_DECAY) : 0 });
       this.retainedPlayers.delete(init.id);
     } else if (!p.bot) { p.wallet = this.rewards.halosCredited; p.presentAtStart = false; }
