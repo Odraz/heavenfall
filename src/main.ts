@@ -5,7 +5,7 @@ import { debugState, resetGameDebug, type Screen } from './debug';
 import { floorHash } from './gen';
 import { newRunIdentity } from './net/version';
 import { RunEvents } from './net/runEvents';
-import { parseParams } from './params';
+import { disposableRun, parseParams, runProgression } from './params';
 import { loadRunMap } from './sim/runMap';
 import { loadEnemyAnims, loadPlayerAnims } from './render/animAtlas';
 import { hasWatchmen } from './data/watchman';
@@ -63,7 +63,7 @@ function saveAccepted(profile: ProfileSession['profile']): void {
   saveCodeButton(saveNotice, () => profileSession!.profile);
   button('Retry save', saveNotice, () => saveAccepted(profileSession!.profile)); document.body.appendChild(saveNotice);
 }
-const disposable = params.dev || params.benchArena >= 0 || params.bot;
+const disposable = disposableRun(params);
 
 /** `onRejected` lets a solo start leave Loading with the reason; a refused run would otherwise never start. */
 function profileMessage(msg: CtrlMessage, transport: Transport, onRejected?: (reason: string) => void): boolean {
@@ -208,7 +208,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   show('loading', loading.el);
   await loading.ready;
   const run: RunConfig = {
-    ...newRunIdentity(seed ?? undefined), heaven: 1, floor: 1, edicts: [...edicts], progressionEnabled: !disposable && !!profileSession && dungeonId === 'rogue',
+    ...newRunIdentity(seed ?? undefined), heaven: 1, floor: 1, edicts: [...edicts], progressionEnabled: runProgression(params, !!profileSession, dungeonId),
     fixture: dungeonId === 'rogue' ? null : dungeonId,
   };
   // Solo autopilot drives the human slot; half-player bots are multiplayer admissions.
@@ -280,7 +280,7 @@ function toHostSetup(name: string): void {
         (net) => {
           // Dev co-op setups (R7): `seed` and `room` fix the floor and the starting room, as in a dev solo run.
           const dev = params.dev && dungeonId === 'rogue' ? { seed: params.seed ?? undefined, startRoom: params.startRoom ?? undefined } : {};
-          host.hostLobby(net, dungeonId === 'rogue' ? null : dungeonId, password, name, params.god, params.bot, profileSession?.profile, !disposable && dungeonId === 'rogue', params.dev, dev);
+          host.hostLobby(net, dungeonId === 'rogue' ? null : dungeonId, password, name, params.god, params.bot, profileSession?.profile, runProgression(params, !!profileSession, dungeonId), params.dev, dev);
           enterLobby({ transport: host.local, playerId: 0, host, client: null, gameId: net.gameId, net: net.stats }, null, false);
         },
         (e: unknown) => {

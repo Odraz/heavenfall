@@ -60,6 +60,10 @@ export interface Params {
   devEdicts: number[];
   /** A simulated bad connection for a joining client (`lag=ms&jitter=ms&loss=%`), or null. */
   netLag: NetLag | null;
+  /** With dev=1 on the generated floor: the Gatekeeper's starting HP fraction (`bosshp=0.52`), or null (R9 §3). */
+  bossHp: number | null;
+  /** The host logs one `EVIDENCE` record per room and run (`evidence=1`, R9 §3); allowed on normal runs: it only reads. */
+  evidence: boolean;
 }
 
 export type BenchView = 'turn' | 'arcade' | 'gate';
@@ -82,6 +86,13 @@ function parseCam(v: string | null): DevCamera | null {
   return { x, y, z, yaw: (yaw * Math.PI) / 180, pitch: (pitch * Math.PI) / 180 };
 }
 
+/** A number in [0, 1], or null. */
+function parseFraction(v: string | null): number | null {
+  if (v === null || v.trim() === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : null;
+}
+
 export function parseParams(search: string): Params {
   const q = new URLSearchParams(search);
   const bench = q.get('bench') === '1';
@@ -97,7 +108,7 @@ export function parseParams(search: string): Params {
     const classId: ClassId = isClassId(cls) ? cls : 'betrayer';
     const benchHudFire = q.get('hudfire') === '1';
     const benchBurst = q.get('burst') === '1';
-    return { dev: false, devMenu: false, readyHold: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0, startRoom: null, devBuild: null, devRelics: [], devEdicts: [], netLag: null };
+    return { dev: false, devMenu: false, readyHold: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0, startRoom: null, devBuild: null, devRelics: [], devEdicts: [], netLag: null, bossHp: null, evidence: q.get('evidence') === '1' };
   }
   // Without dev=1 (or bench=1) the page opens the menus.
   const dev = q.get('dev') === '1';
@@ -137,5 +148,21 @@ export function parseParams(search: string): Params {
     devRelics: dev ? (q.get('relics') ?? '').split(',').filter(isRelicId).slice(0, 2) : [],
     devEdicts: dev ? cleanEdicts((q.get('edicts') ?? '').split(',').filter(Boolean).map(Number)) : [],
     netLag: parseNetLag(q),
+    bossHp: dev && mapId === 'rogue' ? parseFraction(q.get('bosshp')) : null,
+    evidence: q.get('evidence') === '1',
   };
+}
+
+/**
+ * A disposable run never stakes, saves or settles a profile (rogue game.md §13, R9 stage 1): every
+ * development switch makes the page disposable. `god` is also ignored by a progression host
+ * (src/sim/worker.ts), and the switches that only parse with `dev=1` can't reach a normal page.
+ */
+export function disposableRun(p: Params): boolean {
+  return p.dev || p.benchArena >= 0 || p.bot || p.god || p.netLag !== null;
+}
+
+/** Whether a run started from this page records progression (the run's `progressionEnabled`). */
+export function runProgression(p: Params, hasProfile: boolean, dungeonId: string): boolean {
+  return !disposableRun(p) && hasProfile && dungeonId === 'rogue';
 }
