@@ -4,7 +4,7 @@ import { BLESSED, CANTOR, CHORISTER } from '../data/enemies';
 import { FALLEN, GATEBREAKER, RAIN } from '../data/talents';
 import { ATTACK_PRIMARY, ATTACK_SECONDARY } from '../data/weapons';
 import type { GameEvent } from '../net/messages';
-import { TICK_HZ } from './constants';
+import { PLAYER_RADIUS, TICK_HZ } from './constants';
 import type { Simulation, SimPlayer } from './sim';
 import { enemyAt, makeSim, press, put, room } from './testutil/sims';
 
@@ -110,6 +110,85 @@ describe('Tree A: The Walls of Dis', () => {
     sim.step();
     expect(sim.talents.fallen.charging(p)).toBe(false);
     expect(p.cdE).toBeCloseTo(GATEBREAKER.cooldown, 1);
+  });
+
+  /** Charges `ticks` ticks, the path turning `degPerTick` each; returns the tick the charge ended on, or -1. */
+  function turningCharge(sim: Simulation, p: SimPlayer, degPerTick: number, ticks: number): number {
+    press(p, 'E');
+    sim.step();
+    let h = p.yaw;
+    for (let i = 0; i < ticks; i++) {
+      h += (degPerTick * Math.PI) / 180;
+      p.x += Math.cos(h) * GATEBREAKER.speed / TICK_HZ; p.y += Math.sin(h) * GATEBREAKER.speed / TICK_HZ;
+      sim.step();
+      if (!sim.talents.fallen.charging(p)) return i;
+    }
+    return -1;
+  }
+
+  it('Gatebreaker (R9 B2): the host lets the path turn at 180°/s, and cuts a 270°/s turn at the clamp', () => {
+    const [sim, p] = setup(60, 30);
+    kit(sim, p, ['a.1a', 'a.1b', 'a.2b', 'a.3a'], 'blasphemy', 'gatebreaker');
+    put(sim, p, 5.5, 5.5);
+    expect(turningCharge(sim, p, 6, 20)).toBe(-1);
+    const [sim2, f] = setup(60, 30);
+    kit(sim2, f, ['a.1a', 'a.1b', 'a.2b', 'a.3a'], 'blasphemy', 'gatebreaker');
+    put(sim2, f, 5.5, 5.5);
+    // 9° a tick: 3° a tick past the limit, over the 6° tolerance on the third tick.
+    const before = sim2.tick;
+    const ended = turningCharge(sim2, f, 9, 20);
+    expect(ended).toBeGreaterThanOrEqual(0);
+    expect(ended).toBeLessThanOrEqual(3);
+    expect(f.cdE).toBeCloseTo(GATEBREAKER.cooldown, 1);
+    expect(events(sim2, 'talentFx').some((e) => e.kind === 'charge')).toBe(true);
+    expect(sim2.tick - before).toBeLessThan(6);
+  });
+
+  it('Gatebreaker (R9 B4): a charge stopped by a wall ends at once with one gatebreakerWall', () => {
+    const [sim, p] = setup(20, 20);
+    kit(sim, p, ['a.1a', 'a.1b', 'a.2b', 'a.3a'], 'blasphemy', 'gatebreaker');
+    put(sim, p, 14.5, 10.5);
+    press(p, 'E');
+    sim.step();
+    // The client stops at the east wall (x = 21 minus its radius) and sends no more movement.
+    const stop = 21 - PLAYER_RADIUS - 0.01;
+    for (let i = 0; i < 20 && sim.talents.fallen.charging(p); i++) { p.x = Math.min(stop, p.x + GATEBREAKER.speed / TICK_HZ); sim.step(); }
+    expect(sim.talents.fallen.charging(p)).toBe(false);
+    run(sim, 5);
+    const walls = events(sim, 'gatebreakerWall');
+    expect(walls).toHaveLength(1);
+    expect(walls[0]).toMatchObject({ playerId: p.id, x: stop, y: 10.5 });
+    expect(p.cdE).toBeLessThanOrEqual(GATEBREAKER.cooldown);
+  });
+
+  it('Gatebreaker (R9 B4): a charge meeting a wall at an angle, sliding on its last step, still makes one wall event', () => {
+    const [sim, p] = setup(20, 20);
+    kit(sim, p, ['a.1a', 'a.1b', 'a.2b', 'a.3a'], 'blasphemy', 'gatebreaker');
+    put(sim, p, 14.5, 8.5, Math.PI / 6);
+    press(p, 'E');
+    sim.step();
+    const stopX = 21 - PLAYER_RADIUS - 0.01, step = GATEBREAKER.speed / TICK_HZ;
+    for (let i = 0; i < 20 && sim.talents.fallen.charging(p); i++) {
+      // Like the client: along the heading until x is blocked, then only y moves for that last step.
+      const nx = p.x + Math.cos(Math.PI / 6) * step;
+      p.y += Math.sin(Math.PI / 6) * step;
+      p.x = Math.min(stopX, nx);
+      sim.step();
+    }
+    expect(sim.talents.fallen.charging(p)).toBe(false);
+    run(sim, 3);
+    expect(events(sim, 'gatebreakerWall')).toHaveLength(1);
+  });
+
+  it('Gatebreaker: a charge released in the open makes no wall event', () => {
+    const [sim, p] = setup(60, 20);
+    kit(sim, p, ['a.1a', 'a.1b', 'a.2b', 'a.3a'], 'blasphemy', 'gatebreaker');
+    put(sim, p, 5.5, 10.5);
+    press(p, 'E');
+    sim.step();
+    for (let i = 0; i < 40 && sim.talents.fallen.charging(p); i++) { p.x += GATEBREAKER.speed / TICK_HZ; sim.step(); }
+    expect(sim.talents.fallen.charging(p)).toBe(false);
+    expect(events(sim, 'gatebreakerWall')).toHaveLength(0);
   });
 
   it('Underfoot: slowed enemies pressing on the Fallen are trampled for 20, once per second', () => {

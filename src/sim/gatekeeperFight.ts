@@ -136,6 +136,15 @@ export class GatekeeperFight {
     return this.maxHp;
   }
 
+  /**
+   * Development (`bosshp`, R9 B5): the body starts at this fraction of its max HP; at or below the 50%
+   * threshold the normal transition plays first, so phase 2 starts as it would in a real fight.
+   */
+  devStart(fraction: number): void {
+    this.sim.eHp[this.slot] = Math.max(1, Math.min(1, fraction) * this.maxHp);
+    if (fraction <= PHASE_THRESHOLD) this.startTransition();
+  }
+
   /** The victory latch or the end of the fight: cancel everything without credit and release the held player safely. */
   end(): void {
     if (!this.active) return;

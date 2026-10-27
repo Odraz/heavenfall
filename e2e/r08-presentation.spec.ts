@@ -82,3 +82,26 @@ test('cue census: a bot-played crest and Gatekeeper fight; no warning loses its 
     for (const w of WARNINGS) expect(c.refused[w] ?? 0, `${label}: ${w} refused`).toBe(0);
   }
 });
+
+test('the trumpet and phase 2 (R9 B5): bosshp=0.52, a bot-played census from the transition on', async ({ page }) => {
+  test.setTimeout(420_000);
+  // A disposable fight that starts at 52%: the bot's first hits bring him to half and the trumpet.
+  await page.goto(`${base}&room=${BOSS}&class=binder&bot=1&god=1&bosshp=0.52`);
+  await inGame(page);
+  const t0 = Date.now();
+  await page.waitForFunction(() => ((window.__heavenfall.boss?.phase ?? 0) & 3) === 2, null, { timeout: 180_000 });
+  const transition = (Date.now() - t0) / 1000;
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: test.info().outputPath('trumpet.png') });
+  const before = await state(page);
+  await page.waitForTimeout(6000);
+  await page.screenshot({ path: test.info().outputPath('phase2.png') });
+  const t1 = Date.now();
+  await page.waitForFunction(() => window.__heavenfall.gameResult !== null, null, { timeout: 180_000 }).catch(() => undefined);
+  const s = await state(page);
+  const census = { transitionAfter: transition, phase2Seconds: (Date.now() - t1) / 1000 + 6, result: s.gameResult, cuesAtTransition: before.cues, cues: s.cues, started: s.voices.started, refused: s.voices.refused };
+  writeFileSync(test.info().outputPath('phase2-census.json'), JSON.stringify(census, null, 2));
+  console.info(JSON.stringify(census));
+  expect(before.cues.bossTransition ?? 0).toBeGreaterThanOrEqual(1);
+  for (const w of WARNINGS) expect(s.voices.refused[w] ?? 0, `phase 2: ${w} refused`).toBe(0);
+});

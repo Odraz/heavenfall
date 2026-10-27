@@ -17,6 +17,7 @@ import { localSnap, type MainToWorker, type WorkerToMain } from './workerMessage
 import { RunRecords, SettlementCache } from '../net/runRecords';
 import { validateProfile, type Profile } from '../profile/model';
 import { copyInventory } from '../data/items';
+import { EvidenceLog } from './evidence';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -39,6 +40,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let lobby: Lobby | null = null;
 let god = false;
 let diagnostics = false;
+let evidence = false;
 const connPlayer = new Map<number, number>();
 const playerConn = new Map<number, number>();
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -108,6 +110,7 @@ function runTick(): void {
   }
   // A tick's measured time includes encoding that tick's snapshots (§2.2).
   const ms = performance.now() - t0;
+  sim.evidence?.observe(ms);
   post(localSnap(sim, localPlayerId, parts, ms), parts);
   for (const [to, bufs] of remote) post({ t: 'snap', to, bufs, simMs: ms }, bufs);
   flushEvents();
@@ -150,10 +153,12 @@ function start(m: Extract<MainToWorker, { t: 'start' }>): void {
   const { def, map, floor } = loadRunMap(m);
   sim = new Simulation({
     dungeon: def, map, floor, props: propDefs(floor), runId: m.runId, players: m.players, seed: m.simSeed, god: !m.progressionEnabled && m.god, benchRoom: m.benchArena, benchBurst: m.benchBurst,
-    startRoom: m.startRoom, progressionEnabled: m.progressionEnabled, diagnostics: !!m.diagnostics, devBuild: m.devBuild, devRelics: m.devRelics, edicts: m.edicts,
+    startRoom: m.startRoom, progressionEnabled: m.progressionEnabled, diagnostics: !!m.diagnostics, devBuild: m.devBuild, devRelics: m.devRelics, edicts: m.edicts, bossHp: m.bossHp,
   });
   runId = m.runId;
   localPlayerId = m.localPlayerId;
+  // It only reads the simulation; allowed on normal runs (R9 stage 3).
+  if (m.evidence) sim.evidence = new EvidenceLog(sim, __BUILD_VERSION__, (record) => post({ t: 'evidence', record }));
   for (const r of records?.records.values() ?? []) if (!r.closed) send(r.playerId, { type: 'progress', state: records!.commit(r) });
   send('all', { type: 'go' });
   for (const p of sim.players) send(p.id, sim.floorSync(runId));
@@ -172,6 +177,7 @@ function host(m: Extract<MainToWorker, { t: 'host' }>): void {
     profile: m.bot ? undefined : validProfile(m.profile), progressionEnabled: m.progressionEnabled, devSeed: m.devSeed, devStartRoom: m.devStartRoom });
   god = m.god;
   diagnostics = !!m.diagnostics;
+  evidence = !!m.evidence;
   localPlayerId = 0;
   send(0, lobby.lobbyMessage());
   heartbeatTimer = setInterval(() => post({ t: 'heartbeat', loading: lobby?.loadingIds() ?? [] }), PING_MS);
@@ -375,7 +381,7 @@ function checkLoadTimeout(): void {
 function maybeGo(): void {
   if (!lobby?.allReady()) return;
   const players = lobby.go().map(p => ({ ...p, profile: lobby!.profile(p.id) }));
-  start({ ...lobby.run!, t: 'start', players, god, benchArena: -1, benchBurst: false, localPlayerId: 0, diagnostics, startRoom: lobby.run!.devStartRoom });
+  start({ ...lobby.run!, t: 'start', players, god, benchArena: -1, benchBurst: false, localPlayerId: 0, diagnostics, startRoom: lobby.run!.devStartRoom, evidence });
 }
 
 ctx.onmessage = (e: MessageEvent<MainToWorker>) => {

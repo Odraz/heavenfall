@@ -398,6 +398,10 @@ export class GameSounds {
         // Others' landings after the render delay, where they land; the own one played as its leap ended.
         if (e.playerId !== this.localId) sfx('fallingStarLand', { x: e.x, y: e.y }, 1, this.renderDelay);
         break;
+      case 'gatebreakerWall':
+        // Everyone's, the own one too: only the host knows the charge's accepted end (R9 B4).
+        sfx('gatebreakerWall', { x: e.x, y: e.y }, 1, e.playerId === this.localId ? 0 : this.renderDelay);
+        break;
       case 'dashCut':
         // Others' dagger cuts at the streak's start, after the render delay (M12 §5.7).
         if (e.playerId !== this.localId) sfx('daggerCut', { x: e.x0, y: e.y0 }, 1, this.renderDelay);

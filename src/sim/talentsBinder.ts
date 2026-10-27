@@ -89,7 +89,7 @@ export class BinderTalents {
   bind(p: SimPlayer, s: number, seconds: number, cast: number, start = this.sim.tick): void {
     const sim = this.sim;
     if (!sim.eAlive[s] || isBossBody(sim.eType[s])) return;
-    sim.root(s, seconds);
+    sim.root(s, seconds, p.index);
     this.record(p, s, sim.tick + ticks(seconds), cast, start);
   }
 
@@ -104,6 +104,7 @@ export class BinderTalents {
   /** An own pull starts (Chains, Ring, Procession): its bind is recorded when the pull completes. */
   pulled(p: SimPlayer, s: number, cast: number): void {
     this.pullCast[s] = cast; this.pullStart[s] = this.sim.tick; this.pullBy[s] = p.index;
+    this.sim.streaks.touch(s, p.index);
   }
 
   /** A pull completed (the base roots for 2.5 s): an own pull records its source from now. */
@@ -112,7 +113,7 @@ export class BinderTalents {
     if (by < 0) return;
     this.pullBy[s] = -1;
     const p = sim.slots[by];
-    if (p) this.record(p, s, sim.tick + ticks(CHAINS_ROOT), this.pullCast[s], this.pullStart[s]);
+    if (p) { this.record(p, s, sim.tick + ticks(CHAINS_ROOT), this.pullCast[s], this.pullStart[s]); sim.streaks.touch(s, by); }
   }
 
   // ------------------------------------------------------------------ the Chain Gun and the Scourge
@@ -134,7 +135,7 @@ export class BinderTalents {
     sim.propsOnRay(ex, ey, ez, dx, dy, dz, stop);
     for (const s of hits) {
       this.t.primary(root, s, w.damage, w.damage);
-      if (w.slow > 0 && sim.eAlive[s]) sim.slow(s, w.slow);
+      if (w.slow > 0 && sim.eAlive[s]) sim.slow(s, w.slow, p.index);
     }
     for (const o of souls) sim.addRevive(o, reviveHit(w.interval, false), p);
     this.t.finish(root);
@@ -179,7 +180,7 @@ export class BinderTalents {
     hit.sort((a, b) => a.d - b.d);
     for (const { s } of hit) {
       this.t.primary(root, s, w.damage, Infinity);
-      if (sim.eAlive[s]) sim.slow(s, w.slow);
+      if (sim.eAlive[s]) sim.slow(s, w.slow, p.index);
     }
     if (whirl || whip) this.t.fx(p, whirl ? 'whirl' : 'whip', [cx, cy, p.z, ax, ay, 0]);
     this.t.finish(root);
@@ -369,7 +370,7 @@ export class BinderTalents {
         if (best < 0) continue;
         used.add(best); n++;
         // The transfer keeps the original cast's end and ceiling: no refresh.
-        sim.root(best, left / TICK_HZ);
+        sim.root(best, left / TICK_HZ, p.index);
         this.ownBy[best] = p.index; this.ownCast[best] = this.ownCast[v.s]; this.ownInc[best] = sim.eIncarnation[best];
         this.ownUntil[best] = this.ownUntil[v.s]; this.ownCeil[best] = this.ownCeil[v.s];
         arcs.push(v.x, v.y, v.z + 0.8, sim.eX[best], sim.eY[best], sim.eZ[best] + 0.8);
@@ -506,7 +507,7 @@ export class BinderTalents {
       const dx = a.x - sim.eX[s], dy = a.y - sim.eY[s], d = Math.hypot(dx, dy);
       if (d > a.x1 || !this.feetOn(s, a.z, 2)) continue;
       if (!lineOfSight(sim.map, a.x, a.y, a.z + 0.5, sim.eX[s], sim.eY[s], sim.eZ[s] + 0.5)) continue;
-      if (this.feetOn(s, sim.map.floor[Math.floor(sim.eY[s]) * sim.map.w + Math.floor(sim.eX[s])], 0.3)) sim.ePooled[s] = 1;
+      if (this.feetOn(s, sim.map.floor[Math.floor(sim.eY[s]) * sim.map.w + Math.floor(sim.eX[s])], 0.3)) { sim.ePooled[s] = 1; sim.streaks.touchId(s, a.playerId); }
       if (def.flying || sim.isRooted(s) || d <= WELL.stop) continue;
       const m = Math.min(step, d - WELL.stop);
       sim.drift(s, (dx / d) * m, (dy / d) * m);
@@ -520,7 +521,7 @@ export class BinderTalents {
       if (isBossBody(sim.eType[s]) || Math.hypot(sim.eX[s] - a.x, sim.eY[s] - a.y) > a.x1 + ENEMIES[sim.eType[s]].radius) continue;
       if (!this.feetOn(s, a.z, 0.3)) continue;
       sim.ePooled[s] = 1;
-      sim.slow(s, 2 / TICK_HZ);
+      sim.slow(s, 2 / TICK_HZ, sim.playerById(a.playerId)?.index);
     }
   }
 
@@ -535,6 +536,7 @@ export class BinderTalents {
       const reach = def.radius + BOUNDARY.margin;
       if (d2 > reach * reach || !this.feetOn(s, a.z + (a.z1 - a.z) * t, BOUNDARY.feet)) continue;
       sim.ePooled[s] = 1;
+      sim.streaks.touch(s, owner.index);
       const key = sim.eIncarnation[s];
       if (done.has(key)) continue;
       done.add(key);

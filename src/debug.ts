@@ -73,6 +73,9 @@ export interface DebugState {
   attempts: number;
   fallbackUsed: boolean;
   genMs: number;
+  /** The client map build and this page's Loading duration, ms (R9 stage 4). */
+  mapBuildMs: number;
+  loadMs: number;
   floorHash: string | null;
   /** The room in countdown or combat, 255 for none (rogue game.md §14.3). */
   activeRoom: number;
@@ -175,6 +178,8 @@ export const debugState: DebugState = {
   attempts: 0,
   fallbackUsed: false,
   genMs: 0,
+  mapBuildMs: 0,
+  loadMs: 0,
   floorHash: null,
   activeRoom: 255,
   activePhase: 'idle',
@@ -235,6 +240,8 @@ export function resetGameDebug(): void {
     attempts: 0,
     fallbackUsed: false,
     genMs: 0,
+    mapBuildMs: 0,
+    loadMs: 0,
     floorHash: null,
     activeRoom: 255,
     activePhase: 'idle',

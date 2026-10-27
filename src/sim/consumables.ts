@@ -308,6 +308,7 @@ export class Consumables {
       for (const e of areas) {
         if (!this.covers(e, s)) continue;
         sim.ePooled[s] = 1;
+        sim.streaks.touchId(s, e.owner);
         if (e.item === 'frost' && !isBossBody(sim.eType[s])) this.slowed[s] = 1;
         if (!apply) continue;
         if (e.item === 'venom' && (!venom || newerPool(e, venom))) venom = e;

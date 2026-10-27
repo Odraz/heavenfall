@@ -568,6 +568,8 @@ export const SFX = {
   /** Silver Wire strung: a taut wire plucked. */
   silverWirePlace: { priority: PRIO_ABILITY, parts: [part({ wave: 'triangle', freq: 1760, decay: 0.05, sustain: 0.3, release: 0.4, volume: 0.12, vibratoRate: 12, vibratoDepth: 0.3 }), part({ wave: 'noise', freq: 9000, decay: 0.02, release: 0.04, volume: 0.12 })] },
   /** Gatebreaker: the charge begins, iron boots and a roar of embers. */
+  // A shoulder into a door: a deep thud and a short wooden crunch (audio-prompts.md S6 `gatebreakerWall`).
+  gatebreakerWall: { priority: PRIO_ABILITY, parts: [part({ wave: 'sine', freq: 70, freqEnd: 45, decay: 0.12, release: 0.3, volume: 0.5 }), part({ wave: 'noise', freq: 1200, decay: 0.04, release: 0.15, volume: 0.3, lowpass: 1500 })] },
   gatebreakerStart: { priority: PRIO_ABILITY, parts: [part({ wave: 'saw', freq: 82, freqEnd: 110, attack: 0.03, decay: 0.2, sustain: 0.5, hold: 0.2, release: 0.2, volume: 0.3, lowpass: 600 }), part({ wave: 'noise', freq: 3000, attack: 0.05, decay: 0.2, hold: 0.2, release: 0.2, volume: 0.25, lowpass: 2000 })] },
   /** Rain of Fire called down: a rising roar from above. */
   rainOfFireStart: { priority: PRIO_ABILITY, parts: [part({ wave: 'noise', freq: 4000, attack: 0.25, decay: 0.2, sustain: 0.6, hold: 0.2, release: 0.3, volume: 0.35, lowpass: 800, lowpassEnd: 3000 }), part({ wave: 'sine', freq: 60, attack: 0.2, hold: 0.3, release: 0.3, volume: 0.25 })] },

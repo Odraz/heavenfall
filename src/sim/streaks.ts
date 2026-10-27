@@ -1,7 +1,8 @@
 /**
  * Kill streaks with assists (rogue game.md §10, m12-followup-2.md §3). A counted kill within 1.0 s of
  * the player's last counted kill extends the streak; a kill counts for its killer and, once each, for
- * every other living human who damaged or taunted that enemy in the last 1.5 s. Tiers at 10, 25, 50,
+ * every other living human who damaged it, applied a state to it, or had it censed or pooled in their
+ * own area in the last 1.5 s, or in whose Field of Blood the killer stood. Tiers at 10, 25, 50,
  * 100 and 200 are announced once per streak; the highest tier crossed in a tick is one event.
  *
  * Bodies: ordinary combat enemies and boss summons count; the Gatekeeper's body and cleared-room
@@ -36,9 +37,25 @@ export class Streaks {
     this.touched.fill(0, slot * PLAYER_SLOTS, slot * PLAYER_SLOTS + PLAYER_SLOTS);
   }
 
-  /** A player damaged an enemy or applied a state to it. */
-  touch(slot: number, index: number): void {
-    if (index >= 0 && index < PLAYER_SLOTS) this.touched[slot * PLAYER_SLOTS + index] = this.sim.tick + 1;
+  /**
+   * A player damaged an enemy, applied a state to it (bound, slowed, airborne, taunted, silenced), or
+   * kept it censed or pooled in their own area this tick (§10). World hazards never call this.
+   */
+  touch(slot: number, index: number | undefined): void {
+    if (index !== undefined && index >= 0 && index < PLAYER_SLOTS) this.touched[slot * PLAYER_SLOTS + index] = this.sim.tick + 1;
+  }
+
+  /** `touch` by player id (areas record their owner's id). */
+  touchId(slot: number, playerId: number): void {
+    this.touch(slot, this.sim.playerById(playerId)?.index);
+  }
+
+  /** At the kill: censed in this player's cloud, or the killer standing in this player's Field of Blood (§10). */
+  private areaAssist(slot: number, p: SimPlayer, killer: number): boolean {
+    const sim = this.sim;
+    if (sim.talents.heretic.censed(slot, p)) return true;
+    const k = killer >= 0 ? sim.slots[killer] : undefined;
+    return sim.fieldBy === p.index && !!k && sim.inField(k);
   }
 
   /** At the start of a tick: streaks whose second ran out end, before that tick's damage. */
@@ -61,7 +78,7 @@ export class Streaks {
       const p = sim.slots[i];
       if (!p || p.bot || !p.connected || p.dead) continue;
       const at = this.touched[slot * PLAYER_SLOTS + i];
-      if (i !== killer && !(at > 0 && sim.tick + 1 - at <= ASSIST_TICKS)) continue;
+      if (i !== killer && !(at > 0 && sim.tick + 1 - at <= ASSIST_TICKS) && !this.areaAssist(slot, p, killer)) continue;
       p.streak = p.streak > 0 && sim.tick - p.streakTick <= STREAK_TICKS ? p.streak + 1 : 1;
       p.streakTick = sim.tick;
       if (p.streak > p.bestStreak) { p.bestStreak = p.streak; p.bestStreakTick = sim.tick; }

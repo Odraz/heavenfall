@@ -139,3 +139,27 @@ describe('atomic profile storage boundaries', () => {
     session.close(); expect(released).toBe(true); expect(() => session.save(next)).toThrow('released');
   });
 });
+
+describe('the R9 collected-account fixture (docs/rogue/fixtures/r09-collected.txt)', () => {
+  it('imports as a normal profile: every class at level 10 with a legal nine-point build, all relics and deeds, one win', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { CLASS_IDS } = await import('../data/classes');
+    const { DEED_IDS, RELIC_IDS } = await import('../data/relics');
+    const { edictsUnlocked } = await import('../data/edicts');
+    const { learnedError } = await import('../sim/build');
+    const profile = await importCode(readFileSync('docs/rogue/fixtures/r09-collected.txt', 'utf8'));
+    const imported = importProfile(profile, []);
+    expect(imported.repaired).toBe(false);
+    expect(imported.profile).toMatchObject({ run: null, lastSettlement: null, stats: { runs: 1, wins: 1 } });
+    for (const c of CLASS_IDS) {
+      const ch = imported.profile.characters[c];
+      expect(ch.xp).toBe(49_500);
+      expect(levelForXp(ch.xp)).toBe(10);
+      expect(ch.talents).toHaveLength(9);
+      expect(learnedError(c, { talents: ch.talents, q: ch.q, e: ch.e }, levelForXp(ch.xp)), c).toBeNull();
+    }
+    expect([...imported.profile.relics].sort()).toEqual([...RELIC_IDS].sort());
+    expect([...imported.profile.deeds].sort()).toEqual([...DEED_IDS].sort());
+    expect(edictsUnlocked(imported.profile.heavens.clears[1] ?? 0, true)).toBe(true);
+  });
+});

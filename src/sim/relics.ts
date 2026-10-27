@@ -152,7 +152,7 @@ export class Relics {
       for (const a of this.areas) {
         if (!this.covers(a, s)) continue;
         sim.ePooled[s] = 1;
-        sim.slow(s, 2 / TICK_HZ);
+        sim.slow(s, 2 / TICK_HZ, sim.playerById(a.owner)?.index);
       }
     }
   }

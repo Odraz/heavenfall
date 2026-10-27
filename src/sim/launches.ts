@@ -56,6 +56,7 @@ export class Launches {
     const sim = this.sim;
     if (!sim.eAlive[s] || isBossBody(sim.eType[s]) || sim.isRooted(s) || Math.hypot(dx, dy) < 1e-9) return false;
     sim.knockback(s, dx, dy, dist, LAUNCH_SECONDS);
+    if (owner) sim.streaks.touch(s, owner.index);
     sim.commanders.cancel(s); sim.watchmen.cancel(s); sim.dominions.cancel(s, sim.tick);
     // A flyer is knocked back and never lands.
     if (ENEMIES[sim.eType[s]].flying) return true;

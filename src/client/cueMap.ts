@@ -21,6 +21,7 @@ export const EVENT_CUES: Record<GameEvent['type'], readonly SfxName[] | string> 
   crest: ['crest'],
   damage: 'silent: hits sound from the own shot (hitTick) and the HP diff (hurt)',
   dashCut: ['daggerCut'],
+  gatebreakerWall: ['gatebreakerWall'],
   dominionCast: ['dominionSlam'],
   fire: ['state-fire'],
   gameOver: ['victory', 'defeat'],

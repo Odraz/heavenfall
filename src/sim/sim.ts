@@ -9,6 +9,7 @@ import type { HereticCloud } from './talentsHeretic';
 import { Rites } from './rites';
 import { Relics, type VictimStates } from './relics';
 import { Streaks } from './streaks';
+import type { EvidenceLog } from './evidence';
 import { RelicOffers } from './relicOffers';
 import { Route, SOURCE_BELL_FIRST, SOURCE_CHEST } from './route';
 import { Bargain } from './bargain';
@@ -196,6 +197,8 @@ export interface SimOptions {
   devRelics?: string[];
   /** The run's Edicts (game.md §2.5), ids 1–5, fixed by `start`. */
   edicts?: number[];
+  /** Development (`bosshp`, R9 B5): the Gatekeeper's starting HP fraction; ignored with saved progression. */
+  bossHp?: number;
 }
 
 export interface SimEvent {
@@ -621,6 +624,8 @@ export class Simulation {
   readonly rites = new Rites(this);
   readonly relics = new Relics(this);
   readonly streaks = new Streaks(this);
+  /** `evidence=1` (R9 stage 3): reads the run; null otherwise. Never consulted by a rule. */
+  evidence: EvidenceLog | null = null;
   readonly relicOffers = new RelicOffers(this);
   readonly route = new Route(this);
   readonly bargain = new Bargain(this);
@@ -631,6 +636,8 @@ export class Simulation {
   private readonly devRelics: string[];
   /** The run's Edicts (§2.5), sorted ids 1–5; the Sentence is their count. */
   readonly edicts: readonly number[];
+  /** `bosshp` (R9 B5): the Gatekeeper's starting HP fraction in a disposable run, or null. */
+  private readonly bossHpStart: number | null;
   /** Offer keys already healed by the Confessional's sanctuary this floor (§9.6). */
   private readonly sanctuary = new Set<string>();
   /** The simulation seed, for the stable Rite offer generator (§9.10). */
@@ -754,6 +761,8 @@ export class Simulation {
   fieldY = 0;
   fieldZ = 0;
   fieldUntil = 0;
+  /** The index of the player whose Field of Blood this is, for streak assists (§10); -1 none. */
+  fieldBy = -1;
   /** Thrown Silver's coins fly 0.5 s before the Field starts. */
   fieldStart = 0;
 
@@ -898,6 +907,7 @@ export class Simulation {
     this.devBuild = opts.devBuild;
     this.devRelics = this.progressionEnabled ? [] : (opts.devRelics ?? []).filter(isRelicId).slice(0, 2);
     this.edicts = [...new Set((opts.edicts ?? []).filter((e) => Number.isInteger(e) && e >= 1 && e <= 5))].sort((a, b) => a - b);
+    this.bossHpStart = !this.progressionEnabled && opts.bossHp !== undefined && opts.bossHp >= 0 && opts.bossHp <= 1 ? opts.bossHp : null;
     if (this.edicts.includes(4)) this.pickups.currencyLifetime = POVERTY_LIFETIME;
     this.random = mulberry32(opts.seed);
     this.seed = opts.seed >>> 0;
@@ -1856,6 +1866,7 @@ export class Simulation {
     this.spawnAt(slot, GATEKEEPER, c, r, ai, -1);
     this.bossMaxHp = this.boss.seal(ai, this.rooms[ai].partySize);
     this.eHp[slot] = this.bossMaxHp;
+    if (this.bossHpStart !== null) this.boss.devStart(this.bossHpStart);
   }
 
   private startWave(ai: number, n: number): void {
@@ -2044,7 +2055,9 @@ export class Simulation {
     let count = 0;
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k], fire = this.hazards.contact(this.eX[s], this.eY[s], this.eZ[s], this.eGrounded[s] === 1);
-      this.ePooled[s] = fire || this.fieldActive() && inField(this.fieldX, this.fieldY, this.eX[s], this.eY[s]) ? 1 : 0;
+      const field = this.fieldActive() && inField(this.fieldX, this.fieldY, this.eX[s], this.eY[s]);
+      this.ePooled[s] = fire || field ? 1 : 0;
+      if (field) this.streaks.touch(s, this.fieldBy);
       if (fire) this.hazardVictims[count++] = s;
     }
     // Stable bounded slots: owned shield bursts/removals cannot skip or damage a victim twice.
@@ -2792,7 +2805,9 @@ export class Simulation {
   rite(playerId: number, requestId: number, offerId: number, choice: string): void {
     const p = this.playerById(playerId);
     if (!p || p.bot || typeof choice !== 'string' || !Number.isInteger(offerId)) return;
+    const fresh = p.requests.next;
     const result = p.requests.execute(requestId, `rite:${offerId}`, () => this.rites.choose(p, offerId, choice));
+    if (result?.accepted && p.requests.next !== fresh) this.evidence?.decision(p, choice === 'pass' ? 'ritePass' : 'rite');
     this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale choice; try again' }) });
     this.publishInventory(p);
   }
@@ -2853,6 +2868,7 @@ export class Simulation {
   relicChoice(playerId: number, requestId: number, offerId: number, choice: unknown): void {
     const p = this.playerById(playerId);
     if (!p || p.bot || typeof choice !== 'string' || !Number.isInteger(offerId)) return;
+    const fresh = p.requests.next;
     const result = p.requests.execute(requestId, `relic:${offerId}`, (): InteractionResult => {
       const offer = this.relicOffers.find(p, offerId);
       if (!offer) return { accepted: false, reason: 'That offer is settled' };
@@ -2863,6 +2879,7 @@ export class Simulation {
       if (!chest || !this.route.inReach(p, chest, 0.6)) return { accepted: false, reason: 'Choose at the Reliquary' };
       return this.relicOffers.chooseChest(p, offer, choice);
     });
+    if (result?.accepted && p.requests.next !== fresh) this.evidence?.decision(p, choice === 'pass' ? 'rewardPass' : 'reward');
     this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale choice; try again' }) });
     this.publishInventory(p);
   }
@@ -2939,8 +2956,10 @@ export class Simulation {
   interact(playerId: number, requestId: number, sourceId: number): void {
     const p = this.playerById(playerId);
     if (!p || p.bot) return;
+    const fresh = p.requests.next;
     const result = p.requests.execute(requestId, `shop:${sourceId}`, () => sourceId === SOURCE_CHEST ? this.route.interactChest(p)
       : sourceId >= SOURCE_BELL_FIRST ? this.route.ringBell(p, sourceId - SOURCE_BELL_FIRST) : interactShop(this, p, sourceId));
+    if (result?.accepted && p.requests.next !== fresh && sourceId !== SOURCE_CHEST) this.evidence?.decision(p, sourceId >= SOURCE_BELL_FIRST ? 'bell' : 'purchase');
     this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale interaction; try again' }) });
     this.publishInventory(p);
   }
@@ -3125,14 +3144,16 @@ export class Simulation {
     return isBossBody(this.eType[slot]);
   }
 
-  /** Slow: refreshes the duration, doesn't stack. */
-  slow(slot: number, seconds: number): void {
+  /** Slow: refreshes the duration, doesn't stack. `by`: the applying player's index, for streak assists (§10). */
+  slow(slot: number, seconds: number, by?: number): void {
     if (this.immune(slot)) return;
     this.eSlowUntil[slot] = this.tick + ticks(seconds);
+    this.streaks.touch(slot, by);
   }
 
-  root(slot: number, seconds: number): void {
+  root(slot: number, seconds: number, by?: number): void {
     if (this.immune(slot)) return;
+    this.streaks.touch(slot, by);
     if (this.eType[slot] === CARRIER) this.commanders.cancel(slot);
     this.eRootUntil[slot] = Math.max(this.eRootUntil[slot], this.tick + ticks(seconds));
     if (this.dominions.active.get(slot)?.leap) this.dominions.cancel(slot, this.tick);
@@ -3159,7 +3180,8 @@ export class Simulation {
   }
 
   /** Silence: a cast in progress is cancelled. */
-  silence(slot: number, seconds: number): void {
+  silence(slot: number, seconds: number, by?: number): void {
+    this.streaks.touch(slot, by);
     this.eSilenceUntil[slot] = Math.max(this.eSilenceUntil[slot], this.tick + ticks(seconds));
     this.dominions.cancel(slot, this.tick);
     this.commanders.cancel(slot);
@@ -3429,7 +3451,7 @@ export class Simulation {
       this.propsOnRay(ex, ey, ez, dx, dy, dz, stop);
       for (const s of hits) {
         this.damageEnemy(s, w.damage, p.index, w.damage);
-        if (w.slow > 0 && this.eAlive[s]) this.slow(s, w.slow);
+        if (w.slow > 0 && this.eAlive[s]) this.slow(s, w.slow, p.index);
       }
     }
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, p.classId === 'heretic'), p);
@@ -3564,7 +3586,7 @@ export class Simulation {
     for (let i = 0; i < hit.length && i < w.maxHits; i++) {
       const s = hit[i].s;
       this.damageEnemy(s, w.damage, p.index, Infinity);
-      if (this.eAlive[s]) this.slow(s, w.slow);
+      if (this.eAlive[s]) this.slow(s, w.slow, p.index);
     }
   }
 
@@ -3760,6 +3782,7 @@ export class Simulation {
         // Field of Blood (M9 §3.4): 3 m ahead along the yaw; it always has a place. A new field
         // replaces the old one, and it lasts its 8 s whatever happens to the Betrayer.
         [this.fieldX, this.fieldY, this.fieldZ] = fieldCenter(this.map, p.x, p.y, p.yaw);
+        this.fieldBy = p.index;
         this.fieldStart = this.tick;
         this.fieldUntil = this.tick + ticks(FIELD_TIME);
         p.cdQ = cd;
@@ -3814,7 +3837,7 @@ export class Simulation {
       this.abilityEvent(p, 'E', target.x, target.y, target.z, [target.id]);
     } else if (p.classId === 'binder') {
       const targets = this.discordTargets(p);
-      for (const s of targets) this.silence(s, DISCORD_SILENCE);
+      for (const s of targets) this.silence(s, DISCORD_SILENCE, p.index);
       // Voice of the Pit, Shattered Hymn and The Wind of Cocytus (classes-binder.md `b.2a`, `c.3b`, `c.cap`).
       this.talents.binder.discord(p, targets, DISCORD_SILENCE);
       p.cdE = def.cooldown;

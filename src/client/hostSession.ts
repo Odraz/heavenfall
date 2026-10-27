@@ -10,6 +10,7 @@ import type { DirectorInfo } from '../sim/director';
 import type { SimPlayerInit } from '../sim/sim';
 import type { MainToWorker, WorkerToMain } from '../sim/workerMessages';
 import type { Profile } from '../profile/model';
+import type { EvidenceRecord } from '../sim/evidence';
 
 export class HostSession {
   readonly worker: Worker;
@@ -28,6 +29,9 @@ export class HostSession {
   weaponKills: Record<number, number> = {};
   /** Called with each tick's simulation time (ms). */
   onTickMs: (ms: number) => void = () => {};
+  /** `evidence=1` (R9 stage 3): set before `start`/`hostLobby`; records arrive through `onEvidence`. */
+  evidence = false;
+  onEvidence: (record: EvidenceRecord) => void = () => {};
 
   constructor(readonly localPlayerId: number) {
     this.worker = new Worker(new URL('../sim/worker.ts', import.meta.url), { type: 'module' });
@@ -40,8 +44,8 @@ export class HostSession {
   }
 
   /** Singleplayer: starts the game at once. */
-  start(run: RunConfig, players: SimPlayerInit[], god: boolean, benchArena: number, benchBurst = false, startRoom?: number, diagnostics = false, devBuild?: string, devRelics?: string[]): void {
-    this.post({ ...run, t: 'start', players, god, benchArena, benchBurst, localPlayerId: this.localPlayerId, startRoom, diagnostics, devBuild, devRelics });
+  start(run: RunConfig, players: SimPlayerInit[], god: boolean, benchArena: number, benchBurst = false, startRoom?: number, diagnostics = false, devBuild?: string, devRelics?: string[], bossHp?: number): void {
+    this.post({ ...run, t: 'start', players, god, benchArena, benchBurst, localPlayerId: this.localPlayerId, startRoom, diagnostics, devBuild, devRelics, evidence: this.evidence, bossHp });
   }
 
   /** Multiplayer: opens the lobby in the worker and connects the clients' connections to it. */
@@ -56,7 +60,7 @@ export class HostSession {
       this.unbind(conn);
       this.post({ t: 'connClosed', conn });
     };
-    this.post({ t: 'host', heaven: 1, fixture, password, name, god, bot, profile, progressionEnabled, diagnostics, devSeed: dev.seed, devStartRoom: dev.startRoom });
+    this.post({ t: 'host', heaven: 1, fixture, password, name, god, bot, profile, progressionEnabled, diagnostics, devSeed: dev.seed, devStartRoom: dev.startRoom, evidence: this.evidence });
   }
 
   /** The host's `Start` in the Lobby. */
@@ -168,6 +172,9 @@ export class HostSession {
       case 'drop':
         this.unbind(m.conn);
         net?.close(m.conn);
+        break;
+      case 'evidence':
+        this.onEvidence(m.record);
         break;
       case 'heartbeat': {
         const loading = new Set<number>();

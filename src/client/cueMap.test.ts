@@ -12,8 +12,8 @@ function promptIds(): string[] {
   return [...lists.matchAll(/\[[ x]\] `([a-zA-Z-]+)`/g)].map((m) => m[1]);
 }
 
-/** S6's wall stop has no host event yet (gatebreaker charges end silently in a wall). */
-const NO_EVENT_YET = new Set(['gatebreakerWall']);
+/** Prompt IDs without a host event yet (none since R9's `gatebreakerWall`). */
+const NO_EVENT_YET = new Set<string>();
 
 describe('the event-to-cue map (R8)', () => {
   it('names a synthesized or recorded cue for every S1–S7 prompt ID, so a recording replaces it by file name', () => {

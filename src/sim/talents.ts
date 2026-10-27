@@ -215,7 +215,7 @@ export class Talents {
     const pts: number[] = [];
     for (const v of victims) {
       pts.push(v.x, v.y, v.z);
-      this.near(v.x, v.y, v.z + 0.9, v.room, TALENT.frostRadius, (s) => this.sim.slow(s, TALENT.slow));
+      this.near(v.x, v.y, v.z + 0.9, v.room, TALENT.frostRadius, (s) => this.sim.slow(s, TALENT.slow, p.index));
     }
     this.fx(p, 'frost', pts);
   }
@@ -350,7 +350,7 @@ export class Talents {
       pts.push(x, y, z);
       this.near(x, y, z, sim.roomAt(x, y), TALENT.nailRadius, (s) => {
         if (bound.has(s) || ENEMIES[sim.eType[s]].flying) return;
-        bound.add(s); sim.root(s, TALENT.bind);
+        bound.add(s); sim.root(s, TALENT.bind, p.index);
       });
     }
     this.fx(p, 'nail', pts, [...bound]);
@@ -388,6 +388,7 @@ export class Talents {
       if (p.cdQ > 1e-6) return true;
       const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
       [sim.fieldX, sim.fieldY, sim.fieldZ] = thrownFieldCenter(sim.map, p.x, p.y, p.z, dx, dy, dz);
+      sim.fieldBy = p.index;
       sim.fieldStart = sim.tick + ticks(TALENT.thrownFlight);
       sim.fieldUntil = sim.fieldStart + ticks(8);
       p.cdQ = 30;
@@ -625,7 +626,7 @@ export class Talents {
       const reach = ENEMIES[sim.eType[s]].radius + WIRE.margin;
       if (d2 > reach * reach || Math.abs(sim.eZ[s] - (a.z + (a.z1 - a.z) * t - WIRE.height)) > WIRE.feet) continue;
       bound.add(key);
-      sim.root(s, WIRE.bind);
+      sim.root(s, WIRE.bind, sim.playerById(a.playerId)?.index);
     }
   }
 
@@ -635,7 +636,7 @@ export class Talents {
       const s = sim.active[k];
       if (!this.ground(s) || Math.abs(sim.eZ[s] - a.z) > 1) continue;
       if (Math.hypot(sim.eX[s] - a.x, sim.eY[s] - a.y) > TALENT.coinRadius + ENEMIES[sim.eType[s]].radius) continue;
-      sim.root(s, TALENT.bind);
+      sim.root(s, TALENT.bind, sim.playerById(a.playerId)?.index);
       this.endArea(a, 'spent');
       return;
     }
@@ -660,7 +661,7 @@ export class Talents {
       const s = sim.active[k], key = sim.eIncarnation[s];
       if (!this.ground(s) || this.potterBound.has(key) || Math.hypot(sim.eX[s] - sim.fieldX, sim.eY[s] - sim.fieldY) > FIELD_RADIUS) continue;
       this.potterBound.add(key);
-      sim.root(s, TALENT.bind);
+      sim.root(s, TALENT.bind, p.index);
       pts.push(sim.eX[s], sim.eY[s], sim.eZ[s]);
     }
     this.fx(p, 'potter', pts);

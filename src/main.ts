@@ -30,6 +30,7 @@ import { ProfileSession, openCurrentProfile, readProfile } from './profile/stora
 import { abandonAttempt, applyProgress, stakeProfile, type ProgressState } from './profile/lifecycle';
 import { edictsControl } from './ui/edicts';
 import { cleanEdicts, edictsUnlocked } from './data/edicts';
+import type { EvidenceRecord } from './sim/evidence';
 
 /** The Edicts row for a host or solo player (game.md §2.5): unlocked once this profile cleared the heaven; saved as the last choice. */
 function edictsRow(parent: HTMLElement, editable: boolean, onChange: (ids: number[]) => void = () => {}): ReturnType<typeof edictsControl> {
@@ -100,6 +101,30 @@ function localExit(outcome: 'leave' | 'hostLeft'): void {
   if (!profileSession?.profile.run || !lastProgress || lastProgress.runId !== profileSession.profile.run.runId) return;
   const next = applyProgress(profileSession.profile, { ...lastProgress, revision: 0xfffffffe, outcome });
   if (next) saveAccepted(next);
+}
+
+/**
+ * The acceptance evidence of the current run (R9 stage 3, `evidence=1`): each record is logged as one
+ * `EVIDENCE {json}` console line as it arrives, and Results offers them all for copying.
+ */
+let evidence: EvidenceRecord[] = [];
+function hostEvidence(host: HostSession): void {
+  if (!params.evidence) return;
+  evidence = [];
+  host.evidence = true;
+  host.onEvidence = (r) => {
+    // The run record's load timings are the host page's own (Loading and the client map build).
+    if (r.record === 'run') { r.loadMs = Math.round(debugState.loadMs); r.mapBuildMs = Math.round(debugState.mapBuildMs); }
+    console.log(`EVIDENCE ${JSON.stringify(r)}`);
+    evidence.push(r);
+  };
+}
+/** Results' *Copy run evidence*, only with `evidence=1` on the host. */
+function evidenceButton(view: ResultsView): void {
+  if (!params.evidence || !evidence.length) return;
+  const parent = view.el.querySelector('.buttons') ?? view.el;
+  const text = evidence.map((r) => JSON.stringify(r)).join('\n');
+  button('Copy run evidence', parent as HTMLElement, () => { void navigator.clipboard?.writeText(text).catch(() => {}); });
 }
 
 /** The DOM screen currently shown over `#app`, if any. */
@@ -194,6 +219,16 @@ async function loadGameAssets(run: RunConfig, roster: RosterEntry[], localId: nu
 }
 
 /**
+ * The client map build (the game's scene: lightmap, terrain, meshes and the warm-up) and this page's
+ * Loading up to it, for the benchmark and the evidence log (rogue game.md §14 load budget, R9 stage 4).
+ */
+function loadTimings(buildStart: number, loadStart: number): void {
+  const now = performance.now();
+  debugState.mapBuildMs = now - buildStart;
+  debugState.loadMs = now - loadStart;
+}
+
+/**
  * A singleplayer game: from Singleplayer Setup's `Start`, or straight from the page load with `dev=1`
  * or `bench=1`. Loading builds the map and sprite atlas, then enters the game (§3).
  */
@@ -204,7 +239,9 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   }
   // The worker starts when the player clicks Start, or the page loads with dev=1 or bench=1 (§2.2).
   const host = new HostSession(0);
+  hostEvidence(host);
   const loading = loadingScreen();
+  const loadStart = performance.now();
   show('loading', loading.el);
   await loading.ready;
   const run: RunConfig = {
@@ -215,12 +252,16 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
   const roster = [{ id: 0, name, classId, bot: false, profile: profileSession?.profile }];
   const assets = await loadGameAssets(run, roster, 0, false, loading.set);
   const requestedRoom = run.fixture === null ? params.startRoom : params.startArena > 0 ? params.startArena : null;
+  // The rogue benchmark's room (R9 stage 4): the gate view takes the generated floor's boss room.
+  const benchRoom = params.benchArena < 0 || run.fixture !== null ? params.benchArena
+    : params.benchView === 'gate' ? assets.map.rooms.findIndex((r) => r.boss) : Math.min(params.benchArena, assets.map.rooms.length - 1);
   const startRoom = requestedRoom === null ? undefined : Math.min(requestedRoom, assets.map.rooms.length - 1);
   // The session ends at Results or on leaving: the worker is terminated (§2.2).
   const end = (): void => {
     game.dispose();
     host.stop();
   };
+  const buildStart = performance.now();
   const game = new Game({
     root,
     ...assets,
@@ -235,6 +276,7 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
     onResults: (data) => {
       end();
       const view = showResults(data, { onLeave: () => toTitle() });
+      evidenceButton(view);
       show('results', view.el);
     },
     onLeave: () => {
@@ -249,7 +291,8 @@ async function startSingleplayer(name: string, classId: ClassId, dungeonId: stri
     game.handleCtrl(msg);
   };
   await game.prepare();
-  host.start(run, roster, params.god, params.benchArena, params.benchBurst, startRoom, params.dev, params.devBuild ?? undefined, params.devRelics);
+  loadTimings(buildStart, loadStart);
+  host.start(run, roster, params.god, benchRoom, params.benchBurst, startRoom, params.dev, params.devBuild ?? undefined, params.devRelics, params.bossHp ?? undefined);
 }
 
 // ------------------------------------------------------------------ multiplayer (§3, §9)
@@ -276,6 +319,7 @@ function toHostSetup(name: string): void {
       view.setStatus('Creating the game…', true);
       // The worker starts when the host clicks Create (§2.2).
       const host = new HostSession(0);
+      hostEvidence(host);
       createHostNet(() => left).then(
         (net) => {
           // Dev co-op setups (R7): `seed` and `room` fix the floor and the starting room, as in a dev solo run.
@@ -501,6 +545,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
       showLobby(false);
     };
     const view = showResults(data, { onLeave: () => (ended ? toTitle() : end('', true)), onBackToLobby: backToLobby });
+    evidenceButton(view);
     results = view;
     show('results', view.el);
     if (auto) setTimeout(() => results === view && !ended && backToLobby(), BOT_RESULTS_MS);
@@ -510,12 +555,15 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
     const r = round;
     const stale = (): boolean => ended || r !== round;
     const view = loadingScreen();
+    const loadStart = performance.now();
+    evidence = [];
     show('loading', view.el);
     await view.ready;
     if (stale()) return;
     const roster: RosterEntry[] = msg.players;
     const assets = await loadGameAssets(msg, roster, s.playerId, true, view.set);
     if (stale()) return;
+    const buildStart = performance.now();
     const g = new Game({
       root,
       ...assets,
@@ -537,6 +585,7 @@ function enterLobby(s: Session, initial: LobbyState | null, inProgress: boolean,
     if (latest) g.setRoster(latest.players);
     await g.prepare();
     if (stale()) return;
+    loadTimings(buildStart, loadStart);
     view.set('Waiting for the other players…');
     let sentReady = false;
     const ready = (): void => {

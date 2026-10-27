@@ -14,7 +14,7 @@ import { PLAYER_EYE, PLAYER_HEIGHT, PLAYER_RADIUS, TICK_HZ } from './constants';
 import { patchCells, spreadCells, FloorFire } from './floorFire';
 import type { Landing } from './launches';
 import { lineOfSight, raycastTerrain } from './los';
-import { distToCylinder } from './movement';
+import { distToCylinder, moveHorizontal, type Body, type MoveResult } from './movement';
 import type { Simulation, SimPlayer } from './sim';
 import { reviveHit } from './souls';
 import { rainPoint } from './talentGeometry';
@@ -42,7 +42,19 @@ interface Charge {
   root: Root;
   cast: number;
   launched: number[];
+  /** The host's charge heading (the start yaw at first) and the tick it last turned, for the turn clamp. */
+  heading: number;
+  headingTick: number;
 }
+
+/** The host's turn clamp tolerance: one tick of the 180°/s limit (6° at 30 Hz). */
+const TURN_TOLERANCE = GATEBREAKER.turn / TICK_HZ;
+/** An angle in (-π, π]. */
+const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
+/** Segments shorter than this carry no reliable heading. */
+const HEADING_MIN = 0.05;
+/** The wall probe: a charge that barely moved this tick and can't step this far on is stopped by a wall. */
+const WALL_PROBE = 0.15;
 
 export class FallenTalents {
   private readonly charges = new Map<number, Charge>();
@@ -260,7 +272,7 @@ export class FallenTalents {
       if (p.cdE > MOVEMENT_GRACE + 1e-6) return true;
       sim.commanders.releasePlayer(p.id, false);
       this.charges.set(p.id, { start: sim.tick, release: Infinity, x: p.x, y: p.y, z: p.z, path: 0, pts: [p.x, p.y, p.z], lane: new Set(), side: new Set(),
-        root: this.t.root(p, 'E', true), cast: this.t.launches.newCast(), launched: [] });
+        root: this.t.root(p, 'E', true), cast: this.t.launches.newCast(), launched: [], heading: p.yaw, headingTick: sim.tick });
       // Blocked until the charge ends; its 10 s cooldown starts then (§4).
       p.cdE = GATEBREAKER.maxTime + GATEBREAKER.cooldown;
       p.speedCheckSkipUntil = sim.nowMs + (GATEBREAKER.maxTime + 0.6) * 1000;
@@ -297,11 +309,50 @@ export class FallenTalents {
     if (seg > 12) { this.endCharge(p, c, false); return; }
     const left = GATEBREAKER.maxPath - c.path;
     if (seg > left) { x1 = c.x + (x1 - c.x) * (left / seg); y1 = c.y + (y1 - c.y) * (left / seg); }
+    // The turn limit (classes-fallen.md: 180°/s) on the host (R9 B2): the host's own heading turns toward
+    // each segment's at most that fast, like the client's toward the view. A segment more than one tick of
+    // turn (6°) off it is turned back to that tolerance, cut along it, and ends the charge there.
+    let clamped = false;
+    if (seg > HEADING_MIN && left > 0) {
+      const h = Math.atan2(y1 - c.y, x1 - c.x), move = GATEBREAKER.turn * (sim.tick - c.headingTick) / TICK_HZ;
+      c.heading += Math.max(-move, Math.min(move, wrap(h - c.heading)));
+      c.headingTick = sim.tick;
+      const off = wrap(h - c.heading);
+      if (Math.abs(off) > TURN_TOLERANCE + 1e-9) {
+        clamped = true;
+        const heading = c.heading + Math.sign(off) * TURN_TOLERANCE, l = Math.min(seg, left);
+        x1 = c.x + Math.cos(heading) * l; y1 = c.y + Math.sin(heading) * l;
+      }
+    }
     if (seg > 1e-6 && left > 0) this.cut(p, c, c.x, c.y, c.z, x1, y1, p.z, false);
     c.path += Math.min(seg, Math.max(0, left));
+    if (clamped) {
+      // A charge meeting a wall at an angle slides along it for its last step: still a wall stop.
+      if (this.blockedAhead(p, c.heading)) sim.emit('all', { type: 'gatebreakerWall', playerId: p.id, x: p.x, y: p.y, z: p.z });
+      c.x = x1; c.y = y1; c.z = p.z; c.pts.push(x1, y1, p.z);
+      this.endCharge(p, c, true);
+      return;
+    }
     c.x = p.x; c.y = p.y; c.z = p.z;
     if (seg > 0.05) c.pts.push(p.x, p.y, p.z);
-    if (end) this.endCharge(p, c, true);
+    if (end) { this.endCharge(p, c, true); return; }
+    // A wall stops the charge on the client (localPlayer.ts): barely moved, and the next step is blocked.
+    if (sim.tick > c.start && seg < GATEBREAKER.speed / TICK_HZ / 2 && this.blockedAhead(p, c.heading)) {
+      sim.emit('all', { type: 'gatebreakerWall', playerId: p.id, x: p.x, y: p.y, z: p.z });
+      this.endCharge(p, c, true);
+    }
+  }
+
+  private readonly probe: Body = { x: 0, y: 0, z: 0, vz: 0, grounded: true, radius: PLAYER_RADIUS, flying: false };
+  private readonly probeResult: MoveResult = { blocked: false };
+
+  /** Whether a short step along `heading` from the player's accepted feet hits a wall. */
+  private blockedAhead(p: SimPlayer, heading: number): boolean {
+    const b = this.probe;
+    b.x = p.x; b.y = p.y; b.z = p.z; b.vz = 0;
+    this.probeResult.blocked = false;
+    moveHorizontal(this.sim.map, b, Math.cos(heading) * WALL_PROBE, Math.sin(heading) * WALL_PROBE, this.probeResult);
+    return this.probeResult.blocked;
   }
 
   /**
@@ -467,6 +518,7 @@ export class FallenTalents {
         const inFire = !!fire?.at(sim.eX[s], sim.eY[s], sim.eZ[s]);
         if (inFire) {
           sim.ePooled[s] = 1;
+          sim.streaks.touch(s, p.index);
           if (pyre) { this.carryUntil[s] = sim.tick + ticks(FALLEN.pyreCarry); this.carryInc[s] = sim.eIncarnation[s]; }
         }
         if (!inFire && !(pyre && this.pyreBurns(s))) continue;
@@ -535,7 +587,7 @@ export class FallenTalents {
   landControl(l: Landing): void {
     const p = l.owner;
     if (!p || l.kind === 'other' || !this.has(p, F.WINGS) || !this.t.launches.alive(l)) return;
-    this.sim.root(l.slot, FALLEN.wingsBind);
+    this.sim.root(l.slot, FALLEN.wingsBind, p.index);
   }
 
   /** Damage of a landing: As We Fell's 20 to the body its owner launched. */

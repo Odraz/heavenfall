@@ -175,7 +175,7 @@ export class HereticTalents {
   censerBroke(p: SimPlayer, x: number, y: number, z: number, direct: number, dx: number, dy: number, root: Root): void {
     const sim = this.sim;
     if (direct >= 0 && sim.eAlive[direct] && this.has(p, H.IRONS) && sim.ePooled[direct] && !ENEMIES[sim.eType[direct]].flying && !isBossBody(sim.eType[direct])) {
-      sim.root(direct, HERETIC.ironsBind);
+      sim.root(direct, HERETIC.ironsBind, p.index);
       this.t.fx(p, 'irons', [sim.eX[direct], sim.eY[direct], sim.eZ[direct]]);
     }
     const until = sim.tick + ticks(CLOUD_TIME), h = Math.hypot(dx, dy);
@@ -341,7 +341,7 @@ export class HereticTalents {
       if (sim.roomAt(sim.eX[s], sim.eY[s]) !== room || !lineOfSight(sim.map, x, y, cz, sim.eX[s], sim.eY[s], sim.eZ[s] + def.height / 2)) continue;
       bound.push(s);
     }
-    for (const s of bound) sim.root(s, HERETIC.stakeBind);
+    for (const s of bound) sim.root(s, HERETIC.stakeBind, caster.index);
     this.t.fx(caster, 'stake', [x, y, z], bound);
     return true;
   }
@@ -577,7 +577,7 @@ export class HereticTalents {
         const cell = fire?.at(sim.eX[s], sim.eY[s], sim.eZ[s]);
         const furrow = cell ? undefined : furrows.find((c) => this.onFurrow(c, s));
         const onFire = !!cell || !!furrow;
-        if (onFire) sim.ePooled[s] = 1;
+        if (onFire) { sim.ePooled[s] = 1; sim.streaks.touch(s, p.index); }
         if (pitch && (this.t.slowed(s) || sim.isRooted(s) || this.t.launches.airborne(s)) && (onFire || this.censed(s, p))) {
           this.pitchUntil[s] = sim.tick + ticks(HERETIC.pitch); this.pitchInc[s] = sim.eIncarnation[s];
         }
@@ -594,7 +594,7 @@ export class HereticTalents {
         for (let k = 0; k < sim.activeCount; k++) {
           const s = sim.active[k];
           if (ENEMIES[sim.eType[s]].flying || isBossBody(sim.eType[s]) || !sim.ePooled[s] || !this.censed(s, p)) continue;
-          sim.slow(s, HERETIC.commonSlow);
+          sim.slow(s, HERETIC.commonSlow, p.index);
         }
       }
     }

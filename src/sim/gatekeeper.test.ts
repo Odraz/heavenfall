@@ -418,3 +418,30 @@ function input(p: SimPlayer, seq: number) {
     shots: 0, shotButton: 255, shotYaw: 0, shotPitch: 0, shotViewTick: -1, shotViewGap: 0, shotViewFrac: 0,
   };
 }
+
+describe('the development boss HP start (`bosshp`, R9 B5)', () => {
+  const start = (bossHp: number, progressionEnabled = false): Simulation => {
+    const sim = new Simulation({ dungeon: g.def, floor: g.floor, seed: 7, startRoom: BOSS, bossHp, progressionEnabled,
+      players: [{ id: 0, name: 'P0', classId: 'binder' }] });
+    sim.step();
+    sealNow(sim, BOSS);
+    return sim;
+  };
+  it('starts phase 1 at the fraction above 50%', () => {
+    const sim = start(0.8);
+    expect(sim.eHp[sim.bossSlot]).toBeCloseTo(0.8 * sim.bossMaxHp, 3);
+    expect(sim.boss.phase).toBe(1);
+  });
+  it('at or below 50% plays the normal transition, then phase 2', () => {
+    const sim = start(0.45);
+    expect(sim.eHp[sim.bossSlot]).toBeCloseTo(0.45 * sim.bossMaxHp, 3);
+    expect(sim.boss.phase).toBe(2);
+    expect(sim.boss.transitionUntil).toBeGreaterThan(sim.tick);
+    expect(sim.events.some((e) => e.event.type === 'bossPhase' && e.event.phase === 2)).toBe(true);
+  });
+  it('is ignored by a run with saved progression', () => {
+    const sim = start(0.3, true);
+    expect(sim.eHp[sim.bossSlot]).toBe(sim.bossMaxHp);
+    expect(sim.boss.phase).toBe(1);
+  });
+});
