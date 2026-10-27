@@ -43,8 +43,13 @@ describe('URL parameters (§2.5)', () => {
     expect(parseParams('?dev=1&map=rogue&seed=4294967296').seed).toBe(0);
   });
 
-  it('keeps generated maps out of the benchmark', () => {
-    expect(parseParams('?bench=1&map=rogue&room=10&seed=7')).toMatchObject({ mapId: 'sandbox', seed: null, startRoom: null });
+  it('benches a generated room by seed and room (R9 stage 4), the pinned crest room by default', () => {
+    expect(parseParams('?bench=1&map=rogue&room=10&seed=7')).toMatchObject({ mapId: 'rogue', seed: 7, benchArena: 10, startRoom: null, dev: false });
+    expect(parseParams('?bench=1&map=rogue')).toMatchObject({ mapId: 'rogue', seed: 0x12ebaa83, benchArena: 3 });
+    expect(parseParams('?bench=1&map=rogue&room=x&view=gate')).toMatchObject({ benchArena: 3, benchView: 'gate' });
+    expect(parseParams('?bench=1&map=rogue&room=99').benchArena).toBe(31);
+    // Elsewhere the seed stays a dev switch.
+    expect(parseParams('?bench=1&map=pearly-gates&seed=7').seed).toBeNull();
   });
 
   it('keeps bot and god with the menus', () => {
@@ -87,5 +92,17 @@ describe('player name (§3)', () => {
     expect(validName('  Ann  ')).toBe('Ann');
     expect(validName('x'.repeat(16))).toBe('x'.repeat(16));
     expect(validName('x'.repeat(17))).toBeNull();
+  });
+});
+
+describe('R9 evidence and boss HP switches', () => {
+  it('reads bosshp in [0, 1] only with dev=1 on the generated floor', () => {
+    expect(parseParams('?dev=1&map=rogue&bosshp=0.52').bossHp).toBe(0.52);
+    for (const q of ['?dev=1&map=rogue&bosshp=1.5', '?dev=1&map=rogue&bosshp=-1', '?dev=1&map=rogue&bosshp=x', '?dev=1&map=pearly-gates&bosshp=0.5', '?map=rogue&bosshp=0.5'])
+      expect(parseParams(q).bossHp, q).toBeNull();
+  });
+  it('allows evidence=1 on a normal page', () => {
+    expect(parseParams('?evidence=1')).toMatchObject({ evidence: true, dev: false });
+    expect(parseParams('').evidence).toBe(false);
   });
 });

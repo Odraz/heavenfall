@@ -6,6 +6,10 @@ import { DEV_BUILDS } from './data/talents';
 import { isRelicId } from './data/relics';
 import { cleanEdicts } from './data/edicts';
 import { parseNetLag, type NetLag } from './net/lagSim';
+import { PINNED } from './gen/pinned';
+
+/** The rogue benchmark's default room on its pinned seed: the 2×2 crest room (R9 stage 4). */
+export const ROGUE_BENCH_ROOM = 3;
 
 export interface Params {
   dev: boolean;
@@ -97,18 +101,24 @@ export function parseParams(search: string): Params {
   const q = new URLSearchParams(search);
   const bench = q.get('bench') === '1';
   const mapParam = q.get('map');
-  const mapId = !bench && mapParam === 'rogue' ? 'rogue' : getDungeon(mapParam) ? (mapParam as string) : 'sandbox';
+  const mapId = mapParam === 'rogue' ? 'rogue' : getDungeon(mapParam) ? (mapParam as string) : 'sandbox';
   if (bench) {
     const view = q.get('view');
     const benchView: BenchView = view === 'arcade' || view === 'gate' ? view : 'turn';
-    const boss = benchView === 'gate' ? getDungeon(mapId)!.rooms.findIndex((a) => a.boss) : -1;
-    const benchArena = Math.max(0, boss);
+    // The rogue workloads (R9 stage 4): a generated room by `seed` (default the pinned one) and `room`
+    // (default the crest room); in the gate view the floor's boss room, resolved after generation.
+    const rogue = mapId === 'rogue';
+    const roomParam = q.get('room'), seedParam = q.get('seed');
+    const rogueRoom = roomParam !== null && /^\d+$/.test(roomParam) ? Math.min(Number(roomParam), 31) : ROGUE_BENCH_ROOM;
+    const boss = benchView === 'gate' && !rogue ? getDungeon(mapId)!.rooms.findIndex((a) => a.boss) : -1;
+    const benchArena = rogue ? rogueRoom : Math.max(0, boss);
+    const seed = rogue ? (seedParam !== null && /^\d+$/.test(seedParam) ? Number(BigInt(seedParam) % 4294967296n) : PINNED.seed) : null;
     // The class the benchmark plays: the `class` parameter (M11 §5), the Betrayer by default.
     const cls = q.get('class');
     const classId: ClassId = isClassId(cls) ? cls : 'betrayer';
     const benchHudFire = q.get('hudfire') === '1';
     const benchBurst = q.get('burst') === '1';
-    return { dev: false, devMenu: false, readyHold: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0, startRoom: null, devBuild: null, devRelics: [], devEdicts: [], netLag: null, bossHp: null, evidence: q.get('evidence') === '1' };
+    return { dev: false, devMenu: false, readyHold: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0, startRoom: null, devBuild: null, devRelics: [], devEdicts: [], netLag: null, bossHp: null, evidence: q.get('evidence') === '1' };
   }
   // Without dev=1 (or bench=1) the page opens the menus.
   const dev = q.get('dev') === '1';

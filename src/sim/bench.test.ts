@@ -73,3 +73,21 @@ describe('benchmark arena (M10 gate §4)', () => {
     }
   });
 });
+
+describe('the rogue benchmark workloads (R9 stage 4)', () => {
+  it('fills a generated room to the count the measurement starts at, the Gate to 1 500 less the parts reserve', async () => {
+    const { generateFloor } = await import('../gen');
+    const { PINNED } = await import('../gen/pinned');
+    const { PEARLY_POOL } = await import('../data/rooms/1');
+    const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
+    for (const room of [3, g.floor.boss]) {
+      const sim = new Simulation({ dungeon: g.def, map: g.map, floor: g.floor, seed: 1, benchRoom: room, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }] });
+      // What the client's BenchRunner waits for (`benchFull`).
+      const full = room === g.floor.boss ? MAX_LIVING_ENEMIES - PART_RESERVE : MAX_LIVING_ENEMIES;
+      let t = 0;
+      for (; t < 30 * 30 && sim.activeCount < full; t++) sim.step();
+      expect(sim.activeCount, `room ${room}`).toBe(full);
+      expect(sim.roomAt(sim.players[0].x, sim.players[0].y)).toBe(room);
+    }
+  }, 60_000);
+});

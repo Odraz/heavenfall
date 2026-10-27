@@ -15,6 +15,9 @@
 //                  first-person weapon's cosmetic shot, no simulation, tracers or sound (M11 §5)
 //   --burst        every 0.5 s the host deals 40 to the 20 Blessed nearest a point 8 m ahead of the
 //                  player, so they die in light bursts (M12 §10)
+//   --seed <n>     with --map rogue: the generated floor's seed (default: the pinned 317434499)
+//   --room <n>     with --map rogue: the generated room to fill (default: 3, the pinned seed's 2×2 crest
+//                  room; its Refiner's Fire room is 1); --view gate takes the floor's boss room (R9 §4)
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -33,8 +36,12 @@ const cooldown = Math.max(0, Number(option('--cooldown') ?? 0) || 0);
 const classId = option('--class');
 const hudFire = process.argv.includes('--hud-fire');
 const burst = process.argv.includes('--burst');
+const seed = option('--seed');
+const room = option('--room');
 const query = new URLSearchParams({ bench: '1' });
 if (mapId) query.set('map', mapId);
+if (seed) query.set('seed', seed);
+if (room) query.set('room', room);
 if (view) query.set('view', view);
 if (classId) query.set('class', classId);
 if (hudFire) query.set('hudfire', '1');
