@@ -7,7 +7,7 @@
 import { BLESSED, ENEMIES, isBossBody } from '../data/enemies';
 import { CAST_OUT, FALLEN, GATEBREAKER, RAIN } from '../data/talents';
 import {
-  KNOCKBACK_TIME, MOVEMENT_GRACE, SECONDARIES, SHOTGUN_CLOSE_DAMAGE, SHOTGUN_KNOCKBACK_DIST, SHOTGUN_KNOCKBACK_RANGE, WEAPONS,
+  KNOCKBACK_TIME, MOVEMENT_GRACE, MOVEMENT_SPEED_CHECK_SKIP, SECONDARIES, SHOTGUN_CLOSE_DAMAGE, SHOTGUN_KNOCKBACK_DIST, SHOTGUN_KNOCKBACK_RANGE, WEAPONS,
 } from '../data/weapons';
 import { aimDir, rayCylinder } from './combat';
 import { PLAYER_EYE, PLAYER_HEIGHT, PLAYER_RADIUS, TICK_HZ } from './constants';
@@ -392,6 +392,8 @@ export class FallenTalents {
     this.t.finish(c.root);
     // The cooldown starts when the accepted charge ends; a reassignment keeps it (§4).
     p.cdE = GATEBREAKER.cooldown;
+    // The speed check comes back as after any movement ability, not when the longest charge would have ended (R9 review N3).
+    p.speedCheckSkipUntil = Math.min(p.speedCheckSkipUntil, this.sim.nowMs + MOVEMENT_SPEED_CHECK_SKIP * 1000);
     this.t.fx(p, 'charge', c.pts);
     this.t.launched(p, c.launched);
   }

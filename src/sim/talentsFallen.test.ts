@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { BLESSED, CANTOR, CHORISTER } from '../data/enemies';
 import { FALLEN, GATEBREAKER, RAIN } from '../data/talents';
-import { ATTACK_PRIMARY, ATTACK_SECONDARY } from '../data/weapons';
+import { ATTACK_PRIMARY, ATTACK_SECONDARY, MOVEMENT_SPEED_CHECK_SKIP } from '../data/weapons';
 import type { GameEvent } from '../net/messages';
 import { PLAYER_RADIUS, TICK_HZ } from './constants';
 import type { Simulation, SimPlayer } from './sim';
@@ -178,6 +178,19 @@ describe('Tree A: The Walls of Dis', () => {
     expect(sim.talents.fallen.charging(p)).toBe(false);
     run(sim, 3);
     expect(events(sim, 'gatebreakerWall')).toHaveLength(1);
+  });
+
+  it('Gatebreaker (R9 review N3): an early release brings the speed check back 0.6 s later, not at the longest charge\'s end', () => {
+    const [sim, p] = setup(60, 20);
+    kit(sim, p, ['a.1a', 'a.1b', 'a.2b', 'a.3a'], 'blasphemy', 'gatebreaker');
+    put(sim, p, 5.5, 10.5);
+    const step = (ms: number) => { sim.step(sim.tick * (1000 / TICK_HZ) + ms); };
+    sim.nowMs = 0; press(p, 'E'); step(0);
+    expect(p.speedCheckSkipUntil).toBeGreaterThan(sim.nowMs + 1500);
+    for (let i = 0; i < 9; i++) { p.x += GATEBREAKER.speed / TICK_HZ; step(0); }
+    press(p, 'E'); step(0);
+    expect(sim.talents.fallen.charging(p)).toBe(false);
+    expect(p.speedCheckSkipUntil).toBeLessThanOrEqual(sim.nowMs + MOVEMENT_SPEED_CHECK_SKIP * 1000 + 1e-6);
   });
 
   it('Gatebreaker: a charge released in the open makes no wall event', () => {
