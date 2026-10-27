@@ -1,13 +1,36 @@
 /** The host simulation: pure TypeScript, no three.js or DOM (§2.2). */
 import { CLASSES, type ClassId } from '../data/classes';
-import type { DungeonDef, WaveDef } from '../data/dungeons/types';
+import { copyInventory, emptyInventory, FEATHER_SPEED, isItemId, ITEM_IDS, ITEMS, PLUME_LIFT, PLUME_THROW, type Inventory, type ItemId } from '../data/items';
+import { Consumables } from './consumables';
+import { Rewards } from './rewards';
+import { VictoryExit } from './victory';
+import { Talents, type Root } from './talents';
+import type { HereticCloud } from './talentsHeretic';
+import { Rites } from './rites';
+import { Relics, type VictimStates } from './relics';
+import { Streaks } from './streaks';
+import type { EvidenceLog } from './evidence';
+import { RelicOffers } from './relicOffers';
+import { Route, SOURCE_BELL_FIRST, SOURCE_CHEST } from './route';
+import { Bargain } from './bargain';
+import { DEED_RELIC, isRelicId, type DeedId } from '../data/relics';
+import { BASE_ABILITIES, BINDER as BINDER_NUMBERS, DEV_BUILDS, devBuildOrder, FALLEN as FALLEN_NUMBERS, talentNode } from '../data/talents';
+import { resolveKit, runBuildError, type Kit, type RunBuild } from './build';
+import { levelForXp } from '../profile/model';
+import type { Profile } from '../profile/model';
+import { saturatingAdd } from '../profile/model';
+import type { Floor } from '../gen/generate';
+import { ScopedRequests } from '../net/requests';
+import { interactShop, stairPoints, type InteractionResult } from './shop';
+import type { DungeonDef } from '../data/dungeons/types';
 import {
   BLESSED,
   CHERUB,
-  CHERUB_CLIMB,
   CHERUB_HOVER,
   CHORISTER,
+  DOMINION, CANTOR, CARRIER, isCommander, BOSS_PART, isBossBody,
   ENEMIES,
+  WATCHMAN,
   GATEKEEPER,
   ST_ATTACKING,
   ST_FALLING,
@@ -20,11 +43,7 @@ import {
   BLASPHEMY_DURATION,
   BLASPHEMY_RADIUS,
   BLASPHEMY_STUN,
-  CLOUD_DAMAGE,
-  CLOUD_MAX,
   CLOUD_PULSE_TICKS,
-  CLOUD_RADIUS,
-  CLOUD_TIME,
   CENSER_RADIUS,
   CENSER_SPEED,
   CHAINS_ANGLE,
@@ -42,18 +61,12 @@ import {
   FALLING_STAR_LANDING_TICKS,
   FALLING_STAR_RADIUS,
   FALLING_STAR_REACH_DAMAGE,
-  FALLING_STAR_KNOCKBACK_TIME,
   KNOCKBACK_DIST,
   KNOCKBACK_TIME,
-  SHOTGUN_CLOSE_DAMAGE,
-  SHOTGUN_KNOCKBACK_DIST,
-  SHOTGUN_KNOCKBACK_RANGE,
   SHROUD_BURST_DAMAGE,
   SHROUD_BURST_RADIUS,
   MOVEMENT_GRACE,
   MOVEMENT_SPEED_CHECK_SKIP,
-  SHADOWSTEP_CUT_DAMAGE,
-  SHADOWSTEP_CUT_REACH,
   SHADOWSTEP_INVULN,
   SHROUD_AMOUNT,
   SHROUD_DURATION,
@@ -63,14 +76,23 @@ import {
   ATTACK_PRIMARY,
   attackDef,
   chooseAttack,
+  FIRE_LEFT,
+  FIRE_RIGHT,
   SECONDARIES,
   WEAPONS,
   type AttackSlot,
 } from '../data/weapons';
-import type { GameEvent, PlayerStats } from '../net/messages';
+import type { FloorSync, GameEvent, InventoryState, PlayerStats } from '../net/messages';
+import type { BossHeader } from '../net/protocol';
 import {
   ALLY_NONE,
+  DAMAGE_HITS_MAX,
   encodeSnapshot,
+  HURT_HITS_MAX,
+  HURT_MELEE,
+  HURT_RANGED,
+  HURT_WORLD,
+  type HurtKind,
   FLAG_HURT,
   FLAG_ROOTED,
   FLAG_SILENCED,
@@ -81,6 +103,7 @@ import {
   PHASE_COMBAT,
   PHASE_COUNTDOWN,
   PHASE_IDLE,
+  PROJ_NO_OWNER,
   type InputMsg,
   type SnapshotEntities,
   type SnapshotHeader,
@@ -89,6 +112,7 @@ import {
 import {
   ENEMY_SLOTS,
   MAX_LIVING_ENEMIES,
+  ROOM_NONE,
   PLAYER_EYE,
   PLAYER_HEIGHT,
   PLAYER_RADIUS,
@@ -100,83 +124,145 @@ import {
   TICK_MS,
   WALL_TOP,
 } from './constants';
-import { aimDir, burstAngle, burstTier, rayCylinder, silverBulletHits } from './combat';
+import { aimDir, burstAngle, burstTier, rayCylinder, rayEnemy, silverBulletHits } from './combat';
 import { Director, ENGAGED_HIT_TICKS, ENGAGED_RADIUS, KILL_NEAR_RADIUS, type DirectorInfo } from './director';
 import { FIELD_FIRE_RATE, FIELD_TIME, fieldCenter, inField, walkDestination } from './field';
-import { FlowField, UNREACHABLE } from './flowfield';
+import { directStepAllowed, FlowField, UNREACHABLE } from './flowfield';
+import { DryNavigation, FIRE_ENEMY_DAMAGE, FIRE_PLAYER_DAMAGE, Hazards } from './hazards';
+import { SpawnWarnings } from './spawnWarnings';
+import { EnemyHistory, NO_VIEW, viewAt, viewLag, type ViewTick } from './lagComp';
+import { lateStretch, stretchHit, type LateShot } from './lateShots';
+import { shotSpread } from './shotSpread';
+import { HELD_FIRE, latchBits, latchClear, latchFired, latchPress, newFireLatch, nextShot, pressDelta, queueShots, SHOT_EARLY_TICKS, shotsDone, type ClientShot, type FireLatch } from './fireLatch';
+import { CROWD_RADIUS, PINCER_FROM_WAVE, PINCER_SHARE, PINCER_WARNING_TICKS, PositionHistory, pincerPoint, retreatHeading, type Retreat } from './pincer';
 import { lineOfSight, raycastTerrain } from './los';
-import { insideRect, loadMap, overVoid, setArenaDoors, type GameMap } from './map';
+import { applyLeaves, insideRect, loadMap, overVoid, type GameMap } from './map';
 import { distToCylinder, groundHeight, moveHorizontal, stepBody, tryDisplace, type Body, type MoveResult } from './movement';
 import { mulberry32 } from './rng';
+import { partyMultiplier, scaleCount, waveSize } from './party';
+import { GatekeeperFight } from './gatekeeperFight';
+import { BOSS_CAST_NONE, FLAG_PART_OPENING, FLAG_PART_SEAL, PART_RESERVE } from '../data/gatekeeper';
+import { PICKUP_CAP } from '../data/pickups';
+import { PROP_HEIGHT, PROP_BLAST_PLAYER_DAMAGE, type PropDef } from '../data/props';
+import { Props, type Prop } from './props';
+import { Pickups } from './pickups';
+import { DominionBehavior, Dominions } from './dominion';
+import { Commanders, carryPathClear, type beamSegment } from './commanders';
+import { Watchmen } from './watchmen';
+import { hymnalReduction } from '../data/commanders';
+import { directionalSpeedFactor } from '../data/movement';
+import { DOMINION_ALIVE_CAP, DOMINION_COOLDOWN_TICKS, DOMINION_LAUNCH_SPEED, DOMINION_LAUNCH_SECONDS, DOMINION_MELEE_RANGE, DOMINION_MELEE_DAMAGE } from '../data/dominion';
 import { REVIVE_CENSER_RADIUS, REVIVE_COMMUNION, REVIVE_DECAY, REVIVE_HP, REVIVE_INVULNERABLE, reviveHit, reviveSlowdown, SOUL_HEIGHT, SOUL_RADIUS, soulRise, SOUL_RISE_TIME } from './souls';
 
-/** Party-size multipliers ×10 (§7.5), indexed by party size. */
-const MULT10 = [0, 4, 6, 8, 10];
-
-/** The party-size multiplier (§7.5). */
-export function partyMultiplier(partySize: number): number {
-  return MULT10[Math.max(1, Math.min(4, partySize))] / 10;
-}
-
-/**
- * The Gatekeeper's HP and Judgment's interrupt multiplier: 0.3 for a solo game (M12 follow-up §3.3,
- * was 0.4), the party-size multiplier otherwise.
- */
-export function bossMultiplier(partySize: number): number {
-  return partySize <= 1 ? 0.3 : partyMultiplier(partySize);
-}
-
-/** A wave's enemies for the party size, each type and its squad (M12 follow-up §4.2) scaled. */
-export function waveSize(w: WaveDef, partySize: number): number {
-  return scaleCount(w.blessed, partySize) + scaleCount(w.choristers, partySize) + scaleCount(w.cherubs, partySize) + (w.squad ? scaleCount(w.squad.count, partySize) : 0);
-}
-
-/** Scales one enemy count for the party size, rounding up (§7.5). */
-export function scaleCount(count: number, partySize: number): number {
-  const m = MULT10[Math.max(1, Math.min(4, partySize))];
-  return Math.ceil((count * m) / 10);
-}
+export { bossMultiplier, partyMultiplier, scaleCount, waveSize } from './party';
 
 export interface SimPlayerInit {
+  profile?: Profile;
   /** The player ID, which is also its index: its spawn and entry cells (M8 §6.2). */
   id: number;
   name: string;
   classId: ClassId;
+  /** Absent in inherited simulation fixtures; real sessions always carry it from admission. */
+  bot?: boolean;
 }
 
 export interface SimOptions {
+  floor?: Floor | null;
+  progressionEnabled?: boolean;
   dungeon: DungeonDef;
+  /** Real sessions always supply it; standalone simulation fixtures use the zero identity. */
+  runId?: string;
+  /** Reuse the map already generated and validated during Loading. */
+  map?: GameMap;
+  /** Generated, seed-selected prop bodies. Fixed fixtures retain their inherited content. */
+  props?: readonly PropDef[];
   /** Players at `go`; each one's index is its ID (M8 §6.2). */
   players: SimPlayerInit[];
   seed: number;
   /** Every player is invulnerable (`god=1`). */
   god?: boolean;
-  /** The benchmark's arena (§2.5, M10 gate §4); absent or -1 when not benchmarking. */
-  benchArena?: number;
-  /** With `benchArena`: every 0.5 s, 40 damage to the 20 Blessed nearest a point 8 m ahead of player 0 (M12 §10). */
+  /** The benchmark's room (§2.5, M10 gate §4); absent or -1 when not benchmarking. */
+  benchRoom?: number;
+  /** With `benchRoom`: every 0.5 s, 40 damage to the 20 Blessed nearest a point 8 m ahead of player 0 (M12 §10). */
   benchBurst?: boolean;
-  /** Singleplayer: enables health regeneration (§5.7). */
-  singleplayer?: boolean;
   /** Arena waves are disabled (tests). */
   noWaves?: boolean;
-  /** Dev `arena=N`: the arenas before N start cleared, and the players on N's entry cells. */
-  startArena?: number;
+  /** Dev entry: fixtures clear rooms before N; generated floors clear every other room. */
+  startRoom?: number;
+  /** `dev=1`: record the Carrier's decision reasons for the host's debug overlay (never sent to peers). */
+  diagnostics?: boolean;
+  /** Development quick build for the human players (`build=<name>`, never with saved progression). */
+  devBuild?: string;
+  /** Development relics for the human players (`relics=a,b`): owned and equipped, never with saved progression. */
+  devRelics?: string[];
+  /** The run's Edicts (game.md §2.5), ids 1–5, fixed by `start`. */
+  edicts?: number[];
+  /** Development (`bosshp`, R9 B5): the Gatekeeper's starting HP fraction; ignored with saved progression. */
+  bossHp?: number;
 }
 
 export interface SimEvent {
   to: number | 'all';
+  tick: number;
+  revision: number;
   event: GameEvent;
 }
 
 export interface SimPlayer {
+  /** Equipped relics for this run (items-relics.md §2.1) and the profile's owned relics, pawns included. */
+  relics: [string | null, string | null];
+  ownedRelics: string[];
+  /** Relics claimed from the chest this run (saved at once), pawned at the bargain (saved at victory), and the saved loadout. */
+  claimedRelics: string[];
+  pawnedRelics: string[];
+  savedRelics: [string | null, string | null];
+  /** Max HP taken by the Advocate's bargain until the run ends (game.md §9.6). */
+  bargainCut: number;
+  /** The boss room sealed before the Sundial went dark (§6.8): the Mercy deed's condition. */
+  sundialQualified: boolean;
+  /** Deeds (§8.6): admitted at the run's start, the heaven's clears before it, deeds done before, and those done now. */
+  presentAtStart: boolean;
+  clearsBeforeRun: number;
+  profileDeeds: string[];
+  deedsEarned: string[];
+  /** The tick the run's best streak was reached: the earlier wins a tied crown (§10). */
+  bestStreakTick: number;
+  /** M held in the latest accepted input (§5.5), and a Pilgrim's Return channel in progress. */
+  mapHeld: boolean;
+  pilgrim: { room: number; startTick: number; x: number; y: number } | null;
+  /** Each relic id's cooldown end tick: retained through death, reconnect and re-equip (§2.4 rule 7). */
+  relicCd: Record<string, number>;
+  /** The kill streak (game.md §10): count, last counted kill's tick, best this run, own kills and assists counted. */
+  streak: number;
+  streakTick: number;
+  bestStreak: number;
+  streakKills: number;
+  assists: number;
+  /** Learned build plus held Rites (rogue game.md §9.5, §9.10); `kit` is its resolution. */
+  build: RunBuild;
+  kit: Kit;
+  offerKey: string;
+  xpBase: number;
+  requests: ScopedRequests<InteractionResult>;
+  inventory: Inventory;
+  runXp: number;
+  xpCorrection: number;
+  itemsTried: ItemId[];
   id: number;
   /** Equal to the ID (M8 §6.2). */
   index: number;
   name: string;
   classId: ClassId;
+  bot: boolean;
   speed: number;
   maxHp: number;
   hp: number;
+  wallet: number;
+  itemReadyTick: number;
+  featherUntil: number;
+  sealUntil: number;
+  itemPresses: [number, number];
+  pendingItems: [boolean, boolean];
   shield: number;
   /** Tick at which the shield expires. */
   shieldUntil: number;
@@ -232,6 +318,9 @@ export interface SimPlayer {
   /** Seconds of cooldown remaining. */
   cdQ: number;
   cdE: number;
+  /** Close-quarters charge (R06 follow-up §9): seconds of refund left in its per-second budget, and when it was last topped up. */
+  closeCharge: number;
+  closeChargeTick: number;
   /** Tick of the last hit that did damage after invulnerability (for regeneration). */
   lastDamageTick: number;
   /** Tick of the last `damagePlayer` hit that removed HP or shield; unlike `lastDamageTick`, revive and respawn don't set it (M12 §2.3). */
@@ -240,12 +329,34 @@ export interface SimPlayer {
   lastSeq: number;
   /** Host time (ms) when the previous accepted input arrived, or the latest teleport. */
   lastAcceptMs: number;
+  /** Smoothed ordinary horizontal velocity from accepted inputs; never a dash or correction. */
+  moveVx: number;
+  moveVy: number;
   /** The Betrayer's Shadowstep being recorded and cut along (M12 §5.7), or null. */
   dash: DashRecord | null;
   /** The host's latest teleport ID for this player. */
   teleportId: number;
   /** Speed check skipped until this host time (ms). */
   speedCheckSkipUntil: number;
+  /** -1 awaits the launch correction's first acknowledged input; otherwise a bounded host deadline. */
+  launchUntilMs: number;
+  /** The mouse press counters of the latest accepted input (click latching). */
+  leftPresses: number;
+  rightPresses: number;
+  /** Presses waiting for their shot (click latching). */
+  fireLatch: FireLatch;
+  /** What the player's screen showed with its latest accepted input (lag compensation). */
+  view: ViewTick;
+  /** The player's screen times its shots (client-timed shots); false: the host fires the held buttons. */
+  clientShots: boolean;
+  /** The shot counter of the latest accepted input. */
+  shotsSeen: number;
+  /** Shots the player's screen fired, waiting for the fire timer. */
+  shotQueue: ClientShot[];
+  /** The client-timed shot being fired now (its counter), -1 otherwise: its pellets scatter as on the shooter's screen. */
+  shotIndex: number;
+  /** Kills by the player's own weapon hits, left or right button: host diagnostics for the lag test (netcode stage 3). */
+  weaponKills: number;
 }
 
 /**
@@ -265,16 +376,36 @@ interface DashRecord {
   full: boolean;
   /** Enemies this dash already cut. */
   cut: Set<number>;
+  /** The dash's root action (§14.11), set when the host accepts it. */
+  root?: Root | null;
 }
 
 interface SpawnBatch {
   counts: number[];
   spawned: number[];
+  /** Blessed placed as pincer arrivals (R06 follow-up §9). */
+  pincered?: number;
   /** Wave index, or -1 for benchmark top-ups and summons. */
   wave: number;
+  /** The Gatekeeper's adds (rogue bosses.md §3.4): the Host on the gate points, the seal wave on the field points. */
+  boss?: 'host' | 'seal';
+  /** Only these indices of the room's spawn points. */
+  only?: ReadonlySet<number>;
+  /** Placed evenly from `start` over `ticks`. */
+  arrive?: { start: number; ticks: number };
 }
 
-interface ArenaState {
+interface RoomState {
+  /** Knowledge replication and neighbour discovery arrive in R1.5. */
+  knowledge: number;
+  entrySocket: number;
+  cancelTicks: number;
+  refills: number;
+  lastHumanTick: number;
+  trickleAt: number;
+  humanInside: boolean;
+  lastLivingTick: number;
+  holdUsed: number;
   phase: number;
   /** Index of the latest started wave, or -1. */
   wave: number;
@@ -285,9 +416,9 @@ interface ArenaState {
   waveTotals: number[];
   waveAlive: number[];
   waveFullySpawned: boolean[];
-  /** Living enemies belonging to this arena (not counting the Gatekeeper). */
+  /** Living enemies belonging to this room (not counting the Gatekeeper). */
   alive: number;
-  /** During the countdown: the tick the arena seals (M8 §5). */
+  /** During the countdown: the tick the room seals (M8 §5). */
   sealTick: number;
   /** Players in the game when it sealed, for party-size scaling (M8 §6.3); 0 before. */
   partySize: number;
@@ -299,6 +430,10 @@ interface ArenaState {
   paceRate: number;
   /** The latest wave's squad still to place (M12 follow-up §4.2), or null. */
   squad: Squad | null;
+  /** The latest wave's Watchmen still to place (rooms.md §6.4), as a squad on the room's spawn points, or null. */
+  watch: Squad | null;
+  /** Living Watchmen of this room, against its alive cap. */
+  watchAlive: number;
 }
 
 /** A wave's squad being placed: `left` more of `type` on `at`, the next on tick `next` or later. */
@@ -321,15 +456,22 @@ export const PROJ_CENSER = 0;
 export const PROJ_GLOBE = 1;
 export const PROJ_ARROW = 2;
 const MAX_PROJECTILES = 400;
-const PROJECTILE_RANGE = 60;
+export const PROJECTILE_RANGE = 60;
+
+const round1 = (v: number): number => Math.round(v * 10) / 10;
+/** Close-quarters charge (R06 follow-up §9 option 5): range in meters, refund per kill and the per-second budget in seconds. */
+export const CLOSE_CHARGE = { range: 5, refund: 0.25, budget: 2 };
 
 /** Enemy type order for spawning ties: Blessed, Choristers, Cherubs. */
-const SPAWN_TYPES = [BLESSED, CHORISTER, CHERUB];
+const SPAWN_TYPES = [BLESSED, CHORISTER, CHERUB, DOMINION];
 const SPAWN_ELIGIBLE_DIST = 8;
 /** Combat arenas place a wave only on spawn points this far from every living player, when any are (M12 §2.2). */
 const SPAWN_FAR_DIST = 15;
+const SPAWN_MIN_DIST = 3;
 /** A combat arena's wave arrives over this many ticks (M12 §2.2). */
 const WAVE_ARRIVAL_TICKS = 10 * TICK_HZ;
+export const CREST_ARRIVAL_TICKS = 6 * TICK_HZ;
+export const CREST_SPAWN_RATE = 20;
 /** A wave's squad starts this long after the wave, one every SQUAD_EVERY_TICKS (M12 follow-up §4.2). */
 const SQUAD_DELAY_TICKS = 5 * TICK_HZ;
 const SQUAD_EVERY_TICKS = TICK_HZ / 2;
@@ -376,17 +518,12 @@ const CASTERS: Record<number, CasterDef> = {
   // The globe leaves from the orb the Chorister holds above its head (2.3 m, as drawn) and flies at
   // 6 m/s, so it's seen coming and can be shot (M12 follow-up §1.3, after playtesting stage 9).
   [CHORISTER]: { castZ: GLOBE_CAST_Z, range: CHORISTER_RANGE, windup: 1.0, recovery: 1.5, kind: PROJ_GLOBE, speed: GLOBE_SPEED, damage: 12, radius: 0.3 },
+  [CARRIER]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 18, damage: 8, radius: 0.15 },
   [CHERUB]: { range: CHERUB_RANGE, windup: 0.5, recovery: 1.3, kind: PROJ_ARROW, speed: 18, damage: 8, radius: 0.15 },
 };
 
-// The Gatekeeper (§7.4).
+// The Gatekeeper (rogue bosses.md §3): his encounter lives in gatekeeperFight.ts.
 export const BOSS_EYE = 5;
-const VOLLEY_FIRST = 2;
-const VOLLEY_INTERVAL = 4;
-const VOLLEY_WINDUP = 0.5;
-const VOLLEY_ORBS = 8;
-const VOLLEY_SPREAD = (25 * Math.PI) / 180;
-const VOLLEY_ORB = { speed: GLOBE_SPEED, damage: 15, radius: 0.3 };
 
 // The globe (M12 follow-up §1.3).
 /** A shattering globe hurts the players within this many meters of it, in its line of sight. */
@@ -403,23 +540,20 @@ export const GLOBE_SHOT_DAMAGE = 40;
 export const GLOBE_SHOT_BLAST = 3;
 /** The shatter point is moved back along the flight this far for line of sight, out of the wall it hit. */
 const GLOBE_LOS_BACK = 0.1;
-const JUDGMENT_FIRST = 20;
-const JUDGMENT_INTERVAL = 25;
-const JUDGMENT_CAST = 3;
-/** M9 §4 (was 2 000): Field of Blood replaced Kiss as the boss multiplier, and party damage on it fell. */
-const JUDGMENT_INTERRUPT = 1300;
-const SUMMON_FIRST = 30;
-const SUMMON_INTERVAL = 30;
-const SUMMON = { blessed: 150, cherubs: 10 };
 
-/** Gatekeeper casts, as sent in snapshots (§9.4). */
-export const BOSS_CAST_NONE = 0;
-export const BOSS_CAST_VOLLEY = 1;
-export const BOSS_CAST_JUDGMENT = 2;
+/** Gatekeeper casts, as sent in snapshots (rogue bosses.md §3.5). */
+export { BOSS_CAST_CALL, BOSS_CAST_JUDGMENT, BOSS_CAST_NONE, BOSS_CAST_TOLL, BOSS_CAST_VOLLEY } from '../data/gatekeeper';
 
-/** The arena countdown (M8 §5): 60 s, cut to 5 s once every living player is inside. */
-const COUNTDOWN = 60;
-const COUNTDOWN_ALL_IN = 5;
+export { ROOM_NONE } from './constants';
+
+/** Human quorum countdown (rogue game.md §4.3), shortened when everyone is inside. */
+const COUNTDOWN = 20;
+/** The Edict of Poverty's coin fade, 10 s (§2.5). */
+const POVERTY_LIFETIME = 300;
+/** The Edict of Swift Hymns' projectile speed (§2.5). */
+const SWIFT_HYMNS = 1.3;
+const COUNTDOWN_ALL_IN = 3;
+const COUNTDOWN_CANCEL = 3;
 
 const REGEN_DELAY_TICKS = 8 * TICK_HZ;
 const REGEN_FRACTION = 0.015;
@@ -438,6 +572,10 @@ const DASH_WINDOW_TICKS = 15;
 const DASH_MAX_SEGMENT = 12;
 
 const ticks = (seconds: number) => Math.round(seconds * TICK_HZ);
+/** Abilities that move their user: refused while the Call holds them (rogue bosses.md §3.5). */
+export const MOVEMENT_ABILITIES: ReadonlySet<string> = new Set(['fallingStar', 'shadowstep', 'wayBack', 'gatebreaker']);
+/** F opens the Advocate's view within this reach of its point (rogue game.md §9.6). */
+export const ADVOCATE_REACH = 2.5;
 
 /** The shortest distance between segments p0–p1 and q0–q1 (Ericson, Real-Time Collision Detection 5.1.9). */
 export function segmentDistance(
@@ -476,16 +614,50 @@ export function segmentDistance(
 }
 
 export class Simulation {
+  readonly floor: Floor | null;
+  victory: VictoryExit | null = null;
+  admissionClosed = false;
+  get won(): boolean { return this.victory !== null; }
+  readonly items = new Consumables(this);
+  readonly rewards = new Rewards(this);
+  readonly talents = new Talents(this);
+  readonly rites = new Rites(this);
+  readonly relics = new Relics(this);
+  readonly streaks = new Streaks(this);
+  /** `evidence=1` (R9 stage 3): reads the run; null otherwise. Never consulted by a rule. */
+  evidence: EvidenceLog | null = null;
+  readonly relicOffers = new RelicOffers(this);
+  readonly route = new Route(this);
+  readonly bargain = new Bargain(this);
+  /** The input slot (or `item`) of the damage `damageEnemy` is resolving: native and direct-item hits may start relics. */
+  hitCtx: Root['input'] | 'item' | null = null;
+  /** Set while relic damage resolves: its kills never start another relic or talent proc (§2.4 rule 3). */
+  private procFree = false;
+  private readonly devRelics: string[];
+  /** The run's Edicts (§2.5), sorted ids 1–5; the Sentence is their count. */
+  readonly edicts: readonly number[];
+  /** `bosshp` (R9 B5): the Gatekeeper's starting HP fraction in a disposable run, or null. */
+  private readonly bossHpStart: number | null;
+  /** Offer keys already healed by the Confessional's sanctuary this floor (§9.6). */
+  private readonly sanctuary = new Set<string>();
+  /** The simulation seed, for the stable Rite offer generator (§9.10). */
+  readonly seed: number;
+  private readonly devBuild: string | undefined;
+  private nextOfferKey = 1;
+  readonly progressionEnabled: boolean;
+  readonly retainedPlayers = new Map<number, { player: SimPlayer; tick: number }>();
   readonly map: GameMap;
+  readonly runId: string;
   /** The players in the game, sorted by ID. */
   readonly players: SimPlayer[] = [];
   /** The players by index, which is their ID (M8 §6.2); empty slots are undefined. */
   readonly slots: Array<SimPlayer | undefined> = new Array(PLAYER_SLOTS).fill(undefined);
   /** The benchmark's arena, or -1 when not benchmarking. */
-  readonly benchArena: number;
+  readonly benchRoom: number;
   private readonly benchBurst: boolean;
   readonly noWaves: boolean;
-  readonly singleplayer: boolean;
+  /** Records local debug diagnostics (`dev=1`); gameplay never reads them. */
+  readonly diagnostics: boolean;
   /** Every player is invulnerable (`god=1`). */
   private readonly god: boolean;
   /** Seeded PRNG for all simulation randomness (§2.2); tests may replace it. */
@@ -495,12 +667,24 @@ export class Simulation {
   /** Host time of the current tick, ms. */
   nowMs = 0;
   readonly events: SimEvent[] = [];
-  readonly arenas: ArenaState[];
+  readonly rooms: RoomState[];
+  /** The room in countdown or combat, ROOM_NONE when none (rogue game.md §4.2: at most one). */
+  activeRoom = ROOM_NONE;
   /** The run's result, once decided; the simulation stops then. */
   result: null | 'victory' | 'defeat' = null;
 
   // Enemies, structure of arrays indexed by slot.
   readonly eAlive = new Uint8Array(ENEMY_SLOTS);
+  readonly eIncarnation = new Uint32Array(ENEMY_SLOTS);
+  readonly eSpawnTick = new Uint32Array(ENEMY_SLOTS);
+  private nextIncarnation = 1;
+  readonly pickups: Pickups;
+  readonly props: Props;
+  readonly dominions: Dominions;
+  readonly dominionBehavior = new DominionBehavior(this);
+  readonly commanders = new Commanders(this);
+  readonly watchmen = new Watchmen(this);
+  private livingDominions = 0;
   readonly eType = new Uint8Array(ENEMY_SLOTS);
   readonly eState = new Uint8Array(ENEMY_SLOTS);
   readonly eX = new Float64Array(ENEMY_SLOTS);
@@ -511,10 +695,21 @@ export class Simulation {
   private readonly eStartY = new Float64Array(ENEMY_SLOTS);
   readonly eVz = new Float64Array(ENEMY_SLOTS);
   readonly eGrounded = new Uint8Array(ENEMY_SLOTS);
+  /** Native area membership (Field of Blood or active ground hazard); no extra wire flag. */
+  readonly ePooled = new Uint8Array(ENEMY_SLOTS);
   readonly eHp = new Float64Array(ENEMY_SLOTS);
   readonly eTarget = new Int8Array(ENEMY_SLOTS);
-  readonly eArena = new Int8Array(ENEMY_SLOTS);
+  private readonly eWaypoint = new Int32Array(ENEMY_SLOTS).fill(-1);
+  private readonly eWaypointGoal = new Int32Array(ENEMY_SLOTS).fill(-1);
+  readonly eRoom = new Int8Array(ENEMY_SLOTS);
   readonly eWave = new Int16Array(ENEMY_SLOTS);
+  readonly home = new Uint8Array(ENEMY_SLOTS).fill(ROOM_NONE);
+  readonly leashed = new Uint8Array(ENEMY_SLOTS);
+  private readonly eUnreachableSince = new Int32Array(ENEMY_SLOTS).fill(-1);
+  private readonly eRecoveryFailed = new Int32Array(ENEMY_SLOTS).fill(-1);
+  private readonly eStillSince = new Int32Array(ENEMY_SLOTS);
+  private readonly eStillX = new Float64Array(ENEMY_SLOTS);
+  private readonly eStillY = new Float64Array(ENEMY_SLOTS);
   readonly eLos = new Uint8Array(ENEMY_SLOTS);
   readonly eStrafe = new Int8Array(ENEMY_SLOTS);
   readonly eStrafeT = new Float64Array(ENEMY_SLOTS);
@@ -528,7 +723,7 @@ export class Simulation {
   /** Stunned by Blasphemy (M12 §5.3): no steering, striking or casting. */
   readonly eStunUntil = new Int32Array(ENEMY_SLOTS);
   /** The last tick incense hurt the enemy: at most once per 15 ticks (M12 §5.4). */
-  private readonly eIncenseTick = new Int32Array(ENEMY_SLOTS).fill(-CLOUD_PULSE_TICKS);
+  readonly eIncenseTick = new Int32Array(ENEMY_SLOTS).fill(-CLOUD_PULSE_TICKS);
   /** Knocked back on ticks kbFrom < tick ≤ kbUntil. */
   readonly eKbUntil = new Int32Array(ENEMY_SLOTS);
   private readonly eKbFrom = new Int32Array(ENEMY_SLOTS);
@@ -542,6 +737,15 @@ export class Simulation {
   private readonly eForceTick = new Int32Array(ENEMY_SLOTS).fill(-1);
   /** This tick's burst deaths: [slot, angle (+360 if heavy), playerId, …], sent as one `bursts` event. */
   private readonly tickBursts: number[] = [];
+  /** This tick's credited damage per human player index, then per enemy slot: [amount, killed] (R06 follow-up §8). */
+  private readonly tickDamage = new Map<number, Map<number, [number, number]>>();
+  /**
+   * Each player's kills this tick, slot and incarnation pairs (netcode stage 4): every one, a client-timed
+   * shot's too, whose own hits leave the damage numbers (its screen skips the kills it predicted).
+   */
+  private readonly tickKills = new Map<number, number[]>();
+  /** This tick's accepted hits on each human, by player index: [source x, y, amount, kind] (R06 follow-up §9). */
+  private readonly tickHurt = new Map<number, number[][]>();
   // Casts and melee (§7.1).
   /** 1 while winding up a cast. */
   readonly eCast = new Uint8Array(ENEMY_SLOTS);
@@ -551,30 +755,29 @@ export class Simulation {
   /** Seconds until the next melee hit while in range; -1 when out of range. */
   readonly eMeleeNext = new Float64Array(ENEMY_SLOTS).fill(-1);
   /** Incense clouds (M9 §2.8), oldest first: where each censer broke, who threw it, and its ticks. */
-  readonly clouds: Array<{ x: number; y: number; z: number; owner: SimPlayer; from: number; until: number }> = [];
+  readonly clouds: HereticCloud[] = [];
   /** The one Field of Blood (M9 §3.4): its center and floor, active while tick < fieldUntil. */
   fieldX = 0;
   fieldY = 0;
   fieldZ = 0;
   fieldUntil = 0;
+  /** The index of the player whose Field of Blood this is, for streak assists (§10); -1 none. */
+  fieldBy = -1;
+  /** Thrown Silver's coins fly 0.5 s before the Field starts. */
+  fieldStart = 0;
 
-  // The Gatekeeper (§7.4). Timers are ticks.
+  // The Gatekeeper (rogue bosses.md §3).
   /** The living Gatekeeper's slot, or -1. */
   bossSlot = -1;
   bossMaxHp = 0;
-  /** BOSS_CAST_*: the cast in progress. */
-  bossCast = BOSS_CAST_NONE;
-  /** Ticks since the cast in progress started. */
-  bossCastTicks = 0;
-  volleyDue = 0;
-  judgmentDue = 0;
-  summonDue = 0;
-  /** Damage taken during the Judgment cast in progress (after step 1 of §5.5). */
-  private judgmentDamage = 0;
+  /** The authored encounter: its cycle, casts, parts and holds. */
+  readonly boss = new GatekeeperFight(this);
+  /** The cast in progress, BOSS_CAST_*. */
+  get bossCast(): number { return this.boss.cast?.kind ?? BOSS_CAST_NONE; }
   /** The Gatekeeper died this tick or since the last one (dev key K); the run ends in victory. */
   private bossKilled = false;
-  /** The boss arena's party size, for the Judgment interrupt threshold and summons (M8 §6.3). */
-  private bossParty = 1;
+  /** Set while a censer's direct hit resolves: it does full damage to boss parts, unlike area damage. */
+  private directPartHit = false;
 
   /** Dense list of living enemy slots. */
   readonly active = new Int32Array(ENEMY_SLOTS);
@@ -603,15 +806,47 @@ export class Simulation {
   private readonly pMaxDist = new Float64Array(PROJECTILE_SLOTS);
   /** Player index for player projectiles, -1 for enemy projectiles. */
   private readonly pOwner = new Int8Array(PROJECTILE_SLOTS);
+  readonly pReflected = new Uint8Array(PROJECTILE_SLOTS);
+  /** The Orb Volley a globe belongs to (0: none): a volley hurts a player at most once (rogue bosses.md §3.5). */
+  readonly pVolley = new Int32Array(PROJECTILE_SLOTS);
+  private readonly pHostileBudget = new Uint8Array(PROJECTILE_SLOTS);
+  private readonly pOrigin = new Float64Array(PROJECTILE_SLOTS * 3);
+  private readonly pRoom = new Uint8Array(PROJECTILE_SLOTS);
+  /**
+   * A player's censer flies against the enemies where its thrower's screen draws them (netcode stage 4):
+   * this many ticks behind the host, the thrower's view lag when it was thrown; 0 for the present.
+   */
+  private readonly pViewLag = new Float32Array(PROJECTILE_SLOTS);
+  private readonly drawnAt: [number, number, number] = [0, 0, 0];
+  private readonly pReflectOwner = new Map<number, SimPlayer>();
   private readonly pFreedTick = new Int32Array(PROJECTILE_SLOTS).fill(-SLOT_REUSE_TICKS);
   /** Living projectile slots, oldest first. */
   readonly projectiles: number[] = [];
+  /** Spent enemy projectiles still owed to players whose screens draw them behind (dodge compensation). */
+  readonly lateShots: LateShot[] = [];
   private readonly pFree: number[] = [];
   private pNextFresh = 0;
 
   /** Flow fields by player index, made when a player first takes the slot. */
   readonly groundFields: FlowField[] = [];
   readonly airFields: FlowField[] = [];
+  readonly hazards: Hazards;
+  readonly dryNavigation: DryNavigation;
+  readonly spawnWarnings: SpawnWarnings;
+  /** Each living player's last second of positions, for pincer arrivals (R06 follow-up §9). */
+  readonly positions = new PositionHistory();
+  /** The enemies' positions of the last ticks, for lag compensation. */
+  readonly enemyHistory = new EnemyHistory();
+  /** A room's pincer point waiting out its warning. */
+  private readonly pincerPending = new Map<number, number>();
+  private retreatCache: { tick: number; room: number; list: Retreat[] } | null = null;
+  private readonly floorSpawnPoints = new Map<string, { room: number; c: number; r: number; budget: number }>();
+  private readonly spawnBlockedSince = new Map<string, number>();
+  private readonly spawnFloorCells = new Map<number, Uint32Array>();
+  private floorScanTick = -1;
+  private readonly recoveryArrivals = new Map<number, { incarnation: number; room: number; c: number; r: number; x: number; y: number; tick: number; unreachable: boolean }>();
+  private readonly recoveryPointUsers = new Map<string, number>();
+  private readonly hazardVictims = new Uint16Array(ENEMY_SLOTS);
   private readonly fieldValid: boolean[] = new Array(PLAYER_SLOTS).fill(false);
 
   // Separation spatial hashes (ground, air): counting sort of slots by cell.
@@ -634,30 +869,63 @@ export class Simulation {
     enemyY: new Float32Array(ENEMY_SLOTS),
     enemyTypeState: new Uint8Array(ENEMY_SLOTS),
     enemyFlags: new Uint8Array(ENEMY_SLOTS),
+    enemyZ: new Float32Array(ENEMY_SLOTS),
+    enemyIncarnation: new Uint32Array(ENEMY_SLOTS),
+    enemyHp: new Float32Array(ENEMY_SLOTS),
     projectileCount: 0,
     projSlot: new Uint16Array(MAX_PROJECTILES),
     projKind: new Uint8Array(MAX_PROJECTILES),
+    projOwner: new Uint8Array(MAX_PROJECTILES),
     projX: new Float32Array(MAX_PROJECTILES),
     projY: new Float32Array(MAX_PROJECTILES),
     projZ: new Float32Array(MAX_PROJECTILES),
+    pickupCount: 0,
+    pickupId: new Uint32Array(PICKUP_CAP),
+    pickupX: new Float32Array(PICKUP_CAP),
+    pickupY: new Float32Array(PICKUP_CAP),
+    pickupKind: new Uint8Array(PICKUP_CAP),
   };
   private readonly baseFlags = new Uint8Array(ENEMY_SLOTS);
   private preparedTick = -1;
   private readonly lastSentTick = new Map<number, number>();
 
   constructor(opts: SimOptions) {
-    this.map = loadMap(opts.dungeon);
-    this.benchArena = opts.benchArena ?? -1;
-    this.benchBurst = !!opts.benchBurst && this.benchArena >= 0;
+    this.floor = opts.floor ?? null;
+    this.progressionEnabled = opts.progressionEnabled ?? false;
+    this.runId = opts.runId ?? '00000000000000000000000000000000';
+    this.map = opts.map ?? loadMap(opts.dungeon);
+    this.hazards = new Hazards(this.map);
+    this.dryNavigation = new DryNavigation(this.map, this.hazards.active);
+    this.spawnWarnings = new SpawnWarnings((phase, warning) => this.emit('all', { type: 'spawnWarning', phase, warning }));
+    this.pickups = new Pickups(this.map, (p) => this.emit('all', { type: 'pickupState', pickup: { ...p } }));
+    this.props = new Props(this.map, opts.props ?? [], (p, origin) => this.propBroken(p, origin));
+    this.dominions = new Dominions((phase, cast) => this.dominionBehavior.castPhase(phase, cast));
+    this.benchRoom = opts.benchRoom ?? -1;
+    this.benchBurst = !!opts.benchBurst && this.benchRoom >= 0;
     this.noWaves = !!opts.noWaves;
-    this.singleplayer = !!opts.singleplayer;
+    this.diagnostics = !!opts.diagnostics;
+    this.devBuild = opts.devBuild;
+    this.devRelics = this.progressionEnabled ? [] : (opts.devRelics ?? []).filter(isRelicId).slice(0, 2);
+    this.edicts = [...new Set((opts.edicts ?? []).filter((e) => Number.isInteger(e) && e >= 1 && e <= 5))].sort((a, b) => a - b);
+    this.bossHpStart = !this.progressionEnabled && opts.bossHp !== undefined && opts.bossHp >= 0 && opts.bossHp <= 1 ? opts.bossHp : null;
+    if (this.edicts.includes(4)) this.pickups.currencyLifetime = POVERTY_LIFETIME;
     this.random = mulberry32(opts.seed);
-    this.arenas = this.map.arenas.map((a, i) => ({
-      phase: PHASE_IDLE,
+    this.seed = opts.seed >>> 0;
+    this.rooms = this.map.rooms.map((a, i) => ({
+      phase: a.kind === 'breach' ? PHASE_CLEARED : PHASE_IDLE,
+      knowledge: a.kind === 'breach' ? 2 : 0,
+      entrySocket: a.entry[0]?.socket ?? 0,
+      cancelTicks: 0,
+      refills: 3,
+      lastHumanTick: 0,
+      trickleAt: -1,
+      humanInside: false,
+      lastLivingTick: 0,
+      holdUsed: 0,
       wave: -1,
       queue: [],
       rr: 0,
-      budgets: new Float64Array(this.map.arenaSpawnPoints[i].length),
+      budgets: new Float64Array(this.map.roomSpawnPoints[i].length),
       waveTotals: a.waves.map(() => 0),
       waveAlive: a.waves.map(() => 0),
       waveFullySpawned: a.waves.map(() => false),
@@ -668,18 +936,22 @@ export class Simulation {
       pace: 0,
       paceRate: 0,
       squad: null,
+      watch: null,
+      watchAlive: 0,
     }));
-    // Idle arenas keep their exit doors closed.
-    this.map.arenas.forEach((_, ai) => setArenaDoors(this.map, ai, PHASE_IDLE));
-    // Dev `arena=N`: the arenas before it are cleared, their doors open.
-    const startArena = this.benchArena >= 0 ? 0 : Math.max(0, Math.min(opts.startArena ?? 0, this.arenas.length - 1));
-    for (let ai = 0; ai < startArena; ai++) {
-      this.arenas[ai].phase = PHASE_CLEARED;
-      setArenaDoors(this.map, ai, PHASE_CLEARED);
+    // Dev `arena=N`: the rooms before it are cleared, their doors open.
+    const startRoom = this.benchRoom >= 0 ? 0 : Math.max(0, Math.min(opts.startRoom ?? 0, this.rooms.length - 1));
+    for (let ai = 0; ai < startRoom; ai++) this.rooms[ai].phase = PHASE_CLEARED;
+    if (opts.startRoom !== undefined && this.map.rooms.some((r) => r.kind === 'breach')) {
+      for (let i = 0; i < this.rooms.length; i++) if (i !== startRoom) this.rooms[i].phase = PHASE_CLEARED;
     }
+    for (const st of this.rooms) if (st.phase === PHASE_CLEARED) st.knowledge = 2;
+    for (let i = 0; i < this.rooms.length; i++) if (this.rooms[i].knowledge === 2) this.discoverNeighbours(i);
+    this.updateLeaves();
     this.god = !!opts.god;
+    const useEntry = opts.startRoom !== undefined;
     for (const p of opts.players) {
-      const [c, r] = this.benchArena >= 0 ? this.map.arenas[this.benchArena].entryCells[0] : startArena > 0 ? this.map.arenas[startArena].entryCells[p.id] : this.map.spawns[p.id];
+      const [c, r] = this.benchRoom >= 0 ? this.map.rooms[this.benchRoom].entry[0].cells[0] : useEntry ? this.map.rooms[startRoom].entry[0].cells[p.id] : this.map.spawns[p.id];
       this.insertPlayer(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
     }
     const cells = this.map.w * this.map.h;
@@ -687,6 +959,7 @@ export class Simulation {
     this.hashItems = [new Int32Array(ENEMY_SLOTS), new Int32Array(ENEMY_SLOTS)];
     this.hashFill = new Int32Array(cells);
     this.eFreedTick.fill(-SLOT_REUSE_TICKS);
+    this.route.init();
   }
 
   /** Simulation time since the start, ms. */
@@ -698,29 +971,111 @@ export class Simulation {
     return this.players.find((p) => p.id === id);
   }
 
-  /** Arena index and phase as sent in snapshots (§8.2). */
-  arenaStatus(): { arenaIndex: number; arenaPhase: number } {
-    for (let i = this.arenas.length - 1; i >= 0; i--) {
-      if (this.arenas[i].phase !== PHASE_IDLE) return { arenaIndex: i, arenaPhase: this.arenas[i].phase };
+  get solo(): boolean {
+    const connected = this.players.filter((p) => p.connected);
+    return connected.length === 1 && !connected[0].bot;
+  }
+
+  partySize(): number {
+    let p = 0;
+    for (const player of this.players) if (player.connected) p += player.bot ? 0.5 : 1;
+    return Math.max(1, p);
+  }
+
+  private entry(ai: number) {
+    const room = this.map.rooms[ai];
+    return room.entry.find((e) => e.socket === this.rooms[ai].entrySocket) ?? room.entry[0];
+  }
+
+  stateRevision = 0;
+
+  /** Detached records: subsequent simulation changes cannot mutate a queued checkpoint. */
+  floorSync(runId: string): FloorSync {
+    return { type: 'floorSync', runId, tick: this.tick, revision: this.stateRevision,
+      progressionEnabled: this.progressionEnabled, inventories: this.players.map(p => this.inventoryState(p)),
+      kits: this.players.map((p) => this.talents.kitState(p)), talentAreas: this.talents.checkpoint(), fires: this.talents.fireCheckpoint(), itemEffects: this.items.records(), ...this.relics.sync(this.players), route: this.route.state(), edicts: [...this.edicts], victory: this.victory ? { ...this.victory.state } : null,
+      rooms: this.rooms.map(({ phase, knowledge, entrySocket, refills }) => ({ phase, knowledge, entrySocket, refills })),
+      pickups: this.pickups.live.map((p) => ({ ...p })), ...this.props.checkpoint(), dominionCasts: this.dominions.checkpoint(), commanderCasts: this.commanders.checkpoint(), watchmanAims: this.watchmen.checkpoint(), spawnWarnings: this.spawnWarnings.checkpoint(this.tick) };
+  }
+
+  private discoverNeighbours(ai: number): void {
+    for (const leaf of this.map.rooms[ai].leaves) {
+      if (leaf.to < 0 || this.rooms[leaf.to].knowledge !== 0) continue;
+      this.rooms[leaf.to].knowledge = 1;
+      this.roomState(leaf.to);
     }
-    return { arenaIndex: 0, arenaPhase: this.arenas.length ? this.arenas[0].phase : PHASE_IDLE };
+  }
+
+  private visitRoom(ai: number): void {
+    if (this.rooms[ai].knowledge === 2) return;
+    this.rooms[ai].knowledge = 2;
+    this.roomState(ai);
+    this.discoverNeighbours(ai);
+  }
+
+  roomState(ai: number): void {
+    const { phase, knowledge, entrySocket } = this.rooms[ai];
+    this.emit('all', { type: 'roomState', room: ai, phase, knowledge, entrySocket });
+  }
+
+  /** R1 has one reliable payload per revision; capture identity when the event is emitted. */
+  emit(to: number | 'all', event: GameEvent): void {
+    this.events.push({ to, tick: this.tick, revision: ++this.stateRevision, event });
+  }
+
+  /** The active room's phase (countdown or combat), PHASE_IDLE when no room is active (rogue game.md §14.3). */
+  get activePhase(): number {
+    return this.activeRoom === ROOM_NONE ? PHASE_IDLE : this.rooms[this.activeRoom].phase;
+  }
+
+  /** Bit i: room i is cleared (rogue game.md §14.3). */
+  clearedMask(): number {
+    let m = 0;
+    for (let i = 0; i < this.rooms.length; i++) if (this.rooms[i].phase === PHASE_CLEARED) m |= 1 << i;
+    return m >>> 0;
+  }
+
+  /** Opens and closes every leaf by the leaf rule, from the same values the snapshot header carries. */
+  private updateLeaves(): void {
+    applyLeaves(this.map, { activeRoom: this.activeRoom, activePhase: this.activePhase, clearedMask: this.clearedMask() });
   }
 
   isInvulnerable(p: SimPlayer): boolean {
-    return p.god || p.devGod || this.tick < p.invulUntil;
+    return this.won || p.god || p.devGod || this.tick < p.invulUntil;
   }
 
   // ------------------------------------------------------------------ input
 
   /** Applies an input message from a player (§9.3). `nowMs` is the host time of arrival. */
   applyInput(playerId: number, m: InputMsg, nowMs: number): void {
+    if (m.runId !== this.runId) return;
     const p = this.playerById(playerId);
     if (!p || !p.connected) return;
     if (p.lastSeq >= 0 && m.seq <= p.lastSeq) return;
     // Inputs sent before the client saw the host's latest teleport are ignored.
     const behind = (p.teleportId - m.lastTeleportId) & 0xffff;
     if (behind !== 0 && behind < 0x8000) return;
+    const initial = p.lastSeq < 0;
+    for (const slot of [0, 1] as const) {
+      const counter = slot === 0 ? m.item1Presses : m.item2Presses;
+      const delta = (counter - p.itemPresses[slot]) & 255;
+      if (!initial && delta >= 1 && delta <= 127 && !p.dead) p.pendingItems[slot] = true;
+      if (initial || delta <= 127) p.itemPresses[slot] = counter;
+    }
+    // Each mouse press fires once, even if it was released before this input (click latching).
+    if (!initial && !p.dead) {
+      if (pressDelta(m.leftPresses, p.leftPresses)) latchPress(p.fireLatch, 0, this.tick);
+      if (pressDelta(m.rightPresses, p.rightPresses)) latchPress(p.fireLatch, 1, this.tick);
+    }
+    p.leftPresses = m.leftPresses;
+    p.rightPresses = m.rightPresses;
+    // Client-timed shots: the shots the player's screen fired since the previous input.
+    p.clientShots = m.shotButton !== HELD_FIRE;
+    const newShots = initial || !p.clientShots ? 0 : pressDelta(m.shots, p.shotsSeen);
+    p.shotsSeen = m.shots;
+    p.view = m.viewTick >= 0 ? { tick: m.viewTick, gap: m.viewGap, frac: m.viewFrac } : NO_VIEW;
     p.lastSeq = m.seq;
+    p.mapHeld = m.mapHeld;
     p.yaw = m.yaw;
     p.pitch = m.pitch;
     const qPressed = m.qPresses !== p.qPresses;
@@ -732,11 +1087,32 @@ export class Simulation {
       p.lastAcceptMs = nowMs;
       return;
     }
+    if (this.commanders.carriedBy(p.id)) {
+      // Consume press counters above, but never queue a blocked action for release.
+      this.cancelPlayerActions(p);
+      p.lastAcceptMs = nowMs;
+      return;
+    }
+    // Called to the Gate (rogue bosses.md §3.5): held, the player aims, fires and uses non-movement
+    // abilities; the host moves them, and a movement ability press is refused without spending it.
+    if (this.boss.holds(p.id)) {
+      p.lastAcceptMs = nowMs;
+      p.fire = m.fire;
+      p.allyTargetId = m.allyTargetId;
+      const view: ViewTick = m.shotViewTick >= 0 ? { tick: m.shotViewTick, gap: m.shotViewGap, frac: m.shotViewFrac } : NO_VIEW;
+      if (newShots) queueShots(p.shotQueue, newShots, { button: m.shotButton === 1 ? 1 : 0, yaw: m.shotYaw, pitch: m.shotPitch, view, tick: this.tick }, m.shots);
+      if (qPressed && !MOVEMENT_ABILITIES.has(p.kit.q)) p.pendingQ = true;
+      if (ePressed && !MOVEMENT_ABILITIES.has(p.kit.e)) { p.pendingE = true; p.pendingEAlly = m.allyTargetId; }
+      return;
+    }
     let x = m.x;
     let y = m.y;
+    if (p.launchUntilMs === -1) p.launchUntilMs = nowMs + DOMINION_LAUNCH_SECONDS * 1000;
     if (nowMs >= p.speedCheckSkipUntil) {
       const elapsed = Math.max(0, nowMs - p.lastAcceptMs) / 1000;
-      const maxD = 1.2 * p.speed * elapsed + 0.5;
+      const launched = Math.max(0, Math.min(nowMs, p.launchUntilMs) - p.lastAcceptMs) / 1000;
+      const walkingSpeed = p.speed * directionalSpeedFactor(p.yaw, x - p.x, y - p.y);
+      const maxD = 1.2 * (walkingSpeed * elapsed + Math.max(0, DOMINION_LAUNCH_SPEED.center - walkingSpeed) * Math.min(elapsed, launched)) + 0.5;
       const dx = x - p.x;
       const dy = y - p.y;
       const d = Math.hypot(dx, dy);
@@ -749,10 +1125,18 @@ export class Simulation {
     const g = groundHeight(this.map, x, y, PLAYER_RADIUS, Infinity, false, true);
     if (g !== -Infinity && z < g) z = g;
     // A Shadowstep press starts its path where the Betrayer stood before this input (M12 §5.7).
-    if (ePressed && p.classId === 'betrayer') {
+    if (ePressed && p.classId === 'betrayer' && p.kit.e === 'shadowstep') {
       if (p.dash) this.endDash(p);
-      p.dash = { pressSeq: m.seq, pts: [p.x, p.y, p.z], done: 1, acceptTick: -1, full: false, cut: new Set() };
+      p.dash = { pressSeq: m.seq, pts: [p.x, p.y, p.z], done: 1, acceptTick: -1, full: false, cut: new Set(), root: null };
     }
+    const elapsed = (nowMs - p.lastAcceptMs) / 1000;
+    const dx = x - p.x, dy = y - p.y, distance = Math.hypot(dx, dy);
+    if (elapsed >= 0.008 && elapsed <= 0.25 && nowMs >= p.speedCheckSkipUntil && nowMs >= p.launchUntilMs &&
+      distance > 0.001 && distance <= p.speed * elapsed * 1.5 + 0.1) {
+      const scale = Math.min(1 / elapsed, p.speed / distance), blend = Math.min(1, elapsed / 0.1);
+      p.moveVx += (dx * scale - p.moveVx) * blend;
+      p.moveVy += (dy * scale - p.moveVy) * blend;
+    } else p.moveVx = p.moveVy = 0;
     p.x = x;
     p.y = y;
     p.z = z;
@@ -764,6 +1148,10 @@ export class Simulation {
     p.lastAcceptMs = nowMs;
     p.fire = m.fire;
     p.allyTargetId = m.allyTargetId;
+    // Each with the aim and view of this input, sent in the frame the shot was fired.
+    // With the latest shot's own aim and view, which every input repeats (netcode stage 4).
+    const shotView: ViewTick = m.shotViewTick >= 0 ? { tick: m.shotViewTick, gap: m.shotViewGap, frac: m.shotViewFrac } : NO_VIEW;
+    if (newShots) queueShots(p.shotQueue, newShots, { button: m.shotButton === 1 ? 1 : 0, yaw: m.shotYaw, pitch: m.shotPitch, view: shotView, tick: this.tick }, m.shots);
     // Any increase of a press counter is one press (§9.3).
     if (qPressed) p.pendingQ = true;
     if (ePressed) {
@@ -772,32 +1160,53 @@ export class Simulation {
     }
   }
 
-  /** Moves a player on the host and tells its client (§9.3). */
-  teleport(p: SimPlayer, x: number, y: number, z: number): void {
+  /** Moves a player on the host and tells its client (§9.3). `launch` is a horizontal velocity in m/s. */
+  /** `hold`: the Call's hold starts at tick [2], dragging toward ([0], [1]) (the Gatekeeper), or ends (null). */
+  teleport(p: SimPlayer, x: number, y: number, z: number, launch?: { dx: number; dy: number }, carry?: boolean, hold?: [number, number, number] | null): void {
+    if (carry === undefined) this.commanders.releasePlayer(p.id, false);
     p.x = x;
     p.y = y;
     p.z = z;
     p.teleportId = (p.teleportId + 1) & 0xffff;
     p.lastAcceptMs = this.nowMs;
-    this.events.push({ to: p.id, event: { type: 'teleport', teleportId: p.teleportId, x, y, z } });
+    p.moveVx = p.moveVy = 0;
+    p.launchUntilMs = launch ? -1 : 0;
+    this.emit(p.id, { type: 'teleport', teleportId: p.teleportId, x, y, z, ...(launch ? { launch } : {}), ...(carry !== undefined ? { carry } : {}), ...(hold !== undefined ? { hold } : {}) });
   }
 
   /** Adds a player to the game in its slot, with its feet at (x, y, z). */
   private insertPlayer(init: SimPlayerInit, x: number, y: number, z: number): SimPlayer {
     const cls = CLASSES[init.classId];
+    const base: RunBuild = { talents: [], rites: [], q: '', e: '' };
+    const character0 = init.profile?.characters[init.classId];
+    const owned = init.bot ? [] : this.devRelics.length ? [...new Set([...(init.profile?.relics ?? []), ...this.devRelics])] : [...(init.profile?.relics ?? [])];
+    const equip = (this.devRelics.length ? [this.devRelics[0] ?? null, this.devRelics[1] ?? null] : character0?.relics ?? [null, null])
+      .map((id) => (id && owned.includes(id) && !init.bot ? id : null)) as [string | null, string | null];
+    if (equip[0] && equip[0] === equip[1]) equip[1] = null;
     const p: SimPlayer = {
+      relics: equip, ownedRelics: owned, relicCd: {}, claimedRelics: [], pawnedRelics: [], savedRelics: [equip[0], equip[1]], bargainCut: 0, sundialQualified: false, mapHeld: false, pilgrim: null,
+      presentAtStart: true, clearsBeforeRun: init.profile?.heavens.clears[1] ?? 0, profileDeeds: [...(init.profile?.deeds ?? [])], deedsEarned: [], bestStreakTick: 0, streak: 0, streakTick: 0, bestStreak: 0, streakKills: 0, assists: 0,
+      build: base, kit: resolveKit(init.classId, base),
       id: init.id,
       index: init.id,
       name: init.name,
       classId: init.classId,
+      bot: !!init.bot,
       speed: cls.speed,
       maxHp: cls.hp,
       hp: cls.hp,
+      wallet: 0,
+      offerKey: init.profile?.id ?? `disposable:${this.nextOfferKey++}`,
+      xpBase: init.profile?.characters[init.classId].xp ?? 0, requests: new ScopedRequests(),
+      inventory: init.bot ? emptyInventory() : copyInventory(init.profile?.inventory ?? emptyInventory()),
+      runXp: 0, xpCorrection: 0, itemsTried: init.bot ? [] : (init.profile?.codex.itemsTried ?? []).filter(isItemId),
+      itemReadyTick: 0,
+      featherUntil: 0, sealUntil: 0, itemPresses: [0, 0], pendingItems: [false, false],
       shield: 0,
       shieldUntil: 0,
       dead: false,
       connected: true,
-      god: this.god || this.benchArena >= 0,
+      god: this.god || this.benchRoom >= 0,
       devGod: false,
       invulUntil: 0,
       x,
@@ -827,15 +1236,30 @@ export class Simulation {
       revivers: 0,
       soulTick: 0,
       cdQ: 0,
+      closeCharge: CLOSE_CHARGE.budget,
+      closeChargeTick: 0,
       cdE: 0,
       lastDamageTick: this.tick,
       lastHurtTick: -ENGAGED_HIT_TICKS,
       lastSeq: -1,
       lastAcceptMs: this.nowMs,
+      moveVx: 0, moveVy: 0,
       dash: null,
       teleportId: 0,
       speedCheckSkipUntil: 0,
+      launchUntilMs: 0,
+      leftPresses: 0,
+      rightPresses: 0,
+      fireLatch: newFireLatch(),
+      clientShots: false,
+      shotsSeen: 0,
+      shotQueue: [],
+      shotIndex: -1,
+      weaponKills: 0,
+      view: NO_VIEW,
     };
+    const character = init.profile?.characters[init.classId];
+    this.talents.setBuild(p, this.talents.initialBuild(p, character && { talents: character.talents, q: character.q, e: character.e }, this.devBuild), false);
     this.slots[p.index] = p;
     this.activeDirector()?.clear(p.index);
     this.players.push(p);
@@ -847,32 +1271,54 @@ export class Simulation {
   }
 
   /**
-   * A player joins the game in progress (M8 §6.2), placed by the state of arena `arenaIndex`: in
-   * combat as a soul on its entry cell, already floating; in the countdown alive on its entry cell;
-   * otherwise alive on the feet of the living player with the lowest ID or, with none alive, on its
-   * entry cell of the next arena. The host tells its client where with a `teleport`.
+   * A player joins the game in progress (M8 §6.2), placed by the active room: in combat as a soul on
+   * its entry cell, already floating; in the countdown alive on its entry cell; otherwise alive on the
+   * feet of the living player with the lowest ID or, with none alive, on its entry cell of the first
+   * room not cleared. The host tells its client where with a `teleport`.
    */
   addPlayer(init: SimPlayerInit): SimPlayer | null {
     if (init.id < 0 || init.id >= PLAYER_SLOTS || this.slots[init.id] || this.result) return null;
-    const { arenaIndex, arenaPhase } = this.arenaStatus();
+    const saved = this.retainedPlayers.get(init.id);
+    const phase = this.activePhase;
     const lead = this.players.find((q) => this.livingTargetable(q));
     const p = this.insertPlayer(init, 0, 0, 0);
     let x: number;
     let y: number;
     let z: number;
-    if (arenaPhase === PHASE_COMBAT || arenaPhase === PHASE_COUNTDOWN || !lead) {
-      const next = arenaPhase === PHASE_CLEARED && !lead ? arenaIndex + 1 : arenaIndex;
-      const a = this.map.arenas[next];
-      const [c, r] = a ? a.entryCells[p.index] : this.map.spawns[p.index];
+    if (phase === PHASE_COMBAT || !lead) {
+      const next = this.activeRoom !== ROOM_NONE ? this.activeRoom : this.rooms.findIndex((st) => st.phase !== PHASE_CLEARED);
+      const a = next >= 0 ? this.map.rooms[next] : undefined;
+      const [c, r] = a ? this.entry(next).cells[p.index] : this.map.spawns[p.index];
       [x, y, z] = [c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]];
-    } else [x, y, z] = [lead.x, lead.y, lead.z];
-    if (arenaPhase === PHASE_COMBAT) {
+    } else {
+      [x, y, z] = [lead.x, lead.y, lead.z];
+      if (saved && this.activeRoom === ROOM_NONE) {
+        const old = saved.player, cell = Math.floor(old.y) * this.map.w + Math.floor(old.x), room = this.map.roomOf[cell];
+        if (!this.map.solid[cell] && this.rooms[room]?.phase === PHASE_CLEARED && Number.isFinite(this.map.floor[cell])) [x, y, z] = [old.x, old.y, this.map.floor[cell]];
+      }
+    }
+    if (phase === PHASE_COMBAT) {
       // A soul with progress 0 that starts already floating (M8 §4.1).
       p.dead = true;
       p.hp = 0;
       p.soulTick = this.tick - ticks(SOUL_RISE_TIME);
     }
     this.teleport(p, x, y, z);
+    if (saved) {
+      const old = saved.player, elapsed = (this.tick - saved.tick) / TICK_HZ;
+      Object.assign(p, old, { connected: true, x, y, z, lastSeq: -1, lastAcceptMs: this.nowMs, pilgrim: null, mapHeld: false,
+        cdQ: Math.max(0, old.cdQ - elapsed), cdE: Math.max(0, old.cdE - elapsed),
+        shield: 0, shieldCaster: null, featherUntil: 0, sealUntil: 0, speed: CLASSES[p.classId].speed, pendingItems: [false, false], invulUntil: 0, fire: 0, pendingQ: false, pendingE: false,
+        dash: null, landingTick: -1, teleportId: p.teleportId, fireLatch: newFireLatch(), view: NO_VIEW, shotQueue: [], shotIndex: -1,
+        // The returning page's press counters start at 0, so a counter left over from before isn't a press (R9 review N2).
+        qPresses: 0, ePresses: 0,
+        revive: old.dead ? Math.max(0, old.revive - elapsed * REVIVE_DECAY) : 0 });
+      this.retainedPlayers.delete(init.id);
+    } else if (!p.bot) { p.wallet = this.rewards.halosCredited; p.presentAtStart = false; }
+    // Everyone learns the joiner's kit; the joiner gets every kit from its floor checkpoint.
+    this.talents.setBuild(p, p.build);
+    if (this.rites.hasPending(p)) this.rites.publish(p);
+    if (!p.bot) { this.relics.publish(p, 'all'); this.relicOffers.publish(p); }
     return p;
   }
 
@@ -880,10 +1326,17 @@ export class Simulation {
    * A player left or timed out (§9.4, M8 §6.2): their player is removed, with their soul, and the game
    * continues. Enemies retarget at once, and the run is a defeat if every player left is dead.
    */
-  removePlayer(playerId: number): void {
+  removePlayer(playerId: number, retain = false): void {
     const p = this.playerById(playerId);
     if (!p) return;
     p.connected = false;
+    this.items.clearOwner(playerId);
+    this.relics.ownerGone(playerId);
+    this.streaks.end(p);
+    this.route.playerGone(p);
+    this.talents.playerGone(p);
+    p.featherUntil = p.sealUntil = 0; p.shield = 0; p.speed = CLASSES[p.classId].speed;
+    if (retain) this.retainedPlayers.set(playerId, { player: p, tick: this.tick });
     this.activeDirector()?.clear(p.index);
     this.players.splice(this.players.indexOf(p), 1);
     this.slots[p.index] = undefined;
@@ -897,8 +1350,20 @@ export class Simulation {
 
   /** Dev key G: toggles invulnerability for one player. */
   toggleDevGod(playerId: number): void {
+    if (this.progressionEnabled) return;
     const p = this.playerById(playerId);
     if (p) p.devGod = !p.devGod;
+  }
+
+  private devItemPair = 0;
+
+  /** Dev key I: fills both item slots with full stacks of the next pair in catalog order. Never with saved progression. */
+  devItems(playerId: number): void {
+    const p = this.playerById(playerId);
+    if (this.progressionEnabled || !p || p.bot) return;
+    const k = this.devItemPair++ % (ITEM_IDS.length / 2);
+    p.inventory = [0, 1].map((j) => { const item = ITEM_IDS[2 * k + j]; return { item, count: ITEMS[item].cap }; }) as Inventory;
+    this.publishInventory(p);
   }
 
   // ------------------------------------------------------------------ tick
@@ -908,21 +1373,48 @@ export class Simulation {
     if (this.result) return;
     this.tick++;
     this.nowMs = nowMs ?? this.tick * TICK_MS;
-    this.checkArenaStarts();
+    this.positions.sample(this.players.filter((p) => this.livingTargetable(p)));
+    this.streaks.update();
+    this.route.update();
+    this.checkRoomStarts();
+    this.syncHazards();
+    this.updateSpawnWarnings();
+    this.updateTrickle();
     this.updateFlowFields();
     this.updateSpawning();
     this.updatePlayers();
+    this.route.updateReturns();
+    this.talents.update();
+    this.items.update();
+    this.relics.update();
     this.updateEnemies();
     this.separate(0);
     this.separate(1);
+    this.commanders.pulse();
+    this.updateLateShots();
     this.updateProjectiles();
     this.updateClouds();
+    this.props.update(this.tick, (p) => this.explodeProp(p), (p) => this.emit('all', { type: 'propReady', id: p.id, x: p.x, y: p.y, z: p.z }));
+    this.updateHazardDamage();
+    this.talents.pools();
+    this.items.membership();
+    this.relics.membership();
     this.updateSouls();
+    this.pickups.update(this.tick, this.players, (drop, collector) => this.rewards.collect(drop, this.slots[collector.id]!),
+      (drop, collectors) => this.talents.heretic.moteTarget(drop, collectors));
+    this.streaks.flush();
+    this.relics.flush();
+    this.recoverEnemies();
     this.checkVictory();
-    this.checkArenaClears();
+    this.updateExit();
+    this.checkRoomClears();
     this.checkDefeat();
+    this.syncHazards();
+    this.updateSpawnWarnings();
     if (this.benchBurst && this.tick % BENCH_BURST_TICKS === 0) this.benchBurstHit();
     this.flushBursts();
+    this.flushDamage();
+    this.enemyHistory.record(this.tick, this.active, this.activeCount, this.eX, this.eY, this.eZ);
   }
 
   /** The benchmark's bursts (M12 §10): 40 damage, credited to player 0, to the 20 Blessed nearest a point 8 m ahead of it. */
@@ -943,105 +1435,411 @@ export class Simulation {
   /** Sends this tick's burst deaths as one `bursts` event, if there were any (M12 §4.1). */
   flushBursts(): void {
     if (this.tickBursts.length === 0) return;
-    this.events.push({ to: 'all', event: { type: 'bursts', list: this.tickBursts.slice() } });
+    this.emit('all', { type: 'bursts', list: this.tickBursts.slice() });
     this.tickBursts.length = 0;
+  }
+
+  /**
+   * Sends each human their own damage of this tick as one `damage` event (R06 follow-up §8): the
+   * DAMAGE_HITS_MAX largest per-enemy totals, positioned above the enemy as the host has it now.
+   */
+  flushDamage(): void {
+    for (const index of new Set([...this.tickDamage.keys(), ...this.tickKills.keys()])) {
+      const p = this.slots[index];
+      if (!p?.connected) continue;
+      const list: number[] = [];
+      for (const [slot, [amount, killed]] of [...(this.tickDamage.get(index) ?? [])].sort((a, b) => b[1][0] - a[1][0]).slice(0, DAMAGE_HITS_MAX)) {
+        const top = ENEMIES[this.eType[slot]].shot.top;
+        list.push(slot, round1(this.eX[slot]), round1(this.eY[slot]), round1(this.eZ[slot] + top + 0.3), round1(amount), killed);
+      }
+      // Every kill, past the numbers' limit too: the player's screen plays them at once (netcode stage 4).
+      const kills = this.tickKills.get(index);
+      this.emit(p.id, { type: 'damage', hits: list, ...(kills ? { kills } : {}) });
+    }
+    this.tickDamage.clear();
+    this.tickKills.clear();
+    for (const [index, hits] of this.tickHurt) {
+      const p = this.slots[index];
+      if (p?.connected) this.emit(p.id, { type: 'hurt', hits: hits.sort((a, b) => b[2] - a[2]).slice(0, HURT_HITS_MAX).flat() });
+    }
+    this.tickHurt.clear();
   }
 
   /** Victory: when the Gatekeeper dies, every remaining enemy bursts without kill credit (§8.2). */
   private checkVictory(): void {
-    if (!this.bossKilled || this.result) return;
+    if (!this.bossKilled || this.result || this.won) return;
+    // The latch cancels his casts, rings and pending hits and releases a held player safely (§3.8).
+    this.boss.end();
     while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1], true);
-    this.finish('victory');
+    // Hand-authored legacy maps keep their immediate-ending development fixture.
+    if (!this.floor) { this.finish('victory'); return; }
+    const at = stairPoints(this.map, this.floor.boss)[0];
+    this.victory = new VictoryExit(this.tick, this.timeMs, at); this.admissionClosed = true;
+    this.emit('all', { type: 'bossPhase', phase: 0, line: 'The first trumpet is silent. Six to go.' });
+    for (const p of [...this.players, ...[...this.retainedPlayers.values()].map(r => r.player)]) {
+      // Pawned relics are now owned, and the run's relic slots become the saved loadout (§9.6, §13.5).
+      for (const id of p.pawnedRelics) if (!p.ownedRelics.includes(id)) p.ownedRelics.push(id);
+      p.savedRelics = [p.relics[0], p.relics[1]];
+      if (p.dead) {
+        p.dead = false; p.hp = p.maxHp * .5; p.shield = 0; p.revive = 0; p.revivers = 0;
+        if (p.connected) { this.emit('all', { type: 'playerRevived', playerId: p.id }); this.teleport(p, at.x, at.y, at.z); }
+      } else if (p.connected && !this.edicts.includes(2)) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * .3);
+      this.settleDeeds(p);
+    }
+    // Victory closes every unaccepted bargain, including one viewed earlier (§9.6).
+    this.relicOffers.closeBargains(); this.rites.closeBargains();
+    for (const p of this.players) if (!p.bot) { this.relicOffers.publish(p); this.rites.publish(p); }
+    this.items.clearAll(); this.relics.clearAll(); for (const s of [...this.projectiles]) this.removeProjectile(s);
+    this.lateShots.length = 0;
+    this.clouds.length = 0; this.fieldUntil = 0;
+    for (let i = 0; i < this.rooms.length; i++) { this.rooms[i].queue.length = 0; this.rooms[i].squad = this.rooms[i].watch = null; this.items.clearCombat(i); }
+    this.rooms[this.floor.boss].phase = PHASE_CLEARED; this.activeRoom = ROOM_NONE;
+    this.updateLeaves(); this.roomState(this.floor.boss);
+    this.emit('all', { type: 'victoryState', state: { ...this.victory.state } });
+  }
+  private updateExit(): void {
+    if (!this.victory || this.result) return;
+    if (this.victory.update(this.tick, this.players, this.rewards.pagesPending() || this.rites.anyPending() || this.route.choicesPending())) this.finish('victory');
+    else if (this.tick % 30 === 0) this.emit('all', { type: 'victoryState', state: { ...this.victory.state } });
   }
 
-  private livingTargetable(p: SimPlayer | undefined): p is SimPlayer {
+  livingTargetable(p: SimPlayer | undefined): p is SimPlayer {
     return !!p && p.connected && !p.dead;
   }
 
-  /**
-   * Arena countdown (M8 §5): a living player entering an idle arena, once every earlier one is
-   * cleared, starts a 60 s countdown; it drops to 5 s when every living player is inside (none on a
-   * door cell), never restarts, and seals the arena at 0. The benchmark's arena starts at once,
-   * without waiting for earlier arenas to be cleared.
-   */
-  private checkArenaStarts(): void {
-    this.map.arenas.forEach((a, ai) => {
-      const st = this.arenas[ai];
-      if (st.phase === PHASE_IDLE) {
-        if (!this.players.some((p) => this.livingTargetable(p) && insideRect(a, p.x, p.y))) return;
-        if (ai === this.benchArena) {
-          this.startArena(ai);
-          return;
+  /** Room kinds, one active encounter, and human quorum (rogue game.md §4.3). */
+  private checkRoomStarts(): void {
+    if (this.result || this.bossKilled) return;
+    for (let ai = 0; ai < this.rooms.length; ai++) {
+      const a = this.map.rooms[ai], st = this.rooms[ai];
+      let started = false;
+      const humans = this.players.filter((p) => this.livingTargetable(p) && !p.bot);
+      const inside = humans.filter((p) => insideRect(a, p.x, p.y) && !this.onDoor(p));
+      if (inside.length > 0) this.visitRoom(ai);
+      // The Confessional's sanctuary heals each human to full on their first entry this floor (§9.6).
+      if (a.kind === 'confessional') for (const p of inside) {
+        if (this.sanctuary.has(p.offerKey)) continue;
+        this.sanctuary.add(p.offerKey);
+        p.hp = p.maxHp;
+        this.emit(p.id, { type: 'interactionResult', requestId: 0, accepted: true, reason: 'Sanctuary · healed to full' });
+      }
+      if (st.phase === PHASE_IDLE && inside.length > 0) {
+        if (a.kind === 'breach' || a.kind === 'pardoner' || a.kind === 'confessional') {
+          st.phase = PHASE_CLEARED;
+          this.updateLeaves();
+          this.roomState(ai);
+          continue;
         }
-        if (this.arenas.slice(0, ai).some((e) => e.phase !== PHASE_CLEARED)) return;
+        if (this.activeRoom !== ROOM_NONE) continue;
+        const p = inside[0];
+        let best = Infinity;
+        for (const e of a.entry) {
+          const x = e.cells.reduce((sum, c) => sum + c[0] + 0.5, 0) / 4;
+          const y = e.cells.reduce((sum, c) => sum + c[1] + 0.5, 0) / 4;
+          const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+          if (d < best || (d === best && e.socket < st.entrySocket)) {
+            best = d;
+            st.entrySocket = e.socket;
+          }
+        }
+        if (ai === this.benchRoom) { this.startRoom(ai); continue; }
         st.phase = PHASE_COUNTDOWN;
+        st.cancelTicks = 0;
         st.sealTick = this.tick + ticks(COUNTDOWN);
+        started = true;
+        this.activeRoom = ai;
+        this.roomState(ai);
+        this.updateLeaves();
       }
-      if (st.phase !== PHASE_COUNTDOWN) return;
-      const living = this.players.filter((p) => this.livingTargetable(p));
-      if (living.length > 0 && living.every((p) => insideRect(a, p.x, p.y) && !this.onDoor(p))) {
-        st.sealTick = Math.min(st.sealTick, this.tick + ticks(COUNTDOWN_ALL_IN));
+      if (st.phase !== PHASE_COUNTDOWN) continue;
+      st.cancelTicks = inside.length === 0 ? st.cancelTicks + 1 : 0;
+      if (humans.length === 0 || st.cancelTicks >= ticks(COUNTDOWN_CANCEL)) {
+        // An abandoned Bell countdown leaves its room cleared and the Bell ringable (§4.12).
+        st.phase = this.route.bellCanceled(ai) ? PHASE_CLEARED : PHASE_IDLE;
+        st.cancelTicks = 0;
+        this.activeRoom = ROOM_NONE;
+        this.roomState(ai);
+        this.updateLeaves();
+        continue;
       }
-      if (this.tick >= st.sealTick) this.startArena(ai);
-    });
+      const near = humans.filter((p) => insideRect(a, p.x, p.y) || this.inVestibule(ai, p)).length;
+      if (near < Math.ceil(humans.length / 2) && !started) st.sealTick++;
+      if (inside.length === humans.length) st.sealTick = Math.min(st.sealTick, this.tick + ticks(COUNTDOWN_ALL_IN));
+      if (this.tick >= st.sealTick) this.startRoom(ai);
+    }
+  }
+
+  private inVestibule(ai: number, p: SimPlayer): boolean {
+    const { x0, y0, x1, y1 } = this.map.rooms[ai].rect;
+    return this.roomAt(p.x, p.y) === ROOM_NONE && p.x >= x0 - 4 && p.x < x1 + 5 && p.y >= y0 - 4 && p.y < y1 + 5;
+  }
+
+  enemyMayTarget(slot: number, p: SimPlayer): boolean {
+    // One of Them (classes-betrayer.md `b.2b`): ordinary casters (Watchmen too) don't pick a player hidden in the crowd.
+    if (this.talents.hidden.has(p.id) && this.talents.caster(slot)) return false;
+    return !this.leashed[slot] || this.roomAt(p.x, p.y) === this.home[slot];
+  }
+
+  /** Check the whole displacement, including pulls across a corner, and retain the last home cell. */
+  private clampLeash(slot: number, b: Body): void {
+    const x = this.eX[slot], y = this.eY[slot];
+    const dx = b.x - x, dy = b.y - y;
+    const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 4));
+    let last = 0;
+    for (let k = 1; k <= steps; k++) {
+      const f = k / steps;
+      if (this.roomAt(x + dx * f, y + dy * f) !== this.home[slot]) {
+        b.x = x + dx * last;
+        b.y = y + dy * last;
+        b.z = this.eZ[slot];
+        return;
+      }
+      last = f;
+    }
+  }
+
+  /** Finite revisit encounters; passing through spends no refill. Doors stay open. */
+  private updateTrickle(): void {
+    for (let ai = 0; ai < this.rooms.length; ai++) {
+      const st = this.rooms[ai];
+      const human = this.players.some((p) => this.livingTargetable(p) && !p.bot && this.roomAt(p.x, p.y) === ai);
+      const living = this.players.some((p) => this.livingTargetable(p) && this.roomAt(p.x, p.y) === ai);
+      if (living) st.lastLivingTick = this.tick;
+      else if (st.alive > 0 && this.tick - st.lastLivingTick >= ticks(10)) {
+        for (let k = this.activeCount - 1; k >= 0; k--) {
+          const s = this.active[k];
+          if (this.leashed[s] && this.home[s] === ai) this.removeEnemy(s, true);
+        }
+      }
+      const allowed = this.activeRoom === ROOM_NONE && !this.bossKilled && !this.result &&
+        this.map.rooms[ai].kind === 'combat' && st.phase === PHASE_CLEARED && st.refills > 0;
+      if (!allowed || !human) st.trickleAt = -1;
+      else if (!st.humanInside && this.tick - st.lastHumanTick >= ticks(10)) st.trickleAt = this.tick + ticks(3);
+      if (human) st.lastHumanTick = this.tick;
+      st.humanInside = human;
+      if (st.trickleAt < 0 || this.tick < st.trickleAt) continue;
+      const count = Math.floor(Math.min(12, 4 + 2 * this.partySize()));
+      if (!this.canAlloc(count)) continue;
+      const points = this.map.roomSpawnPoints[ai];
+      const safe = new Uint8Array(points.length);
+      const markerSafe = this.markEligible(points, SPAWN_MIN_DIST, safe, this.spawnEligibility(ai, points, BLESSED));
+      const key = `${ai}:${BLESSED}`;
+      let temporary: { room: number; c: number; r: number; budget: number } | undefined;
+      if (!markerSafe) {
+        if (!this.spawnBlockedSince.has(key)) this.spawnBlockedSince.set(key, this.tick);
+        if (this.tick - this.spawnBlockedSince.get(key)! < 2 * TICK_HZ) continue;
+        temporary = this.floorSpawn(ai, BLESSED); if (!temporary) continue;
+      } else this.spawnBlockedSince.delete(key);
+      const hidden: number[] = [];
+      let farthest = -1, farDist = -1;
+      for (let i = 0; i < points.length; i++) {
+        if (!safe[i]) continue;
+        const [c, r] = points[i];
+        let seen = false, distance = Infinity;
+        for (const p of this.players) {
+          if (!this.livingTargetable(p)) continue;
+          if (lineOfSight(this.map, p.x, p.y, p.z + PLAYER_EYE, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c] + 1)) seen = true;
+          distance = Math.min(distance, (p.x - c - 0.5) ** 2 + (p.y - r - 0.5) ** 2);
+        }
+        if (!seen) hidden.push(i);
+        if (distance > farDist) { farDist = distance; farthest = i; }
+      }
+      if (!temporary && hidden.length === 0) {
+        const [c, r] = points[farthest];
+        if (!this.spawnWarnings.permit(ai, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c], this.tick)) continue;
+      }
+      let placed = 0;
+      for (; placed < count; placed++) {
+        const i = hidden.length > 0 ? hidden[placed % hidden.length] : farthest;
+        const [c, r] = temporary ? [temporary.c, temporary.r] : points[i];
+        const slot = this.allocSlot();
+        if (slot < 0) break;
+        this.spawnAt(slot, BLESSED, c, r, ai, -1);
+        this.home[slot] = ai;
+        this.leashed[slot] = 1;
+        this.retarget(slot);
+      }
+      if (placed > 0) { st.refills--; st.trickleAt = -1; this.invalidateFields(); }
+    }
+  }
+
+  /** Warned anti-softlock relocation keeps identity, HP, statuses and reward entitlement. */
+  private recoverEnemies(): void {
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      if ((this.eX[s] - this.eStillX[s]) ** 2 + (this.eY[s] - this.eStillY[s]) ** 2 >= 1 || this.eHurtTick[s] > this.eStillSince[s]) {
+        this.eStillSince[s] = this.tick;
+        this.eStillX[s] = this.eX[s];
+        this.eStillY[s] = this.eY[s];
+      }
+    }
+    this.updateRecoveryArrivals();
+    if (this.tick % ticks(5) !== 0 || this.activePhase !== PHASE_COMBAT) return;
+    const ai = this.activeRoom, st = this.rooms[ai];
+    const lastPlaced = st.wave === this.map.rooms[ai].waves.length - 1 && st.waveFullySpawned[st.wave];
+    const fallback = new Map<number, [number, number] | null>();
+    for (let k = this.activeCount - 1; k >= 0; k--) {
+      const s = this.active[k];
+      if (this.eRoom[s] !== ai || isBossBody(this.eType[s]) || this.leashed[s]) continue;
+      if (this.recoveryArrivals.has(s)) continue;
+      const avoids = !ENEMIES[this.eType[s]].flying && this.dryNavigation.room === ai;
+      const fields = ENEMIES[this.eType[s]].flying ? this.airFields : avoids ? this.dryNavigation.fields : this.groundFields;
+      const c = Math.floor(this.eX[s]), r = Math.floor(this.eY[s]);
+      const anchor = avoids && this.hazards.active[r * this.map.w + c] ? this.dryNavigation.project(r * this.map.w + c) : r * this.map.w + c;
+      const reachable = anchor >= 0 && this.players.some((p) => this.livingTargetable(p) && this.fieldValid[p.index] && fields[p.index] && fields[p.index]!.targetCell >= 0 && fields[p.index]!.at(anchor % this.map.w, Math.floor(anchor / this.map.w)) !== UNREACHABLE);
+      if (reachable) this.eUnreachableSince[s] = -1;
+      else if (this.eUnreachableSince[s] < 0) this.eUnreachableSince[s] = this.tick;
+      const unreachable = this.eUnreachableSince[s] >= 0 && this.tick - this.eUnreachableSince[s] >= ticks(10);
+      const stuck = lastPlaced && st.alive <= 10 && this.tick - this.eStillSince[s] >= ticks(20);
+      if (reachable && !stuck) { this.eRecoveryFailed[s] = -1; continue; }
+      if (!unreachable && !stuck && this.eRecoveryFailed[s] < 0) continue;
+      const points = this.map.roomSpawnPoints[ai], safe = new Uint8Array(points.length);
+      this.markEligible(points, SPAWN_MIN_DIST, safe, this.spawnEligibility(ai, points, this.eType[s]));
+      let best = -1, distance = -1;
+      for (let i = 0; i < points.length; i++) {
+        if (!safe[i]) continue;
+        const [x, y] = points[i];
+        let nearest = Infinity;
+        let reachableMarker = false;
+        for (const p of this.players) {
+          if (!this.livingTargetable(p)) continue;
+          nearest = Math.min(nearest, (p.x - x - 0.5) ** 2 + (p.y - y - 0.5) ** 2);
+          if (this.fieldValid[p.index] && fields[p.index] && fields[p.index]!.targetCell >= 0 && fields[p.index]!.at(x, y) !== UNREACHABLE) reachableMarker = true;
+        }
+        if (reachableMarker && nearest > distance) { distance = nearest; best = i; }
+      }
+      let point = best >= 0 ? points[best] : null;
+      if (!point) {
+        const type = this.eType[s];
+        if (!fallback.has(type)) {
+          let cell = -1, far = -1; const def = ENEMIES[type];
+          for (const i of this.fallbackSpawnCells(ai)) {
+            const x = i % this.map.w, y = Math.floor(i / this.map.w), z = this.map.floor[i];
+            if (this.map.solid[i] || this.props.blocksSpawn(ai, x + 0.5, y + 0.5, z, def.radius, def.height) || !this.spawnClearance(x + 0.5, y + 0.5, z, SPAWN_MIN_DIST)) continue;
+            let distance = Infinity, target = false;
+            for (const p of this.players) if (this.livingTargetable(p)) {
+              distance = Math.min(distance, (p.x - x - 0.5) ** 2 + (p.y - y - 0.5) ** 2);
+              if (this.fieldValid[p.index] && fields[p.index] && fields[p.index]!.at(x, y) !== UNREACHABLE) target = true;
+            }
+            if (target && distance > far) { far = distance; cell = i; }
+          }
+          fallback.set(type, cell >= 0 ? [cell % this.map.w, Math.floor(cell / this.map.w)] : null);
+        }
+        point = fallback.get(this.eType[s])!;
+      }
+      if (point) {
+        const [x, y] = point, key = `${ai}:${x}:${y}`;
+        this.recoveryArrivals.set(s, { incarnation: this.eIncarnation[s], room: ai, c: x, r: y, x: this.eX[s], y: this.eY[s], tick: this.tick, unreachable });
+        this.recoveryPointUsers.set(key, (this.recoveryPointUsers.get(key) ?? 0) + 1);
+        this.spawnWarnings.permit(ai, x + 0.5, y + 0.5, this.map.floor[y * this.map.w + x], this.tick, undefined, 'recovery');
+      } else if (this.eRecoveryFailed[s] < 0) this.eRecoveryFailed[s] = this.tick;
+      else if (this.tick - this.eRecoveryFailed[s] >= ticks(10)) {
+        console.warn('diagnostic: unreachable enemy removed', { room: ai, slot: s });
+        this.rewards.settleXp(s);
+        this.removeEnemy(s, true);
+      }
+    }
+  }
+
+  private updateRecoveryArrivals(): void {
+    for (const [s, q] of this.recoveryArrivals) {
+      const type = this.eType[s], cell = Math.floor(this.eY[s]) * this.map.w + Math.floor(this.eX[s]);
+      const fields = ENEMIES[type].flying ? this.airFields : this.dryNavigation.room === q.room ? this.dryNavigation.fields : this.groundFields;
+      const reachable = this.players.some((p) => this.livingTargetable(p) && this.fieldValid[p.index] && fields[p.index] && fields[p.index]!.at(cell % this.map.w, Math.floor(cell / this.map.w)) !== UNREACHABLE);
+      const z = this.map.floor[q.r * this.map.w + q.c], def = ENEMIES[type];
+      const cancel = !this.eAlive[s] || this.eIncarnation[s] !== q.incarnation || this.eRoom[s] !== q.room || this.activePhase !== PHASE_COMBAT || this.activeRoom !== q.room ||
+        !this.spawnClearance(q.c + 0.5, q.r + 0.5, z, SPAWN_MIN_DIST) || this.map.solid[q.r * this.map.w + q.c] ||
+        this.props.blocksSpawn(q.room, q.c + 0.5, q.r + 0.5, z, def.radius, def.height) ||
+        reachable && (q.unreachable || (this.eX[s] - q.x) ** 2 + (this.eY[s] - q.y) ** 2 >= 1 || this.eHurtTick[s] >= q.tick);
+      if (!cancel && !this.spawnWarnings.permit(q.room, q.c + 0.5, q.r + 0.5, z, this.tick, undefined, 'recovery')) continue;
+      if (!cancel) {
+        this.eX[s] = this.eStillX[s] = q.c + 0.5; this.eY[s] = this.eStillY[s] = q.r + 0.5;
+        this.eZ[s] = z + (ENEMIES[type].flying ? CHERUB_HOVER : 0); this.eStillSince[s] = this.eSpawnTick[s] = this.tick;
+        this.eUnreachableSince[s] = this.eRecoveryFailed[s] = -1; this.retarget(s);
+      }
+      this.recoveryArrivals.delete(s); const key = `${q.room}:${q.c}:${q.r}`, left = this.recoveryPointUsers.get(key)! - 1;
+      if (left) this.recoveryPointUsers.set(key, left);
+      else { this.recoveryPointUsers.delete(key); this.spawnWarnings.cancel(q.room, q.c + 0.5, q.r + 0.5, 'recovery'); }
+    }
+  }
+
+  roomAt(x: number, y: number): number {
+    const c = Math.floor(x), r = Math.floor(y);
+    return c >= 0 && r >= 0 && c < this.map.w && r < this.map.h ? this.map.roomOf[r * this.map.w + c] : ROOM_NONE;
   }
 
   private onDoor(p: SimPlayer): boolean {
-    return this.map.doorArena[Math.floor(p.y) * this.map.w + Math.floor(p.x)] >= 0;
+    return this.map.doorRoom[Math.floor(p.y) * this.map.w + Math.floor(p.x)] >= 0;
   }
 
-  /** Seconds until the countdown arena seals, or 0 (M8 §5). */
+  /** Seconds until the countdown room seals, or 0 (M8 §5). */
   countdownLeft(): number {
-    const { arenaIndex, arenaPhase } = this.arenaStatus();
-    if (arenaPhase !== PHASE_COUNTDOWN) return 0;
-    return Math.max(0, this.arenas[arenaIndex].sealTick - this.tick) / TICK_HZ;
+    if (this.activePhase !== PHASE_COUNTDOWN) return 0;
+    return Math.max(0, this.rooms[this.activeRoom].sealTick - this.tick) / TICK_HZ;
   }
 
-  private startArena(ai: number): void {
-    const a = this.map.arenas[ai];
-    const st = this.arenas[ai];
+  /** The same living-human quorum used by the countdown, projected for the HUD. */
+  countdownHold(): number {
+    if (this.activePhase !== PHASE_COUNTDOWN) return 0;
+    const humans = this.players.filter((p) => this.livingTargetable(p) && !p.bot);
+    const room = this.map.rooms[this.activeRoom];
+    const inside = humans.filter((p) => insideRect(room, p.x, p.y) || this.inVestibule(this.activeRoom, p)).length;
+    return (inside < Math.ceil(humans.length / 2) ? 0x80 : 0) | (inside << 3) | humans.length;
+  }
+
+  private startRoom(ai: number): void {
+    if (this.won) return;
+    if (this.map.rooms[ai].boss) this.admissionClosed = true;
+    const a = this.map.rooms[ai];
+    const st = this.rooms[ai];
     st.phase = PHASE_COMBAT;
-    // Party-size scaling counts the players in the game at the seal (M8 §6.3).
-    st.partySize = Math.max(1, this.players.length);
-    setArenaDoors(this.map, ai, PHASE_COMBAT);
+    this.activeRoom = ai;
+    // Freeze P at the seal: connected humans plus half-player bots.
+    st.partySize = this.partySize();
+    // A rung Bell: only sealing spends it, and its room fights the one Judgment wave (§4.12).
+    const bell = this.route.bellFight(ai);
+    if (bell) this.route.bellSealed(ai);
+    if (a.boss) this.route.bossSealed();
+    this.rewards.roomSealed(ai, bell);
+    this.updateLeaves();
     this.invalidateFields();
-    this.events.push({ to: 'all', event: { type: 'arenaStarted', arenaIndex: ai } });
+    this.roomState(ai);
     for (const p of this.players) {
-      if (!this.livingTargetable(p)) continue;
+      if (!p.connected) continue;
       if (!insideRect(a, p.x, p.y) || this.onDoor(p)) {
-        const [c, r] = a.entryCells[p.index];
+        const [c, r] = this.entry(ai).cells[p.index];
         this.teleport(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
       }
     }
-    if (this.isCombatArena(ai)) {
-      // The director (M12 §2.3): every intensity starts at 0; it can't start a wave while more than
-      // the largest wave is alive.
-      const cap = Math.max(...a.waves.map((w) => waveSize(w, st.partySize)));
-      st.director = new Director(a.waves.length, cap, this.singleplayer);
+    if (this.isPacedRoom(ai)) {
+      // Account for the previous wave's 30% carry-over, bounded by the global cap.
+      const sizes = a.waves.map((w) => waveSize(w, st.partySize));
+      const cap = Math.min(MAX_LIVING_ENEMIES, Math.max(...sizes.map((size, i) => size + Math.floor(0.3 * (sizes[i - 1] ?? 0)))));
+      st.director = new Director(a.waves.length, cap, this.solo);
     }
-    if (this.benchArena < 0 && !this.noWaves && a.waves.length > 0) this.startWave(ai, 0);
+    if (this.benchRoom < 0 && !this.noWaves && a.waves.length > 0) this.startWave(ai, 0);
     if (a.boss && this.map.boss) this.placeBoss(ai);
   }
 
   /**
-   * One of the combat arenas, whose waves the director paces and which arrive from far away over
-   * 10 s (M12 §2): an arena with more than one wave, outside the benchmark, with waves enabled. The
-   * boss arena and the sandbox's single wave keep the MVP's rules.
+   * A room whose waves the director paces and which arrive from far away over 10 s (M12 §2): a room
+   * with more than one wave, outside the benchmark, with waves enabled. The boss room and the
+   * sandbox's single wave keep the MVP's rules.
    */
-  private isCombatArena(ai: number): boolean {
-    const a = this.map.arenas[ai];
-    return !a.boss && a.waves.length > 1 && ai !== this.benchArena && !this.noWaves;
+  private isPacedRoom(ai: number): boolean {
+    const a = this.map.rooms[ai];
+    return a.kind === 'combat' && (a.shape !== undefined || a.waves.length > 1) && ai !== this.benchRoom && !this.noWaves;
   }
 
   /** The director of the arena in combat, if it has one (M12 §2.3). */
   private activeDirector(): Director | null {
-    for (const st of this.arenas) if (st.phase === PHASE_COMBAT && st.director) return st.director;
+    for (const st of this.rooms) if (st.phase === PHASE_COMBAT && st.director) return st.director;
     return null;
   }
 
   /** The director's state for the F3 overlay (M12 §2.3), or null when no combat arena is in combat. */
   directorInfo(): DirectorInfo | null {
-    const st = this.arenas.find((a) => a.phase === PHASE_COMBAT && a.director);
+    const st = this.rooms.find((a) => a.phase === PHASE_COMBAT && a.director);
     if (!st || !st.director) return null;
     const d = st.director;
     return {
@@ -1066,57 +1864,71 @@ export class Simulation {
     const [c, r] = this.map.boss!;
     const slot = this.allocSlot();
     if (slot < 0) return;
-    this.bossParty = this.arenas[ai].partySize;
-    this.bossMaxHp = ENEMIES[GATEKEEPER].hp * bossMultiplier(this.bossParty);
-    this.bossCast = BOSS_CAST_NONE;
-    this.bossCastTicks = 0;
-    this.volleyDue = this.tick + ticks(VOLLEY_FIRST);
-    this.judgmentDue = this.tick + ticks(JUDGMENT_FIRST);
-    this.summonDue = this.tick + ticks(SUMMON_FIRST);
     this.bossSlot = slot;
     this.spawnAt(slot, GATEKEEPER, c, r, ai, -1);
+    this.bossMaxHp = this.boss.seal(ai, this.rooms[ai].partySize);
     this.eHp[slot] = this.bossMaxHp;
+    if (this.bossHpStart !== null) this.boss.devStart(this.bossHpStart);
   }
 
   private startWave(ai: number, n: number): void {
-    const st = this.arenas[ai];
-    const w = this.map.arenas[ai].waves[n];
-    const counts = [scaleCount(w.blessed, st.partySize), scaleCount(w.choristers, st.partySize), scaleCount(w.cherubs, st.partySize)];
+    const st = this.rooms[ai];
+    const w = this.map.rooms[ai].waves[n];
+    // The Edict of the Host: a wave with a commander brings one more, before party scaling (§2.5).
+    const host = this.edicts.includes(1) && (w.dominions ?? 0) > 0 ? 1 : 0;
+    const counts = [scaleCount(w.blessed, st.partySize), scaleCount(w.choristers, st.partySize), scaleCount(w.cherubs, st.partySize), scaleCount((w.dominions ?? 0) + host, st.partySize)];
     const squad = w.squad ? scaleCount(w.squad.count, st.partySize) : 0;
+    const watchmen = scaleCount(w.watchmen ?? 0, st.partySize);
     st.wave = n;
-    const queued = counts[0] + counts[1] + counts[2];
-    st.waveTotals[n] = queued + squad;
+    const queued = counts.reduce((sum, n) => sum + n, 0);
+    st.waveTotals[n] = queued + squad + watchmen;
     st.waveAlive[n] = 0;
     st.waveFullySpawned[n] = st.waveTotals[n] === 0;
     st.pace = 0;
-    st.paceRate = queued / WAVE_ARRIVAL_TICKS;
-    if (queued > 0) st.queue.push({ counts, spawned: [0, 0, 0], wave: n });
+    st.paceRate = queued / (this.isCrest(ai, n) ? CREST_ARRIVAL_TICKS : WAVE_ARRIVAL_TICKS);
+    if (this.isCrest(ai, n)) this.emit('all', { type: 'crest', room: ai, wave: n, total: queued });
+    if (queued > 0) st.queue.push({ counts, spawned: [0, 0, 0, 0], wave: n });
     st.squad = squad > 0 ? { type: w.squad!.type === 'cherubs' ? CHERUB : CHORISTER, at: w.squad!.at, left: squad, next: this.tick + SQUAD_DELAY_TICKS, rr: 0, wave: n } : null;
+    // Watchmen arrive like a squad, on the room's unrestricted spawn points (rooms.md §6.4).
+    st.watch = watchmen > 0 ? { type: WATCHMAN, at: this.map.roomSpawnPoints[ai], left: watchmen, next: this.tick + SQUAD_DELAY_TICKS, rr: 0, wave: n } : null;
     st.director?.waveStarted(n);
   }
 
-  private checkArenaClears(): void {
-    this.map.arenas.forEach((a, ai) => {
-      const st = this.arenas[ai];
-      if (st.phase !== PHASE_COMBAT || a.boss || this.benchArena >= 0) return;
+  private checkRoomClears(): void {
+    this.map.rooms.forEach((a, ai) => {
+      const st = this.rooms[ai];
+      if (st.phase !== PHASE_COMBAT || a.boss || this.benchRoom >= 0) return;
       const allWavesStarted = this.noWaves || st.wave >= a.waves.length - 1;
-      if (!allWavesStarted || st.queue.length > 0 || st.alive > 0) return;
+      if (!allWavesStarted || st.queue.length > 0 || st.squad || st.watch || st.alive > 0) return;
       st.phase = PHASE_CLEARED;
-      setArenaDoors(this.map, ai, PHASE_CLEARED);
+      // A Bell's wave cleared: no clear XP, reward or heal; each human in its seal gets a Rite page (§4.12).
+      const bell = this.route.bellFight(ai);
+      if (bell) { this.route.bellCleared(ai); this.rewards.bellCleared(ai); }
+      else this.rewards.roomCleared(ai);
+      this.items.clearCombat(ai);
+      this.relics.roomCleared(ai);
+      if (!bell) this.route.roomCleared(ai);
+      this.talents.roomCleared();
+      for (const { player } of this.retainedPlayers.values()) if (player.dead) {
+        player.dead = false; player.hp = player.maxHp * 0.5; player.revive = 0; player.shield = 0;
+      }
+      if (this.activeRoom === ai) this.activeRoom = ROOM_NONE;
+      this.updateLeaves();
       this.invalidateFields();
-      this.events.push({ to: 'all', event: { type: 'arenaCleared', arenaIndex: ai } });
-      // The living are healed to full, as the fallen come back at full (M12 follow-up §3.2).
-      for (const p of this.players) if (p.connected && !p.dead) p.hp = p.maxHp;
+      this.roomState(ai);
+      st.lastHumanTick = this.tick;
+      // Clear sustain (rogue game.md §4.3), once per encounter; never after a Bell, never under Penance (§2.5).
+      if (!bell && !this.edicts.includes(2)) for (const p of this.players) if (p.connected && !p.dead) p.hp = Math.min(p.maxHp, p.hp + 0.3 * p.maxHp);
       for (const p of this.players) {
         if (!p.connected || !p.dead) continue;
         p.dead = false;
-        p.hp = p.maxHp;
+        p.hp = 0.5 * p.maxHp;
         p.shield = 0;
         p.revive = 0;
         p.revivers = 0;
         p.lastDamageTick = this.tick;
-        const [c, r] = a.entryCells[p.index];
-        this.events.push({ to: 'all', event: { type: 'playerRespawned', playerId: p.id } });
+        const [c, r] = this.entry(ai).cells[p.index];
+        this.emit('all', { type: 'playerRespawned', playerId: p.id });
         this.teleport(p, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c]);
       }
     });
@@ -1124,9 +1936,29 @@ export class Simulation {
 
   /** Defeat: all connected players are dead at the same time (§5.7). */
   private checkDefeat(): void {
-    if (this.result || this.benchArena >= 0) return;
+    if (this.result || this.won || this.benchRoom >= 0) return;
     const connected = this.players.filter((p) => p.connected);
     if (connected.length > 0 && connected.every((p) => p.dead)) this.finish('defeat');
+  }
+
+  /**
+   * The deeds at the boss's death (items-relics.md §3): only for a saved run, a record admitted at the
+   * start whose profile had already won this heaven; each deed once per profile, its relic owned at once.
+   */
+  private settleDeeds(p: SimPlayer): void {
+    if (!this.progressionEnabled || p.bot || !p.presentAtStart || p.clearsBeforeRun < 1) return;
+    const done: DeedId[] = [];
+    if (p.deaths === 0) done.push('unbroken');
+    if (p.sundialQualified) done.push('mercy');
+    if (p.bestStreak >= 200) done.push('armageddon');
+    if (this.edicts.length >= 3) done.push('sentence3');
+    for (const d of done) {
+      if (p.profileDeeds.includes(d) || p.deedsEarned.includes(d)) continue;
+      p.deedsEarned.push(d);
+      const relic = DEED_RELIC[d];
+      if (!p.ownedRelics.includes(relic)) p.ownedRelics.push(relic);
+    }
+    if (p.deedsEarned.length && p.connected) this.publishInventory(p);
   }
 
   /** Ends the run: the host sends one last snapshot and `gameOver`, then stops simulating (§3). */
@@ -1135,9 +1967,15 @@ export class Simulation {
     this.result = result;
     const stats: Record<number, PlayerStats> = {};
     for (const p of this.players) {
-      if (p.connected) stats[p.id] = { kills: p.kills, damage: Math.round(p.damage), deaths: p.deaths, reviveAssists: p.reviveAssists };
+      if (p.connected) stats[p.id] = { kills: p.kills, damage: Math.round(p.damage), deaths: p.deaths, reviveAssists: p.reviveAssists, bestStreak: p.bestStreak, assists: p.assists,
+        runXp: Math.floor(p.runXp), levelBefore: levelForXp(p.xpBase), levelAfter: levelForXp(saturatingAdd(p.xpBase, Math.floor(p.runXp))),
+        rites: p.build.rites.map((id) => talentNode(id)?.name ?? id), deeds: [...p.deedsEarned], relics: [...p.claimedRelics, ...p.pawnedRelics] };
     }
-    this.events.push({ to: 'all', event: { type: 'gameOver', result, timeMs: Math.round(this.timeMs), stats } });
+    // The streak crown (§10): the best streak of the run, the earlier to reach it on a tie.
+    const crowned = this.players.filter((p) => p.connected && !p.bot && p.bestStreak > 0)
+      .sort((a, b) => b.bestStreak - a.bestStreak || a.bestStreakTick - b.bestStreakTick || a.id - b.id)[0];
+    this.emit('all', { type: 'gameOver', result, timeMs: Math.round(this.victory?.state.clearTimeMs ?? this.timeMs), unclaimed: this.victory?.unclaimed ?? false, stats,
+      sentence: this.edicts.length, crown: crowned?.id ?? -1 });
   }
 
   // ------------------------------------------------------------------ flow fields
@@ -1146,51 +1984,119 @@ export class Simulation {
     this.fieldValid.fill(false);
   }
 
-  /** One ground and one air field per living player, each recomputed every 0.25 s on staggered ticks. */
+  /** Only rebuild occupied enemy rooms, at the inherited staggered cadence. */
   private updateFlowFields(): void {
     for (const p of this.players) {
-      if (!this.livingTargetable(p)) continue;
+      const room = this.roomAt(p.x, p.y);
+      // Roomless hand-written geometry fixtures retain their explicit fields.
+      if (this.map.rooms.length === 0) {
+        if (this.livingTargetable(p) && this.activeCount > 0) this.computeFields(p, ROOM_NONE);
+        continue;
+      }
+      if (!this.livingTargetable(p) || room === ROOM_NONE || !this.hasEnemies(room) && this.rooms[room].queue.length === 0 && !this.rooms[room].squad && !this.rooms[room].watch && this.rooms[room].trickleAt < 0) {
+        this.fieldValid[p.index] = false;
+        this.dryNavigation.release(p.index);
+        continue;
+      }
       const k = p.index * 2;
       const due = Math.floor((this.tick + k) / 7.5) !== Math.floor((this.tick + k - 1) / 7.5);
-      if (!due && this.fieldValid[p.index]) continue;
-      this.computeFields(p);
+      const cell = Math.floor(p.y) * this.map.w + Math.floor(p.x);
+      if (!due && this.fieldValid[p.index] && this.groundFields[p.index].targetCell === cell) continue;
+      this.computeFields(p, room);
     }
   }
 
-  /** Computes every living player's flow fields now. */
-  refreshFields(): void {
-    for (const p of this.players) if (this.livingTargetable(p)) this.computeFields(p);
+  private hasEnemies(room: number): boolean {
+    if (this.rooms[room].alive > 0 || (this.bossSlot >= 0 && this.eRoom[this.bossSlot] === room)) return true;
+    // Dev/test enemies may be placed without an owning wave.
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k];
+      if (this.eRoom[s] < 0 && this.roomAt(this.eX[s], this.eY[s]) === room) return true;
+    }
+    return false;
   }
 
-  private computeFields(p: SimPlayer): void {
-    const c = Math.floor(p.x);
-    const r = Math.floor(p.y);
-    this.groundFields[p.index].compute(c, r);
-    this.airFields[p.index].compute(c, r);
+  /** Explicit refresh for dev/test placements, including roomless geometry fixtures. */
+  refreshFields(): void {
+    this.syncHazards();
+    for (const p of this.players) if (this.livingTargetable(p)) this.computeFields(p, this.roomAt(p.x, p.y), true);
+  }
+
+  private computeFields(p: SimPlayer, room: number, forceAir = false): void {
+    const c = Math.floor(p.x), r = Math.floor(p.y);
+    const rect = room === ROOM_NONE ? undefined : this.map.rooms[room].rect;
+    const clamp = rect ? { x0: rect.x0 - 4, y0: rect.y0 - 4, x1: rect.x1 + 4, y1: rect.y1 + 4 } : undefined;
+    this.groundFields[p.index].compute(c, r, clamp);
+    let flyers = forceAir || room !== ROOM_NONE && (this.rooms[room].squad?.type === CHERUB || this.rooms[room].queue.some((b) => b.counts[2] > b.spawned[2]));
+    for (let k = 0; k < this.activeCount && !flyers; k++) {
+      const s = this.active[k];
+      flyers = ENEMIES[this.eType[s]].flying && (this.eRoom[s] === room || (this.eRoom[s] < 0 && this.roomAt(this.eX[s], this.eY[s]) === room));
+    }
+    if (flyers) this.airFields[p.index].compute(c, r, clamp);
+    else this.airFields[p.index].targetCell = -1;
     this.fieldValid[p.index] = true;
+    if (this.dryNavigation.room === room && room !== ROOM_NONE) this.dryNavigation.compute(p.index, c, r);
+    else this.dryNavigation.release(p.index);
+  }
+
+  private syncHazards(): void {
+    const room = !this.result && this.activePhase === PHASE_COMBAT ? this.activeRoom : -1;
+    const changed = this.hazards.setRoom(room);
+    let avoiding = false;
+    if (this.hazards.room >= 0) for (let k = 0; k < this.activeCount && !avoiding; k++) {
+      const s = this.active[k]; avoiding = !ENEMIES[this.eType[s]].flying && !isBossBody(this.eType[s]) && this.roomAt(this.eX[s], this.eY[s]) === this.hazards.room;
+    }
+    if (this.dryNavigation.setRoom(avoiding ? this.hazards.room : -1) || changed) this.invalidateFields();
+  }
+
+  private updateHazardDamage(): void {
+    this.ePooled.fill(0);
+    if (this.hazards.room < 0 && !this.fieldActive()) return;
+    // Player snapshots carry accepted feet, not a grounded bit; actual floor contact is the test.
+    for (const p of this.players) if (this.livingTargetable(p) && !this.talents.ignoresWorld(p) && this.hazards.contact(p.x, p.y, p.z, true)) this.damagePlayer(p, FIRE_PLAYER_DAMAGE);
+    let count = 0;
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k], fire = this.hazards.contact(this.eX[s], this.eY[s], this.eZ[s], this.eGrounded[s] === 1);
+      const field = this.fieldActive() && inField(this.fieldX, this.fieldY, this.eX[s], this.eY[s]);
+      this.ePooled[s] = fire || field ? 1 : 0;
+      if (field) this.streaks.touch(s, this.fieldBy);
+      if (fire) this.hazardVictims[count++] = s;
+    }
+    // Stable bounded slots: owned shield bursts/removals cannot skip or damage a victim twice.
+    for (let k = 0; k < count; k++) {
+      const s = this.hazardVictims[k];
+      if (this.eAlive[s]) this.damageEnemy(s, FIRE_ENEMY_DAMAGE, -1, FIRE_ENEMY_DAMAGE, this.eX[s], this.eY[s], true);
+    }
   }
 
   // ------------------------------------------------------------------ spawning
 
   private updateSpawning(): void {
-    this.arenas.forEach((st, ai) => {
+    for (const p of this.floorSpawnPoints.values()) p.budget = Math.min(BUDGET_MAX, p.budget + (this.isCrest(p.room) ? CREST_SPAWN_RATE : SPAWN_RATE) / TICK_HZ);
+    this.rooms.forEach((st, ai) => {
       const b = st.budgets;
-      for (let i = 0; i < b.length; i++) b[i] += BUDGET_PER_TICK;
-      if (st.phase === PHASE_COMBAT) this.updateArenaSpawning(ai);
+      const rate = this.isCrest(ai) ? CREST_SPAWN_RATE / TICK_HZ : BUDGET_PER_TICK;
+      for (let i = 0; i < b.length; i++) b[i] += rate;
+      if (st.phase === PHASE_COMBAT) this.updateRoomSpawning(ai);
       // The cap applies to the budget carried into the next tick, so a busy point sustains its rate.
       for (let i = 0; i < b.length; i++) if (b[i] > BUDGET_MAX) b[i] = BUDGET_MAX;
     });
   }
 
-  private updateArenaSpawning(ai: number): void {
-    const st = this.arenas[ai];
-    if (ai === this.benchArena) {
+  private isCrest(ai: number, wave = this.rooms[ai].wave): boolean {
+    const room = this.map.rooms[ai];
+    return room.kind === 'combat' && room.shape === '2x2' && wave === room.waves.length - 1;
+  }
+
+  private updateRoomSpawning(ai: number): void {
+    const st = this.rooms[ai];
+    if (ai === this.benchRoom) {
       // Benchmark: keep exactly 1 500 enemies alive instead of waves, topped up with Blessed. The
       // Gatekeeper and his summons count (`living` leaves the Gatekeeper out).
       let queued = 0;
-      for (const q of st.queue) for (let t = 0; t < 3; t++) queued += q.counts[t] - q.spawned[t];
-      const boss = this.bossSlot >= 0 && this.eArena[this.bossSlot] === ai ? 1 : 0;
-      const need = MAX_LIVING_ENEMIES - this.living - boss - queued;
+      for (const q of st.queue) for (let t = 0; t < q.counts.length; t++) queued += q.counts[t] - q.spawned[t];
+      const boss = this.bossSlot >= 0 && this.eRoom[this.bossSlot] === ai ? 1 : 0;
+      const need = MAX_LIVING_ENEMIES - (boss ? PART_RESERVE : 0) - this.living - boss - queued;
       if (need > 0) st.queue.push({ counts: [need, 0, 0], spawned: [0, 0, 0], wave: -1 });
     }
 
@@ -1204,48 +2110,76 @@ export class Simulation {
     }
 
     this.placeQueued(ai);
-    this.placeSquad(ai);
+    this.placeSquad(ai, 'squad');
+    this.placeSquad(ai, 'watch');
+  }
+
+  /** A room's Watchman alive cap (rooms.md §6.4): `ceil(5 × mult(P))`, or `ceil(7 × mult(P))` in a ranged template. */
+  watchmanCap(ai: number): number {
+    const room = this.map.rooms[ai];
+    const ranged = room.focus === 'ranged' || room.secondary === 'ranged';
+    return Math.ceil((ranged ? 7 : 5) * partyMultiplier(this.rooms[ai].partySize) - 1e-9);
+  }
+
+  /** Whether any of wave `n` waits in the room's queue, squad or Watchman queue. */
+  private waveQueued(st: RoomState, n: number): boolean {
+    return st.queue.some((b) => b.wave === n) || st.squad?.wave === n || st.watch?.wave === n;
   }
 
   /**
    * A wave's squad (M12 follow-up §4.2): from 5 s after the wave starts, one every 0.5 s, round-robin
    * over its points more than 8 m from every living player. When none is (a player stands among
-   * them), it comes from the arena's spawn points instead, by the wave's rule (more than 15 m, else
-   * 8 m, else any), so the wave still arrives in full.
+   * them), it uses the same distant-marker or warned safe-floor fallback as its ordinary wave.
    */
-  private placeSquad(ai: number): void {
-    const st = this.arenas[ai];
-    const q = st.squad;
-    if (!q || q.left <= 0 || this.tick < q.next || this.living >= MAX_LIVING_ENEMIES) return;
+  private placeSquad(ai: number, which: 'squad' | 'watch'): void {
+    const st = this.rooms[ai];
+    const q = st[which];
+    if (!q || q.left <= 0 || this.tick < q.next || this.activeCount >= MAX_LIVING_ENEMIES) return;
+    // Queued Watchmen wait for a free place under the alive cap and stay part of their wave.
+    if (which === 'watch' && st.watchAlive >= this.watchmanCap(ai)) return;
     let points = q.at;
     let eligible = new Uint8Array(points.length);
-    const own = this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible);
+    const own = this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible, this.spawnEligibility(ai, points, q.type));
+    let warned = false;
+    let temporary: { room: number; c: number; r: number; budget: number } | undefined;
     if (!own) {
-      points = this.map.arenaSpawnPoints[ai];
-      if (points.length === 0) return;
+      points = this.map.roomSpawnPoints[ai];
       eligible = new Uint8Array(points.length);
-      if (!this.markEligible(points, SPAWN_FAR_DIST, eligible) && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible)) eligible.fill(1);
+      const allowed = this.spawnEligibility(ai, points, q.type);
+      if (!this.markEligible(points, this.map.rooms[ai].shape === '1x1' ? 10 : SPAWN_FAR_DIST, eligible, allowed) && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible, allowed)) {
+        warned = true;
+        if (!this.markEligible(points, SPAWN_MIN_DIST, eligible, allowed)) {
+          const key = `${ai}:${q.type}`; if (!this.spawnBlockedSince.has(key)) this.spawnBlockedSince.set(key, this.tick);
+          if (this.tick - this.spawnBlockedSince.get(key)! < 2 * TICK_HZ) return;
+          temporary = this.floorSpawn(ai, q.type); if (!temporary) return;
+        }
+      }
     }
+    if (own || eligible.some(Boolean)) this.spawnBlockedSince.delete(`${ai}:${q.type}`);
     let found = -1;
     const rr = own ? q.rr : st.rr;
     for (let k = 0; k < points.length; k++) {
       const i = (rr + k) % points.length;
       if (eligible[i]) {
+        const [x, y] = points[i];
+        if (warned && !this.spawnWarnings.permit(ai, x + 0.5, y + 0.5, this.map.floor[y * this.map.w + x], this.tick)) continue;
         found = i;
         break;
       }
     }
+    if (found < 0 && !temporary) return;
     const slot = this.allocSlot();
     if (slot < 0) return;
-    const [c, r] = points[found];
+    const [c, r] = temporary ? [temporary.c, temporary.r] : points[found];
     this.spawnAt(slot, q.type, c, r, ai, q.wave);
-    if (own) q.rr = (found + 1) % points.length;
+    if (temporary) temporary.budget--;
+    else if (own) q.rr = (found + 1) % points.length;
     else st.rr = (found + 1) % points.length;
     q.left--;
     q.next = this.tick + SQUAD_EVERY_TICKS;
     if (q.left === 0) {
-      st.squad = null;
-      if (!st.queue.some((b) => b.wave === q.wave)) st.waveFullySpawned[q.wave] = true;
+      st[which] = null;
+      if (!this.waveQueued(st, q.wave)) st.waveFullySpawned[q.wave] = true;
     }
   }
 
@@ -1264,7 +2198,7 @@ export class Simulation {
     const r2 = ENGAGED_RADIUS * ENGAGED_RADIUS;
     for (let k = 0; k < this.activeCount && left > 0; k++) {
       const s = this.active[k];
-      if (this.eType[s] === GATEKEEPER) continue;
+      if (isBossBody(this.eType[s])) continue;
       for (let i = 0; i < PLAYER_SLOTS; i++) {
         if (engaged[i]) continue;
         const p = this.slots[i]!;
@@ -1280,52 +2214,211 @@ export class Simulation {
   }
 
   private placeQueued(ai: number): void {
-    const st = this.arenas[ai];
-    if (st.queue.length === 0) return;
-    const points = this.map.arenaSpawnPoints[ai];
+    const st = this.rooms[ai];
+    if (st.queue.length === 0) { this.pincerPending.delete(ai); return; }
+    const points = this.map.roomSpawnPoints[ai];
     const np = points.length;
-    if (np === 0) return;
-    // Eligible: more than 15 m from every living player in a combat arena (M12 §2.2), else more
-    // than 8 m; if no point is, every point.
+    // A pincer warning stays shown while it waits, between placement attempts too.
+    const pending = this.pincerPending.get(ai);
+    if (pending !== undefined) { const [c, r] = points[pending]; this.spawnWarnings.permit(ai, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c], this.tick, undefined, 'pincer', PINCER_WARNING_TICKS); }
+    // Preferred markers stay distant. Exhaustion falls back to a one-second warning,
+    // with the three-metre body clearance rechecked on every tick and placement.
     const paced = st.director !== null;
-    const eligible = new Uint8Array(np);
-    const far = paced && this.markEligible(points, SPAWN_FAR_DIST, eligible);
-    if (!far && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible)) eligible.fill(1);
+    const def = this.map.rooms[ai];
+    const warned = new Map<number, boolean>();
+    const maskFor = (type: number) => {
+      const allowed = this.spawnEligibility(ai, points, type);
+      const eligible = new Uint8Array(np);
+      const far = paced && this.markEligible(points, def.shape === '1x1' ? 10 : SPAWN_FAR_DIST, eligible, allowed);
+      if (!far && !this.markEligible(points, SPAWN_ELIGIBLE_DIST, eligible, allowed)) { this.markEligible(points, SPAWN_MIN_DIST, eligible, allowed); warned.set(type, true); }
+      return eligible;
+    };
+    const shared = def.spawnTags?.length ? null : maskFor(BLESSED);
+    const eligibleByType = SPAWN_TYPES.map((type) => shared ?? maskFor(type));
+    if (shared && warned.get(BLESSED)) for (const type of SPAWN_TYPES) warned.set(type, true);
+    for (let k = 0; k < SPAWN_TYPES.length; k++) {
+      const key = `${ai}:${SPAWN_TYPES[k]}`;
+      if (warned.get(SPAWN_TYPES[k]) && !eligibleByType[k].some(Boolean)) {
+        if (!this.spawnBlockedSince.has(key)) this.spawnBlockedSince.set(key, this.tick);
+      } else this.spawnBlockedSince.delete(key);
+    }
 
     while (st.queue.length > 0) {
-      if (this.living >= MAX_LIVING_ENEMIES) return;
+      if (this.activeCount >= MAX_LIVING_ENEMIES - (this.bossSlot >= 0 ? PART_RESERVE : 0)) return;
       if (paced && st.pace < 1 - 1e-9) return;
+      const batch = st.queue[0];
+      if (batch.boss) {
+        // At most floor(250 × mult(P)) adds alive; the Host arrives over 6 s.
+        if (this.living >= this.boss.addCap) return;
+        if (batch.arrive) {
+          const total = batch.counts.reduce((a, b) => a + b, 0), placed = batch.spawned.reduce((a, b) => a + b, 0);
+          if (placed >= Math.ceil(total * Math.min(1, (this.tick - batch.arrive.start + 1) / batch.arrive.ticks) - 1e-9)) return;
+        }
+      }
+      const family = batch.wave >= 0 && batch.spawned[3] === 0 ? def.waves[batch.wave].commander : undefined;
+      const preferredType = family === 'cantor' ? CANTOR : family === 'carrier' ? CARRIER : DOMINION;
+      const leaderType = preferredType !== DOMINION && !this.commanders.hasFamily(preferredType, ai) ? preferredType : DOMINION;
+      eligibleByType[3] = maskFor(leaderType);
+      if (warned.get(leaderType) && !eligibleByType[3].some(Boolean)) {
+        const key = `${ai}:${leaderType}`; if (!this.spawnBlockedSince.has(key)) this.spawnBlockedSince.set(key, this.tick);
+      }
+      const typeIndex = this.nextType(batch, eligibleByType.map((mask, k) => mask.some((ok, i) => !!ok && st.budgets[i] >= 1) || warned.get(k === 3 ? leaderType : SPAWN_TYPES[k]) === true));
+      if (typeIndex < 0) return; // Pending elites wait; fodder remains eligible while the cap is full.
       let found = -1;
+      const eligible = eligibleByType[typeIndex], type = typeIndex === 3 ? leaderType : SPAWN_TYPES[typeIndex];
+      const affinity = (type === CHORISTER || type === CANTOR) ? def.chorister : type === DOMINION ? def.dominion : undefined;
+      const preferred = affinity?.filter((i) => eligible[i] && st.budgets[i] >= 1 && (!batch.only || batch.only.has(i)));
+      if (preferred?.length && !warned.get(type)) found = preferred[Math.floor(this.random() * preferred.length)];
+      const pincer = found < 0 && type === BLESSED && paced && batch.wave >= PINCER_FROM_WAVE && (def.focus === 'horde' || def.secondary === 'horde') &&
+        (batch.pincered ?? 0) < Math.floor(batch.counts[0] * PINCER_SHARE);
+      if (pincer) { found = this.pincerSpawn(ai, points, st.budgets); if (found >= 0) batch.pincered = (batch.pincered ?? 0) + 1; }
       for (let k = 0; k < np; k++) {
+        if (found >= 0) break;
         const i = (st.rr + k) % np;
+        if (batch.only && !batch.only.has(i)) continue;
         if (eligible[i] && st.budgets[i] >= 1) {
+          if (warned.get(type)) { const [c, r] = points[i]; if (!this.spawnWarnings.permit(ai, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c], this.tick, () => { st.budgets[i] = Math.min(1, st.budgets[i]); })) continue; }
           found = i;
           break;
         }
       }
-      if (found < 0) return;
+      let temporary: { room: number; c: number; r: number; budget: number } | undefined;
+      if (found < 0 && warned.get(type) && !eligible.some(Boolean) && this.tick - this.spawnBlockedSince.get(`${ai}:${type}`)! >= 2 * TICK_HZ) temporary = this.floorSpawn(ai, type);
+      if (found < 0 && !temporary) return;
       const slot = this.allocSlot();
       if (slot < 0) return;
-      const batch = st.queue[0];
-      const type = this.takeNextType(batch);
+      batch.spawned[typeIndex]++;
       if (batch.spawned.every((s, t) => s >= batch.counts[t])) {
         st.queue.shift();
-        // Fully placed once its squad is too (M12 follow-up §4.2).
-        if (batch.wave >= 0 && st.squad?.wave !== batch.wave) st.waveFullySpawned[batch.wave] = true;
+        // Fully placed once its squad and Watchmen are too (M12 follow-up §4.2, rooms.md §6.4).
+        if (batch.wave >= 0 && !this.waveQueued(st, batch.wave)) st.waveFullySpawned[batch.wave] = true;
       }
-      const [c, r] = points[found];
+      const [c, r] = temporary ? [temporary.c, temporary.r] : points[found];
       this.spawnAt(slot, type, c, r, ai, batch.wave);
-      st.budgets[found] -= 1;
-      st.rr = (found + 1) % np;
+      if (temporary) temporary.budget -= 1;
+      else { st.budgets[found] -= 1; st.rr = (found + 1) % np; }
       // Budget left when the wave is fully placed is dropped.
       if (paced) st.pace = st.queue.length > 0 ? st.pace - 1 : 0;
     }
   }
 
+  private updateSpawnWarnings(): void {
+    const active = (room: number) => !this.result && (this.activePhase === PHASE_COMBAT && this.activeRoom === room || this.activeRoom === ROOM_NONE && this.rooms[room]?.trickleAt >= 0);
+    this.spawnWarnings.update(this.tick, active, (w) => this.spawnClearance(w.x, w.y, w.z, SPAWN_MIN_DIST));
+    for (const [key, p] of this.floorSpawnPoints) if (!active(p.room)) this.floorSpawnPoints.delete(key);
+    for (const key of this.spawnBlockedSince.keys()) if (!active(Number(key.split(':')[0]))) this.spawnBlockedSince.delete(key);
+  }
+
+  private floorSpawn(ai: number, type: number): { room: number; c: number; r: number; budget: number } | undefined {
+    const key = `${ai}:${type}`, def = ENEMIES[type];
+    let p = this.floorSpawnPoints.get(key);
+    const legal = (c: number, r: number) => {
+      const i = r * this.map.w + c, z = this.map.floor[i];
+      if (this.map.solid[i] || this.map.roomOf[i] !== ai || this.map.hazard[i] || this.props.blocksSpawn(ai, c + 0.5, r + 0.5, z, def.radius, def.height)) return false;
+      if (!this.spawnClearance(c + 0.5, r + 0.5, z, SPAWN_MIN_DIST)) return false;
+      const fields = this.groundFields;
+      return this.players.some((q) => this.livingTargetable(q) && this.fieldValid[q.index] && fields[q.index].at(c, r) !== UNREACHABLE);
+    };
+    if (p && !legal(p.c, p.r)) { this.floorSpawnPoints.delete(key); p = undefined; }
+    if (!p && this.floorScanTick !== this.tick) {
+      this.floorScanTick = this.tick; let best = -1, distance = -1;
+      for (const cell of this.fallbackSpawnCells(ai)) {
+        const c = cell % this.map.w, r = Math.floor(cell / this.map.w);
+        if (!legal(c, r)) continue;
+        let d = Infinity;
+        for (const q of this.players) if (this.livingTargetable(q)) d = Math.min(d, (q.x - c - 0.5) ** 2 + (q.y - r - 0.5) ** 2);
+        if (d > distance) { distance = d; best = r * this.map.w + c; }
+      }
+      if (best >= 0) { p = { room: ai, c: best % this.map.w, r: Math.floor(best / this.map.w), budget: 1 }; this.floorSpawnPoints.set(key, p); }
+    }
+    if (!p || p.budget < 1) return undefined;
+    return this.spawnWarnings.permit(ai, p.c + 0.5, p.r + 0.5, this.map.floor[p.r * this.map.w + p.c], this.tick) ? p : undefined;
+  }
+
+  private fallbackSpawnCells(ai: number): Uint32Array {
+    let cells = this.spawnFloorCells.get(ai); if (cells) return cells;
+    const room = this.map.rooms[ai], rect = room.rect, out: number[] = [];
+    const rewards = [room.points?.reward, room.points?.advocate, ...(room.points?.pedestals ?? [])].filter((p): p is [number, number] => !!p);
+    const entries = room.entry.flatMap((e) => e.cells);
+    for (let r = rect.y0; r <= rect.y1; r++) for (let c = rect.x0; c <= rect.x1; c++) {
+      const i = r * this.map.w + c;
+      if (this.map.wall[i] || this.map.hazard[i] || this.map.doorRoom[i] >= 0 || this.map.roomOf[i] !== ai ||
+        rewards.some(([x, y]) => Math.abs(x - c) <= 1 && Math.abs(y - r) <= 1) ||
+        entries.some(([x, y]) => Math.abs(x - c) <= 1 && Math.abs(y - r) <= 1)) continue;
+      out.push(i);
+    }
+    cells = Uint32Array.from(out); this.spawnFloorCells.set(ai, cells); return cells;
+  }
+
+  private spawnClearance(x: number, y: number, z: number, distance: number): boolean {
+    for (const p of this.players) if (this.livingTargetable(p) && distToCylinder(x, y, z, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) <= distance) return false;
+    return true;
+  }
+
+  /** Authored marker tags also apply when squads or trickles borrow ordinary points. */
+  private spawnEligibility(ai: number, points: Array<[number, number]>, type: number): boolean[] | undefined {
+    const tags = this.map.rooms[ai].spawnTags;
+    if (!tags?.length) return undefined;
+    const markers = this.map.roomSpawnPoints[ai];
+    return points.map(([x, y]) => {
+      const index = markers.findIndex(([c, r]) => x === c && y === r);
+      const tag = tags.find((t) => t.index === index);
+      return !tag || tag.only.some((id) => (id === 'chorister' ? type === CHORISTER || type === CANTOR : type === DOMINION));
+    });
+  }
+
+  /**
+   * A pincer arrival's spawn point now (R06 follow-up §9), or -1: ahead of a player retreating from the
+   * crowd, at least SPAWN_ELIGIBLE_DIST from everyone. A point nearer than the far distance is used only
+   * after its 2 s warning; until then this Blessed is placed as usual.
+   */
+  private pincerSpawn(ai: number, points: Array<[number, number]>, budgets: Float64Array): number {
+    const allowed = this.spawnEligibility(ai, points, BLESSED);
+    const safe = new Uint8Array(points.length), far = new Uint8Array(points.length);
+    this.markEligible(points, SPAWN_ELIGIBLE_DIST, safe, allowed);
+    this.markEligible(points, this.map.rooms[ai].shape === '1x1' ? 10 : SPAWN_FAR_DIST, far, allowed);
+    let i = this.pincerPending.get(ai) ?? -1;
+    if (i >= 0 && !safe[i]) {
+      const [c, r] = points[i];
+      this.spawnWarnings.cancel(ai, c + 0.5, r + 0.5, 'pincer');
+      this.pincerPending.delete(ai); i = -1;
+    }
+    if (i < 0) i = pincerPoint(points, (k) => !!safe[k] && budgets[k] >= 1, this.retreats(ai));
+    if (i < 0 || budgets[i] < 1) return -1;
+    const [c, r] = points[i];
+    if (!far[i] && !this.spawnWarnings.permit(ai, c + 0.5, r + 0.5, this.map.floor[r * this.map.w + c], this.tick, undefined, 'pincer', PINCER_WARNING_TICKS)) {
+      this.pincerPending.set(ai, i);
+      return -1;
+    }
+    this.pincerPending.delete(ai);
+    return i;
+  }
+
+  /** The living players in room `ai` retreating from the crowd this tick, once per tick. */
+  private retreats(ai: number): Retreat[] {
+    if (this.retreatCache?.tick === this.tick && this.retreatCache.room === ai) return this.retreatCache.list;
+    const list: Retreat[] = [], r2 = CROWD_RADIUS * CROWD_RADIUS;
+    for (const p of this.players) {
+      if (!this.livingTargetable(p) || this.roomAt(p.x, p.y) !== ai) continue;
+      const from = this.positions.secondAgo(p.id);
+      if (!from) continue;
+      let sx = 0, sy = 0, n = 0;
+      for (let k = 0; k < this.activeCount; k++) {
+        const s = this.active[k], dx = this.eX[s] - p.x, dy = this.eY[s] - p.y;
+        if (this.eRoom[s] === ai && dx * dx + dy * dy <= r2) { sx += this.eX[s]; sy += this.eY[s]; n++; }
+      }
+      const h = retreatHeading(from, p, n ? { x: sx / n, y: sy / n } : null);
+      if (h) list.push({ x: p.x, y: p.y, hx: h[0], hy: h[1] });
+    }
+    this.retreatCache = { tick: this.tick, room: ai, list };
+    return list;
+  }
+
   /** Marks the spawn points farther than `dist` from every living player; returns whether any is. */
-  private markEligible(points: Array<[number, number]>, dist: number, eligible: Uint8Array): boolean {
+  private markEligible(points: Array<[number, number]>, dist: number, eligible: Uint8Array, allowed?: readonly boolean[]): boolean {
     let any = false;
     for (let i = 0; i < points.length; i++) {
+      if (allowed && !allowed[i]) { eligible[i] = 0; continue; }
       const [c, r] = points[i];
       const px = c + 0.5;
       const py = r + 0.5;
@@ -1345,10 +2438,16 @@ export class Simulation {
   }
 
   /** The type with the lowest (spawned + 0.5) / count among types with enemies left (§8.2). */
-  private takeNextType(batch: SpawnBatch): number {
+  private nextType(batch: SpawnBatch, canSpawn?: readonly boolean[]): number {
     let best = -1;
     let bestV = Infinity;
-    for (let t = 0; t < 3; t++) {
+    const eliteCap = this.dominionAlive() >= DOMINION_ALIVE_CAP + (this.edicts.includes(1) ? 1 : 0);
+    // Put the wave's first commander in the opening arrivals, not halfway through its minions.
+    const leader = SPAWN_TYPES.indexOf(DOMINION);
+    if (!eliteCap && batch.counts[leader] > 0 && batch.spawned[leader] === 0 && (!canSpawn || canSpawn[leader])) return leader;
+    for (let t = 0; t < batch.counts.length; t++) {
+      if (canSpawn && !canSpawn[t]) continue;
+      if (SPAWN_TYPES[t] === DOMINION && eliteCap) continue;
       if (batch.spawned[t] >= batch.counts[t]) continue;
       const v = (batch.spawned[t] + 0.5) / batch.counts[t];
       if (v < bestV) {
@@ -1356,11 +2455,15 @@ export class Simulation {
         best = t;
       }
     }
-    batch.spawned[best]++;
-    return SPAWN_TYPES[best];
+    return best;
+  }
+
+  private dominionAlive(): number {
+    return this.livingDominions;
   }
 
   private allocSlot(): number {
+    if (this.activeCount >= MAX_LIVING_ENEMIES) return -1;
     if (this.freeCount > 0) {
       const s = this.freeFifo[this.freeHead];
       if (this.eFreedTick[s] + SLOT_REUSE_TICKS <= this.tick) {
@@ -1373,30 +2476,118 @@ export class Simulation {
     return -1;
   }
 
+  /** A trickle is one complete batch; wait rather than spending a refill on a partial placement. */
+  private canAlloc(count: number): boolean {
+    if (this.activeCount + count > MAX_LIVING_ENEMIES) return false;
+    let available = ENEMY_SLOTS - this.nextFresh;
+    for (let k = 0; k < this.freeCount && available < count; k++) {
+      const s = this.freeFifo[(this.freeHead + k) % ENEMY_SLOTS];
+      if (this.tick - this.eFreedTick[s] < SLOT_REUSE_TICKS) break;
+      available++;
+    }
+    return available >= count;
+  }
+
   /** Places a new enemy on a cell (§2.3) and returns its slot, or -1 if no slot is free. */
-  placeEnemy(type: number, c: number, r: number, arena: number): number {
+  placeEnemy(type: number, c: number, r: number, room: number): number {
     const slot = this.allocSlot();
-    if (slot >= 0) this.spawnAt(slot, type, c, r, arena, -1);
+    if (slot >= 0) this.spawnAt(slot, type, c, r, room, -1);
     return slot;
   }
 
-  private spawnAt(slot: number, type: number, c: number, r: number, arena: number, wave: number): void {
+  /** A Watcher or the Seal (rogue bosses.md §3.5) at an exact point, in the slots reserved for parts. Returns its slot or -1. */
+  spawnBossPart(x: number, y: number, zBase: number, hp: number, seal: boolean): number {
+    const room = this.boss.room;
+    if (room < 0 || this.activeCount >= MAX_LIVING_ENEMIES) return -1;
+    let slot = -1;
+    if (this.freeCount > 0 && this.eFreedTick[this.freeFifo[this.freeHead]] + SLOT_REUSE_TICKS <= this.tick) {
+      slot = this.freeFifo[this.freeHead];
+      this.freeHead = (this.freeHead + 1) % ENEMY_SLOTS;
+      this.freeCount--;
+    } else if (this.nextFresh < ENEMY_SLOTS) slot = this.nextFresh++;
+    if (slot < 0) return -1;
+    this.spawnAt(slot, BOSS_PART, Math.floor(x), Math.floor(y), room, -1);
+    this.eX[slot] = this.eStartX[slot] = x;
+    this.eY[slot] = this.eStartY[slot] = y;
+    this.eZ[slot] = zBase;
+    this.eHp[slot] = hp;
+    this.eState[slot] = seal ? ST_ATTACKING : ST_IDLE;
+    return slot;
+  }
+
+  /** A Watcher tether's accepted share on the body (rogue bosses.md §3.5): no break credit, procs or kill credit; it may finish him. */
+  bossTether(amount: number): void {
+    const s = this.bossSlot;
+    if (s < 0 || amount <= 0) return;
+    this.eHp[s] -= amount;
+    this.eHurtTick[s] = this.tick;
+    if (this.eHp[s] <= 0) { this.rewards.enemyKilled(s); this.removeEnemy(s); }
+  }
+
+  /** Queues the Gatekeeper's adds: one seal wave and at most one Host batch; a new Host discards the previous one's unplaced summons. */
+  queueBossAdds(kind: 'host' | 'seal', counts: number[], arrival: number): void {
+    const room = this.boss.room, def = this.map.rooms[room], st = this.rooms[room];
+    if (!def || !st) return;
+    const markers = this.map.roomSpawnPoints[room];
+    const wanted = kind === 'host' ? def.points?.addSpawns?.gate : def.points?.addSpawns?.field;
+    const only = new Set<number>();
+    for (const [c, r] of wanted ?? []) { const i = markers.findIndex(([x, y]) => x === c && y === r); if (i >= 0) only.add(i); }
+    st.queue = st.queue.filter((b) => b.boss !== kind);
+    st.queue.push({ counts: [...counts, 0].slice(0, 4), spawned: [0, 0, 0, 0], wave: -1, boss: kind, ...(only.size ? { only } : {}), ...(arrival > 0 ? { arrive: { start: this.tick, ticks: arrival } } : {}) });
+  }
+
+  /** The 50% transition removes pending add batches without credit; living adds remain. */
+  discardBossAdds(): void {
+    const st = this.rooms[this.boss.room];
+    if (st) st.queue = st.queue.filter((b) => !b.boss);
+  }
+
+  /** The 50% transition removes every hostile projectile without credit, owed late shots included. */
+  clearHostileProjectiles(): void {
+    for (const slot of [...this.projectiles]) if (this.pOwner[slot] < 0 && !this.pReflected[slot]) this.removeProjectile(slot);
+    this.lateShots.length = 0;
+  }
+
+  private spawnAt(slot: number, type: number, c: number, r: number, room: number, wave: number): void {
+    if (this.nextIncarnation > 0xffffffff) throw new Error('enemy incarnation exhausted');
+    if ((type === CANTOR || type === CARRIER) && this.commanders.hasFamily(type, room)) type = DOMINION;
     const def = ENEMIES[type];
+    this.eIncarnation[slot] = this.nextIncarnation++;
+    this.eSpawnTick[slot] = this.tick;
+    this.streaks.spawned(slot);
     this.eAlive[slot] = 1;
     this.eType[slot] = type;
     this.eState[slot] = ST_IDLE;
     this.eX[slot] = c + 0.5;
     this.eY[slot] = r + 0.5;
-    this.eZ[slot] = this.map.floor[r * this.map.w + c] + (type === CHERUB ? CHERUB_HOVER : 0);
+    this.eZ[slot] = this.map.floor[r * this.map.w + c] + (ENEMIES[type].flying ? CHERUB_HOVER : 0);
     this.eStartX[slot] = this.eX[slot];
     this.eStartY[slot] = this.eY[slot];
     this.eVz[slot] = 0;
     this.eGrounded[slot] = 1;
     this.eHp[slot] = def.hp;
-    this.eArena[slot] = arena;
+    if (isCommander(type)) this.livingDominions++;
+    if (type === WATCHMAN && room >= 0) this.rooms[room].watchAlive++;
+    this.dominions.reset(slot);
+    this.dominions.leapReadyAt[slot] = this.tick + DOMINION_COOLDOWN_TICKS;
+    if (isCommander(type) && wave >= 0) {
+      const n4 = this.map.rooms[room].waves[wave].dominions ?? 0;
+      const party = this.rooms[room].partySize, count = scaleCount(n4, party);
+      if (count > 0) this.eHp[slot] *= n4 * partyMultiplier(party) / count;
+    }
+    this.rewards.enemySpawned(slot, type, room, wave);
+    this.eRoom[slot] = room;
     this.eWave[slot] = wave;
+    this.home[slot] = ROOM_NONE;
+    this.leashed[slot] = 0;
+    this.eUnreachableSince[slot] = -1;
+    this.eRecoveryFailed[slot] = -1;
+    this.eStillSince[slot] = this.tick;
+    this.eStillX[slot] = this.eX[slot];
+    this.eStillY[slot] = this.eY[slot];
     this.eLos[slot] = 0;
     this.eTarget[slot] = -1;
+    this.eWaypoint[slot] = this.eWaypointGoal[slot] = -1;
     this.eStrafe[slot] = 1;
     this.eStrafeT[slot] = 0;
     this.eHurtTick[slot] = -1;
@@ -1414,13 +2605,15 @@ export class Simulation {
     this.eMeleeNext[slot] = -1;
     this.activePos[slot] = this.activeCount;
     this.active[this.activeCount++] = slot;
-    if (type !== GATEKEEPER) this.living++;
-    if (arena >= 0) {
-      const st = this.arenas[arena];
-      if (type !== GATEKEEPER) st.alive++;
+    if (!isBossBody(type)) this.living++;
+    if (room >= 0) {
+      const st = this.rooms[room];
+      if (!isBossBody(type)) st.alive++;
       if (wave >= 0) st.waveAlive[wave]++;
     }
+    this.watchmen.spawn(slot);
     this.retarget(slot);
+    this.commanders.spawn(slot);
   }
 
   /**
@@ -1429,25 +2622,30 @@ export class Simulation {
    */
   removeEnemy(slot: number, sweep = false): void {
     if (!this.eAlive[slot]) return;
+    this.dominions.cancel(slot, this.tick);
+    this.commanders.remove(slot);
+    this.watchmen.remove(slot);
     this.eAlive[slot] = 0;
+    this.ePooled[slot] = 0;
     const type = this.eType[slot];
-    const d = sweep || type === GATEKEEPER ? null : this.activeDirector();
+    if (isCommander(type)) this.livingDominions--;
+    if (type === WATCHMAN && this.eRoom[slot] >= 0) this.rooms[this.eRoom[slot]].watchAlive--;
+    const d = sweep || isBossBody(type) ? null : this.activeDirector();
     if (d) {
       for (const p of this.players) {
         if (this.livingTargetable(p) && Math.hypot(this.eX[slot] - p.x, this.eY[slot] - p.y) <= KILL_NEAR_RADIUS) d.killNear(p.index);
       }
     }
-    if (type !== GATEKEEPER) this.living--;
-    const arena = this.eArena[slot];
-    if (arena >= 0) {
-      const st = this.arenas[arena];
-      if (type !== GATEKEEPER) st.alive--;
+    if (!isBossBody(type)) this.living--;
+    const room = this.eRoom[slot];
+    if (room >= 0) {
+      const st = this.rooms[room];
+      if (!isBossBody(type)) st.alive--;
       const wave = this.eWave[slot];
       if (wave >= 0) st.waveAlive[wave]--;
     }
     if (slot === this.bossSlot) {
       this.bossSlot = -1;
-      this.bossCast = BOSS_CAST_NONE;
       this.bossKilled = true;
     }
     const pos = this.activePos[slot];
@@ -1462,6 +2660,7 @@ export class Simulation {
 
   /** Dev key K: kills every living enemy, including the Gatekeeper, without kill credit. */
   killAll(blessedOnly = false): void {
+    if (this.progressionEnabled) return;
     if (!blessedOnly) {
       while (this.activeCount > 0) this.removeEnemy(this.active[this.activeCount - 1]);
       return;
@@ -1481,8 +2680,45 @@ export class Simulation {
    * burst death (M12 §4.1), summed over the tick; a burst is blasted away from (fromX, fromY), by
    * default the credited player.
    */
-  damageEnemy(slot: number, amount: number, source: number, force = amount, fromX = NaN, fromY = NaN): void {
+  damageEnemy(slot: number, amount: number, source: number, force = amount, fromX = NaN, fromY = NaN, worldBurst = false, areaSource = Number.isFinite(fromX) && Number.isFinite(fromY)): void {
+    // Only the call that set the context is native or a direct item: nested damage (a death's discharge) is not.
+    const origin = this.procFree ? null : this.hitCtx;
+    this.hitCtx = null;
     if (!this.eAlive[slot] || amount <= 0) return;
+    const cast = this.commanders.active.get(slot);
+    if (cast?.kind === 'beam' && (cast.phase === 'tell' || cast.phase === 'active') && !worldBurst && (source >= 0 || Number.isFinite(fromX) && Number.isFinite(fromY))) {
+      const area = areaSource, attacker = this.slots[source];
+      const x = area ? fromX : attacker?.x, y = area ? fromY : attacker?.y;
+      if (x !== undefined && y !== undefined) { const factor = hymnalReduction(cast.yaw, x - this.eX[slot], y - this.eY[slot], area); amount *= factor; force *= factor; }
+    }
+    // Boss parts (rogue bosses.md §3.5): refused while opening, half from area damage; their deaths grant nothing.
+    if (this.eType[slot] === BOSS_PART) {
+      if (this.boss.partOpening(slot)) return;
+      if (areaSource && !this.directPartHit) amount *= 0.5;
+      const shooter = source >= 0 ? this.slots[source] : undefined;
+      const applied = Math.min(amount, this.eHp[slot]);
+      if (shooter) shooter.damage += applied;
+      this.eHp[slot] -= amount;
+      this.eHurtTick[slot] = this.tick;
+      if (shooter && !(origin && shooter.shotIndex >= 0)) {
+        let own = this.tickDamage.get(source);
+        if (!own) { own = new Map(); this.tickDamage.set(source, own); }
+        const hit = own.get(slot) ?? [0, 0];
+        hit[0] += applied; if (this.eHp[slot] <= 0) hit[1] = 1;
+        own.set(slot, hit);
+      }
+      if (this.eHp[slot] <= 0) {
+        if (shooter) { let kills = this.tickKills.get(source); if (!kills) { kills = []; this.tickKills.set(source, kills); } kills.push(slot, this.eIncarnation[slot]); }
+        this.boss.partKilled(slot, shooter ? shooter.id : -1);
+        this.removeEnemy(slot, true);
+      }
+      return;
+    }
+    // The body: refused while transitioning, clamped at 50% in phase 1 and at 1 HP while the completion gate holds.
+    if (slot === this.bossSlot) {
+      amount = this.boss.bodyAmount(amount);
+      if (amount <= 0) return;
+    }
     // 1. Bound (M9 §3.6): a rooted enemy, during the pull too, takes double damage, and double force.
     if (this.isRooted(slot)) {
       amount *= BOUND_FACTOR;
@@ -1493,45 +2729,313 @@ export class Simulation {
       this.eForce[slot] = 0;
     }
     this.eForce[slot] += force;
-    // Judgment is interrupted by the boss taking 1 300 damage during it, counted after step 1.
-    if (slot === this.bossSlot && this.bossCast === BOSS_CAST_JUDGMENT) {
-      this.judgmentDamage += amount;
-      if (this.judgmentDamage >= JUDGMENT_INTERRUPT * bossMultiplier(this.bossParty) - 1e-9) this.interruptJudgment();
-    }
     const shooter = source >= 0 ? this.slots[source] : undefined;
-    if (shooter) shooter.damage += Math.min(amount, this.eHp[slot]);
+    const applied = Math.min(amount, this.eHp[slot]);
+    if (shooter) { shooter.damage += applied; this.streaks.touch(slot, source); }
+    this.commanders.damaged(slot, applied);
     this.eHp[slot] -= amount;
     this.eHurtTick[slot] = this.tick;
+    // Judgment's break fill and the 50% threshold read the accepted hit.
+    if (slot === this.bossSlot) this.boss.bodyDamaged(applied);
+    // A client-timed shot's own hits already showed their numbers on the shooter's screen (netcode stage 3).
+    // Bots get theirs too: the lag test's bot guest plays its reported kills like a player (netcode stage 4).
+    if (shooter && !(origin && shooter.shotIndex >= 0)) {
+      let own = this.tickDamage.get(source);
+      if (!own) { own = new Map(); this.tickDamage.set(source, own); }
+      const hit = own.get(slot) ?? [0, 0];
+      hit[0] += applied; if (this.eHp[slot] <= 0) hit[1] = 1;
+      own.set(slot, hit);
+    }
     // 5. Death and kill credit.
     if (this.eHp[slot] <= 0) {
+      // Relic triggers read the victim's states as they were before this killing damage (§2.4 rule 1).
+      if (shooter && origin && !shooter.bot) this.relics.killed(shooter, origin, slot, this.victimStates(slot));
+      this.streaks.killed(slot, shooter ? source : -1, !!origin);
+      if (!this.procFree) this.talents.died(slot, shooter ? source : -1);
+      this.rewards.enemyKilled(slot);
       if (shooter) {
         shooter.kills++;
+        let kills = this.tickKills.get(source);
+        if (!kills) { kills = []; this.tickKills.set(source, kills); }
+        kills.push(slot, this.eIncarnation[slot]);
+        if (origin === 'LMB' || origin === 'RMB') shooter.weaponKills++;
+        this.closeQuarters(shooter, slot);
         this.noteBurst(slot, shooter, fromX, fromY);
-      }
+      } else if (worldBurst) this.noteBurst(slot, null, fromX, fromY);
       this.removeEnemy(slot);
     }
   }
 
-  /** A credited kill bursts when its tick's force reaches 2× the type's max HP, heavy at 4× (M12 §4.1). */
-  private noteBurst(slot: number, shooter: SimPlayer, fromX: number, fromY: number): void {
-    const type = this.eType[slot];
-    if (type === GATEKEEPER) return;
-    const tier = burstTier(this.eForce[slot], ENEMIES[type].hp);
-    if (tier === 0) return;
-    const fx = Number.isNaN(fromX) ? shooter.x : fromX;
-    const fy = Number.isNaN(fromY) ? shooter.y : fromY;
-    const angle = burstAngle(fx, fy, this.eX[slot], this.eY[slot], slot);
-    this.tickBursts.push(slot, tier === 2 ? angle + 360 : angle, shooter.id);
+
+
+
+
+  /**
+   * Close-quarters charge (R06 follow-up §9 option 5): a kill within 5 m of its credited player takes
+   * 0.25 s off that player's Q and E cooldowns, at most 2 s per second.
+   */
+  private closeQuarters(p: SimPlayer, slot: number): void {
+    if (p.dead || Math.hypot(this.eX[slot] - p.x, this.eY[slot] - p.y) > CLOSE_CHARGE.range) return;
+    p.closeCharge = Math.min(CLOSE_CHARGE.budget, p.closeCharge + (this.tick - p.closeChargeTick) * TICK_DT * CLOSE_CHARGE.budget);
+    p.closeChargeTick = this.tick;
+    if (p.closeCharge < CLOSE_CHARGE.refund - 1e-9) return;
+    p.closeCharge -= CLOSE_CHARGE.refund;
+    p.cdQ = Math.max(0, p.cdQ - CLOSE_CHARGE.refund);
+    p.cdE = Math.max(0, p.cdE - CLOSE_CHARGE.refund);
   }
 
-  /** A hit on a player. */
-  damagePlayer(p: SimPlayer, amount: number): void {
-    if (p.dead || !p.connected) return;
+  /** An enemy's §4.11 states now, for a relic kill trigger. */
+  private victimStates(s: number): VictimStates {
+    return { taunted: this.eTauntUntil[s] > this.tick, censed: this.talents.censed(s), bound: this.isRooted(s), pooled: this.ePooled[s] === 1,
+      slowed: this.talents.slowed(s), airborne: this.talents.launches.airborne(s) };
+  }
+
+  /** Relic and combo damage (`origin=relic`): credited to the owner, never starting another proc. */
+  relicDamage(s: number, amount: number, owner: SimPlayer, x: number, y: number): void {
+    this.procFree = true;
+    try { this.damageEnemy(s, amount, owner.connected ? owner.index : -1, amount, x, y); }
+    finally { this.procFree = false; }
+  }
+
+  inventoryState(p: SimPlayer): InventoryState {
+    return { playerId: p.id, inventory: copyInventory(p.inventory), wallet: p.wallet, chart: this.rewards.chartRevealed,
+      ownedRelics: [...p.ownedRelics], pawnedRelics: [...p.pawnedRelics], maxHp: p.maxHp, bargainOpen: this.bargain.available(p),
+      nextRequestId: p.requests.next, itemReadyTick: p.itemReadyTick, featherUntil: p.featherUntil, sealUntil: p.sealUntil, itemsTried: [...p.itemsTried], xp: saturatingAdd(p.xpBase, Math.floor(p.runXp)), runXp: Math.floor(p.runXp) };
+  }
+  publishInventory(p: SimPlayer): void { this.emit(p.id, { type: 'inventory', state: this.inventoryState(p) }); }
+  /** Take a Rite card or Pass (rogue game.md §9.10), once per request ID. */
+  rite(playerId: number, requestId: number, offerId: number, choice: string): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot || typeof choice !== 'string' || !Number.isInteger(offerId)) return;
+    const fresh = p.requests.next;
+    const result = p.requests.execute(requestId, `rite:${offerId}`, () => this.rites.choose(p, offerId, choice));
+    if (result?.accepted && p.requests.next !== fresh) this.evidence?.decision(p, choice === 'pass' ? 'ritePass' : 'rite');
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale choice; try again' }) });
+    this.publishInventory(p);
+  }
+
+  /** Whether the player can reach the Advocate (rogue game.md §9.6): within 2.5 m, in the Confessional. */
+  advocateInReach(p: SimPlayer): boolean {
+    const room = this.floor?.confessional ?? -1, point = room >= 0 ? this.map.rooms[room]?.points?.advocate : undefined;
+    return !!point && this.roomAt(p.x, p.y) === room && Math.hypot(point[0] + 0.5 - p.x, point[1] + 0.5 - p.y) <= ADVOCATE_REACH;
+  }
+
+  /**
+   * A whole learned allocation and Q/E assignment (§9.5, §9.6, §9.8): at the Advocate in a valley or a
+   * countdown, alive; refused whole if illegal. Reassigning Q/E alone (the same learned talents) works
+   * anywhere outside combat, from the T view. Development runs without saved progression may edit
+   * anywhere with free points, so talents can be tried without leveling.
+   */
+  advocate(playerId: number, requestId: number, talents: unknown, q: unknown, e: unknown): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot) return;
+    const result = p.requests.execute(requestId, 'advocate', (): InteractionResult => {
+      if (!Array.isArray(talents) || talents.length > 32 || talents.some((t) => typeof t !== 'string') || typeof q !== 'string' || typeof e !== 'string') return { accepted: false, reason: 'Malformed loadout' };
+      const free = !this.progressionEnabled;
+      if (!p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
+      const slotsOnly = talents.length === p.build.talents.length && p.build.talents.every((t) => talents.includes(t));
+      if (!free && !slotsOnly && !this.advocateInReach(p)) return { accepted: false, reason: 'Speak to the Advocate in the Confessional' };
+      if (this.activePhase === PHASE_COMBAT) return { accepted: false, reason: 'Not while the doors are sealed' };
+      const error = this.talents.edit(p, talents as string[], q, e, free);
+      if (error) return { accepted: false, reason: error };
+      if (this.rites.hasPending(p)) this.rites.publish(p);
+      return { accepted: true, reason: 'Your build is set' };
+    });
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale loadout; try again' }) });
+    // The view snaps back to the accepted kit on refusal (§9.8).
+    this.emit(playerId, { type: 'kit', kit: this.talents.kitState(p) });
+  }
+
+  private devBuildIndex = 0;
+
+  /** Dev key B: the next development quick build for this player, replacing its Rites (never with saved progression). */
+  devBuildCycle(playerId: number): void {
+    const p = this.playerById(playerId);
+    if (this.progressionEnabled || !p || p.bot) return;
+    const order = devBuildOrder(p.classId), name = order[this.devBuildIndex++ % order.length], d = DEV_BUILDS[name];
+    const [q, e] = BASE_ABILITIES[p.classId];
+    const build = { talents: [...d.talents], rites: [...(d.rites ?? [])], q: d.q ?? q, e: d.e ?? e };
+    const error = runBuildError(p.classId, build, null);
+    if (!error) this.talents.setBuild(p, build);
+    this.emit(playerId, { type: 'interactionResult', requestId: 0, accepted: !error, reason: error ?? `Dev build: ${d.label}` });
+  }
+
+  /** Dev key R: a Rite offer now, as if a page was touched. */
+  devRite(playerId: number): void {
+    const p = this.playerById(playerId);
+    if (p) this.rites.dev(p);
+  }
+
+  /** A relic card taken, or the chest passed / the bargain declined (§6.5, §9.6), once per request ID. */
+  relicChoice(playerId: number, requestId: number, offerId: number, choice: unknown): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot || typeof choice !== 'string' || !Number.isInteger(offerId)) return;
+    const fresh = p.requests.next;
+    const result = p.requests.execute(requestId, `relic:${offerId}`, (): InteractionResult => {
+      const offer = this.relicOffers.find(p, offerId);
+      if (!offer) return { accepted: false, reason: 'That offer is settled' };
+      if (!p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
+      if (this.activePhase === PHASE_COMBAT) return { accepted: false, reason: 'Choose after the fight' };
+      if (offer.source === 'bargain') return this.bargain.chooseRelic(p, offer, choice);
+      const chest = this.route.chest;
+      if (!chest || !this.route.inReach(p, chest, 0.6)) return { accepted: false, reason: 'Choose at the Reliquary' };
+      return this.relicOffers.chooseChest(p, offer, choice);
+    });
+    if (result?.accepted && p.requests.next !== fresh) this.evidence?.decision(p, choice === 'pass' ? 'rewardPass' : 'reward');
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale choice; try again' }) });
+    this.publishInventory(p);
+  }
+
+  /**
+   * Equips two relics at the Advocate (§8.1, §9.6): owned or pawned, distinct, outside combat, in reach.
+   * Development runs without saved progression may equip anywhere. A pawned relic changes the run's slot
+   * but not the saved one until victory.
+   */
+  equipRelics(playerId: number, requestId: number, relics: unknown): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot) return;
+    const result = p.requests.execute(requestId, 'relics', (): InteractionResult => {
+      if (!Array.isArray(relics) || relics.length !== 2 || relics.some((r) => r !== null && typeof r !== 'string')) return { accepted: false, reason: 'Malformed relics' };
+      const [a, b] = relics as [string | null, string | null];
+      if (!p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
+      if (this.progressionEnabled && !this.advocateInReach(p)) return { accepted: false, reason: 'Equip relics with the Advocate in the Confessional' };
+      if (this.activePhase === PHASE_COMBAT) return { accepted: false, reason: 'Not while the doors are sealed' };
+      const usable = (id: string | null) => id === null || p.ownedRelics.includes(id) || p.pawnedRelics.includes(id);
+      if (!usable(a) || !usable(b) || (a && a === b)) return { accepted: false, reason: 'Equip owned relics, each once' };
+      this.relics.equip(p, [a, b]);
+      // The saved loadout takes owned relics only; a pawn's slot keeps its saved relic until victory.
+      p.savedRelics = [a, b].map((id, i) => (id && p.pawnedRelics.includes(id) && !p.ownedRelics.includes(id) ? p.savedRelics[i] : id)) as [string | null, string | null];
+      if (p.savedRelics[0] && p.savedRelics[0] === p.savedRelics[1]) p.savedRelics[1] = null;
+      return { accepted: true, reason: 'Your relics are set' };
+    });
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale relics; try again' }) });
+    this.relics.publish(p);
+    this.publishInventory(p);
+  }
+
+  /** Pilgrim's Return (§5.5): start a channel to a cleared room (`room` ≥ 0), or cancel it (-1). */
+  pilgrimReturn(playerId: number, requestId: number, room: unknown): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot || !Number.isInteger(room)) return;
+    if (room === -1) { this.route.cancelReturn(p, 'Return canceled'); return; }
+    const result = p.requests.execute(requestId, 'return', () => this.route.startReturn(p, room as number));
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale request; try again' }) });
+  }
+
+  /** The Advocate's bargain or Sundial offer opened from its card (§6.8, §9.6). */
+  advocateOffer(playerId: number, requestId: number, offer: unknown): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot || (offer !== 'bargain' && offer !== 'sundial')) return;
+    const result = p.requests.execute(requestId, `offer:${offer}`, (): InteractionResult => {
+      if (offer === 'bargain') return this.bargain.open(p);
+      return this.sundialOffer(p);
+    });
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale request; try again' }) });
+  }
+
+  /** The Sundial's Rite offer at the Advocate while it is lit (§6.8), in a valley or countdown. */
+  sundialOffer(p: SimPlayer): InteractionResult {
+    if (!p.connected || p.dead || this.result) return { accepted: false, reason: 'Unavailable' };
+    if (this.route.sundial !== 'lit') return { accepted: false, reason: 'The Sundial has gone dark' };
+    if (this.progressionEnabled && !this.advocateInReach(p)) return { accepted: false, reason: 'Speak to the Advocate in the Confessional' };
+    if (this.activePhase === PHASE_COMBAT) return { accepted: false, reason: 'Not while the doors are sealed' };
+    this.rites.openSundial(p);
+    return { accepted: true, reason: 'The Sundial’s Rite' };
+  }
+
+  /** A Bell rung (§4.12): its cleared room counts down again from its original entry socket. */
+  ringBell(ai: number): void {
+    const st = this.rooms[ai];
+    st.phase = PHASE_COUNTDOWN;
+    st.cancelTicks = 0;
+    st.sealTick = this.tick + ticks(COUNTDOWN);
+    this.activeRoom = ai;
+    this.roomState(ai);
+    this.updateLeaves();
+  }
+
+  /** A shop, chest or Bell request (rogue game.md §6.5, §6.6, §4.12), executed once per request ID like every scoped request. */
+  interact(playerId: number, requestId: number, sourceId: number): void {
+    const p = this.playerById(playerId);
+    if (!p || p.bot) return;
+    const fresh = p.requests.next;
+    const result = p.requests.execute(requestId, `shop:${sourceId}`, () => sourceId === SOURCE_CHEST ? this.route.interactChest(p)
+      : sourceId >= SOURCE_BELL_FIRST ? this.route.ringBell(p, sourceId - SOURCE_BELL_FIRST) : interactShop(this, p, sourceId));
+    if (result?.accepted && p.requests.next !== fresh && sourceId !== SOURCE_CHEST) this.evidence?.decision(p, sourceId >= SOURCE_BELL_FIRST ? 'bell' : 'purchase');
+    this.emit(playerId, { type: 'interactionResult', requestId, ...(result ?? { accepted: false, reason: 'Stale interaction; try again' }) });
+    this.publishInventory(p);
+  }
+
+  /** A credited kill bursts when its tick's force reaches 2× the type's max HP, heavy at 4× (M12 §4.1). */
+  private noteBurst(slot: number, shooter: SimPlayer | null, fromX: number, fromY: number): void {
+    const type = this.eType[slot];
+    if (isBossBody(type)) return;
+    const tier = burstTier(this.eForce[slot], ENEMIES[type].hp);
+    if (tier === 0) return;
+    const fx = Number.isNaN(fromX) ? shooter?.x ?? this.eX[slot] : fromX;
+    const fy = Number.isNaN(fromY) ? shooter?.y ?? this.eY[slot] : fromY;
+    const angle = burstAngle(fx, fy, this.eX[slot], this.eY[slot], slot);
+    this.tickBursts.push(slot, tier === 2 ? angle + 360 : angle, shooter?.id ?? -1);
+  }
+
+  // ------------------------------------------------------------------ generated props (rogue R2.2)
+
+  private propBroken(p: Prop, origin: 'player' | 'world'): void {
+    const z = p.z + PROP_HEIGHT[p.family] / 2;
+    const targets: number[] = [];
+    if (p.family === 'loot') this.rewards.propLoot(p);
+    else if (p.family === 'blessing' && origin === 'player') {
+      for (const q of this.players) {
+        if (!this.livingTargetable(q) || this.roomAt(q.x, q.y) !== p.room ||
+          distToCylinder(p.x, p.y, z, q.x, q.y, q.z, PLAYER_RADIUS, PLAYER_HEIGHT) > 6 ||
+          !lineOfSight(this.map, p.x, p.y, z, q.x, q.y, q.z + PLAYER_HEIGHT / 2)) continue;
+        this.heal(q, 30); targets.push(q.id);
+      }
+    }
+    this.emit('all', { type: 'propBroken', id: p.id, family: p.family, x: p.x, y: p.y, z: p.z,
+      marked: p.marked, impactTick: p.blastTick, readyTick: p.readyTick, targets });
+  }
+
+  private explodeProp(p: Prop): void {
+    const z = p.z + PROP_HEIGHT.blast / 2;
+    this.emit('all', { type: 'propBlast', id: p.id, x: p.x, y: p.y, z: p.z });
+    const victims: number[] = [];
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k], def = ENEMIES[this.eType[s]];
+      if (this.roomAt(this.eX[s], this.eY[s]) !== p.room ||
+        distToCylinder(p.x, p.y, z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > 4 ||
+        !lineOfSight(this.map, p.x, p.y, z, this.eX[s], this.eY[s], this.eZ[s] + def.height / 2)) continue;
+      victims.push(s);
+    }
+    for (const s of victims) this.damageEnemy(s, 60, -1, Infinity, p.x, p.y, true);
+    for (const q of this.players) {
+      if (!this.livingTargetable(q) || this.talents.ignoresWorld(q) || this.roomAt(q.x, q.y) !== p.room ||
+        distToCylinder(p.x, p.y, z, q.x, q.y, q.z, PLAYER_RADIUS, PLAYER_HEIGHT) > 4 ||
+        !lineOfSight(this.map, p.x, p.y, z, q.x, q.y, q.z + PLAYER_HEIGHT / 2)) continue;
+      this.damagePlayer(q, PROP_BLAST_PLAYER_DAMAGE, { x: p.x, y: p.y, kind: HURT_RANGED });
+    }
+    this.props.area(p.x, p.y, z, 4, this.tick, 'world', (q) => q.room === p.room);
+  }
+
+  /** Native damage rays carry on through props, like globes, until their accepted enemy/terrain stop. */
+  propsOnRay(x: number, y: number, z: number, dx: number, dy: number, dz: number, stop: number): void {
+    for (const { prop } of this.props.ray(x, y, z, dx, dy, dz, stop)) this.props.break(prop.id, this.tick);
+  }
+
+  /** A hit on a player; returns the HP and shield it removed. */
+  /**
+   * Damage to a player; returns what it removed. `from` is where it came from and how (R06 follow-up §9):
+   * the hurt player is told, to draw a hit arc toward it; without one it has no direction.
+   */
+  damagePlayer(p: SimPlayer, amount: number, from?: { x: number; y: number; kind: HurtKind }, lethal = false): number {
+    if (p.dead || !p.connected) return 0;
+    // Invulnerability is checked first: a refused hit consumes neither shield nor HP (rogue bosses.md §3.5).
+    if (this.isInvulnerable(p)) return 0;
+    // Judgment's lethal hit: the player's HP plus shield, through Brimstone Hide and any shield (the Shroud still bursts).
+    if (lethal) amount = p.hp + p.shield;
     // 2. Brimstone Hide.
-    if (p.classId === 'fallen') amount *= 0.6;
-    // 3. Invulnerability.
-    if (this.isInvulnerable(p)) amount = 0;
-    if (amount <= 0) return;
+    else if (p.classId === 'fallen') amount *= 0.6;
+    if (amount <= 0) return 0;
     p.lastDamageTick = this.tick;
     p.lastHurtTick = this.tick;
     // 4. Shield; one taken to 0 bursts (M9 §3.3).
@@ -1541,16 +3045,25 @@ export class Simulation {
       absorbed = Math.min(p.shield, amount);
       p.shield -= absorbed;
       amount -= absorbed;
-      burst = p.shield <= 0;
+      burst = p.shield <= 0 && (p.sealUntil <= this.tick || lethal);
     }
     const [x, y, z] = [p.x, p.y, p.z];
     // Intensity (M12 §2.3): the shield absorbed plus the HP lost, counted down to 0 only.
     this.activeDirector()?.hurt(p.index, absorbed + Math.min(amount, p.hp), p.maxHp);
+    const removed = absorbed + Math.min(amount, p.hp);
+    if (!p.bot && removed > 0) {
+      const list = this.tickHurt.get(p.index) ?? [];
+      list.push([round1(from?.x ?? p.x), round1(from?.y ?? p.y), round1(removed), from?.kind ?? HURT_WORLD]);
+      this.tickHurt.set(p.index, list);
+    }
     p.hp -= amount;
     // 5. Death.
     if (p.hp <= 0) this.killPlayer(p);
+    // Wrath of Dis fills from what the Fallen survives, and resets on death (classes-fallen.md `a.cap`).
+    if (p.classId === 'fallen') this.talents.fallen.hurt(p, removed);
     // Even if the hit killed the player: the burst is where they stood.
     if (burst) this.shroudBurst(p, x, y, z);
+    return removed;
   }
 
   /**
@@ -1563,6 +3076,12 @@ export class Simulation {
     p.shieldCaster = null;
     const source = caster && caster.connected ? caster.index : -1;
     const cz = z + PLAYER_HEIGHT / 2;
+    // The Stake binds the crowd instead of the burst (classes-heretic.md `c.1a`).
+    if (caster && this.talents.heretic.stake(caster, x, y, z)) {
+      this.emit('all', { type: 'shroudBurst', playerId: p.id, x, y, z });
+      return;
+    }
+    const root = caster && caster.connected ? this.talents.root(caster, 'E') : null;
     const hit: number[] = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
@@ -1570,8 +3089,10 @@ export class Simulation {
       if (distToCylinder(x, y, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= SHROUD_BURST_RADIUS) hit.push(s);
     }
     // Applied after the scan: a kill removes the enemy from the active list.
-    for (const s of hit) this.damageEnemy(s, SHROUD_BURST_DAMAGE, source, Infinity, x, y);
-    this.events.push({ to: 'all', event: { type: 'shroudBurst', playerId: p.id, x, y, z } });
+    for (const s of hit) { if (root) this.talents.primary(root, s, SHROUD_BURST_DAMAGE, Infinity, x, y); else this.damageEnemy(s, SHROUD_BURST_DAMAGE, source, Infinity, x, y); }
+    if (root) this.talents.finish(root);
+    if (caster?.connected) this.props.area(x, y, cz, SHROUD_BURST_RADIUS, this.tick);
+    this.emit('all', { type: 'shroudBurst', playerId: p.id, x, y, z });
   }
 
   private killPlayer(p: SimPlayer): void {
@@ -1579,6 +3100,7 @@ export class Simulation {
     this.activeDirector()?.died(p.index);
     p.dead = true;
     p.deaths++;
+    p.featherUntil = p.sealUntil = 0; p.speed = CLASSES[p.classId].speed; p.pendingItems = [false, false];
     p.hp = 0;
     p.shield = 0;
     // The soul (M8 §4.1): its ground point is the feet, dropped to the ground under them.
@@ -1593,7 +3115,12 @@ export class Simulation {
     p.pendingE = false;
     p.landingTick = -1;
     p.dash = null;
-    this.events.push({ to: 'all', event: { type: 'playerDied', playerId: p.id } });
+    this.talents.playerGone(p);
+    this.relics.ownerGone(p.id);
+    this.streaks.end(p);
+    this.route.playerGone(p);
+    this.route.cancelReturn(p, 'Return broken');
+    this.emit('all', { type: 'playerDied', playerId: p.id });
     // Blasphemy ends when the Fallen dies (§7.2).
     if (p.classId === 'fallen') for (let k = 0; k < this.activeCount; k++) this.eTauntUntil[this.active[k]] = 0;
   }
@@ -1610,23 +3137,28 @@ export class Simulation {
     p.shield = amount;
     p.shieldUntil = this.tick + ticks(seconds);
     p.shieldCaster = caster;
+    p.sealUntil = 0;
   }
 
   // ------------------------------------------------------------------ status effects (§5.6)
 
   private immune(slot: number): boolean {
-    return this.eType[slot] === GATEKEEPER;
+    return isBossBody(this.eType[slot]);
   }
 
-  /** Slow: refreshes the duration, doesn't stack. */
-  slow(slot: number, seconds: number): void {
+  /** Slow: refreshes the duration, doesn't stack. `by`: the applying player's index, for streak assists (§10). */
+  slow(slot: number, seconds: number, by?: number): void {
     if (this.immune(slot)) return;
     this.eSlowUntil[slot] = this.tick + ticks(seconds);
+    this.streaks.touch(slot, by);
   }
 
-  root(slot: number, seconds: number): void {
+  root(slot: number, seconds: number, by?: number): void {
     if (this.immune(slot)) return;
+    this.streaks.touch(slot, by);
+    if (this.eType[slot] === CARRIER) this.commanders.cancel(slot);
     this.eRootUntil[slot] = Math.max(this.eRootUntil[slot], this.tick + ticks(seconds));
+    if (this.dominions.active.get(slot)?.leap) this.dominions.cancel(slot, this.tick);
   }
 
   /** Rooted: by Chains, including the 0.3 s pull. The Gatekeeper can't be rooted. */
@@ -1638,6 +3170,9 @@ export class Simulation {
   stun(slot: number, seconds: number): void {
     if (this.immune(slot)) return;
     this.eStunUntil[slot] = Math.max(this.eStunUntil[slot], this.tick + ticks(seconds));
+    this.dominions.cancel(slot, this.tick);
+    this.commanders.cancel(slot);
+    this.watchmen.cancel(slot);
     this.eCast[slot] = 0;
     this.eCastT[slot] = 0;
   }
@@ -1647,8 +3182,12 @@ export class Simulation {
   }
 
   /** Silence: a cast in progress is cancelled. */
-  silence(slot: number, seconds: number): void {
+  silence(slot: number, seconds: number, by?: number): void {
+    this.streaks.touch(slot, by);
     this.eSilenceUntil[slot] = Math.max(this.eSilenceUntil[slot], this.tick + ticks(seconds));
+    this.dominions.cancel(slot, this.tick);
+    this.commanders.cancel(slot);
+    this.watchmen.cancel(slot);
     this.eCast[slot] = 0;
     this.eCastT[slot] = 0;
   }
@@ -1661,15 +3200,27 @@ export class Simulation {
     if (this.immune(slot)) return;
     const len = Math.hypot(dirX, dirY);
     if (len < 1e-9) return;
+    if (this.dominions.active.get(slot)?.leap) this.dominions.cancel(slot, this.tick);
     const v = dist / seconds;
     this.eKbVx[slot] = (dirX / len) * v;
     this.eKbVy[slot] = (dirY / len) * v;
     this.eKbFrom[slot] = this.tick;
     this.eKbUntil[slot] = this.tick + ticks(seconds);
   }
+  /**
+   * Plume of Expulsion's throw: a real half-second flight whose hit cylinder follows gravity, not client
+   * VFX. Returns whether the body was thrown (and so takes the Plume's damage).
+   */
+  itemLaunch(slot: number, x: number, y: number): boolean {
+    if (this.immune(slot) || this.isRooted(slot) || !this.eGrounded[slot] || this.tick < this.eKbUntil[slot]) return false;
+    this.knockAway(slot, x, y, PLUME_THROW, .5);
+    this.eVz[slot] = PLUME_LIFT; this.eGrounded[slot] = 0;
+    this.commanders.cancel(slot); this.dominions.cancel(slot, this.tick); this.watchmen.cancel(slot);
+    return true;
+  }
 
   /** Knocks an enemy away from (cx, cy); one exactly there goes along a fixed angle from its slot. */
-  private knockAway(slot: number, cx: number, cy: number, dist: number, seconds: number): void {
+  knockAway(slot: number, cx: number, cy: number, dist: number, seconds: number): void {
     let dx = this.eX[slot] - cx;
     let dy = this.eY[slot] - cy;
     if (Math.hypot(dx, dy) < 1e-6) {
@@ -1683,6 +3234,7 @@ export class Simulation {
   /** Chains: moves linearly to (x, y) over 0.3 s ignoring collision, then roots for 1.5 s. */
   pull(slot: number, x: number, y: number, floorZ: number): void {
     if (this.immune(slot)) return;
+    if (this.eType[slot] === CARRIER) this.commanders.cancel(slot);
     const o = slot * 6;
     this.ePull[o] = this.eX[slot];
     this.ePull[o + 1] = this.eY[slot];
@@ -1690,7 +3242,7 @@ export class Simulation {
     this.ePull[o + 3] = x;
     this.ePull[o + 4] = y;
     // Ground enemies end on the floor there; flyers keep their hover height.
-    this.ePull[o + 5] = this.eType[slot] === CHERUB ? this.eZ[slot] : floorZ;
+    this.ePull[o + 5] = ENEMIES[this.eType[slot]].flying ? this.eZ[slot] : floorZ;
     this.ePullStart[slot] = this.tick;
     this.eKbUntil[slot] = 0;
   }
@@ -1698,28 +3250,44 @@ export class Simulation {
   // ------------------------------------------------------------------ players
 
   /**
-   * Singleplayer regeneration (§5.7): 1.5% of max HP per second after 8 s without damage, except in a
-   * combat arena's fight (M12 §2.5), where it's 8% after 2 s (M12 follow-up §3.1), and only while its
-   * director relaxes.
+   * True solo sustain (rogue game.md §4.3): breath during ordinary combat relax, baseline during
+   * boss combat. There is no passive recovery between encounters.
    */
   private regenerate(p: SimPlayer): void {
+    if (this.activePhase !== PHASE_COMBAT || this.roomAt(p.x, p.y) !== this.activeRoom) return;
     const d = this.activeDirector();
+    if (!d && this.map.rooms[this.activeRoom].kind !== 'boss') return;
     const [delay, fraction] = d ? [BREATH_DELAY_TICKS, BREATH_FRACTION] : [REGEN_DELAY_TICKS, REGEN_FRACTION];
     if (d && d.phase !== 'relax') return;
     if (this.tick - p.lastDamageTick < delay) return;
     p.hp = Math.min(p.maxHp, p.hp + fraction * p.maxHp * TICK_DT);
   }
 
+  /** A grab cancels queued actions and unfinished movement attacks without executing them. */
+  cancelPlayerActions(p: SimPlayer): void {
+    p.fire = 0; p.pendingQ = p.pendingE = false;
+    latchClear(p.fireLatch);
+    p.shotQueue.length = 0;
+    p.pendingItems[0] = p.pendingItems[1] = false;
+    p.dash = null; p.landingTick = -1;
+  }
+
   private updatePlayers(): void {
     for (const p of this.players) {
+      const carried = !!this.commanders.carriedBy(p.id);
+      if (carried) this.cancelPlayerActions(p);
+      p.speed = CLASSES[p.classId].speed + (this.tick < p.featherUntil ? FEATHER_SPEED : 0);
+      for (const slot of [0, 1] as const) if (p.pendingItems[slot]) { p.pendingItems[slot] = false; this.items.manual(p, slot); }
       p.cdQ = Math.max(0, p.cdQ - TICK_DT);
       p.cdE = Math.max(0, p.cdE - TICK_DT);
       if (p.shield > 0 && this.tick >= p.shieldUntil) p.shield = 0;
-      if (p.dead) {
+      if (!p.dead && this.solo) this.regenerate(p);
+      if (p.dead || carried) {
         p.fireTimer = Math.max(0, p.fireTimer - TICK_DT);
+        latchClear(p.fireLatch);
+        p.shotQueue.length = 0;
         continue;
       }
-      if (this.singleplayer) this.regenerate(p);
       if (p.landingTick >= 0 && this.tick >= p.landingTick) {
         p.landingTick = -1;
         this.fallingStarLanding(p);
@@ -1742,15 +3310,52 @@ export class Simulation {
    * adds its own interval; the timer counts down twice as fast in a Field of Blood.
    */
   private updateWeapon(p: SimPlayer): void {
-    const slot = chooseAttack(p.classId, p.fire, this.sacramentTarget(p) !== undefined);
+    if (p.clientShots) {
+      this.updateClientShots(p);
+      return;
+    }
+    const slot = chooseAttack(p.classId, p.fire | latchBits(p.fireLatch, this.tick), this.sacramentTarget(p) !== undefined);
     if (slot !== ATTACK_NONE && p.fireTimer <= 1e-6) {
-      this.fireWeapon(p, slot);
-      if (slot === ATTACK_PRIMARY) p.shots++;
-      else p.shots2++;
-      p.fireTimer += attackDef(p.classId, slot).interval;
+      latchFired(p.fireLatch, slot);
+      this.shoot(p, slot);
     }
     p.fireTimer -= TICK_DT * this.fireRate(p);
     if (slot === ATTACK_NONE && p.fireTimer < 0) p.fireTimer = 0;
+  }
+
+  /**
+   * Client-timed shots (netcode stage 2): the shots the player's screen fired, each with the aim and view
+   * of the input that carried it, no faster than the fire timer allows; a shot may come SHOT_EARLY_TICKS
+   * before the timer is ready, so network jitter doesn't hold it back.
+   */
+  private updateClientShots(p: SimPlayer): void {
+    const shot = nextShot(p.shotQueue, this.tick);
+    if (shot && p.fireTimer <= SHOT_EARLY_TICKS * TICK_DT + 1e-6) {
+      p.shotQueue.shift();
+      // A Heretic's Sacrament with no ally to heal here falls back to the censer while the left is held, as held buttons do.
+      const bits = shot.button ? FIRE_RIGHT | (p.classId === 'heretic' ? p.fire & FIRE_LEFT : 0) : FIRE_LEFT;
+      const slot = chooseAttack(p.classId, bits, this.sacramentTarget(p) !== undefined);
+      if (slot !== ATTACK_NONE) {
+        const { yaw, pitch, view } = p;
+        p.yaw = shot.yaw;
+        p.pitch = shot.pitch;
+        p.view = shot.view;
+        p.shotIndex = shot.index;
+        try { this.shoot(p, slot); } finally { p.yaw = yaw; p.pitch = pitch; p.view = view; p.shotIndex = -1; }
+      }
+    }
+    p.fireTimer -= TICK_DT * this.fireRate(p);
+    if (!p.shotQueue.length && p.fireTimer < 0) p.fireTimer = 0;
+  }
+
+  /** Fires `slot` and starts its interval, against the enemies where the player's screen drew them (lag compensation). */
+  private shoot(p: SimPlayer, slot: AttackSlot): void {
+    this.enemyHistory.rewind(p.view, this.active, this.activeCount, this.eX, this.eY, this.eZ);
+    try { this.fireWeapon(p, slot); } finally { this.enemyHistory.restore(this.eX, this.eY, this.eZ); }
+    if (slot === ATTACK_PRIMARY) p.shots++;
+    else p.shots2++;
+    // Whirl slows the Scourge to 1.2 s between swings (classes-binder.md `b.1a`).
+    p.fireTimer += p.classId === 'binder' && slot !== ATTACK_PRIMARY ? this.talents.binder.scourgeInterval(p) : attackDef(p.classId, slot).interval;
   }
 
   /** How fast a player's fire timer counts down: 2 in a Field of Blood, otherwise 1 (M9 §3.4). */
@@ -1760,7 +3365,11 @@ export class Simulation {
 
   /** A living player in the Field of Blood, by its latest accepted position (M9 §3.4). */
   inField(p: SimPlayer): boolean {
-    return this.tick < this.fieldUntil && !p.dead && inField(this.fieldX, this.fieldY, p.x, p.y);
+    return this.fieldActive() && !p.dead && inField(this.fieldX, this.fieldY, p.x, p.y);
+  }
+
+  fieldActive(): boolean {
+    return this.tick >= this.fieldStart && this.tick < this.fieldUntil;
   }
 
   /**
@@ -1781,6 +3390,21 @@ export class Simulation {
 
   /** Fires one of the player's attacks from the eye, along the latest reported aim. */
   fireWeapon(p: SimPlayer, slot: AttackSlot = ATTACK_PRIMARY): void {
+    // The Betrayer's two lines carry its talents' Delivery and Payload (classes-betrayer.md §3).
+    if (p.classId === 'betrayer') {
+      this.talents.shoot(p, slot !== ATTACK_PRIMARY);
+      return;
+    }
+    // The Binder's Chain Gun and Scourge carry its Delivery (classes-binder.md §3).
+    if (p.classId === 'binder') {
+      if (slot === ATTACK_PRIMARY) this.talents.binder.chainGun(p); else this.talents.binder.scourge(p);
+      return;
+    }
+    // The Fallen's shotgun and slug carry its Delivery and Payload (classes-fallen.md §3).
+    if (p.classId === 'fallen') {
+      if (slot === ATTACK_PRIMARY) this.talents.fallen.shotgun(p); else this.talents.fallen.slug(p);
+      return;
+    }
     const w = attackDef(p.classId, slot);
     const ex = p.x;
     const ey = p.y;
@@ -1788,7 +3412,11 @@ export class Simulation {
     switch (w.kind) {
       case 'censer': {
         const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
-        this.spawnProjectile(PROJ_CENSER, ex, ey, ez, dx, dy, dz, CENSER_SPEED, CENSER_RADIUS, w.damage, w.range, p.index);
+        const censer = this.spawnProjectile(PROJ_CENSER, ex, ey, ez, dx, dy, dz, CENSER_SPEED, CENSER_RADIUS, w.damage, w.range, p.index);
+        if (censer >= 0) {
+          this.pViewLag[censer] = viewLag(p.view, this.tick - 1);
+          this.talents.heretic.censerThrown(censer, p);
+        }
         return;
       }
       case 'sacrament': {
@@ -1797,7 +3425,7 @@ export class Simulation {
         const ally = this.sacramentTarget(p);
         if (!ally) return;
         if (ally.dead) this.addRevive(ally, reviveHit(w.interval, true), p);
-        else this.heal(ally, w.damage);
+        else { this.heal(ally, w.damage); this.talents.heretic.fork(p, ally); }
         p.beamId = ally.id;
         p.beamUntil = this.tick + BEAM_HOLD_TICKS;
         return;
@@ -1809,13 +3437,12 @@ export class Simulation {
         this.silverBullet(p);
         return;
     }
-    // Souls this trigger pull hit: all pellets together count one hit per soul (M8 §4.2).
+    // The Chain Gun (the Fallen and the Betrayer shoot through their talent modules). Souls this trigger
+    // pull hit: all pellets together count one hit per soul (M8 §4.2).
     const souls = new Set<SimPlayer>();
-    const knock = p.classId === 'fallen' && slot === ATTACK_PRIMARY ? new Set<number>() : null;
-    const bodyZ = p.z + PLAYER_HEIGHT / 2;
     for (let i = 0; i < w.pellets; i++) {
-      const yaw = w.spreadYaw > 0 ? p.yaw + (this.random() * 2 - 1) * w.spreadYaw : p.yaw;
-      const pitch = w.spreadPitch > 0 ? p.pitch + (this.random() * 2 - 1) * w.spreadPitch : p.pitch;
+      const yaw = w.spreadYaw > 0 ? p.yaw + this.spreadDraw(p, i, 0) * w.spreadYaw : p.yaw;
+      const pitch = w.spreadPitch > 0 ? p.pitch + this.spreadDraw(p, i, 1) * w.spreadPitch : p.pitch;
       const [dx, dy, dz] = aimDir(yaw, pitch);
       const hits = this.rayEnemies(ex, ey, ez, dx, dy, dz, w.range, w.maxHits);
       // Where the ray stops: the terrain or its range, or the last enemy it can pierce.
@@ -1823,37 +3450,30 @@ export class Simulation {
       if (hits.length >= w.maxHits) stop = this.rayT(hits[hits.length - 1], ex, ey, ez, dx, dy, dz);
       this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
       this.globesOnRay(p, ex, ey, ez, dx, dy, dz, stop);
+      this.propsOnRay(ex, ey, ez, dx, dy, dz, stop);
       for (const s of hits) {
-        // A shotgun pellet within 6 m deals 20, a Blessed's HP, and always bursts what it kills; beyond, 10
-        // (M12 §5.1, §4.1).
-        const def = ENEMIES[this.eType[s]];
-        const close = knock !== null && distToCylinder(p.x, p.y, bodyZ, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= SHOTGUN_KNOCKBACK_RANGE;
-        const damage = close ? SHOTGUN_CLOSE_DAMAGE : w.damage;
-        this.damageEnemy(s, damage, p.index, close ? Infinity : damage);
-        if (w.slow > 0 && this.eAlive[s]) this.slow(s, w.slow);
-        knock?.add(s);
+        this.damageEnemy(s, w.damage, p.index, w.damage);
+        if (w.slow > 0 && this.eAlive[s]) this.slow(s, w.slow, p.index);
       }
     }
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, p.classId === 'heretic'), p);
-    // The shotgun knocks back each survivor within 6 m once per shot, except rooted ones (M9 §3.1).
-    if (knock) {
-      for (const s of knock) {
-        if (!this.eAlive[s] || this.isRooted(s)) continue;
-        const def = ENEMIES[this.eType[s]];
-        if (distToCylinder(p.x, p.y, bodyZ, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > SHOTGUN_KNOCKBACK_RANGE) continue;
-        this.knockAway(s, p.x, p.y, SHOTGUN_KNOCKBACK_DIST, KNOCKBACK_TIME);
-      }
-    }
   }
 
-  /** Distance along a ray to where it enters an enemy's cylinder. */
+  /**
+   * A pellet's spread draw on `axis` (0 yaw, 1 pitch), in [-1, 1): a client-timed shot's is the one the
+   * shooter's screen drew (netcode stage 3); a shot of the host's own timer draws the random stream.
+   */
+  spreadDraw(p: SimPlayer, pellet: number, axis: 0 | 1): number {
+    return p.shotIndex >= 0 ? shotSpread(p.id, p.shotIndex, pellet, axis) : this.random() * 2 - 1;
+  }
+
+  /** Distance along a ray to where it enters an enemy's shot volume. */
   private rayT(slot: number, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number): number {
-    const def = ENEMIES[this.eType[slot]];
-    return rayCylinder(ox, oy, oz, dx, dy, dz, this.eX[slot], this.eY[slot], this.eZ[slot], def.radius, def.height);
+    return rayEnemy(ox, oy, oz, dx, dy, dz, this.eType[slot], this.eX[slot], this.eY[slot], this.eZ[slot]);
   }
 
   /** Adds to `out` the souls (not the shooter's) that a ray passes through before `stop` (M8 §4.2). */
-  private soulsOnRay(p: SimPlayer, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, stop: number, out: Set<SimPlayer>): void {
+  soulsOnRay(p: SimPlayer, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, stop: number, out: Set<SimPlayer>): void {
     for (const o of this.players) {
       if (o === p || !this.hasSoul(o) || out.has(o)) continue;
       if (rayCylinder(ox, oy, oz, dx, dy, dz, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= stop) out.add(o);
@@ -1864,11 +3484,11 @@ export class Simulation {
    * Shoots down every globe whose path in the last 0.25 s passes within 0.3 m of a player's ray from
    * (ox, oy, oz) along the unit (dx, dy, dz) up to `stop` (M12 follow-up §1.3). The ray carries on.
    */
-  private globesOnRay(p: SimPlayer, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, stop: number): void {
+  globesOnRay(p: SimPlayer, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, stop: number): void {
     let hit: number[] | null = null;
     for (const g of this.projectiles) {
       if (this.pKind[g] !== PROJ_GLOBE || this.pOwner[g] >= 0) continue;
-      const back = Math.min(this.pTraveled[g], this.pSpeed[g] * GLOBE_SHOT_TRAIL);
+      const back = Math.min(this.pTraveled[g], this.pSpeed[g] * (GLOBE_SHOT_TRAIL + viewLag(p.view, this.tick - 1) * TICK_DT));
       const gx = this.pX[g];
       const gy = this.pY[g];
       const gz = this.pZ[g];
@@ -1882,12 +3502,24 @@ export class Simulation {
   }
 
   /** A globe shot down by player `p`: 40 to every enemy within 3 m in its line of sight, credited, and nothing to players. */
-  private shootDownGlobe(slot: number, p: SimPlayer): void {
+  /** The owner index of a projectile: a player's, or -1 for an enemy's. */
+  projectileOwner(slot: number): number {
+    return this.pOwner[slot];
+  }
+
+  /** Moves an enemy horizontally by (dx, dy) with collision, as a drag (the Well of the Giants). */
+  drift(slot: number, dx: number, dy: number): void {
+    const b = this.loadBody(slot);
+    if (tryDisplace(this.map, b, dx, dy)) this.storeBody(slot, b);
+  }
+
+  shootDownGlobe(slot: number, p: SimPlayer): void {
     if (!this.pAlive[slot]) return;
     const x = this.pX[slot];
     const y = this.pY[slot];
     const z = this.pZ[slot];
     this.removeProjectile(slot);
+    this.props.area(x, y, z, GLOBE_SHOT_BLAST, this.tick);
     for (let k = this.activeCount - 1; k >= 0; k--) {
       const s = this.active[k];
       const def = ENEMIES[this.eType[s]];
@@ -1895,28 +3527,30 @@ export class Simulation {
       if (!lineOfSight(this.map, x, y, z, this.eX[s], this.eY[s], this.eZ[s] + def.height / 2)) continue;
       this.damageEnemy(s, GLOBE_SHOT_DAMAGE, p.index, GLOBE_SHOT_DAMAGE, x, y);
     }
-    this.events.push({ to: 'all', event: { type: 'globeShatter', x, y, z, by: p.id } });
+    this.emit('all', { type: 'globeShatter', x, y, z, by: p.id });
   }
 
   /**
    * A globe shatters on what it touched at (x, y, z) (M12 follow-up §1.3): its damage to the player it hit
    * (`direct`, or none) and to every other living targetable player within 1.5 m in its line of sight.
    */
-  private shatterGlobe(slot: number, x: number, y: number, z: number, direct: SimPlayer | null): void {
+  private shatterGlobe(slot: number, x: number, y: number, z: number, direct: SimPlayer | null, spared: readonly number[] = []): void {
     const damage = this.pDamage[slot];
-    const lx = x - this.pDx[slot] * GLOBE_LOS_BACK;
-    const ly = y - this.pDy[slot] * GLOBE_LOS_BACK;
-    const lz = z - this.pDz[slot] * GLOBE_LOS_BACK;
+    const dx = this.pDx[slot], dy = this.pDy[slot], dz = this.pDz[slot], volley = this.pVolley[slot];
     this.removeProjectile(slot);
     for (const p of this.players) {
-      if (!this.livingTargetable(p)) continue;
-      if (p !== direct) {
-        if (distToCylinder(x, y, z, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) > GLOBE_BLAST + 1e-9) continue;
-        if (!lineOfSight(this.map, lx, ly, lz, p.x, p.y, p.z + PLAYER_HEIGHT / 2)) continue;
-      }
-      this.damagePlayer(p, damage);
+      if (!this.livingTargetable(p) || spared.includes(p.id)) continue;
+      if (p !== direct && !this.inGlobeBlast(p, x, y, z, dx, dy, dz)) continue;
+      if (!this.boss.volleyMayHit(volley, p)) continue;
+      this.damagePlayer(p, damage, { x: x - dx * 4, y: y - dy * 4, kind: HURT_RANGED });
     }
-    this.events.push({ to: 'all', event: { type: 'globeShatter', x, y, z, by: -1 } });
+    this.emit('all', { type: 'globeShatter', x, y, z, by: -1 });
+  }
+
+  /** Whether a globe flying along (dx, dy, dz) and shattering at (x, y, z) catches `p` in its blast. */
+  private inGlobeBlast(p: SimPlayer, x: number, y: number, z: number, dx: number, dy: number, dz: number): boolean {
+    if (distToCylinder(x, y, z, p.x, p.y, p.z, PLAYER_RADIUS, PLAYER_HEIGHT) > GLOBE_BLAST + 1e-9) return false;
+    return lineOfSight(this.map, x - dx * GLOBE_LOS_BACK, y - dy * GLOBE_LOS_BACK, z - dz * GLOBE_LOS_BACK, p.x, p.y, p.z + PLAYER_HEIGHT / 2);
   }
 
   /**
@@ -1932,6 +3566,10 @@ export class Simulation {
     const ax = Math.cos(p.yaw);
     const ay = Math.sin(p.yaw);
     const cosMax = Math.cos(SCOURGE_HALF_ARC);
+    this.props.area(cx, cy, cz, w.range, this.tick, 'player', (q) => {
+      const dx = q.x - cx, dy = q.y - cy, length = Math.hypot(dx, dy);
+      return length < 1e-9 || (dx * ax + dy * ay) / length >= cosMax - 1e-9;
+    });
     const hit: Array<{ s: number; d: number }> = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
@@ -1950,7 +3588,7 @@ export class Simulation {
     for (let i = 0; i < hit.length && i < w.maxHits; i++) {
       const s = hit[i].s;
       this.damageEnemy(s, w.damage, p.index, Infinity);
-      if (this.eAlive[s]) this.slow(s, w.slow);
+      if (this.eAlive[s]) this.slow(s, w.slow, p.index);
     }
   }
 
@@ -1974,13 +3612,21 @@ export class Simulation {
     const souls = new Set<SimPlayer>();
     this.soulsOnRay(p, ex, ey, ez, dx, dy, dz, stop, souls);
     this.globesOnRay(p, ex, ey, ez, dx, dy, dz, stop);
+    this.propsOnRay(ex, ey, ez, dx, dy, dz, stop);
     // Its force is what the bullet still carried on reaching the enemy (M12 §4.1).
     for (const h of dealt.hits) this.damageEnemy(h.s, h.amount, p.index, h.carried);
     for (const o of souls) this.addRevive(o, reviveHit(w.interval, false), p);
-    this.events.push({ to: 'all', event: { type: 'silverBullet', playerId: p.id, x: ex, y: ey, z: ez, ex: ex + dx * stop, ey: ey + dy * stop, ez: ez + dz * stop } });
+    this.emit('all', { type: 'silverBullet', playerId: p.id, x: ex, y: ey, z: ez, ex: ex + dx * stop, ey: ey + dy * stop, ez: ez + dz * stop });
   }
 
   // ------------------------------------------------------------------ souls (M8 §4)
+
+  /** Each connected player's weapon kills, for the host's diagnostics (netcode stage 3). */
+  weaponKills(): Record<number, number> {
+    const out: Record<number, number> = {};
+    for (const p of this.players) if (p.connected) out[p.id] = p.weaponKills;
+    return out;
+  }
 
   /** A dead, connected player has a soul. */
   private hasSoul(p: SimPlayer): boolean {
@@ -2000,7 +3646,11 @@ export class Simulation {
     if (!this.hasSoul(p)) return;
     p.revive = Math.min(1, p.revive + amount / reviveSlowdown(p.deaths));
     if (by) p.revivers |= 1 << by.index;
-    if (p.revive >= 1 - 1e-9) this.revivePlayer(p);
+    if (p.revive >= 1 - 1e-9) {
+      this.revivePlayer(p);
+      // Lazarus: a revival the Saint completes bursts into light (classes-heretic.md `a.2b`).
+      if (by?.classId === 'heretic') this.talents.heretic.revived(by, p);
+    }
   }
 
   /** Revived on the soul's ground point with half HP, invulnerable for 2 s. */
@@ -2014,7 +3664,7 @@ export class Simulation {
     p.lastDamageTick = this.tick;
     p.invulUntil = Math.max(p.invulUntil, this.tick + ticks(REVIVE_INVULNERABLE));
     this.invalidateFields();
-    this.events.push({ to: 'all', event: { type: 'playerRevived', playerId: p.id } });
+    this.emit('all', { type: 'playerRevived', playerId: p.id });
     this.teleport(p, p.x, p.y, p.z);
   }
 
@@ -2036,8 +3686,7 @@ export class Simulation {
     const hits: Array<[number, number]> = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
-      const def = ENEMIES[this.eType[s]];
-      const t = rayCylinder(ox, oy, oz, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height);
+      const t = rayEnemy(ox, oy, oz, dx, dy, dz, this.eType[s], this.eX[s], this.eY[s], this.eZ[s]);
       if (t > stop) continue;
       if (hits.length < maxHits) {
         hits.push([t, s]);
@@ -2063,15 +3712,18 @@ export class Simulation {
     const hit = this.rayEnemies(ex, ey, ez, dx, dy, dz, stop, 1);
     if (hit.length === 0) return { t: stop, slot: -1 };
     const s = hit[0];
-    const def = ENEMIES[this.eType[s]];
-    return { t: rayCylinder(ex, ey, ez, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height), slot: s };
+    return { t: rayEnemy(ex, ey, ez, dx, dy, dz, this.eType[s], this.eX[s], this.eY[s], this.eZ[s]), slot: s };
   }
 
   private abilityEvent(p: SimPlayer, slot: 'Q' | 'E', x: number, y: number, z: number, targets: number[] = []): void {
-    this.events.push({ to: 'all', event: { type: 'abilityUsed', playerId: p.id, slot, x, y, z, targets } });
+    this.emit('all', { type: 'abilityUsed', playerId: p.id, slot, x, y, z, targets });
   }
 
   private useQ(p: SimPlayer): void {
+    if (p.classId === 'betrayer' && this.talents.useQ(p)) return;
+    if (p.classId === 'fallen' && p.kit.q === 'castOut') { this.talents.fallen.castOut(p); return; }
+    if (p.classId === 'heretic' && p.kit.q === 'cloudOfWitnesses') { this.talents.heretic.witnesses(p); return; }
+    if (p.classId === 'binder' && this.talents.binder.useQ(p)) return;
     if (p.cdQ > 1e-6) return;
     const cd = ABILITIES[p.classId].Q.cooldown;
     const bx = p.x;
@@ -2080,15 +3732,20 @@ export class Simulation {
     switch (p.classId) {
       case 'fallen': {
         // Blasphemy: every enemy within 12 m, including the Gatekeeper, targets the Fallen for 5 s, and
-        // every one but the Gatekeeper is stunned for 1 s (M12 §5.3).
+        // every one but the Gatekeeper is stunned for 1 s (M12 §5.3). Weight of Sin slows for 3 s instead
+        // of the stun; Blasphemer's Ring sets the ground burning instead (classes-fallen.md `a.1b`, `b.3b`).
+        const sin = this.talents.has(p, 'fallen.a.1b'), ring = this.talents.has(p, 'fallen.b.3b');
         for (let k = 0; k < this.activeCount; k++) {
           const s = this.active[k];
           const def = ENEMIES[this.eType[s]];
           if (distToCylinder(bx, by, bz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > BLASPHEMY_RADIUS) continue;
           this.eTauntUntil[s] = this.tick + ticks(BLASPHEMY_DURATION);
           this.eTarget[s] = p.index;
-          this.stun(s, BLASPHEMY_STUN);
+          this.streaks.touch(s, p.index);
+          if (sin) this.slow(s, FALLEN_NUMBERS.sinSlow);
+          else if (!ring) this.stun(s, BLASPHEMY_STUN);
         }
+        if (ring) this.talents.fallen.blasphemerRing(p, this.talents.root(p, 'Q'));
         break;
       }
       case 'heretic': {
@@ -2100,8 +3757,9 @@ export class Simulation {
           this.heal(o, COMMUNION_HEAL);
           healed.push(o.id);
         }
-        // It also adds to every soul within its radius.
-        for (const o of this.players) {
+        // It also adds to every soul within its radius; Resurrection of the Body raises them instead, and
+        // Exorcism and Wall of Fire add their effect (classes-heretic.md `a.cap`, `a.1b`, `b.2b`).
+        if (!this.talents.heretic.communion(p, healed)) for (const o of this.players) {
           if (o === p || !this.hasSoul(o)) continue;
           if (distToCylinder(bx, by, bz, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= COMMUNION_RADIUS) this.addRevive(o, REVIVE_COMMUNION, p);
         }
@@ -2114,8 +3772,11 @@ export class Simulation {
         const c = Math.floor(dx);
         const r = Math.floor(dy);
         const floorZ = this.map.floor[r * this.map.w + c];
-        for (const s of this.chainsTargets(p)) this.pull(s, dx, dy, floorZ);
-        p.cdQ = cd;
+        const targets = this.chainsTargets(p);
+        for (const s of targets) this.pull(s, dx, dy, floorZ);
+        // Own pulls, and The Procession's file behind them (classes-binder.md `c.2a`).
+        this.talents.binder.chained(p, targets, dx, dy, floorZ);
+        p.cdQ = this.talents.binder.allOfTartarus(p) ? BINDER_NUMBERS.tartarusCooldown : cd;
         this.abilityEvent(p, 'Q', dx, dy, floorZ);
         return;
       }
@@ -2123,6 +3784,8 @@ export class Simulation {
         // Field of Blood (M9 §3.4): 3 m ahead along the yaw; it always has a place. A new field
         // replaces the old one, and it lasts its 8 s whatever happens to the Betrayer.
         [this.fieldX, this.fieldY, this.fieldZ] = fieldCenter(this.map, p.x, p.y, p.yaw);
+        this.fieldBy = p.index;
+        this.fieldStart = this.tick;
         this.fieldUntil = this.tick + ticks(FIELD_TIME);
         p.cdQ = cd;
         this.abilityEvent(p, 'Q', this.fieldX, this.fieldY, this.fieldZ);
@@ -2134,6 +3797,10 @@ export class Simulation {
   }
 
   private useE(p: SimPlayer, allyId: number): void {
+    if (p.classId === 'betrayer' && this.talents.useE(p)) return;
+    if (p.classId === 'fallen' && this.talents.fallen.useE(p)) return;
+    if (p.classId === 'heretic' && this.talents.heretic.useE(p)) return;
+    if (p.classId === 'binder' && this.talents.binder.useE(p)) return;
     const def = ABILITIES[p.classId].E;
     if (def.movement) {
       // Movement abilities run on the client; the host accepts within 0.25 s of ready (§9.3). A
@@ -2142,6 +3809,7 @@ export class Simulation {
         p.dash = null;
         return;
       }
+      this.commanders.releasePlayer(p.id, false);
       if (p.classId === 'fallen') {
         // Falling Star (M12 §5.2): the leap goes wherever the Fallen aimed, so no ally is needed; it
         // lands 15 ticks later, invulnerable until then. `targets` is the ally it went to, if valid.
@@ -2156,7 +3824,7 @@ export class Simulation {
         p.invulUntil = Math.max(p.invulUntil, this.tick + ticks(SHADOWSTEP_INVULN));
         p.cdE = def.cooldown;
         p.speedCheckSkipUntil = this.nowMs + MOVEMENT_SPEED_CHECK_SKIP * 1000;
-        if (p.dash) p.dash.acceptTick = this.tick;
+        if (p.dash) { p.dash.acceptTick = this.tick; p.dash.root = this.talents.root(p, 'E', true, p.dash.pts[0], p.dash.pts[1]); }
         this.abilityEvent(p, 'E', p.x, p.y, p.z);
       }
       return;
@@ -2170,7 +3838,10 @@ export class Simulation {
       p.cdE = def.cooldown;
       this.abilityEvent(p, 'E', target.x, target.y, target.z, [target.id]);
     } else if (p.classId === 'binder') {
-      for (const s of this.discordTargets(p)) this.silence(s, DISCORD_SILENCE);
+      const targets = this.discordTargets(p);
+      for (const s of targets) this.silence(s, DISCORD_SILENCE, p.index);
+      // Voice of the Pit, Shattered Hymn and The Wind of Cocytus (classes-binder.md `b.2a`, `c.3b`, `c.cap`).
+      this.talents.binder.discord(p, targets, DISCORD_SILENCE);
       p.cdE = def.cooldown;
       // At the Binder's feet; clients fan the shout out along its yaw.
       this.abilityEvent(p, 'E', p.x, p.y, p.z);
@@ -2190,22 +3861,27 @@ export class Simulation {
     const g = groundHeight(this.map, cx, cy, PLAYER_RADIUS, Infinity, false, true);
     const floor = g === -Infinity ? p.z : g;
     const cz = floor + PLAYER_HEIGHT / 2;
+    // Son of the Morning widens the outer launch ring to 8 m; the crater stays 3.5 m (classes-fallen.md `c.1b`).
+    const reach = this.talents.has(p, 'fallen.c.1b') ? FALLEN_NUMBERS.starRing : FALLING_STAR_RADIUS;
+    this.props.area(cx, cy, cz, reach, this.tick);
     const hit: Array<{ s: number; d: number }> = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
       const def = ENEMIES[this.eType[s]];
       const d = distToCylinder(cx, cy, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height);
-      if (d <= FALLING_STAR_RADIUS) hit.push({ s, d });
+      if (d <= reach) hit.push({ s, d });
     }
     const launched: number[] = [];
+    const root = this.talents.root(p, 'E'), cast = this.talents.launches.newCast();
     for (const { s, d } of hit) {
-      if (d <= FALLING_STAR_CRATER) this.damageEnemy(s, FALLING_STAR_DAMAGE, p.index, Infinity, cx, cy);
-      else this.damageEnemy(s, FALLING_STAR_REACH_DAMAGE, p.index, FALLING_STAR_REACH_DAMAGE, cx, cy);
+      if (d <= FALLING_STAR_CRATER) this.talents.primary(root, s, FALLING_STAR_DAMAGE, Infinity, cx, cy);
+      else this.talents.primary(root, s, FALLING_STAR_REACH_DAMAGE, FALLING_STAR_REACH_DAMAGE, cx, cy);
       if (!this.eAlive[s] || this.isRooted(s) || this.immune(s)) continue;
-      this.knockAway(s, cx, cy, KNOCKBACK_DIST, FALLING_STAR_KNOCKBACK_TIME);
-      launched.push(s);
+      // Falling Star's accepted launch, even though its arc is drawn only; its landing is recorded.
+      if (this.talents.launches.launchFrom(s, cx, cy, KNOCKBACK_DIST, p, 'qe', cast)) launched.push(s);
     }
-    this.events.push({ to: 'all', event: { type: 'starLanded', playerId: p.id, x: cx, y: cy, z: floor, launched } });
+    this.talents.finish(root);
+    this.emit('all', { type: 'starLanded', playerId: p.id, x: cx, y: cy, z: floor, launched });
   }
 
   /**
@@ -2219,6 +3895,7 @@ export class Simulation {
     const dash = p.dash!;
     if (dash.acceptTick < 0) return;
     this.cutNewSegments(p, dash);
+    if (dash.root) this.talents.finish(dash.root);
     if (dash.full || this.tick >= dash.acceptTick + DASH_WINDOW_TICKS) this.endDash(p);
   }
 
@@ -2234,24 +3911,16 @@ export class Simulation {
     const dy = y1 - y0;
     const len2 = dx * dx + dy * dy;
     if (len2 > DASH_MAX_SEGMENT * DASH_MAX_SEGMENT) return;
-    const len = Math.sqrt(len2);
-    const ux = len > 1e-9 ? dx / len : 0;
-    const uy = len > 1e-9 ? dy / len : 0;
-    const hit: number[] = [];
-    for (let k = 0; k < this.activeCount; k++) {
-      const s = this.active[k];
-      if (dash.cut.has(s)) continue;
-      const def = ENEMIES[this.eType[s]];
-      const t = len2 > 1e-12 ? Math.max(0, Math.min(1, ((this.eX[s] - x0) * dx + (this.eY[s] - y0) * dy) / len2)) : 0;
-      const cz = z0 + (z1 - z0) * t + PLAYER_HEIGHT / 2;
-      if (distToCylinder(x0 + dx * t, y0 + dy * t, cz, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) <= SHADOWSTEP_CUT_REACH) hit.push(s);
+    const reach = this.talents.dashReach(p);
+    for (const q of this.props.all) {
+      if (q.broken) continue;
+      const t = len2 > 1e-12 ? Math.max(0, Math.min(1, ((q.x - x0) * dx + (q.y - y0) * dy) / len2)) : 0;
+      const x = x0 + dx * t, y = y0 + dy * t, z = z0 + (z1 - z0) * t + PLAYER_HEIGHT / 2;
+      if (this.props.inArea(q, x, y, z, reach)) this.props.break(q.id, this.tick);
     }
-    // Applied after the scan: a kill removes the enemy from the active list. A burst flies along the
-    // dash, from a point behind the enemy on the segment's direction (M12 §4.1).
-    for (const s of hit) {
-      dash.cut.add(s);
-      this.damageEnemy(s, SHADOWSTEP_CUT_DAMAGE, p.index, SHADOWSTEP_CUT_DAMAGE, this.eX[s] - ux, this.eY[s] - uy);
-    }
+    // Hits apply after the scan; a burst flies along the dash (M12 §4.1). The Long Knife widens the
+    // path; Scattered Sheep launches instead of cutting (classes-betrayer.md `b.2a`, `b.3b`).
+    this.talents.cutSegment(p, dash.root ?? this.talents.root(p, 'E'), dash.cut, reach, x0, y0, z0, x1, y1, z1);
   }
 
   /** Closes a dash's window, cutting along what's left of its path; `dashCut` carries the path's ends. A press never accepted sends nothing. */
@@ -2260,9 +3929,10 @@ export class Simulation {
     p.dash = null;
     if (!dash || dash.acceptTick < 0) return;
     this.cutNewSegments(p, dash);
+    if (dash.root) this.talents.finish(dash.root);
     const q = dash.pts;
     const l = q.length - 3;
-    this.events.push({ to: 'all', event: { type: 'dashCut', playerId: p.id, x0: q[0], y0: q[1], z0: q[2], x1: q[l], y1: q[l + 1], z1: q[l + 2] } });
+    this.emit('all', { type: 'dashCut', playerId: p.id, x0: q[0], y0: q[1], z0: q[2], x1: q[l], y1: q[l + 1], z1: q[l + 2] });
   }
 
   /**
@@ -2270,6 +3940,9 @@ export class Simulation {
    * 5 m; a step into a wall, a closed door or a floor more than 0.5 m above the previous one is blocked.
    */
   chainsDestination(p: SimPlayer): [number, number] {
+    // Cast Down: where the crosshair meets the floor, 1.5–15 m away (classes-binder.md `a.1a`).
+    const cast = this.talents.binder.chainsDestination(p);
+    if (cast) return cast;
     const [x, y] = walkDestination(this.map, p.x, p.y, p.yaw, CHAINS_MAX);
     return [x, y];
   }
@@ -2308,17 +3981,19 @@ export class Simulation {
     const ey = p.y;
     const ez = p.z + PLAYER_EYE;
     const cosMax = Math.cos(CHAINS_ANGLE);
+    const all = this.talents.binder.allOfTartarus(p);
     const out: number[] = [];
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
-      if (this.eType[s] === GATEKEEPER) continue;
+      if (isBossBody(this.eType[s])) continue;
       const def = ENEMIES[this.eType[s]];
       if (distToCylinder(ex, ey, ez, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > CHAINS_RANGE) continue;
       const bx = this.eX[s] - ex;
       const by = this.eY[s] - ey;
       const bz = this.eZ[s] + def.height / 2 - ez;
       const len = Math.hypot(bx, by, bz);
-      if (len > 1e-9 && (bx * ax + by * ay + bz * az) / len < cosMax - 1e-9) continue;
+      // All of Tartarus reaches every direction (classes-binder.md `a.cap`).
+      if (!all && len > 1e-9 && (bx * ax + by * ay + bz * az) / len < cosMax - 1e-9) continue;
       if (!lineOfSight(this.map, ex, ey, ez, this.eX[s], this.eY[s], this.eZ[s] + def.height / 2)) continue;
       out.push(s);
     }
@@ -2327,8 +4002,19 @@ export class Simulation {
 
   // ------------------------------------------------------------------ projectiles (§5.4)
 
+  itemProjectileCapacity(replacingFlight = false): boolean {
+    const flights = this.items.flights - (replacingFlight ? 1 : 0);
+    return this.projectiles.length + flights < MAX_PROJECTILES && this.projectiles.filter(s => !this.pHostileBudget[s]).length + flights < MAX_PROJECTILES - 64;
+  }
+
   spawnProjectile(kind: number, x: number, y: number, z: number, dx: number, dy: number, dz: number, speed: number, radius: number, damage: number, maxDist: number, owner: number): number {
-    if (this.projectiles.length >= MAX_PROJECTILES) this.removeProjectile(this.projectiles[0]);
+    if (owner >= 0 && !this.itemProjectileCapacity()) return -1;
+    if (this.projectiles.length + this.items.flights >= MAX_PROJECTILES) {
+      // Only a hostile shot may replace the oldest projectile. Reserved item flights survive.
+      const victim = this.projectiles.find(s => !this.pHostileBudget[s]) ?? this.projectiles[0];
+      if (victim === undefined) return -1;
+      this.removeProjectile(victim);
+    }
     let slot = -1;
     if (this.pFree.length > 0 && this.pFreedTick[this.pFree[0]] + SLOT_REUSE_TICKS <= this.tick) slot = this.pFree.shift()!;
     else if (this.pNextFresh < PROJECTILE_SLOTS) slot = this.pNextFresh++;
@@ -2347,6 +4033,9 @@ export class Simulation {
     this.pTraveled[slot] = 0;
     this.pMaxDist[slot] = Math.min(maxDist, PROJECTILE_RANGE);
     this.pOwner[slot] = owner;
+    this.pViewLag[slot] = 0;
+    this.pReflected[slot] = 0; this.pHostileBudget[slot] = owner < 0 ? 1 : 0; this.pVolley[slot] = 0;
+    this.pOrigin.set([x, y, z], slot * 3); this.pRoom[slot] = this.pickups.roomAt(x, y);
     this.projectiles.push(slot);
     return slot;
   }
@@ -2354,6 +4043,7 @@ export class Simulation {
   removeProjectile(slot: number): void {
     if (!this.pAlive[slot]) return;
     this.pAlive[slot] = 0;
+    this.pReflectOwner.delete(slot);
     const i = this.projectiles.indexOf(slot);
     if (i >= 0) this.projectiles.splice(i, 1);
     this.pFreedTick[slot] = this.tick;
@@ -2368,6 +4058,7 @@ export class Simulation {
 
   /** Moves one projectile as a swept segment against the heightfield and enlarged target cylinders. */
   private updateProjectile(slot: number): void {
+    if (this.pReflected[slot]) { this.updateReflected(slot); return; }
     const x = this.pX[slot];
     const y = this.pY[slot];
     const z = this.pZ[slot];
@@ -2380,11 +4071,19 @@ export class Simulation {
     const terrainT = raycastTerrain(this.map, x, y, z, dx, dy, dz, len);
     let hitT = Infinity;
     let hitSlot = -1;
+    /** For an enemy projectile: how far into this tick's flight its player hit happens. */
+    let hitKey = Infinity;
     if (owner >= 0) {
+      const thrower = this.slots[owner];
+      // Each enemy where the thrower's screen draws it as the censer passes (netcode stage 4).
+      const lag = this.pViewLag[slot], view = lag > 0 ? viewAt(this.tick - 1 - lag) : NO_VIEW, at = this.drawnAt;
       for (let k = 0; k < this.activeCount; k++) {
         const s = this.active[k];
-        const def = ENEMIES[this.eType[s]];
-        const t = rayCylinder(x, y, z, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s] - pr, def.radius + pr, def.height + 2 * pr);
+        // The Long Chain: the censer flies through Blessed (classes-heretic.md `a.3b`).
+        if (this.talents.heretic.passesBlessed(thrower, this.eType[s])) continue;
+        const shot = ENEMIES[this.eType[s]].shot;
+        if (!this.enemyHistory.positionAt(s, view, at)) { at[0] = this.eX[s]; at[1] = this.eY[s]; at[2] = this.eZ[s]; }
+        const t = rayCylinder(x, y, z, dx, dy, dz, at[0], at[1], at[2] + shot.base - pr, shot.radius + pr, shot.top - shot.base + 2 * pr);
         if (t <= terrainT && t < hitT) {
           hitT = t;
           hitSlot = s;
@@ -2399,34 +4098,59 @@ export class Simulation {
       }
       // A censer passing a globe shatters it and flies on (M12 follow-up §1.3).
       const shooter = this.slots[owner];
-      if (shooter) this.globesOnRay(shooter, x, y, z, dx, dy, dz, Math.min(len, terrainT, hitT, soulT));
+      const propHit = this.pDamage[slot] > 0 ? this.props.ray(x, y, z, dx, dy, dz, Math.min(len, terrainT, hitT, soulT), pr)[0] : undefined;
+      if (shooter) this.globesOnRay(shooter, x, y, z, dx, dy, dz, Math.min(len, terrainT, hitT, soulT, propHit?.distance ?? Infinity));
+      if (propHit) {
+        this.props.break(propHit.prop.id, this.tick);
+        this.explodeCenser(slot, x + dx * propHit.distance, y + dy * propHit.distance, z + dz * propHit.distance, -1);
+        return;
+      }
       if (soulT < hitT) {
         this.explodeCenser(slot, x + dx * soulT, y + dy * soulT, z + dz * soulT, -1);
         return;
       }
     } else {
+      // Dodge compensation: each player is tested against the stretch of this tick's flight their screen
+      // drew, `back` behind it; the hit that comes first in the flight wins.
+      const step = this.pSpeed[slot] * TICK_DT;
       for (const p of this.players) {
         if (!this.livingTargetable(p)) continue;
-        const t = rayCylinder(x, y, z, dx, dy, dz, p.x, p.y, p.z - pr, PLAYER_RADIUS + pr, PLAYER_HEIGHT + 2 * pr);
-        if (t <= terrainT && t < hitT) {
+        const back = viewLag(p.view, this.tick - 1) * step;
+        const stretch = lateStretch(back, this.pTraveled[slot], 0, len, terrainT);
+        if (!stretch) continue;
+        const t = stretchHit(x, y, z, dx, dy, dz, stretch[0], stretch[1], p.x, p.y, p.z - pr, PLAYER_RADIUS + pr, PLAYER_HEIGHT + 2 * pr);
+        if (t + back < hitKey) {
+          hitKey = t + back;
           hitT = t;
           hitSlot = p.index;
         }
+      }
+      const reflection = this.items.reflection(x, y, z, dx, dy, dz, Math.min(len, terrainT, hitKey));
+      if (reflection) {
+        const t = reflection.distance, rx = x + dx * t, ry = y + dy * t, rz = z + dz * t;
+        let ax = this.pOrigin[slot * 3] - rx, ay = this.pOrigin[slot * 3 + 1] - ry, az = this.pOrigin[slot * 3 + 2] - rz;
+        let length = Math.hypot(ax, ay, az); if (length < 1e-9) { ax = -dx; ay = -dy; az = -dz; length = 1; }
+        this.pX[slot] = rx; this.pY[slot] = ry; this.pZ[slot] = rz; this.pTraveled[slot] += t;
+        this.pDx[slot] = ax / length; this.pDy[slot] = ay / length; this.pDz[slot] = az / length;
+        this.pReflected[slot] = 1; this.pRoom[slot] = reflection.area.room;
+        const caster = this.playerById(reflection.area.owner);
+        if (caster) { this.pOwner[slot] = caster.index; this.pReflectOwner.set(slot, caster); }
+        this.emit('all', { type: 'itemReflected', playerId: reflection.area.owner, projectile: slot, x: rx, y: ry, z: rz });
+        this.updateReflected(slot, len - t); return;
       }
     }
     if (hitSlot >= 0) {
       if (owner >= 0) this.explodeCenser(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT, hitSlot);
       else if (this.pKind[slot] === PROJ_GLOBE) this.shatterGlobe(slot, x + dx * hitT, y + dy * hitT, z + dz * hitT, this.slots[hitSlot]!);
       else {
-        this.damagePlayer(this.slots[hitSlot]!, this.pDamage[slot]);
+        this.damagePlayer(this.slots[hitSlot]!, this.pDamage[slot], { x: x - dx * 4, y: y - dy * 4, kind: HURT_RANGED });
         this.removeProjectile(slot);
       }
       return;
     }
     if (terrainT < len) {
       if (owner >= 0) this.explodeCenser(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT, -1);
-      else if (this.pKind[slot] === PROJ_GLOBE) this.shatterGlobe(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT, null);
-      else this.removeProjectile(slot);
+      else this.endHostile(slot, x + dx * terrainT, y + dy * terrainT, z + dz * terrainT, this.pTraveled[slot] + terrainT, len - terrainT, this.pKind[slot] === PROJ_GLOBE);
       return;
     }
     const nx = x + dx * len;
@@ -2439,11 +4163,74 @@ export class Simulation {
     if (this.pTraveled[slot] >= this.pMaxDist[slot] - 1e-9) {
       // Beyond an open edge a censer vanishes without breaking (M10 §3.4): its cloud would hurt nothing.
       if (owner >= 0 && !overVoid(this.map, nx, ny)) this.explodeCenser(slot, nx, ny, nz, -1);
-      else if (owner < 0 && this.pKind[slot] === PROJ_GLOBE) this.shatterGlobe(slot, nx, ny, nz, null);
+      else if (owner < 0) this.endHostile(slot, nx, ny, nz, this.pTraveled[slot], 0, this.pKind[slot] === PROJ_GLOBE);
       else this.removeProjectile(slot);
       return;
     }
-    if (nx < 0 || ny < 0 || nx >= this.map.w || ny >= this.map.h || nz > WALL_TOP) this.removeProjectile(slot);
+    if (nx < 0 || ny < 0 || nx >= this.map.w || ny >= this.map.h || nz > WALL_TOP) {
+      if (owner < 0) this.endHostile(slot, nx, ny, nz, this.pTraveled[slot], 0, false);
+      else this.removeProjectile(slot);
+    }
+  }
+
+  /**
+   * An enemy projectile ends at (x, y, z), `flown` from its spawn and `over` short of where this tick's
+   * flight would have taken it (dodge compensation). The players whose screens haven't drawn its end yet
+   * are owed it as a late shot; the others get a globe's shatter (`blast`) now. Removes the projectile.
+   */
+  private endHostile(slot: number, x: number, y: number, z: number, flown: number, over: number, blast: boolean): void {
+    const step = this.pSpeed[slot] * TICK_DT;
+    const owed: number[] = [];
+    for (const p of this.players) if (this.livingTargetable(p) && viewLag(p.view, this.tick - 1) * step > over + 1e-9) owed.push(p.id);
+    if (owed.length) {
+      this.lateShots.push({ kind: this.pKind[slot], damage: this.pDamage[slot], radius: this.pRadius[slot], step, x, y, z,
+        dx: this.pDx[slot], dy: this.pDy[slot], dz: this.pDz[slot], flown, over, blast, owed, volley: this.pVolley[slot] });
+    }
+    if (blast) this.shatterGlobe(slot, x, y, z, null, owed);
+    else this.removeProjectile(slot);
+  }
+
+  /**
+   * The late shots fly on unseen (dodge compensation): each player still owed one is hit by the stretch
+   * their screen drew this tick, or caught in a globe's shatter when their screen reaches its end.
+   */
+  private updateLateShots(): void {
+    for (let i = this.lateShots.length - 1; i >= 0; i--) {
+      const s = this.lateShots[i];
+      s.over += s.step;
+      s.owed = s.owed.filter((id) => {
+        const p = this.playerById(id);
+        if (!this.livingTargetable(p)) return false;
+        const back = viewLag(p.view, this.tick - 1) * s.step;
+        const stretch = lateStretch(back, s.flown, s.over - s.step, s.over, 0);
+        const pr = s.radius;
+        const t = stretch ? stretchHit(s.x, s.y, s.z, s.dx, s.dy, s.dz, stretch[0], stretch[1], p.x, p.y, p.z - pr, PLAYER_RADIUS + pr, PLAYER_HEIGHT + 2 * pr) : Infinity;
+        if (t < Infinity) {
+          if (this.boss.volleyMayHit(s.volley ?? 0, p)) this.damagePlayer(p, s.damage, { x: s.x + s.dx * (t - 4), y: s.y + s.dy * (t - 4), kind: HURT_RANGED });
+          return false;
+        }
+        if (s.over < back) return true;
+        if (s.blast && this.inGlobeBlast(p, s.x, s.y, s.z, s.dx, s.dy, s.dz) && this.boss.volleyMayHit(s.volley ?? 0, p)) this.damagePlayer(p, s.damage, { x: s.x - s.dx * 4, y: s.y - s.dy * 4, kind: HURT_RANGED });
+        return false;
+      });
+      if (!s.owed.length) this.lateShots.splice(i, 1);
+    }
+  }
+
+  private updateReflected(slot: number, distance = this.pSpeed[slot] * TICK_DT): void {
+    const x = this.pX[slot], y = this.pY[slot], z = this.pZ[slot], dx = this.pDx[slot], dy = this.pDy[slot], dz = this.pDz[slot];
+    const remaining = this.pMaxDist[slot] - this.pTraveled[slot], length = Math.min(distance, remaining);
+    const stop = Math.min(raycastTerrain(this.map, x, y, z, dx, dy, dz, length), this.items.roomBound(x, y, dx, dy, length, this.pRoom[slot]));
+    let victim = -1, hit = stop;
+    for (let k = 0; k < this.activeCount; k++) {
+      const s = this.active[k], shot = ENEMIES[this.eType[s]].shot, radius = this.pRadius[slot];
+      const t = rayCylinder(x, y, z, dx, dy, dz, this.eX[s], this.eY[s], this.eZ[s] + shot.base - radius, shot.radius + radius, shot.top - shot.base + 2 * radius);
+      if (t >= 0 && t <= hit) { hit = t; victim = s; }
+    }
+    const owner = this.pReflectOwner.get(slot);
+    if (victim >= 0 && owner?.connected) this.damageEnemy(victim, this.pDamage[slot], owner.index, this.pDamage[slot], x, y, false, false);
+    this.pX[slot] += dx * hit; this.pY[slot] += dy * hit; this.pZ[slot] += dz * hit; this.pTraveled[slot] += hit;
+    if (victim >= 0 || stop < length || length >= remaining) this.removeProjectile(slot);
   }
 
   /**
@@ -2453,16 +4240,24 @@ export class Simulation {
   private explodeCenser(slot: number, x: number, y: number, z: number, direct: number): void {
     const owner = this.pOwner[slot];
     const damage = this.pDamage[slot];
+    const hx = this.pDx[slot], hy = this.pDy[slot];
     this.pX[slot] = x;
     this.pY[slot] = y;
     this.pZ[slot] = z;
     this.removeProjectile(slot);
-    if (direct >= 0) this.damageEnemy(direct, damage, owner);
     const shooter = this.slots[owner];
+    // The censer's hit and its cloud are one LMB root (classes-heretic.md "Button kills").
+    const root = this.talents.heretic.takeRoot(slot) ?? (shooter ? this.talents.root(shooter, 'LMB') : null);
+    if (direct >= 0) {
+      // A censer's direct hit is a direct shot for a boss part (rogue bosses.md §3.5); its cloud is area.
+      this.directPartHit = true;
+      try { if (root && shooter) this.talents.primary(root, direct, damage, damage, x, y); else this.damageEnemy(direct, damage, owner, damage, x, y); }
+      finally { this.directPartHit = false; }
+    }
     if (!shooter) return;
-    // At most 6 clouds: a new one replaces the oldest.
-    if (this.clouds.length >= CLOUD_MAX) this.clouds.shift();
-    this.clouds.push({ x, y, z, owner: shooter, from: this.tick, until: this.tick + ticks(CLOUD_TIME) });
+    // Its cloud (at most 6 per Heretic, the oldest going out), or its LMB Payload's area.
+    this.talents.heretic.censerBroke(shooter, x, y, z, direct, hx, hy, root!);
+    this.talents.finish(root!);
     for (const o of this.players) {
       if (o === shooter || !this.hasSoul(o)) continue;
       if (distToCylinder(x, y, z, o.x, o.y, this.soulBase(o), SOUL_RADIUS, SOUL_HEIGHT) <= REVIVE_CENSER_RADIUS) {
@@ -2478,25 +4273,8 @@ export class Simulation {
    * pulsing cloud's Heretic (no one if it left).
    */
   private updateClouds(): void {
-    while (this.clouds.length && this.tick >= this.clouds[0].until) this.clouds.shift();
-    const pulsing = this.clouds.filter((c) => this.tick >= c.from && (this.tick - c.from) % CLOUD_PULSE_TICKS === 0);
-    if (pulsing.length === 0) return;
-    const hits: Array<[number, number]> = [];
-    for (let k = 0; k < this.activeCount; k++) {
-      const s = this.active[k];
-      if (this.tick - this.eIncenseTick[s] < CLOUD_PULSE_TICKS) continue;
-      const def = ENEMIES[this.eType[s]];
-      // Newest first, so the credit goes to the newest cloud covering the enemy.
-      for (let i = pulsing.length - 1; i >= 0; i--) {
-        const c = pulsing[i];
-        if (distToCylinder(c.x, c.y, c.z, this.eX[s], this.eY[s], this.eZ[s], def.radius, def.height) > CLOUD_RADIUS) continue;
-        hits.push([s, c.owner.connected ? c.owner.index : -1]);
-        this.eIncenseTick[s] = this.tick;
-        break;
-      }
-    }
-    // Applied after the scan: a kill removes the enemy from the active list.
-    for (const [s, source] of hits) this.damageEnemy(s, CLOUD_DAMAGE, source);
+    // Cloud shapes, worn clouds and their pulses live with the Heretic's talents (classes-heretic.md §3).
+    this.talents.heretic.updateClouds();
   }
 
   // ------------------------------------------------------------------ enemies
@@ -2515,22 +4293,28 @@ export class Simulation {
       this.retargetBoss(slot);
       return;
     }
+    if (this.eType[slot] === BOSS_PART) { this.eTarget[slot] = -1; return; }
+    // A Watchman's aim keeps its locked target (rooms.md §6.4); otherwise its sight checks choose.
+    if (this.eType[slot] === WATCHMAN && this.watchmen.retarget(slot)) return;
     if (this.eTauntUntil[slot] > this.tick) {
       const f = this.fallenIndex();
-      if (f >= 0 && this.livingTargetable(this.slots[f])) {
+      if (f >= 0 && this.livingTargetable(this.slots[f]) && this.enemyMayTarget(slot, this.slots[f]!)) {
         this.eTarget[slot] = f;
         return;
       }
     }
-    const air = this.eType[slot] === CHERUB;
+    const air = ENEMIES[this.eType[slot]].flying;
     const c = Math.floor(this.eX[slot]);
     const r = Math.floor(this.eY[slot]);
     let best = -1;
     let bestD = Infinity;
     for (const p of this.players) {
-      if (!this.livingTargetable(p) || !this.fieldValid[p.index]) continue;
-      const field = air ? this.airFields[p.index] : this.groundFields[p.index];
-      let d = field.at(c, r);
+      if (!this.livingTargetable(p) || !this.enemyMayTarget(slot, p) || !this.fieldValid[p.index]) continue;
+      const avoids = !air && this.dryNavigation.room >= 0 && this.dryNavigation.room === this.roomAt(this.eX[slot], this.eY[slot]);
+      const field = air ? this.airFields[p.index] : avoids ? this.dryNavigation.fields[p.index] : this.groundFields[p.index];
+      if (!field || field.targetCell < 0) continue;
+      const cell = r * this.map.w + c, anchor = avoids ? this.dryNavigation.project(cell) : cell;
+      let d = anchor < 0 ? UNREACHABLE : field.at(anchor % this.map.w, Math.floor(anchor / this.map.w));
       if (d === UNREACHABLE) continue;
       if (p.classId === 'fallen') d *= 0.5;
       if (d < bestD) {
@@ -2542,7 +4326,7 @@ export class Simulation {
   }
 
   /** An enemy's eye: the Gatekeeper's is 5 m above its feet, every other enemy's at its body center (§2.3). */
-  private eyeZ(slot: number): number {
+  eyeZ(slot: number): number {
     return this.eZ[slot] + (this.eType[slot] === GATEKEEPER ? BOSS_EYE : ENEMIES[this.eType[slot]].height / 2);
   }
 
@@ -2602,16 +4386,20 @@ export class Simulation {
       const slot = this.active[k];
       this.eStartX[slot] = this.eX[slot];
       this.eStartY[slot] = this.eY[slot];
+      if (this.eSpawnTick[slot] === tick || this.eType[slot] === BOSS_PART) continue;
       const t = this.eTarget[slot];
-      const targetGone = t >= 0 && !this.livingTargetable(this.slots[t]);
-      if (targetGone || slot % RETARGET_TICKS === tick % RETARGET_TICKS) this.retarget(slot);
+      const targetGone = t >= 0 && (!this.livingTargetable(this.slots[t]) || !this.enemyMayTarget(slot, this.slots[t]!));
+      if (targetGone || t < 0 || slot % RETARGET_TICKS === tick % RETARGET_TICKS) this.retarget(slot);
       const type = this.eType[slot];
       if (type === GATEKEEPER) {
         this.updateLos(slot);
-        this.updateBoss(slot);
         continue;
       }
+      const familyHolding = this.commanders.update(slot);
+      if (familyHolding && type === CARRIER) continue;
+      if (type === DOMINION && this.dominionBehavior.flight(slot)) continue;
       if (this.ePullStart[slot] >= 0) {
+        if (type === WATCHMAN) this.watchmen.cancel(slot);
         this.updatePull(slot);
         continue;
       }
@@ -2620,135 +4408,59 @@ export class Simulation {
       // doesn't strike or cast, and is idle.
       const stunned = this.isStunned(slot);
       if (tick > this.eKbFrom[slot] && tick <= this.eKbUntil[slot]) this.updateKnockback(slot);
-      else if (type === CHERUB) this.updateCherub(slot, stunned);
-      else this.updateWalker(slot, stunned);
-      if (stunned) {
+      else if (ENEMIES[type].flying) this.updateCherub(slot, stunned);
+      else this.updateWalker(slot, stunned, familyHolding);
+      const thrown = tick <= this.eKbUntil[slot] && !this.eGrounded[slot];
+      if (type === WATCHMAN) this.watchmen.update(slot, stunned || thrown, thrown);
+      else if (stunned || thrown) {
         this.eMeleeNext[slot] = -1;
         this.eCast[slot] = 0;
         this.eCastT[slot] = 0;
         if (this.eCastCd[slot] > 0) this.eCastCd[slot] = Math.max(0, this.eCastCd[slot] - TICK_DT);
-        this.eState[slot] = ST_IDLE;
-      } else if (type === BLESSED) this.updateMelee(slot);
-      else this.updateCast(slot);
+        this.eState[slot] = thrown ? ST_FALLING : ST_IDLE;
+      } else if (type === CANTOR && familyHolding) { const phase = this.commanders.active.get(slot)?.phase; this.eState[slot] = phase === 'tell' ? ST_WINDUP : ST_ATTACKING; }
+      else if (type === BLESSED) this.updateMelee(slot);
+      else if (type !== DOMINION && type !== CANTOR) this.updateCast(slot);
     }
+    if (this.livingDominions > 0) this.dominionBehavior.update();
+    // After the loop: the encounter spawns and removes its parts.
+    if (this.bossSlot >= 0 && this.eSpawnTick[this.bossSlot] !== tick) this.boss.update();
   }
+
+
+
+
+
 
   private updatePull(slot: number): void {
     const o = slot * 6;
     const f = Math.min(1, (this.tick - this.ePullStart[slot]) / ticks(CHAINS_PULL_TIME));
     const p = this.ePull;
-    this.eX[slot] = p[o] + (p[o + 3] - p[o]) * f;
-    this.eY[slot] = p[o + 1] + (p[o + 4] - p[o + 1]) * f;
-    this.eZ[slot] = p[o + 2] + (p[o + 5] - p[o + 2]) * f;
+    const b = this.loadBody(slot);
+    b.x = p[o] + (p[o + 3] - p[o]) * f;
+    b.y = p[o + 1] + (p[o + 4] - p[o + 1]) * f;
+    b.z = p[o + 2] + (p[o + 5] - p[o + 2]) * f;
+    this.storeBody(slot, b);
     this.eState[slot] = ST_MOVING;
     if (f >= 1) {
       this.ePullStart[slot] = -1;
       this.eGrounded[slot] = 1;
       this.eVz[slot] = 0;
       this.root(slot, CHAINS_ROOT);
+      this.talents.binder.pullDone(slot);
     }
   }
 
   private updateLos(slot: number): void {
+    if (this.eType[slot] === WATCHMAN) {
+      if (slot % LOS_TICKS === this.tick % LOS_TICKS) this.watchmen.look(slot);
+      return;
+    }
     const t = this.eTarget[slot];
     if (t < 0 || slot % LOS_TICKS !== this.tick % LOS_TICKS) return;
     const p = this.slots[t];
     if (!p) return;
     this.eLos[slot] = lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eyeZ(slot), p.x, p.y, p.z + PLAYER_HEIGHT / 2) ? 1 : 0;
-  }
-
-  /**
-   * The Gatekeeper's casts and summons (§7.4, §5.6). A cast that becomes allowed when another one ends
-   * starts on the next tick.
-   */
-  private updateBoss(slot: number): void {
-    const tick = this.tick;
-    const silenced = tick < this.eSilenceUntil[slot];
-    const t = this.eTarget[slot];
-    const wasCasting = this.bossCast !== BOSS_CAST_NONE;
-    this.eState[slot] = ST_IDLE;
-
-    if (tick >= this.summonDue) {
-      // Not a cast: silence doesn't stop it.
-      const ai = this.eArena[slot];
-      const counts = [scaleCount(SUMMON.blessed, this.bossParty), 0, scaleCount(SUMMON.cherubs, this.bossParty)];
-      if (ai >= 0) this.arenas[ai].queue.push({ counts, spawned: [0, 0, 0], wave: -1 });
-      this.summonDue += ticks(SUMMON_INTERVAL);
-    }
-
-    if (this.bossCast === BOSS_CAST_VOLLEY) {
-      if (silenced || t < 0) {
-        this.bossCast = BOSS_CAST_NONE;
-        this.volleyDue = tick + ticks(VOLLEY_INTERVAL);
-      } else if (++this.bossCastTicks >= ticks(VOLLEY_WINDUP)) {
-        this.fireVolley(slot);
-        this.bossCast = BOSS_CAST_NONE;
-        this.volleyDue = tick + ticks(VOLLEY_INTERVAL);
-        this.eState[slot] = ST_ATTACKING;
-      } else this.eState[slot] = ST_WINDUP;
-    } else if (this.bossCast === BOSS_CAST_JUDGMENT) {
-      if (silenced) this.interruptJudgment();
-      else if (++this.bossCastTicks >= ticks(JUDGMENT_CAST)) this.completeJudgment(slot);
-      else this.eState[slot] = ST_WINDUP;
-    }
-    if (wasCasting || silenced) return;
-
-    if (tick >= this.judgmentDue) {
-      this.bossCast = BOSS_CAST_JUDGMENT;
-      this.bossCastTicks = 0;
-      this.judgmentDamage = 0;
-      this.eState[slot] = ST_WINDUP;
-      this.events.push({ to: 'all', event: { type: 'bossCast', phase: 'start' } });
-    } else if (tick >= this.volleyDue && t >= 0 && this.eLos[slot]) {
-      this.bossCast = BOSS_CAST_VOLLEY;
-      this.bossCastTicks = 0;
-      this.eState[slot] = ST_WINDUP;
-    }
-  }
-
-  /** Orb Volley: 8 orbs at the target's body center, rotated by evenly spread angles from −25° to +25°. */
-  private fireVolley(slot: number): void {
-    const p = this.slots[this.eTarget[slot]];
-    if (!p) return;
-    const ox = this.eX[slot];
-    const oy = this.eY[slot];
-    const oz = this.eyeZ(slot);
-    const dx = p.x - ox;
-    const dy = p.y - oy;
-    const dz = p.z + PLAYER_HEIGHT / 2 - oz;
-    const len = Math.hypot(dx, dy, dz);
-    if (len < 1e-9) return;
-    for (let i = 0; i < VOLLEY_ORBS; i++) {
-      const a = -VOLLEY_SPREAD + (2 * VOLLEY_SPREAD * i) / (VOLLEY_ORBS - 1);
-      const ca = Math.cos(a);
-      const sa = Math.sin(a);
-      const rx = dx * ca - dy * sa;
-      const ry = dx * sa + dy * ca;
-      this.spawnProjectile(PROJ_GLOBE, ox, oy, oz, rx / len, ry / len, dz / len, VOLLEY_ORB.speed, VOLLEY_ORB.radius, VOLLEY_ORB.damage, PROJECTILE_RANGE, -1);
-    }
-  }
-
-  /** Judgment completes: 100% of max HP to every living player whose eye sees the boss's eye. */
-  private completeJudgment(slot: number): void {
-    const bx = this.eX[slot];
-    const by = this.eY[slot];
-    const bz = this.eyeZ(slot);
-    this.bossCast = BOSS_CAST_NONE;
-    this.judgmentDue = this.tick + ticks(JUDGMENT_INTERVAL);
-    this.eState[slot] = ST_ATTACKING;
-    this.events.push({ to: 'all', event: { type: 'bossCast', phase: 'completed' } });
-    for (const p of this.players) {
-      if (!this.livingTargetable(p)) continue;
-      if (lineOfSight(this.map, p.x, p.y, p.z + PLAYER_EYE, bx, by, bz)) this.damagePlayer(p, p.maxHp);
-    }
-  }
-
-  /** Discord or 1 300 damage (scaled, M9 §4) interrupts Judgment; the next one is due 25 s later. */
-  private interruptJudgment(): void {
-    if (this.bossCast !== BOSS_CAST_JUDGMENT) return;
-    this.bossCast = BOSS_CAST_NONE;
-    this.judgmentDue = this.tick + ticks(JUDGMENT_INTERVAL);
-    this.events.push({ to: 'all', event: { type: 'bossCast', phase: 'interrupted' } });
   }
 
   /** Whether a caster's target is within its range with line of sight. */
@@ -2764,15 +4476,15 @@ export class Simulation {
 
   private speedOf(slot: number): number {
     const s = ENEMIES[this.eType[slot]].speed;
-    return this.tick < this.eSlowUntil[slot] ? s * SLOW_FACTOR : s;
+    return this.tick < this.eSlowUntil[slot] || this.items.slowed[slot] ? s * SLOW_FACTOR : s;
   }
 
   private updateKnockback(slot: number): void {
     const b = this.loadBody(slot);
     const dx = this.eKbVx[slot] * TICK_DT;
     const dy = this.eKbVy[slot] * TICK_DT;
-    if (b.flying) moveHorizontal(this.map, b, dx, dy);
-    else stepBody(this.map, b, dx, dy, TICK_DT);
+    if (b.flying && b.vz === 0) moveHorizontal(this.map, b, dx, dy);
+    else { b.flying = false; stepBody(this.map, b, dx, dy, TICK_DT); }
     this.storeBody(slot, b);
     this.eState[slot] = !b.grounded ? ST_FALLING : ST_MOVING;
   }
@@ -2791,6 +4503,7 @@ export class Simulation {
   }
 
   private storeBody(slot: number, b: Body): void {
+    if (this.leashed[slot]) this.clampLeash(slot, b);
     this.eX[slot] = b.x;
     this.eY[slot] = b.y;
     this.eZ[slot] = b.z;
@@ -2807,16 +4520,25 @@ export class Simulation {
     const y = this.eY[slot];
     const c = Math.floor(x);
     const r = Math.floor(y);
-    const tc = Math.floor(p.x);
-    const tr = Math.floor(p.y);
+    const projected = !!field.excluded && field.targetCell !== Math.floor(p.y) * this.map.w + Math.floor(p.x);
+    const tc = projected ? field.targetCell % this.map.w : Math.floor(p.x);
+    const tr = projected ? Math.floor(field.targetCell / this.map.w) : Math.floor(p.y);
     let gx: number;
     let gy: number;
-    if (Math.abs(c - tc) <= 1 && Math.abs(r - tr) <= 1) {
-      gx = p.x;
-      gy = p.y;
+    if (Math.abs(c - tc) <= 1 && Math.abs(r - tr) <= 1 && directStepAllowed(field, c, r, tc, tr)) {
+      gx = projected ? tc + 0.5 : p.x;
+      gy = projected ? tr + 0.5 : p.y;
       out.direct = true;
+      this.eWaypoint[slot] = -1;
     } else {
-      const n = field.bestNeighbor(c, r);
+      let n = this.eWaypoint[slot];
+      const distance = n < 0 ? Infinity : Math.hypot(n % this.map.w + 0.5 - x, Math.floor(n / this.map.w) + 0.5 - y);
+      // Finish the cell-centre waypoint before replanning at a diagonal's intermediate cell.
+      if (n < 0 || this.eWaypointGoal[slot] !== field.targetCell || field.dist[n] === UNREACHABLE || distance < 0.12 || distance > 2 ||
+        !directStepAllowed(field, c, r, n % this.map.w, Math.floor(n / this.map.w))) {
+        n = field.bestNeighbor(c, r);
+        this.eWaypoint[slot] = n; this.eWaypointGoal[slot] = field.targetCell;
+      }
       if (n < 0) return false;
       gx = (n % this.map.w) + 0.5;
       gy = Math.floor(n / this.map.w) + 0.5;
@@ -2835,24 +4557,38 @@ export class Simulation {
   private readonly steerOut = { dx: 0, dy: 0, dist: 0, direct: false };
 
   /** Blessed and Choristers: follow the ground field; Choristers stop to cast in range. A stunned one doesn't steer. */
-  private updateWalker(slot: number, stunned: boolean): void {
+  private updateWalker(slot: number, stunned: boolean, familyHolding = false): void {
     const type = this.eType[slot];
     const b = this.loadBody(slot);
     const t = this.eTarget[slot];
     let mx = 0;
     let my = 0;
     const rooted = this.tick < this.eRootUntil[slot];
-    const holds = type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot));
+    const holds = familyHolding || (type === DOMINION ? this.dominions.holding(slot, this.tick) : type === WATCHMAN ? this.watchmen.holds(slot) :
+      type === CHORISTER && (this.eCast[slot] === 1 || this.casterInRange(slot)));
     const p = t >= 0 ? this.slots[t] : undefined;
-    if (p && !rooted && !holds && !stunned) {
+    const avoids = this.dryNavigation.room >= 0 && this.dryNavigation.room === this.roomAt(b.x, b.y);
+    const cell = avoids ? this.hazards.cell(b.x, b.y) : -1, inFire = avoids && !!this.hazards.active[cell];
+    if ((p || inFire) && !rooted && (!holds || inFire) && !stunned) {
       const s = this.steerOut;
-      if (this.steer(slot, this.groundFields[t], p, s)) {
+      const field = avoids ? this.dryNavigation.fields[t] : this.groundFields[t];
+      let steered = false;
+      if (inFire) {
+        const next = this.dryNavigation.escapeStep(cell);
+        if (next >= 0) {
+          const dx = next % this.map.w + 0.5 - b.x, dy = Math.floor(next / this.map.w) + 0.5 - b.y, d = Math.hypot(dx, dy);
+          if (d > 1e-9) { s.dx = dx / d; s.dy = dy / d; s.dist = d; s.direct = false; steered = true; }
+        }
+      } else if (p && field && (!avoids || field.targetCell >= 0)) steered = this.steer(slot, field, p, s);
+      if (steered) {
         let step = this.speedOf(slot) * TICK_DT;
         if (s.direct && type === BLESSED) step = Math.min(step, s.dist - BLESSED_STOP);
-        else if (s.direct) step = Math.min(step, s.dist);
+        else step = Math.min(step, s.dist);
         if (step > 0) {
           mx = s.dx * step;
           my = s.dy * step;
+          // Only ordinary steering refuses fire. Accepted knockbacks, pulls and separation keep their existing paths.
+          if (avoids && !inFire && this.hazards.active[this.hazards.cell(b.x + mx, b.y + my)]) mx = my = 0;
         }
       }
     }
@@ -2863,6 +4599,7 @@ export class Simulation {
 
   private updateCherub(slot: number, stunned: boolean): void {
     const b = this.loadBody(slot);
+    b.vz = 0; b.grounded = true; // Resume ordinary hovering after an accepted physical launch.
     const t = this.eTarget[slot];
     let mx = 0;
     let my = 0;
@@ -2870,7 +4607,11 @@ export class Simulation {
     const rooted = this.tick < this.eRootUntil[slot];
     const p = t >= 0 ? this.slots[t] : undefined;
     if (p && !rooted && !stunned) {
-      if (this.casterInRange(slot)) {
+      // A Carrier must approach inside its 20 m acquisition range. Strafing at the Cherub's
+      // 25 m arrow range otherwise leaves it circling forever without a chance to carry.
+      const carryApproach = this.eType[slot] === CARRIER && (Math.hypot(p.x - b.x, p.y - b.y) > 20 ||
+        !carryPathClear(this.map, this.eRoom[slot], b.x, b.y, b.z, b.x, b.y, b.z));
+      if (this.casterInRange(slot) && !carryApproach) {
         strafing = true;
         const base = Math.atan2(p.y - b.y, p.x - b.x);
         const a = base + (this.eStrafe[slot] * Math.PI) / 2;
@@ -2899,8 +4640,9 @@ export class Simulation {
     // Hover with the feet 4 m above the ground height, changing height at up to 6 m/s.
     const g = groundHeight(this.map, b.x, b.y, b.radius, Infinity, false, true);
     if (g !== -Infinity) {
-      const want = g + CHERUB_HOVER;
-      const maxDz = CHERUB_CLIMB * TICK_DT;
+      // Brought Low holds a flyer its Binder binds on the floor (classes-binder.md `a.2b`).
+      const want = g + (this.talents.binder.grounded(slot) ? 0 : CHERUB_HOVER);
+      const maxDz = this.talents.binder.climbRate(slot) * TICK_DT;
       b.z += Math.max(-maxDz, Math.min(maxDz, want - b.z));
     }
     this.storeBody(slot, b);
@@ -2911,21 +4653,25 @@ export class Simulation {
    * Blessed melee (§7.1): while within 1.2 m horizontally and less than 1.5 m apart in height, 5 damage
    * on the 8th tick in range (0.267 s, M12 §3.2), then every 1 s. Leaving range resets the timer.
    */
-  private updateMelee(slot: number): void {
+  updateMelee(slot: number): void {
+    const dominion = this.eType[slot] === DOMINION;
     const t = this.eTarget[slot];
     let inRange = false;
     const p = t >= 0 ? this.slots[t] : undefined;
     if (p) {
-      inRange = Math.hypot(p.x - this.eX[slot], p.y - this.eY[slot]) <= MELEE_RANGE && Math.abs(p.z - this.eZ[slot]) < MELEE_HEIGHT;
+      inRange = Math.hypot(p.x - this.eX[slot], p.y - this.eY[slot]) <= (dominion ? DOMINION_MELEE_RANGE : MELEE_RANGE) && Math.abs(p.z - this.eZ[slot]) < MELEE_HEIGHT &&
+        (!dominion || lineOfSight(this.map, this.eX[slot], this.eY[slot], this.eyeZ(slot), p.x, p.y, p.z + PLAYER_HEIGHT / 2));
     }
-    if (!inRange) {
+    // Fettered Hands: a Blessed bound by its Binder strains at the chains instead of striking (classes-binder.md `b.2b`).
+    if (!inRange || this.talents.binder.fettered(slot)) {
       this.eMeleeNext[slot] = -1;
       return;
     }
     if (this.eMeleeNext[slot] < 0) this.eMeleeNext[slot] = MELEE_FIRST;
     this.eMeleeNext[slot] -= TICK_DT;
     if (this.eMeleeNext[slot] <= 1e-9) {
-      this.damagePlayer(p!, MELEE_DAMAGE);
+      // Red Iron answers an accepted melee hit the Fallen survives (classes-fallen.md `a.1a`).
+      if (this.damagePlayer(p!, dominion ? DOMINION_MELEE_DAMAGE : MELEE_DAMAGE, { x: this.eX[slot], y: this.eY[slot], kind: HURT_MELEE }) > 0 && p!.classId === 'fallen') this.talents.fallen.meleeStruck(p!, slot);
       this.eMeleeNext[slot] += MELEE_INTERVAL;
     }
     if (this.eState[slot] !== ST_FALLING) this.eState[slot] = ST_ATTACKING;
@@ -2980,7 +4726,19 @@ export class Simulation {
     dx /= len;
     dy /= len;
     dz /= len;
-    this.spawnProjectile(c.kind, ox, oy, oz, dx, dy, dz, c.speed, c.radius, c.damage, PROJECTILE_RANGE, -1);
+    this.spawnProjectile(c.kind, ox, oy, oz, dx, dy, dz, c.speed * (c.kind === PROJ_GLOBE && this.edicts.includes(3) ? SWIFT_HYMNS : 1), c.radius, c.damage, PROJECTILE_RANGE, -1);
+  }
+
+  /** Candidate cells along the beam, padded for bodies/separation displacement. */
+  commanderBeamCandidates(b: ReturnType<typeof beamSegment>): number[] {
+    const cells = new Set<number>(), found = new Set<number>(), { w, h } = this.map;
+    for (let t = 0; t <= b.length + 0.5; t += 0.5) {
+      const x = b.x + b.dx * Math.min(t, b.length), y = b.y + b.dy * Math.min(t, b.length);
+      for (let r = Math.max(0, Math.floor(y - 1.5)); r <= Math.min(h - 1, Math.floor(y + 1.5)); r++)
+        for (let c = Math.max(0, Math.floor(x - 1.5)); c <= Math.min(w - 1, Math.floor(x + 1.5)); c++) cells.add(r * w + c);
+    }
+    for (const cell of cells) for (const layer of [0, 1] as const) for (let i = this.hashStart[layer][cell]; i < this.hashStart[layer][cell + 1]; i++) found.add(this.hashItems[layer][i]);
+    return [...found];
   }
 
   /** Pushes overlapping enemies apart, half the overlap each, up to 8 neighbors (§7.3). */
@@ -2992,7 +4750,7 @@ export class Simulation {
     start.fill(0);
     const isLayer = (slot: number) => {
       const t = this.eType[slot];
-      return t !== GATEKEEPER && (t === CHERUB) === (layer === 1);
+      return !isBossBody(t) && ENEMIES[t].flying === (layer === 1);
     };
     const cellOf = (slot: number) => {
       let c = Math.floor(this.eX[slot]);
@@ -3008,7 +4766,7 @@ export class Simulation {
       start[cellOf(s) + 1]++;
       n++;
     }
-    if (n < 2) return;
+    if (n === 0) return;
     for (let i = 0; i < cells; i++) start[i + 1] += start[i];
     const fill = this.hashFill;
     fill.set(start.subarray(0, cells));
@@ -3021,7 +4779,7 @@ export class Simulation {
     const b = this.body;
     for (let k = 0; k < this.activeCount; k++) {
       const s = this.active[k];
-      if (!isLayer(s) || this.ePullStart[s] >= 0) continue;
+      if (!isLayer(s) || this.ePullStart[s] >= 0 || this.dominions.active.get(s)?.leap || this.commanders.active.get(s)?.phase === 'carry' || this.commanders.active.get(s)?.phase === 'active') continue;
       const def = ENEMIES[this.eType[s]];
       const x = this.eX[s];
       const y = this.eY[s];
@@ -3077,44 +4835,43 @@ export class Simulation {
         py = sy + ty * k2 - y;
       }
       this.loadBody(s);
-      if (tryDisplace(this.map, b, px, py)) {
-        this.eX[s] = b.x;
-        this.eY[s] = b.y;
-      }
+      if (tryDisplace(this.map, b, px, py)) this.storeBody(s, b);
     }
   }
 
   // ------------------------------------------------------------------ snapshots
 
-  /** Living enemies in the current arena plus its enemies not yet spawned (§8.2). */
+  /** Living enemies in the active room plus its enemies not yet spawned (§8.2). */
   enemiesRemaining(): number {
-    const { arenaIndex } = this.arenaStatus();
-    const st = this.arenas[arenaIndex];
+    const ai = this.activeRoom;
+    const st = this.rooms[ai];
     if (!st) return 0;
-    if (this.map.arenas[arenaIndex].boss) return st.alive;
+    if (this.map.rooms[ai].boss) return st.alive;
     let n = st.alive;
-    for (const q of st.queue) for (let t = 0; t < 3; t++) n += q.counts[t] - q.spawned[t];
-    n += st.squad?.left ?? 0;
-    const waves = this.map.arenas[arenaIndex].waves;
-    if (!this.noWaves && this.benchArena < 0) {
+    for (const q of st.queue) for (let t = 0; t < q.counts.length; t++) n += q.counts[t] - q.spawned[t];
+    n += (st.squad?.left ?? 0) + (st.watch?.left ?? 0);
+    const waves = this.map.rooms[ai].waves;
+    if (!this.noWaves && this.benchRoom < 0) {
       for (let i = st.wave + 1; i < waves.length; i++) n += waveSize(waves[i], st.partySize);
     }
     return n;
   }
 
-  /** The boss fields of the snapshot header; 0 outside the boss fight (§9.4). */
-  private bossHeader(): Pick<SnapshotHeader, 'bossHp' | 'bossMaxHp' | 'bossCast' | 'bossCastProgress'> {
+  /** The boss fields of the snapshot header; 0 outside the boss fight (rogue bosses.md §3.5). */
+  private bossHeader(): BossHeader {
     const s = this.bossSlot;
-    if (s < 0) return { bossHp: 0, bossMaxHp: 0, bossCast: BOSS_CAST_NONE, bossCastProgress: 0 };
-    const len = this.bossCast === BOSS_CAST_VOLLEY ? ticks(VOLLEY_WINDUP) : ticks(JUDGMENT_CAST);
-    const progress = this.bossCast === BOSS_CAST_NONE ? 0 : Math.min(255, Math.round((this.bossCastTicks / len) * 255));
-    return { bossHp: Math.max(0, this.eHp[s]), bossMaxHp: Math.round(this.bossMaxHp), bossCast: this.bossCast, bossCastProgress: progress };
+    const encounter = this.boss.header();
+    if (s < 0) return { bossHp: 0, bossMaxHp: 0, bossCast: BOSS_CAST_NONE, bossCastProgress: 0, ...encounter };
+    return { bossHp: Math.max(0, this.eHp[s]), bossMaxHp: Math.round(this.bossMaxHp), bossCast: this.bossCast, bossCastProgress: this.boss.castProgress(), ...encounter };
   }
 
   private prepareSnapshot(): void {
     if (this.preparedTick === this.tick) return;
     this.preparedTick = this.tick;
     const e = this.ent;
+    e.dominionCasts = this.dominions.checkpoint();
+    e.commanderCasts = this.commanders.checkpoint();
+    e.watchmanAims = this.watchmen.checkpoint();
     const tick = this.tick;
     e.enemyCount = this.activeCount;
     for (let k = 0; k < this.activeCount; k++) {
@@ -3122,22 +4879,31 @@ export class Simulation {
       e.enemySlot[k] = s;
       e.enemyX[k] = this.eX[s];
       e.enemyY[k] = this.eY[s];
+      e.enemyZ[k] = this.eZ[s];
+      e.enemyIncarnation[k] = this.eIncarnation[s];
+      e.enemyHp[k] = this.eHp[s];
       e.enemyTypeState[k] = (this.eType[s] & 0x0f) | (this.eState[s] << 4);
       let f = 0;
       if (this.isRooted(s)) f |= FLAG_ROOTED;
       if (tick < this.eSilenceUntil[s]) f |= FLAG_SILENCED;
-      if (tick < this.eSlowUntil[s]) f |= FLAG_SLOWED;
+      if (tick < this.eSlowUntil[s] || this.items.slowed[s]) f |= FLAG_SLOWED;
       if (tick < this.eTauntUntil[s]) f |= FLAG_TAUNTED;
       if (tick < this.eStunUntil[s]) f |= FLAG_STUNNED;
+      if (this.eType[s] === BOSS_PART) f = (this.boss.partOpening(s) ? FLAG_PART_OPENING : 0) | (this.boss.hold?.seal === s ? FLAG_PART_SEAL : 0);
       this.baseFlags[k] = f;
     }
     e.projectileCount = this.projectiles.length;
     this.projectiles.forEach((slot, i) => {
       e.projSlot[i] = slot;
       e.projKind[i] = this.pKind[slot];
+      e.projOwner[i] = this.pOwner[slot] >= 0 ? this.slots[this.pOwner[slot]]?.id ?? PROJ_NO_OWNER : PROJ_NO_OWNER;
       e.projX[i] = this.pX[slot];
       e.projY[i] = this.pY[slot];
       e.projZ[i] = this.pZ[slot];
+    });
+    e.pickupCount = this.pickups.live.length;
+    this.pickups.live.forEach((p, i) => {
+      e.pickupId[i] = p.id; e.pickupX[i] = p.x; e.pickupY[i] = p.y; e.pickupKind[i] = p.kind;
     });
   }
 
@@ -3151,12 +4917,15 @@ export class Simulation {
       e.enemyFlags[k] = this.baseFlags[k] | (this.eHurtTick[s] > since ? FLAG_HURT : 0);
     }
     this.lastSentTick.set(recipientId, this.tick);
-    const { arenaIndex, arenaPhase } = this.arenaStatus();
     const header: SnapshotHeader = {
+      runId: this.runId,
+      stateRevision: this.stateRevision,
       tick: this.tick,
-      arenaIndex,
-      arenaPhase,
+      activeRoom: this.activeRoom,
+      activePhase: this.activePhase,
+      clearedMask: this.clearedMask(),
       countdown: Math.ceil(this.countdownLeft() * 10 - 1e-6),
+      hold: this.countdownHold(),
       enemiesRemaining: this.enemiesRemaining(),
       ...this.bossHeader(),
     };
@@ -3180,6 +4949,9 @@ export class Simulation {
         shots: p.shots & 0xff,
         shots2: p.shots2 & 0xff,
         beam: this.tick < p.beamUntil ? p.beamId : ALLY_NONE,
+        shotsDone: shotsDone(p.shotQueue, p.shotsSeen),
+        wallet: p.wallet,
+        carrySlot: this.commanders.carriedBy(p.id)?.slot ?? -1, teleportId: p.teleportId,
       });
     }
     return encodeSnapshot(header, players, e);

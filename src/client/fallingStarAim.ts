@@ -45,7 +45,7 @@ export function walkableCells(map: GameMap): Uint8Array {
   };
   const step = (ac: number, ar: number, bc: number, br: number): boolean => open(bc, br) && map.floor[br * w + bc] - map.floor[ar * w + ac] <= STEP_UP + EPS;
   const queue: number[] = [];
-  for (const points of map.arenaSpawnPoints) {
+  for (const points of map.roomSpawnPoints) {
     for (const [c, r] of points) {
       if (!open(c, r) || out[r * w + c]) continue;
       out[r * w + c] = 1;

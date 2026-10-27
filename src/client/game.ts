@@ -1,8 +1,24 @@
+import { CARRIER_SWOOP, hymnalReduction } from '../data/commanders';
+import { CommanderProjection } from './commanders';
+import { CommanderView } from './commanderView';
+import { DamageNumbers, loadDamageNumbersSetting } from './damageNumbers';
+import { HitArcs, arcAngle, hurtShake } from './hitArcs';
+import { WatchmanProjection } from './watchmen';
+import { BELL_FORWARD, ROD_BELL_FORWARD, WatchmanView } from './watchmanView';
+import { WATCHMAN_MUZZLE_Z, type WatchmanAim } from '../data/watchman';
+import { RewardShafts, rewardPickupIds, rewardSpot } from './rewardShaft';
+import { rewardLabel } from '../gen/rewards';
 /** The in-game client: input or bot, local movement, snapshots, interpolation, rendering and feedback. */
 import { CLASSES, type ClassId } from '../data/classes';
 import { DECOR, decorSprite } from '../data/decor';
 import * as THREE from 'three';
-import { CHERUB, CHERUB_CLIMB, CHERUB_HOVER, CHORISTER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_WINDUP } from '../data/enemies';
+import { BOSS_PART, CANTOR, CARRIER, isCommander, CHORISTER, DOMINION, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT, ST_FALLING, ST_WINDUP, WATCHMAN } from '../data/enemies';
+import { DOMINION_RADIUS } from '../data/dominion';
+import { DominionProjection } from './dominion';
+import { DominionView } from './dominionView';
+import { HazardView } from './hazards';
+import { SpawnProjection } from './spawns';
+import { SpawnView } from './spawnView';
 import {
   ABILITIES,
   ATTACK_NONE,
@@ -22,6 +38,7 @@ import {
   SCOURGE_HALF_ARC,
   SECONDARIES,
   SHADOWSTEP_TIME,
+  SHOTGUN_CLOSE_DAMAGE,
   SHOTGUN_KNOCKBACK_RANGE,
   SHROUD_BURST_RADIUS,
   type AttackSlot,
@@ -29,15 +46,19 @@ import {
 import { debugState } from '../debug';
 import type { CtrlMessage, GameEvent, LobbyPlayer } from '../net/messages';
 import type { NetStats } from '../net/netStats';
+import type { LinkQuality } from '../net/linkQuality';
 import { ALLY_NONE, encodeInput, FLAG_HURT, FLAG_ROOTED, FLAG_SILENCED, FLAG_STUNNED, FLAG_TAUNTED, PHASE_CLEARED, PHASE_COMBAT, PHASE_COUNTDOWN, type Snapshot } from '../net/protocol';
 import type { Transport } from '../net/transport';
 import type { Params } from '../params';
-import { aimDir, estimateSilverBullet, rayCylinder } from '../sim/combat';
+import { aimDir, BURST_HEAVY, burstAngle, rayCylinder, rayEnemy } from '../sim/combat';
+import { shotSpread } from '../sim/shotSpread';
+import { PREDICTION_MAX_MS, PredictedDeaths, revealTick } from './predictedDeaths';
 import { ENEMY_SLOTS, PLAYER_EYE, PLAYER_HEIGHT, PROJECTILE_SLOTS, TICK_DT, TICK_MS } from '../sim/constants';
 import { raycastTerrain } from '../sim/los';
-import { arenaPhaseOf, doorsClosed, overVoid, setArenaDoors, type GameMap } from '../sim/map';
+import { applyLeaves, leafOpen, overVoid, type GameMap } from '../sim/map';
 import { distToCylinder, groundHeight } from '../sim/movement';
-import { BOSS_CAST_JUDGMENT, GLOBE_BLAST, GLOBE_SHOT_BLAST, PROJ_ARROW, PROJ_CENSER, PROJ_GLOBE } from '../sim/sim';
+import { BOSS_CAST_JUDGMENT, GLOBE_BLAST, GLOBE_SHOT_BLAST, PROJ_ARROW, PROJ_CENSER, PROJ_GLOBE, PROJECTILE_RANGE } from '../sim/sim';
+import { OwnCensers, type CenserBreak, type CenserWorld } from './ownCensers';
 import type { EnemyAnimSet, PlayerAnimSet } from '../render/animAtlas';
 import type { Atlas, SpriteFrame } from '../render/atlas';
 import { Billboards, NO_GLOW, type Glow } from '../render/billboards';
@@ -76,11 +97,12 @@ import {
   type BurstInfo,
   type Tier,
 } from './burstDeaths';
-import { Flinches, HIT_FLINCH, KILL_FLINCH, PredictedKills, predictHit, predictPellets, predictSilverBullet, type PelletTarget, type Predicted } from './killPredict';
+import { latchBits, latchClear, latchFired, latchPress, newFireLatch } from '../sim/fireLatch';
+import { Flinches, HIT_FLINCH, KILL_FLINCH, KillConfirmations, OwnDamage, PredictedKills, predictHit, predictPellets, predictSilverBullet, type PelletTarget, type Predicted } from './killPredict';
 import { BurstPops, MassKills } from './massKill';
-import { massKillShake, Shake, SHAKE_BLASPHEMY, SHAKE_LANDING, SHAKE_SHROUD, SHROUD_SHAKE_RANGE } from './shake';
+import { dominionShake, massKillShake, Shake, SHAKE_BLASPHEMY, SHAKE_LANDING, SHAKE_SHROUD, SHROUD_SHAKE_RANGE } from './shake';
 import { LIGHTMAP_TEXELS } from '../render/lightmap';
-import { Bot, type BotEnemy } from './bot';
+import { Bot, type BotBoss, type BotEnemy } from './bot';
 import { corpseFrame, EnemyAnimator, spriteDirection, type Corpse } from './enemyAnim';
 import { FpsCounter } from './fps';
 import type { HostSession } from './hostSession';
@@ -93,12 +115,53 @@ import { audio, type LoopHandle } from '../audio/audio';
 import { SOUL_HEIGHT, SOUL_RADIUS } from '../sim/souls';
 import { pickAllyTarget } from './allyTarget';
 import { GameSounds } from './sounds';
+import type { InteractKind } from './cueMap';
 import { ViewBob } from './bob';
 import { SoulView } from './soulView';
 import { LocalPlayer, MAX_FRAME_DT, wasdDirection } from './localPlayer';
 import { PartyFrames } from './partyFrames';
 import { PlayerAnimator } from './playerAnim';
 import { SnapshotBuffer, type InterpolatedEnemies } from './snapshots';
+import { RunEvents } from '../net/runEvents';
+import type { Floor } from '../gen/generate';
+import { ClientRooms, roomMessage } from './rooms';
+import { PickupView } from './pickups';
+import { PropView } from './props';
+import { propDefs } from '../data/props';
+import { FEATHER_SPEED, ITEMS } from '../data/items';
+import { MapView, type MapPlayer } from './mapView';
+import { ShopView } from './shop';
+import type { InventoryState } from '../net/messages';
+import { ItemView } from './itemView';
+import { FeatherTrails } from './featherTrail';
+import type { VictoryState } from '../sim/victory';
+import { levelForXp } from '../profile/model';
+import { TalentClient } from './talentClient';
+import { riteOverlay, talentPanel, type RiteOverlay, type TalentPanel } from '../ui/talents';
+import { ALT_ABILITIES, BINDER, GATEBREAKER, RAIN, hasCatalog } from '../data/talents';
+import { aimedWalk, rainPoint } from '../sim/talentGeometry';
+/** Alternatives whose `abilityUsed` the base class key must not draw or sound (R5). */
+/** The incense loop is heard from clouds within this distance (m). */
+const INCENSE_HEARD = 12;
+const ALT_SFX_KEYS = new Set(['castOut', 'gatebreaker', 'rainOfFire', 'breadOfAngels', 'trialByFire', 'cloudOfWitnesses', 'well', 'ring', 'boundary']);
+import { ADVOCATE_REACH } from '../sim/sim';
+import type { RiteOffer } from '../net/messages';
+import { advocateSprite } from './advocate';
+import { RelicView } from './relicView';
+import { RelicHud } from './relicHud';
+import { RouteView } from './routeView';
+import { advocateHub, relicOfferOverlay, relicPanel, type RelicOfferOverlay, type RelicPanel } from '../ui/relics';
+import { relicDormancy } from '../sim/relicUse';
+import { resolveKit } from '../sim/build';
+import { SOURCE_BELL_FIRST, SOURCE_CHEST } from '../sim/route';
+import { SOURCE_CHART } from '../sim/shop';
+import { KEY } from '../data/pickups';
+import type { RelicOfferState, RouteState } from '../net/messages';
+import type { RelicId } from '../data/relics';
+import { STREAK_NAMES } from '../sim/streaks';
+import { sentenceLabel } from '../data/edicts';
+import { GatekeeperView, partsOf, sightState, sightWindow, ringContactIn, type PartView } from './gatekeeperView';
+import { BOSS_CAST_CALL, BOSS_CAST_TOLL, BOSS_CAST_VOLLEY, BOSS_FLAG_DEFERRED, BOSS_FLAG_WATCHERS, BOSS_PHASE_INVULNERABLE, FLAG_PART_OPENING, FLAG_PART_SEAL } from '../data/gatekeeper';
 
 const BENCH_TURN_RATE = 0.3;
 /** A move longer than this in one frame is a teleport: the weapon's sway resets (M11 §3.2, as the bob). */
@@ -142,14 +205,6 @@ const TRACER_WIDTH = 0.1;
 const SLUG_TRACER_WIDTH = 0.15;
 /** The slug's muzzle flash size (M9 §5.1); every attack's recoil is in attackKick (M11). */
 const SLUG_FLASH = 1.3;
-/**
- * The local player's own censer starts at the painted launcher's muzzle (the stage 2 playtest): the
- * simulation launches it from the eye, so it's drawn from the muzzle, the offset fading over this.
- * A censer appearing within CENSER_CLAIM_MS of a local censer shot, this near the player, is theirs.
- */
-const CENSER_BLEND_MS = 250;
-const CENSER_CLAIM_MS = 600;
-const CENSER_CLAIM_DIST = 3;
 /** The Silver Bullet's tracer: an ember strip with a silver-white core, fading over 0.25 s. */
 const SILVER_EMBER = 0xff7a3a;
 const SILVER_CORE = 0xf2f4ff;
@@ -264,11 +319,14 @@ export interface RosterEntry {
   id: number;
   name: string;
   classId: ClassId;
+  bot?: boolean;
 }
 
 export interface GameOptions {
   root: HTMLElement;
   map: GameMap;
+  floor: Floor | null;
+  runId: string;
   atlas: Atlas;
   textures: GameTextures;
   /** The animated 8-direction sprites of every enemy type that has an atlas, by type. */
@@ -282,10 +340,14 @@ export interface GameOptions {
   localPlayerId: number;
   /** Players at `start`, sorted by id; `setRoster` keeps it current (M8 §6.2). */
   roster: RosterEntry[];
+  /** Resolved dev start room; multiplayer always waits for the host's placement. */
+  startRoom?: number;
   /** Singleplayer pauses the simulation while the Pause overlay is open (§3); multiplayer shows party frames. */
   singleplayer: boolean;
   /** Payload bytes over PeerJS, in multiplayer (§2.5). */
   net: NetStats | null;
+  /** A client's round trip to the host and its route (F3); null on the host and in single player. */
+  link?: LinkQuality | null;
   /** Called 3 s after the result, when the Results screen should appear. */
   onResults: (data: ResultsData) => void;
   /** Called when the player clicks `Leave game`, after `leave` was sent. */
@@ -305,14 +367,44 @@ export class Game {
   /** The players' names and classes by id, kept current during the game (M8 §6.2). */
   private roster: RosterEntry[];
   private readonly classId: ClassId;
-  private readonly maxHp: number;
+  private maxHp: number;
+  /** The bargain's cut from max HP, drawn dark at the HP bar's end (game.md §9.6). */
+  private hpCut = 0;
   private readonly scene: GameScene;
   private readonly canvas: HTMLCanvasElement;
   private readonly input: Input;
   private readonly player: LocalPlayer;
   private readonly overlay: DebugOverlay;
   private readonly hud: Hud;
+  private readonly rooms: ClientRooms;
+  private readonly mapView: MapView;
+  private readonly shop: ShopView;
+  private readonly itemView: ItemView;
+  /** R6: relic areas, projectiles and rings, and the HUD's relic strip and streak banner. */
+  private readonly relicView: RelicView;
+  private readonly relicHud: RelicHud;
+  private readonly featherTrails = new FeatherTrails();
+  private readonly shopHint = document.createElement('div');
+  private inventory: InventoryState | null = null;
+  private nextRequestId = 1;
+  /** What each own interact request was for, so its result plays the right cue (R8). */
+  private readonly interactKinds = new Map<number, InteractKind>();
+  /** Own Rite offers already announced, and the taken Rites' count (-1 before the first kit). */
+  private readonly ritesOffered = new Set<number>();
+  private ritesTaken = -1;
+  private victory: VictoryState | null = null;
+  private readonly victoryHint = document.createElement('div');
   private readonly pause: PauseOverlay;
+  /** Talents (R4): every player's kit, the Betrayer's areas, and the open Rite or Talents view. */
+  private readonly talents: TalentClient;
+  /** From the floor checkpoint; until then nothing is treated as a free-points development run. */
+  private progressionEnabled = true;
+  private overlayView: { kind: 'rite'; view: RiteOverlay; offerId: number } | { kind: 'talents'; view: TalentPanel }
+    | { kind: 'relicOffer'; view: RelicOfferOverlay; offerId: number } | { kind: 'relics'; view: RelicPanel } | { kind: 'advocate'; view: { el: HTMLElement; setMessage(text: string): void } } | null = null;
+  /** R6: the key, the chest and the Bells; the own pending relic offers. */
+  private readonly routeView: RouteView;
+  private relicOffers: RelicOfferState[] = [];
+  private readonly ritePip = document.createElement('div');
   private readonly party: PartyFrames | null;
   private paused = false;
   /** performance.now() when the Pause overlay opened. */
@@ -321,6 +413,7 @@ export class Game {
   private wasLocked = false;
   private readonly fps = new FpsCounter();
   private readonly snaps: SnapshotBuffer;
+  private readonly runEvents: RunEvents;
   private readonly billboards: Billboards;
   /** Contact shadows under the characters (M10 §5.4). */
   private readonly shadows: ContactShadows;
@@ -343,20 +436,33 @@ export class Game {
   private seq = 0;
   private lastTeleportId = 0;
   private dead = false;
+  /** A room is sealed (the host refuses loadout changes then, rogue game.md §9.6). */
+  private sealed = false;
   private qPresses = 0;
   private ePresses = 0;
+  private itemPresses = [0, 0];
   /** The mouse buttons as the input's `fire` bits (M9 §10). */
   private fire = 0;
   /** The attack the held buttons pick locally this frame (M9 §2.1). */
   private attack: AttackSlot = ATTACK_NONE;
   /** Cosmetic fire timer, shared by both attacks and run locally at 30 Hz (M9 §2.2). */
   private fireTimer = 0;
+  /** Mouse press counters sent to the host, and the presses waiting for their shot (click latching). */
+  private leftPresses = 0;
+  private rightPresses = 0;
+  private readonly latch = newFireLatch();
+  /** Ticks of the cosmetic fire timer so far: the latch's clock. */
+  private fireTick = 0;
+  /** The shots the cosmetic fire timer fired, sent to the host, and the latest one's button (client-timed shots). */
+  private shots = 0;
+  private shotButton: 0 | 1 = 0;
+  /** The latest shot's aim and view, which every input repeats (netcode stage 4). */
+  private readonly shotAim = { yaw: 0, pitch: 0, tick: -1, gap: 0, frac: 0 };
   /** The view's yaw and pitch last frame, for the weapon's sway (M11 §3.2). */
   private swayYaw = 0;
   private swayPitch = 0;
-  /** The local player's censer shots waiting for their projectile, and the censers claimed as theirs, by slot. */
-  private readonly censerShots: Array<{ at: number; from: [number, number, number] }> = [];
-  private readonly ownCensers = new Map<number, { at: number; dx: number; dy: number; dz: number }>();
+  /** The local player's own censers, flown here from the click (netcode stage 4). */
+  private readonly ownCensers = new OwnCensers();
   /** Projectile slots drawn this frame and the last. */
   private projSeen = new Set<number>();
   private projPrev = new Set<number>();
@@ -372,6 +478,31 @@ export class Game {
   private inFieldNow = false;
   /** The censers' incense clouds (M9 §2.8), drawn where each censer vanished. */
   private readonly incense: IncenseClouds;
+  private readonly pickups: PickupView;
+  private readonly props: PropView;
+  private readonly commanders: CommanderProjection;
+  private readonly watchmen: WatchmanProjection;
+  private readonly watchmanView: WatchmanView;
+  /** The Gatekeeper's ring, parts, chain and threads (rogue bosses.md §3.5 Client). */
+  private readonly gatekeeperView: GatekeeperView;
+  /** The Toll impacts seen in snapshot headers, newest last (at most two rings roll at once). */
+  private tollImpacts: number[] = [];
+  /** The ring impact whose whoosh already played. */
+  private whooshed = 0;
+  /** The crosshair eye's last test (every 100 ms) and result. */
+  private sightAt = -Infinity;
+  private sight: 'full' | 'half' | 'none' = 'none';
+  /** The cycle whose Judgment pre-warning played. */
+  private prewarned = Number.NaN;
+  private readonly commanderView: CommanderView;
+  private readonly damageNumbers: DamageNumbers;
+  private readonly hitArcs: HitArcs;
+  private readonly rewardShafts: RewardShafts;
+  private readonly dominion: DominionProjection;
+  private readonly dominionView = new DominionView();
+  private readonly hazards: HazardView;
+  private readonly spawnWarnings: SpawnProjection;
+  private readonly spawnView = new SpawnView();
   /** When each enemy slot's Falling Star launch arc starts (M9 §3.2). */
   private readonly launchAt = new Float64Array(ENEMY_SLOTS).fill(-Infinity);
   /** Wading (M12 §3.1): launched enemies don't press until then (ms), and the applied speed factor. */
@@ -388,6 +519,8 @@ export class Game {
   private fireAcc = 0;
   /** Local timer for movement abilities (§9.3): performance.now() when it's ready again. */
   private localEReadyAt = 0;
+  /** The host's cooldown has started for the last local E press: from then on it rules (close-quarters refunds shorten it). */
+  private eAcked = true;
   private allyTargetId = ALLY_NONE;
   /** With no ally target, an ally in the aim but out of range, for the grey chevron. */
   private allyOutOfRange = ALLY_NONE;
@@ -407,12 +540,8 @@ export class Game {
   private soulHitAt = -Infinity;
   private soulHitId = -1;
   private hum: LoopHandle | null = null;
-  /** Each arena's phase its doors were last set for, or -1 before the first snapshot. */
-  private doorPhase: number[];
-  /** Smoothed Cherub heights per slot (§9.4). */
-  private readonly cherubZ = new Float32Array(ENEMY_SLOTS);
-  /** Frame number when each slot's Cherub height was last updated. */
-  private readonly cherubFrame = new Uint32Array(ENEMY_SLOTS);
+  /** Each leaf's state its door was last drawn in (room by room, leaf by leaf): 1 closed, 0 open, -1 before the first snapshot. */
+  private leafDrawn: Int8Array;
   private frameNo = 1;
   private readonly zScratch = new Float32Array(ENEMY_SLOTS);
   /** performance.now() when each enemy's last white flash started. */
@@ -441,13 +570,34 @@ export class Game {
   private readonly rotations: Record<string, Rotations>;
   /** Your kills, at once (M12 §4.4), and the screen shake (§4.5). */
   private readonly predicted = new PredictedKills();
+  /** The share of predicted kills the host confirmed (F3, the lag test). */
+  private readonly confirmations = new KillConfirmations();
+  /** The damage this screen's shots dealt that the snapshots don't show yet (netcode stage 3). */
+  private readonly ownDamage = new OwnDamage();
+  /** Enemies the local player's screen predicted it killed: they die at once and stay hidden (netcode stage 2). */
+  private readonly deaths = new PredictedDeaths();
+  /** Predicted kills that reappeared because the host's snapshots kept them alive (F3, the lag test). */
+  private revealedKills = 0;
+  /** The host's reports of the local player's other kills, slot and incarnation pairs, to play next frame (netcode stage 4). */
+  private readonly reportedKills: number[] = [];
+  /** Reported kills that died at once instead of after the render delay (the lag test). */
+  private reportedEarly = 0;
+  /** R9 B3 diagnosis: reported kills this screen did not draw at the report, with or without a pending burst. */
+  private reportedUndrawn = 0;
+  private reportedUndrawnBurst = 0;
+  private reportedReceived = 0;
+  private reportedHidden = 0;
   private readonly flinches = new Flinches();
   private readonly shake = new Shake();
   private wasLeaping = false;
   /** Falling Star aimed anywhere (M12 §5.2): the hold, the walkable cells (once per map), this frame's preview, the ally leapt to. */
   private readonly starAim = new StarAim();
+  /** Gatebreaker's key is still held since its charge started. */
+  private chargeHeld = false;
   private walkable: Uint8Array | null = null;
   private starPreview: Landing | null = null;
+  /** An aimed cast's preview while its key is held (R5: Rain of Fire, the Well, the Boundary): feet, radius, validity and an optional line. */
+  private aimPreview: { at: [number, number, number]; radius: number; valid: boolean; line?: [[number, number, number], [number, number, number]] } | null = null;
   private leapAlly = ALLY_NONE;
   /** Shadowstep (M12 §5.7): when the local slash began, and where the dash started. */
   private slashAt = -Infinity;
@@ -461,6 +611,8 @@ export class Game {
   private readonly playerAnimator = new PlayerAnimator();
   /** The Gatekeeper's cast and its progress (0–1) in the newest snapshot. */
   private bossCast = 0;
+  /** The Gatekeeper's 50% transition: his sprite holds the first trumpet aloft. */
+  private bossTransition = false;
   private bossCastProgress = 0;
   private resultAt = -1;
   private resultData: ResultsData | null = null;
@@ -482,7 +634,26 @@ export class Game {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'game-canvas';
     o.root.appendChild(this.canvas);
-    this.scene = new GameScene(this.canvas, this.map, o.textures.terrain, o.textures.fx.glow);
+    this.scene = new GameScene(this.canvas, this.map, o.textures.terrain, o.textures.fx.glow, o.floor);
+    this.pickups = new PickupView(this.map, o.runId, o.textures.fx.glow, o.atlas);
+    this.scene.scene.add(this.pickups.group);
+    this.props = new PropView(this.map, o.runId, propDefs(o.floor), this.scene.terrain.lightmap, o.atlas);
+    this.scene.scene.add(this.props.billboards.mesh);
+    this.dominion = new DominionProjection(o.runId);
+    this.commanders = new CommanderProjection(o.runId);
+    this.watchmen = new WatchmanProjection(o.runId);
+    this.commanderView = new CommanderView(o.textures.fx.beam, o.textures.fx.glow);
+    this.scene.scene.add(this.commanderView.group);
+    this.watchmanView = new WatchmanView(o.textures.fx.beam, !o.enemyAnims[WATCHMAN], o.params.dev);
+    this.scene.scene.add(this.watchmanView.group);
+    this.gatekeeperView = new GatekeeperView(o.textures.fx.beam);
+    this.scene.scene.add(this.gatekeeperView.group);
+    this.rewardShafts = new RewardShafts(o.textures.fx.beam);
+    this.scene.scene.add(this.rewardShafts.group);
+    this.spawnWarnings = new SpawnProjection(o.runId, this.map);
+    this.scene.scene.add(this.spawnView.group);
+    this.scene.scene.add(this.dominionView.group);
+    this.hazards = new HazardView(this.map, o.textures.terrain.refiner, o.textures.fx.flames); this.scene.scene.add(this.hazards.group);
     this.billboards = new Billboards(o.atlas.texture);
     this.scene.scene.add(this.billboards.mesh);
     for (const [type, set] of Object.entries(o.enemyAnims)) {
@@ -513,35 +684,84 @@ export class Game {
     this.particles = new Particles([o.atlas.frames.feather, o.atlas.frames.spark, o.atlas.frames.ember], this.pieceFloor);
     this.rotations = Object.fromEntries(ROTATED_SPRITES.map((n) => [n, [0, 1, 2, 3].map((r) => o.atlas.frames[`${n}-r${r}`]) as unknown as Rotations]));
     this.hud = new Hud(o.root, this.classId, !o.singleplayer);
+    this.damageNumbers = new DamageNumbers(this.hud.root);
+    this.hitArcs = new HitArcs(this.hud.root);
     this.hud.onChatSend = (text) => o.onChat?.(text);
     this.hud.setHp(this.maxHp, 0, this.maxHp);
     this.hud.setRemaining(null);
     this.hud.setDeath(null);
+    this.rooms = new ClientRooms(this.map, o.runId);
+    this.mapView = new MapView(this.hud.root, this.rooms, o.floor, this.localId);
+    this.shop = new ShopView(this.map, o.floor); this.scene.scene.add(this.shop.group);
+    this.itemView = new ItemView(this.map);
+    this.scene.scene.add(this.itemView.group);
+    this.relicView = new RelicView(this.map, this.vfx);
+    this.scene.scene.add(this.relicView.group);
+    this.relicHud = new RelicHud(this.hud.root);
+    this.routeView = new RouteView(this.map, o.textures.fx.beam);
+    this.scene.scene.add(this.routeView.group);
+    this.shopHint.className = 'shop-hint'; this.hud.root.append(this.shopHint);
+    this.victoryHint.className = 'victory-hint'; this.hud.root.append(this.victoryHint);
     this.party = o.singleplayer ? null : new PartyFrames(this.hud.leftColumn, this.hud.ownFrame);
-    this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id));
+    this.sounds = new GameSounds(this.map, this.localId, (id) => this.classOf(id), (id, slot) => {
+      const ab = this.talents?.ability(id, slot);
+      return ab && Object.hasOwn(ALT_ABILITIES, ab) ? ab : undefined;
+    }, () => this.snaps.estimatedTick(performance.now()));
+    debugState.cues = this.sounds.census;
+    // Read through, since the mixer may start after the game (the first user gesture).
+    debugState.voices = { get started() { return audio()?.started ?? {}; }, get refused() { return audio()?.refused ?? {}; } };
     this.hud.onReady = () => this.sounds.abilityReady();
     this.overlay = new DebugOverlay(o.root, this.params.dev);
     this.pause = new PauseOverlay(o.root, () => this.resume(), () => this.leave());
+    this.talents = new TalentClient({
+      vfx: this.vfx, glow: o.textures.fx.glow, flames: o.textures.fx.flames, localId: this.localId,
+      classOf: (id) => this.classOf(id), pose: (id) => this.playerPose(id),
+      later: (id, run) => this.later(id, run),
+      map: this.map, tick: () => this.snaps.estimatedTick(performance.now()),
+      incense: this.incense, cloudBase: (x, y, z) => this.cloudBase(x, y, z),
+    });
+    this.scene.scene.add(this.talents.group);
+    if (o.floor) this.scene.scene.add(advocateSprite(this.map, o.floor.confessional));
+    this.ritePip.className = 'rite-pip'; this.ritePip.hidden = true; this.hud.root.append(this.ritePip);
 
     this.input = new Input(this.canvas);
     this.input.pointerLockAllowed = !this.params.bot && this.params.benchArena < 0;
     this.input.onKey = (code) => this.onKey(code);
+    // Hold M and click a cleared room to return there (rogue game.md §5.5).
+    this.input.onMapClick = () => this.mapClick();
+    this.mapView.onClick = () => { if (!document.pointerLockElement) this.mapClick(); };
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('visibilitychange', this.onVisibility);
 
-    const [sc, sr] = this.params.benchArena >= 0 ? this.map.arenas[this.params.benchArena].entryCells[0] : this.params.startArena > 0 ? this.map.arenas[this.params.startArena].entryCells[index] : this.map.spawns[index];
+    const [sc, sr] = this.params.benchArena >= 0 ? this.map.rooms[this.params.benchArena].entry[0].cells[0] : o.startRoom !== undefined ? this.map.rooms[o.startRoom].entry[0].cells[index] : this.map.spawns[index];
     this.player = new LocalPlayer(sc + 0.5, sr + 0.5, this.map.floor[sr * this.map.w + sc], CLASSES[me.classId].speed);
-    this.doorPhase = this.map.arenas.map(() => -1);
+    this.leafDrawn = new Int8Array(this.map.rooms.reduce((n, a) => n + a.leaves.length, 0)).fill(-1);
 
-    this.snaps = new SnapshotBuffer(o.host ? 1.5 : 4.5);
+    this.runEvents = new RunEvents(o.runId);
+    this.snaps = new SnapshotBuffer(o.host ? 1.5 : 4.5, o.runId);
     this.snaps.onComplete = (s, prev) => this.onSnapshot(s, prev);
     o.transport.onSnapshot = (buf) => this.snaps.addPart(buf, performance.now());
 
     this.bot = this.params.bot ? new Bot(this.map) : null;
-    if (this.params.dev) window.__heavenfallTeleport = (x, y) => this.player.teleport(x, y, this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)]);
+    // The published pose follows at once; otherwise it shows the old place until the next frame draws.
+    if (this.params.dev) window.__heavenfallTeleport = (x, y) => {
+      const z = this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)];
+      this.player.teleport(x, y, z);
+      Object.assign(debugState.self, { x, y, z });
+    };
+    // Dev: turn the view (e2e screenshots of what a player sees, e.g. facing the Gatekeeper).
+    if (this.params.dev) window.__heavenfallLook = (yaw, pitch = 0) => { this.player.yaw = yaw; this.player.pitch = pitch; };
     this.bench = this.params.benchArena >= 0 && o.host ? new BenchRunner(o.root, o.host, () => this.scene.rendererString(), () => this.scene.renderStats()) : null;
 
     debugState.players = o.roster.map((r) => ({ id: r.id, classId: r.classId, hp: CLASSES[r.classId].hp, dead: false, kills: 0, revive: 0, primaryShots: 0, secondaryShots: 0 }));
+    debugState.wallet = 0; debugState.pickups = [];
+    debugState.props = this.props.defs.map((p) => ({ id: p.id, room: p.room, family: p.family, x: p.x, y: p.y,
+      z: this.map.floor[Math.floor(p.y) * this.map.w + Math.floor(p.x)], marked: p.marked }));
+    debugState.brokenProps = [];
+    debugState.propRecharges = [];
+    debugState.dominion = { rendered: [], actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 };
+    debugState.hazards = { activeRoom: -1, activeCells: 0 };
+    debugState.spawnWarnings = []; debugState.crests = 0;
     this.sounds.renderDelay = (this.snaps.delayTicks * TICK_MS) / 1000;
   }
 
@@ -589,9 +809,44 @@ export class Game {
     // Dev key J removes only the Blessed, leaving the casters in view (M12 follow-up screenshots).
     else if (code === 'KeyJ' && this.params.dev && this.o.host) this.o.host.killAll(true);
     else if (code === 'KeyG' && this.params.dev && this.o.host) this.o.host.toggleGod();
+    // Dev key I fills both item slots with the next pair, to try every item's effect.
+    else if (code === 'KeyI' && this.params.dev && this.o.host) this.o.host.devItems();
+    // Dev keys B (next quick build), R (a Rite offer now) and T (the Talents view anywhere, free points, while alive).
+    else if (code === 'KeyB' && this.params.dev && this.o.host) this.o.host.devBuild();
+    else if (code === 'KeyR' && this.params.dev && this.o.host) this.o.host.devRite();
+    else if (code === 'KeyT' && this.params.dev && !this.dead) this.openTalents();
     else if (this.params.bot) return;
+    // T: the own talents to read anywhere in the run, dead or alive (§9.4); out of combat and alive,
+    // Q and E can be reassigned there too.
+    else if (code === 'KeyT') this.openTalents(this.dead || this.sealed ? 'view' : 'slots');
+    else if ((code === 'Digit1' || code === 'Digit2') && !this.dead && !this.player.carried) {
+      const slot = code === 'Digit1' ? 0 : 1; this.itemPresses[slot] = (this.itemPresses[slot] + 1) & 255;
+    }
+    else if (code === 'KeyF' && !this.dead) {
+      const sourceId = this.shop.target(this.player.body, this.player.yaw, this.player.pitch);
+      const route = sourceId < 0 ? this.routeView.target(this.player.body) : null;
+      if (sourceId >= 0) {
+        this.interactKinds.set(this.nextRequestId, sourceId === SOURCE_CHART ? 'chart' : 'buy');
+        this.o.transport.sendCtrl({ type: 'interact', runId: this.o.runId, requestId: this.nextRequestId++, sourceId });
+      } else if (route) {
+        this.interactKinds.set(this.nextRequestId, 'other');
+        this.o.transport.sendCtrl({ type: 'interact', runId: this.o.runId, requestId: this.nextRequestId++, sourceId: route.kind === 'chest' ? SOURCE_CHEST : SOURCE_BELL_FIRST + route.room });
+      }
+      // The Advocate within 2.5 m, else the oldest pending offer (rogue game.md §1.4, §9.6).
+      else if (this.advocateInReach()) this.openAdvocate();
+      else this.openPendingOffer();
+    }
     else if (code === 'KeyQ') this.pressAbility('Q', performance.now());
     else if (code === 'KeyE') this.pressAbility('E', performance.now());
+  }
+
+  /** Discard predictions canceled by the host's grab correction. */
+  private cancelCarriedActions(): void {
+    this.fire = 0;
+    latchClear(this.latch);
+    this.starAim.reset(); this.starPreview = null; this.aimPreview = null; this.chargeHeld = false;
+    this.wasLeaping = this.wasDashing = false;
+    this.dashFrom = null;
   }
 
   /**
@@ -599,22 +854,27 @@ export class Game {
    * their displayed cooldown is ready.
    */
   private pressAbility(slot: 'Q' | 'E', now: number): void {
-    if (this.dead || this.over) return;
+    if (this.dead || this.over || this.player.carried) return;
     if (slot === 'Q') {
       this.qPresses = (this.qPresses + 1) & 0xff;
       // Your Blasphemy shakes the screen on its press (M12 §4.5).
       if (this.classId === 'fallen' && this.displayedCooldown('Q', now) <= 0) this.shake.add(now, SHAKE_BLASPHEMY);
-      // Your Chains come down at once (M12 follow-up §2.2).
-      if (this.classId === 'binder' && this.displayedCooldown('Q', now) <= 0) this.ownChains(now);
+      // Your Chains come down at once (M12 follow-up §2.2); Ring and the Boundary come from the host.
+      if (this.classId === 'binder' && this.talents.ability(this.localId, 'Q') === 'chains' && this.displayedCooldown('Q', now) <= 0) this.ownChains(now);
       return;
     }
     const def = ABILITIES[this.classId].E;
+    // The Way Back and the Silver Wire count every key-down; the host decides each press (R4).
+    if (this.classId === 'betrayer' && this.talents.ability(this.localId, 'E') !== 'shadowstep') {
+      this.ePresses = (this.ePresses + 1) & 0xff;
+      return;
+    }
     // The Heretic and the Binder count every E key-down; the Fallen and the Betrayer only the leaps and
     // dashes they execute (M12 §5.2).
     if (!def.movement) {
       this.ePresses = (this.ePresses + 1) & 0xff;
       // Your Discord's gust leaves at once, along your view (M12 follow-up §2.4).
-      if (this.classId === 'binder' && this.displayedCooldown('E', now) <= 0) {
+      if (this.classId === 'binder' && this.talents.ability(this.localId, 'E') === 'discord' && this.displayedCooldown('E', now) <= 0) {
         const b = this.player.body;
         const [dx, dy, dz] = aimDir(this.player.yaw, this.player.pitch);
         this.vfx.gust(now, [b.x, b.y, b.z + PLAYER_EYE - GUST_BELOW_EYE], [dx, dy, dz], DISCORD_HALF_ANGLE, DISCORD_RANGE);
@@ -623,6 +883,22 @@ export class Game {
     }
     const ready = this.displayedCooldown('E', now) <= 0;
     const p = this.player;
+    const eAbility = this.talents.ability(this.localId, 'E');
+    // Gatebreaker (classes-fallen.md §4): the press starts the charge at once; the release is the next press.
+    if (this.classId === 'fallen' && eAbility === 'gatebreaker') {
+      if (!ready || p.charging) return;
+      p.startCharge();
+      this.ePresses = (this.ePresses + 1) & 0xff;
+      this.localEReadyAt = now + (GATEBREAKER.maxTime + GATEBREAKER.cooldown) * 1000;
+      this.eAcked = false;
+      this.chargeHeld = true;
+      return;
+    }
+    // Rain of Fire: held to aim like Falling Star, counted for the host on release.
+    if (this.classId === 'fallen' && eAbility === 'rainOfFire') {
+      if (!this.bot) this.starAim.keyDown(this.displayedCooldown('E', now) <= 0, !this.dead);
+      return;
+    }
     if (this.classId === 'fallen') {
       // Falling Star: held to aim, released to leap (M12 §5.2). The bot leaps at once, only to an ally target.
       if (!this.bot) {
@@ -644,6 +920,7 @@ export class Game {
     p.startDash(dx, dy);
     this.ePresses = (this.ePresses + 1) & 0xff;
     this.localEReadyAt = now + def.cooldown * 1000;
+    this.eAcked = false;
     // The dagger cuts across the view for the dash's 200 ms (M12 §5.7), its sound with the slash.
     this.slashAt = now;
     debugState.slashAt = now;
@@ -654,10 +931,12 @@ export class Game {
 
   /** Falling Star's leap to a landing point (feet) starts: counted for the host, cooling down locally (M12 §5.2). */
   private leap(now: number, x: number, y: number, z: number, ally: number): void {
+    if (this.player.carried) return;
     this.player.startLeap(x, y, z);
     this.leapAlly = ally;
     this.ePresses = (this.ePresses + 1) & 0xff;
     this.localEReadyAt = now + ABILITIES.fallen.E.cooldown * 1000;
+    this.eAcked = false;
   }
 
   /**
@@ -667,6 +946,31 @@ export class Game {
    */
   private updateStarAim(now: number, fire: number): number {
     const p = this.player;
+    if (p.carried) { this.starAim.reset(); this.starPreview = null; this.aimPreview = null; return 0; }
+    const eAbility = this.talents.ability(this.localId, 'E');
+    if (eAbility === 'gatebreaker') {
+      this.starPreview = null;
+      // Letting go of E releases the charge (the host gets the release as the next press).
+      if (this.chargeHeld && !this.input.isDown('KeyE')) {
+        this.chargeHeld = false;
+        if (p.charging) { p.releaseCharge(); this.ePresses = (this.ePresses + 1) & 0xff; }
+      }
+      // A charge a wall or its 1.2 s ended also tells the host, so it stops cutting along walking steps.
+      if (this.chargeHeld && !p.charging) { this.chargeHeld = false; this.ePresses = (this.ePresses + 1) & 0xff; }
+      return fire;
+    }
+    if (eAbility === 'rainOfFire') {
+      this.starPreview = null;
+      const step = this.starAim.frame(this.input.isDown('KeyE'), this.input.rightHeld, this.input.releases);
+      if (this.starAim.aiming || step === 'release') {
+        const b = p.body, [dx, dy, dz] = aimDir(p.yaw, p.pitch);
+        const at = rainPoint(this.map, b.x, b.y, b.z, dx, dy, dz, RAIN.range);
+        const radius = this.talents.ownHas('fallen.c.1b') ? RAIN.wide : RAIN.radius;
+        this.aimPreview = this.starAim.aiming ? { at: [at.x, at.y, at.z], radius, valid: at.valid } : null;
+        if (step === 'release' && at.valid) this.ePresses = (this.ePresses + 1) & 0xff;
+      } else this.aimPreview = null;
+      return this.starAim.rightBlocked ? fire & ~(FIRE_RIGHT | FIRE_RIGHT_LAST) : fire;
+    }
     const step = this.starAim.frame(this.input.isDown('KeyE'), this.input.rightHeld, this.input.releases);
     let landing: Landing | null = null;
     if (this.starAim.aiming || step === 'release') {
@@ -682,6 +986,12 @@ export class Game {
   /** The teammates a leap can snap to: their interpolated feet. */
   private starAllies(): StarAlly[] {
     return this.snaps.playersOut.filter((q) => q.id !== this.localId).map((q) => ({ id: q.id, x: q.x, y: q.y, z: q.z, dead: q.dead }));
+  }
+
+  /** An aimed cast's ring (and line) on the floor while its key is held. */
+  private drawAimPreview(): void {
+    const a = this.aimPreview;
+    this.vfx.setAimPreview(a ? a.at : null, a?.radius ?? 0, a?.valid ?? false, this.scene.camera.position, a?.line);
   }
 
   /** Falling Star's preview: its arc from the feet and its rings, gold-orange when valid, red when not. */
@@ -705,10 +1015,26 @@ export class Game {
     this.vfx.beam(now, pts, DASH_STREAK, DASH_STREAK_CORE, DASH_STREAK_MS);
   }
 
+  /**
+   * A Scourge swing's shape: the base 3 m arc, The Long Flail's 4 m arc, Whirl's full circle or the
+   * Whip's 7 m line (classes-binder.md `b.1a`, `b.3b`, `c.2b`).
+   */
+  private scourgeShape(now: number, playerId: number, x: number, y: number, z: number, yaw: number): void {
+    const has = (id: string) => this.talents.kits.get(playerId)?.active.includes(id) ?? false;
+    // Whirl with The Long Flail reaches 4 m all round (R06 follow-up §1).
+    if (has('binder.b.1a')) { this.vfx.ring(now, x, y, z + 0.9, 0xff6a2a, 0.6, has('binder.b.3b') ? BINDER.flail : 3, 260); return; }
+    if (has('binder.c.2b')) {
+      const pts: Array<[number, number, number]> = [[x, y, z + 0.9], [x + Math.cos(yaw) * BINDER.whipLength, y + Math.sin(yaw) * BINDER.whipLength, z + 0.9]];
+      this.vfx.beam(now, pts, 0xff6a2a, 0.12, 240); this.vfx.beam(now, pts, 0xfff0c0, 0.04, 240);
+      return;
+    }
+    this.vfx.scourgeArc(now, x, y, z, yaw);
+  }
+
   /** Pause opens when pointer lock is lost, before the result (§3). */
   private readonly onPointerLockChange = (): void => {
     const locked = this.input.pointerLocked;
-    if (this.wasLocked && !locked) this.openPause();
+    if (this.wasLocked && !locked && !this.overlayView) this.openPause();
     this.wasLocked = locked;
   };
 
@@ -774,9 +1100,263 @@ export class Game {
     for (const p of players) {
       if (!p.classId) continue;
       const r = this.roster.find((q) => q.id === p.id);
-      if (r) Object.assign(r, { name: p.name, classId: p.classId });
-      else this.roster.push({ id: p.id, name: p.name, classId: p.classId });
+      if (r) Object.assign(r, { name: p.name, classId: p.classId, bot: p.bot });
+      else this.roster.push({ id: p.id, name: p.name, classId: p.classId, bot: p.bot });
     }
+  }
+
+  /** Runs another player's effect after the render delay; the own one at once. */
+  private later(playerId: number, run: (now: number) => void): void {
+    const now = performance.now();
+    if (playerId === this.localId) run(now);
+    else this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run });
+  }
+
+  /** A talent event's game-side effects: the own kit, offers, launched enemies, the hidden mark. */
+  private talentEvent(e: GameEvent, now: number): void {
+    if (e.type === 'kit' && e.kit.playerId === this.localId) {
+      // A Rite taken sounds once per accepted change, never on the first kit after joining.
+      if (this.ritesTaken >= 0 && e.kit.rites.length > this.ritesTaken) this.sounds.riteTaken();
+      this.ritesTaken = e.kit.rites.length;
+      this.applyOwnKit();
+      if (this.overlayView?.kind === 'talents') this.overlayView.view.setBuild({ talents: e.kit.learned, q: e.kit.q, e: e.kit.e }, e.kit.rites);
+    }
+    if (e.type === 'hidden' && e.playerId === this.localId) this.hud.setHidden(e.hidden);
+    if (e.type === 'riteOffers') {
+      // A new own Rite page: its cue once per offer.
+      if (e.offers.some((o) => !this.ritesOffered.has(o.offerId))) this.sounds.riteOffer();
+      for (const o of e.offers) this.ritesOffered.add(o.offerId);
+      const open = this.overlayView;
+      if (open?.kind === 'rite') {
+        const current = e.offers.find((o) => o.offerId === open.offerId);
+        if (current) open.view.show(current, e.offers.length);
+        else if (e.offers.length) this.openRite(e.offers[0]);
+        else this.closeOverlay();
+      } else if (e.rites > 0 && !this.dead && !open) {
+        const offer = e.offers.find((o) => o.offerId === e.rites);
+        if (offer) this.openRite(offer);
+      }
+    }
+    if (e.type === 'meter' && e.playerId === this.localId && e.kind === 'wrath') this.hud.setWrath(e.value / e.max);
+    if (e.type === 'launched') {
+      // R5 launches fly Falling Star's arc after the render delay and don't hold a wading player.
+      for (const s of e.slots) {
+        this.launchAt[s] = now + (e.playerId === this.localId ? 0 : this.snaps.delayTicks * TICK_MS);
+        this.wadeLaunchedUntil[s] = now + WADE_LAUNCH_MS;
+      }
+    }
+    if (e.type === 'talentFx' && e.kind === 'sheep') {
+      // Scattered Sheep's launches fly their arc after the render delay, like Falling Star's (M9 §3.2).
+      for (const s of e.slots) {
+        this.launchAt[s] = now + (e.playerId === this.localId ? 0 : this.snaps.delayTicks * TICK_MS);
+        this.wadeLaunchedUntil[s] = now + WADE_LAUNCH_MS;
+      }
+    }
+  }
+
+  /** The HUD slots and Q/E hints from the own effective kit (rogue game.md §1.4). */
+  private applyOwnKit(): void {
+    const slot = (key: 'Q' | 'E') => {
+      const def = this.talents.ownDef(this.classId, key), id = this.talents.ability(this.localId, key);
+      return { name: def.name, icon: def.icon, hint: ALT_ABILITIES[id]?.hint ?? CLASSES[this.classId].hints.find((h) => h.key === key)?.text ?? null };
+    };
+    this.hud.setKit({ Q: slot('Q'), E: slot('E') });
+    // Wrath of Dis shows its fill only while the capstone is effective; its value arrives as owner meters.
+    if (!this.talents.ownHas('fallen.a.cap')) this.hud.setWrath(null);
+    else if (this.wrathShown === null) this.hud.setWrath(0);
+    this.wrathShown = this.talents.ownHas('fallen.a.cap') ? 0 : null;
+  }
+
+  private wrathShown: number | null = null;
+
+  /** Within the Advocate's reach in the Confessional (rogue game.md §9.6). */
+  private advocateInReach(): boolean {
+    const room = this.o.floor?.confessional ?? -1, point = room >= 0 ? this.map.rooms[room]?.points?.advocate : undefined;
+    const b = this.player.body;
+    return !!point && this.rooms.roomAt(b.x, b.y) === room && Math.hypot(point[0] + 0.5 - b.x, point[1] + 0.5 - b.y) <= ADVOCATE_REACH;
+  }
+
+  /**
+   * A choice view takes the mouse without opening Pause; in singleplayer the simulation waits, as for
+   * Pause (§9.6). Multiplayer keeps running: a sealed door refuses a later commit, never the offer.
+   */
+  private openOverlay(el: HTMLElement): void {
+    this.closeOverlay();
+    this.input.release();
+    this.input.enabled = false;
+    this.o.root.appendChild(el);
+    if (document.pointerLockElement) document.exitPointerLock();
+    if (this.o.singleplayer && !this.paused) { this.o.host?.setPaused(true); this.pausedAt = performance.now(); }
+    document.addEventListener('keydown', this.overlayKey, true);
+  }
+
+  private closeOverlay(): void {
+    const open = this.overlayView;
+    if (!open) return;
+    this.overlayView = null;
+    open.view.el.remove();
+    document.removeEventListener('keydown', this.overlayKey, true);
+    if (this.o.singleplayer && !this.paused) {
+      this.o.host?.setPaused(false);
+      const ms = performance.now() - this.pausedAt;
+      this.localEReadyAt += ms;
+      this.snaps.shiftArrivals(ms);
+    }
+    if (!this.over && !this.paused) {
+      // The Esc that closed the view stopped in the capture phase, so it can't also reach the game.
+      this.input.enabled = true;
+      if (this.input.pointerLockAllowed) this.input.requestPointerLock();
+    }
+  }
+
+  private readonly overlayKey = (e: KeyboardEvent): void => {
+    // Esc closes the choice only: the same press must not reach the game and open Pause.
+    // T closes the Talents view it opens.
+    if (e.code === 'Escape' || (e.code === 'KeyT' && !e.repeat && this.overlayView?.kind === 'talents')) { e.preventDefault(); e.stopImmediatePropagation(); this.closeOverlay(); }
+  };
+
+  /** The host's route state: the chest and Bells drawn, the key holder named under the minimap. */
+  private applyRoute(state: RouteState): void {
+    // A Bell rung: its toll, heard by everyone (rogue game.md §4.12).
+    for (const b of state.bells) if (b.state === 'pending' && this.routeView.state.bells.find((o) => o.room === b.room)?.state === 'available') this.sounds.bell({ x: b.x, y: b.y });
+    // The Reliquary opening, heard by everyone near it; a join that finds it open stays quiet.
+    const was = this.routeView.state.chest;
+    if (state.chest?.open && was && !was.open) this.sounds.chestOpen({ x: state.chest.x, y: state.chest.y });
+    this.routeView.set(state);
+    debugState.route = { keyHolder: state.keyHolder, keyUsed: state.keyUsed, chest: state.chest ? { open: state.chest.open } : null, bells: state.bells.map((b) => b.state), sundial: state.sundial };
+    this.mapView.setRoute(state, state.keyHolder < 0 && !state.keyUsed && [...this.pickups.model.records.values()].some((r) => r.pickup.kind === KEY && r.pickup.room === this.o.floor?.keyRoom));
+    this.relicHud.setKey(state.keyHolder >= 0 ? this.roster.find((r) => r.id === state.keyHolder)?.name ?? `Player ${state.keyHolder}` : null);
+  }
+
+  /** LMB with the full map held: Pilgrim's Return to the cleared room under the cursor (§5.5). */
+  private mapClick(): void {
+    if (this.dead || this.over || this.paused || !this.o.floor || !this.mapView.open) return;
+    const room = this.mapView.roomAtCursor();
+    if (room >= 0) this.o.transport.sendCtrl({ type: 'pilgrimReturn', runId: this.o.runId, requestId: this.nextRequestId++, room });
+  }
+
+  /** Pilgrim's Return (§5.5): a gold ring closing on the channeling player over 1.5 s, a chime, the target outlined. */
+  private pilgrimEvent(e: Extract<GameEvent, { type: 'pilgrim' }>, now: number): void {
+    const at = e.playerId === this.localId ? this.player.body : this.playerPose(e.playerId);
+    if (e.phase === 'start') {
+      if (at) for (let i = 0; i < 3; i++) this.vfx.ring(now, at.x, at.y, at.z + 0.05, 0xffd27a, 2.2 - i * 0.6, 0.3, 1500 - i * 300, i * 300);
+      this.sounds.teleport('start', e.playerId === this.localId || !at ? null : { x: at.x, y: at.y });
+      if (e.playerId === this.localId) this.mapView.returnTarget = e.room;
+    } else {
+      if (e.playerId === this.localId) this.mapView.returnTarget = -1;
+      if (e.phase === 'arrive' && at) { this.vfx.pillar(now, at.x, at.y, at.z); this.sounds.teleport('arrive', e.playerId === this.localId ? null : { x: at.x, y: at.y }); }
+    }
+  }
+
+  /** F with nothing to interact with: the oldest free Rite offer, else a waiting chest offer (§9.10). */
+  private openPendingOffer(): void {
+    const free = this.talents.offers.find((o) => o.source !== 'sundial' && o.source !== 'bargain');
+    if (free) { this.openRite(free); return; }
+    const chest = this.relicOffers.find((o) => o.source === 'chest');
+    if (chest) this.openRelicOffer(chest);
+  }
+
+  /** The host published the own relic offers: refresh an open one, or open the one it asks for. */
+  private relicOfferEvent(open: number): void {
+    const view = this.overlayView;
+    if (view?.kind === 'relicOffer') {
+      const current = this.relicOffers.find((o) => o.offerId === view.offerId);
+      if (current) view.view.show(current, this.relicOffers.length, this.maxHp + this.hpCut);
+      else this.closeOverlay();
+    } else if (open && !this.dead && (!view || view.kind === 'advocate')) {
+      const offer = this.relicOffers.find((o) => o.offerId === open);
+      if (offer) this.openRelicOffer(offer);
+    }
+  }
+
+  private openRelicOffer(offer: RelicOfferState): void {
+    if (this.over) return;
+    const view = relicOfferOverlay({
+      onTake: (offerId, id) => this.o.transport.sendCtrl({ type: 'relicChoice', runId: this.o.runId, requestId: this.nextRequestId++, offerId, choice: id }),
+      onPass: (offerId) => this.o.transport.sendCtrl({ type: 'relicChoice', runId: this.o.runId, requestId: this.nextRequestId++, offerId, choice: 'pass' }),
+      onClose: () => this.closeOverlay(),
+    });
+    this.openOverlay(view.el);
+    this.overlayView = { kind: 'relicOffer', view, offerId: offer.offerId };
+    view.show(offer, this.relicOffers.length, this.maxHp + this.hpCut);
+  }
+
+  /** The Advocate's view (§9.6): Talents, Relics, the bargain and the Sundial's Rite while it is lit. */
+  private openAdvocate(): void {
+    if (this.over) return;
+    const sundialLeft = this.sundialLeft();
+    const view = advocateHub({
+      bargain: this.inventory?.bargainOpen ?? true,
+      sundial: sundialLeft > 0 ? `Seal the Gatekeeper within ${Math.floor(sundialLeft / 60)}:${String(Math.floor(sundialLeft % 60)).padStart(2, '0')} for a Rite of your choice.` : null,
+      onTalents: () => this.openTalents(),
+      onRelics: () => this.openRelics(false),
+      onBargain: () => this.o.transport.sendCtrl({ type: 'advocateOffer', runId: this.o.runId, requestId: this.nextRequestId++, offer: 'bargain' }),
+      onSundial: () => this.o.transport.sendCtrl({ type: 'advocateOffer', runId: this.o.runId, requestId: this.nextRequestId++, offer: 'sundial' }),
+      onClose: () => this.closeOverlay(),
+    });
+    this.openOverlay(view.el);
+    this.overlayView = { kind: 'advocate', view };
+  }
+
+  /** Seconds the Sundial still burns, from the host's run clock (0 when dark) (§6.8). */
+  private sundialLeft(): number {
+    const r = this.routeView.state;
+    return r.sundial === 'lit' ? Math.max(0, (r.sundialTick - this.snaps.estimatedTick(performance.now())) / 30) : 0;
+  }
+
+  /** The Relics view: at the Advocate (or anywhere in a development run) it equips; otherwise it reads. */
+  private openRelics(readOnly: boolean): void {
+    if (this.over) return;
+    const inv = this.inventory, own = this.talents.own();
+    const kit = resolveKit(this.classId, { talents: own?.learned ?? [], rites: own?.rites ?? [], q: this.talents.ability(this.localId, 'Q'), e: this.talents.ability(this.localId, 'E') });
+    const view = relicPanel({
+      title: readOnly ? 'Relics' : 'The Advocate · Relics',
+      owned: inv?.ownedRelics ?? [], pawned: inv?.pawnedRelics ?? [], equipped: this.relicHud.equipped(),
+      dormancy: (id: RelicId) => relicDormancy(id, kit, { allies: [], items: (inv?.inventory ?? []).flatMap((s) => (s ? [s.item] : [])), areas: new Set(), hazard: true }),
+      readOnly, note: readOnly ? 'Equip relics with the Advocate in the Confessional.' : 'A pawned relic is yours only if the Gatekeeper falls.',
+      onApply: (relics) => this.o.transport.sendCtrl({ type: 'relics', runId: this.o.runId, requestId: this.nextRequestId++, relics }),
+      onClose: () => this.closeOverlay(),
+    });
+    this.openOverlay(view.el);
+    this.overlayView = { kind: 'relics', view };
+  }
+
+  /** A pending Rite's cards (§9.10): Take, Pass, or Esc to keep it for later. */
+  private openRite(offer: RiteOffer): void {
+    if (this.over) return;
+    const view = riteOverlay({
+      classId: this.classId,
+      onTake: (offerId, id) => this.o.transport.sendCtrl({ type: 'rite', runId: this.o.runId, requestId: this.nextRequestId++, offerId, choice: id }),
+      onPass: (offerId) => this.o.transport.sendCtrl({ type: 'rite', runId: this.o.runId, requestId: this.nextRequestId++, offerId, choice: 'pass' }),
+      onClose: () => this.closeOverlay(),
+    });
+    this.openOverlay(view.el);
+    this.overlayView = { kind: 'rite', view, offerId: offer.offerId };
+    view.show(offer, this.talents.offers.length);
+  }
+
+  /**
+   * The Advocate's Talents view (§9.6); in a development run without saved progression, anywhere with
+   * free points. T's view anywhere: `slots` reassigns Q and E out of combat, `view` only reads the
+   * build (in combat or dead). The same trees in every mode.
+   */
+  private openTalents(mode: 'edit' | 'slots' | 'view' = 'edit'): void {
+    if (this.over || !hasCatalog(this.classId)) return;
+    const k = this.talents.own();
+    const dev = !this.progressionEnabled;
+    const view = talentPanel({
+      classId: this.classId,
+      build: { talents: k?.learned ?? [], q: this.talents.ability(this.localId, 'Q'), e: this.talents.ability(this.localId, 'E') },
+      rites: k?.rites ?? [],
+      level: dev ? null : levelForXp(this.inventory?.xp ?? 0),
+      title: mode !== 'edit' ? 'Talents' : dev ? 'Talents · development' : 'The Advocate',
+      readOnly: mode === 'view',
+      slotsOnly: mode === 'slots',
+      onApply: (b) => this.o.transport.sendCtrl({ type: 'advocate', runId: this.o.runId, requestId: this.nextRequestId++, talents: [...b.talents], q: b.q, e: b.e }),
+      onClose: () => this.closeOverlay(),
+    });
+    this.openOverlay(view.el);
+    this.overlayView = { kind: 'talents', view };
   }
 
   /** `Resume`: closes the overlay and requests pointer lock; the click is the required user gesture. */
@@ -796,17 +1376,35 @@ export class Game {
     const p = this.player;
     this.o.transport.sendInput(
       encodeInput({
+        runId: this.o.runId,
         seq: ++this.seq,
         x: p.body.x,
         y: p.body.y,
         z: p.body.z,
         yaw: p.yaw,
         pitch: p.pitch,
-        fire: this.fire,
+        fire: p.carried ? 0 : this.fire,
         qPresses: this.qPresses,
         ePresses: this.ePresses,
         allyTargetId: this.allyTargetId,
         lastTeleportId: this.lastTeleportId,
+        item1Presses: this.itemPresses[0],
+        item2Presses: this.itemPresses[1],
+        mapHeld: this.input.mapHeld,
+        qHeld: !p.carried && this.input.enabled && !this.input.typing && this.input.isDown('KeyQ'),
+        eHeld: !p.carried && this.input.enabled && !this.input.typing && this.input.isDown('KeyE'),
+        leftPresses: this.leftPresses,
+        rightPresses: this.rightPresses,
+        viewTick: this.snaps.view.tick,
+        viewGap: this.snaps.view.gap,
+        viewFrac: this.snaps.view.frac,
+        shots: this.shots,
+        shotButton: this.shotButton,
+        shotYaw: this.shotAim.yaw,
+        shotPitch: this.shotAim.pitch,
+        shotViewTick: this.shotAim.tick,
+        shotViewGap: this.shotAim.gap,
+        shotViewFrac: this.shotAim.frac,
       }),
     );
   }
@@ -827,22 +1425,191 @@ export class Game {
 
   /** A `ctrl` message from the host; the game handles its events (§9.2). */
   handleCtrl(msg: CtrlMessage): void {
-    if (msg.type !== 'event' || this.disposed) return;
+    if (msg.type === 'floorSync' && !this.disposed) {
+      if (msg.victory) this.setVictory(msg.victory);
+      if (msg.progressionEnabled !== undefined) this.progressionEnabled = msg.progressionEnabled;
+      this.talents.sync(msg, performance.now());
+      this.applyOwnKit();
+      this.itemView.sync(msg.itemEffects ?? []);
+      this.relicView.sync(msg.relicAreas ?? [], msg.relicShots ?? []);
+      if (msg.route) this.applyRoute(msg.route);
+      if (msg.edicts) { this.hud.setSentence(sentenceLabel(msg.edicts.length)); debugState.sentence = msg.edicts.length; }
+      const relics = msg.relicStates?.find((r) => r.playerId === this.localId);
+      if (relics) { this.relicHud.setRelics(relics.relics, relics.combo, relics.ready); this.hud.setRelicHints(relics.relics); debugState.relics = { equipped: [relics.relics[0], relics.relics[1]], combo: relics.combo }; }
+      const inventory = msg.inventories?.find(p => p.playerId === this.localId);
+      if (inventory) this.setInventory(inventory);
+      this.dominion.sync(msg);
+      this.commanders.sync(msg);
+      this.watchmen.sync(msg);
+      this.spawnWarnings.sync(msg);
+      this.pickups.model.sync(msg);
+      if (this.props.model.sync(msg)) {
+        debugState.brokenProps = [...this.props.model.broken];
+        debugState.propRecharges = [...this.props.model.recharges].map(([id, readyTick]) => ({ id, readyTick }));
+      }
+      if (this.rooms.sync(msg)) {
+        debugState.floorSyncTick = this.rooms.syncTick;
+        debugState.roomKnowledge = this.rooms.states.map((r) => r.knowledge);
+      }
+      return;
+    }
+    if (msg.type !== 'event' || this.disposed || !this.runEvents.accept(msg)) return;
+    if (msg.event.type === 'roomState') {
+      const transition = this.rooms.event(msg.event, msg.revision);
+      debugState.roomKnowledge = this.rooms.states.map((r) => r.knowledge);
+      if (!transition) return;
+      if (msg.event.phase === PHASE_COMBAT) this.hazards.seal(msg.event.room, msg.tick);
+    }
+    if (msg.event.type === 'pickupState') this.pickups.model.state(msg.event.pickup, msg.tick, msg.revision);
+    if (msg.event.type === 'spawnWarning' && !this.spawnWarnings.event(msg.event, msg.tick, msg.revision)) return;
+    if (msg.event.type === 'dominionCast') {
+      if (!this.dominion.event(msg.event, msg.tick, msg.revision)) return;
+      const phase = msg.event.phase; debugState.dominion[phase === 'start' ? 'starts' : phase === 'strike' ? 'strikes' : 'cancels']++;
+      if (phase === 'start') { debugState.dominion.startedCastIds.push(msg.event.cast.castId); if (debugState.dominion.startedCastIds.length > 6) debugState.dominion.startedCastIds.shift(); }
+    }
+    if (msg.event.type === 'propBroken' || msg.event.type === 'propBlast' || msg.event.type === 'propReady') {
+      if (!this.props.model.event(msg.event, msg.revision)) return;
+      debugState.brokenProps = [...this.props.model.broken];
+      debugState.propRecharges = [...this.props.model.recharges].map(([id, readyTick]) => ({ id, readyTick }));
+    }
     this.onEvent(msg.event, performance.now());
     this.sounds.event(msg.event, (id) => this.playerPose(id));
   }
 
+  private setInventory(state: InventoryState): void {
+    if (this.inventory && levelForXp(state.xp) > levelForXp(this.inventory.xp)) {
+      // A new point is learned at the Confessional or in the Lobby (rogue game.md §9.5).
+      const level = levelForXp(state.xp);
+      this.hud.centerText(hasCatalog(this.classId) ? `Level ${level} — learn it at the Confessional` : `Level ${level}`, 3000, performance.now()); this.sounds.levelUp();
+    }
+    // A relic became yours (claimed, pawned or a deed's): a bright chime with its line.
+    const had = (this.inventory?.ownedRelics?.length ?? 0) + (this.inventory?.pawnedRelics?.length ?? 0);
+    if (this.inventory && (state.ownedRelics?.length ?? 0) + (state.pawnedRelics?.length ?? 0) > had) this.sounds.relicClaim();
+    this.inventory = state; this.nextRequestId = Math.max(this.nextRequestId, state.nextRequestId);
+    if (state.maxHp !== undefined) { this.hpCut = Math.max(0, CLASSES[this.classId].hp - state.maxHp); this.maxHp = state.maxHp; }
+    this.hud.setInventory(state); this.shop.update(state);
+  }
+  private setVictory(state: VictoryState): void {
+    this.victory = { ...state }; this.shop.victory(state); if (this.inventory) this.shop.update(this.inventory);
+    this.victoryHint.textContent = state.waiting ? 'A choice is waiting · Return to an earned Rite page' : 'Victory secured · Shop, then stand in the Stair for 3 seconds';
+  }
+
   private onEvent(e: GameEvent, now: number): void {
+    if (this.talents.event(e, now)) { this.talentEvent(e, now); return; }
     switch (e.type) {
+      case 'victoryState': this.setVictory(e.state); break;
+      case 'itemUsed':
+        if (e.instance) this.itemView.state(e.instance);
+        // Self items show what the abilities that do the same show: Sacrament's heal, Martyr's Shroud's bubble.
+        if (e.item === 'balm') {
+          this.particles.healColumn(e.x, e.y, e.z);
+          if (e.playerId === this.localId) this.hud.vignette('green', HEAL_VIGNETTE, now, HEAL_FADE_MS);
+          else this.party?.flash(e.playerId, 'green');
+        }
+        if (e.item === 'seal') {
+          this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0x4aa3e8, 1.3, 1.6, 900, 0.4);
+          if (e.playerId !== this.localId) this.party?.flash(e.playerId, 'blue');
+        }
+        if (e.item === 'feather') {
+          const at = this.playerPose(e.playerId);
+          if (at) this.featherTrails.start(e.playerId, now + (ITEMS.feather.duration / 30) * 1000, at);
+        }
+        break;
+      case 'itemEffectActivated': this.itemView.state(e.effect); break;
+      case 'itemEffectEnded': this.itemView.remove(e.instanceId); break;
+      case 'itemReflected': this.vfx.glow(now, e.x, e.y, e.z, 0xddeeff, .2, .5, 180); break;
+      case 'relicArea': if (e.end) this.relicView.endArea(e.area.id); else this.relicView.area(e.area); break;
+      case 'relicShot': if (e.end) this.relicView.endShot(e.shot.id, e, now); else this.relicView.shot(e.shot); break;
+      case 'relicFx': this.relicView.fx(e, now); break;
+      case 'relicState':
+        if (e.playerId !== this.localId) break;
+        this.relicHud.setRelics(e.relics, e.combo, e.ready);
+        this.hud.setRelicHints(e.relics);
+        debugState.relics = { equipped: [e.relics[0], e.relics[1]], combo: e.combo };
+        if (this.overlayView?.kind === 'relics') this.overlayView.view.setEquipped(e.relics, this.inventory?.ownedRelics, this.inventory?.pawnedRelics);
+        break;
+      case 'route': this.applyRoute(e.state); break;
+      case 'pilgrim': this.pilgrimEvent(e, now); break;
+      case 'relicOffers':
+        if (e.playerId !== this.localId) break;
+        this.relicOffers = e.offers;
+        debugState.relicOffers = e.offers.length;
+        this.relicOfferEvent(e.open);
+        break;
+      case 'streak':
+        if (e.playerId === this.localId) { this.relicHud.streakTier(e.tier, e.count, now); debugState.streak = { count: e.count, best: Math.max(debugState.streak.best, e.count) }; }
+        else this.hud.addChat(this.roster.find((r) => r.id === e.playerId)?.name ?? `Player ${e.playerId}`, `${STREAK_NAMES[e.tier]} (${e.count})`, now);
+        break;
+      case 'streakEnd': if (e.playerId === this.localId) this.relicHud.streakEnd(e.count, now); break;
+      case 'inventory':
+        if (e.state.playerId === this.localId) this.setInventory(e.state);
+        break;
+      case 'interactionResult':
+        this.sounds.interaction(e.accepted, this.interactKinds.get(e.requestId));
+        this.interactKinds.delete(e.requestId);
+        this.hud.centerText(e.reason, 1800, now);
+        if (this.overlayView) this.overlayView.view.setMessage(e.reason);
+        break;
+      case 'wayBack': {
+        // The host's accepted return: the own body runs it at once, others' streak after the render delay.
+        const ms = Math.max(1, e.ms);
+        if (e.playerId === this.localId) {
+          this.player.startMove(((e.x1 - e.x0) / ms) * 1000, ((e.y1 - e.y0) / ms) * 1000, ms / 1000);
+          this.hud.slash(now);
+          this.sounds.ownDaggerCut();
+        }
+        this.later(e.playerId, (t) => this.dashStreak(t, e.x0, e.y0, e.z0, e.x1, e.y1, e.z1));
+        break;
+      }
+      case 'recoil':
+        if (e.playerId === this.localId) this.player.startMove(e.vx, e.vy, 0.15);
+        break;
+      case 'crest':
+        debugState.crests++;
+        this.hud.centerText('The crest is coming', 2000, now);
+        break;
+      case 'dominionCast':
+        if (e.phase === 'strike') {
+          const b = this.player.body;
+          const impactShake = dominionShake(Math.hypot(e.x - b.x, e.y - b.y, e.z - b.z));
+          if (!this.dead && impactShake) this.shake.add(now, impactShake);
+          this.vfx.ring(now, e.x, e.y, e.z, 0xffedaa, 0, DOMINION_RADIUS, 220);
+          this.vfx.glow(now, e.x, e.y, e.z + 0.2, 0xffd066, 0.2, DOMINION_RADIUS, 250);
+        }
+        break;
+      case 'propBroken':
+        if (e.family === 'blessing') {
+          this.vfx.ring(now, e.x, e.y, e.z, 0x55ff88, 0, 6, 450);
+          this.vfx.glow(now, e.x, e.y, e.z + 1.8, 0x55ff88, 0.5, 2, 400);
+          for (const id of e.targets) { const p = this.playerPose(id); if (p) this.particles.healColumn(p.x, p.y, p.z); }
+        } else if (e.family === 'loot') {
+          this.particles.globeShards(e.x, e.y, e.z + 0.75, 18);
+          this.vfx.glow(now, e.x, e.y, e.z + 0.5, 0xffe4b5, 0.2, e.marked ? 1 : 0.5, 300);
+          if (e.marked) this.vfx.beam(now, [[e.x, e.y, e.z], [e.x, e.y, e.z + 2]], 0xffda68, 0.25, 500);
+        }
+        break;
+      case 'propBlast':
+        this.vfx.ring(now, e.x, e.y, e.z, 0xf05a25, 0, 4, 250);
+        this.vfx.smoke(now, e.x, e.y, e.z + 0.6, 0x28252b, 0.3, 1.5, 500);
+        break;
       case 'teleport':
-        this.player.teleport(e.x, e.y, e.z);
+        if (((e.teleportId - this.lastTeleportId) & 0xffff) >= 0x8000 || e.teleportId === this.lastTeleportId) break;
+        if (e.hold) this.player.hold(this.map, e.x, e.y, e.z, e.hold[0], e.hold[1], Math.max(0, this.snaps.estimatedTick(now) - e.hold[2]) / 30);
+        else this.player.teleport(e.x, e.y, e.z, e.launch);
+        this.player.carried = e.carry === true;
+        if (this.player.carried) this.cancelCarriedActions();
+        if (e.carry === false || e.hold === null) this.player.body.grounded = false;
         this.lastTeleportId = e.teleportId;
         break;
-      case 'arenaStarted':
-        this.hud.centerText('The doors are sealed', 2000, now);
-        break;
-      case 'arenaCleared':
-        this.hud.centerText('Arena cleared', 2000, now);
+      case 'roomState':
+        if (e.phase === PHASE_COMBAT) this.hud.centerText('The doors are sealed', 2000, now);
+        else if (e.phase === PHASE_CLEARED && this.map.rooms[e.room].kind === 'combat') {
+          // The clear reward comes down from the sky and is named under the clear (audit batch 3).
+          const reward = this.o.floor?.rewards[e.room], spot = rewardSpot(this.map, e.room);
+          const named = reward && reward.kind !== 'nothing' && spot;
+          this.hud.centerText('Room cleared', named ? 3000 : 2000, now, named ? `Reward: ${rewardLabel(reward)}` : null);
+          if (named) { this.rewardShafts.arrive(spot.x, spot.y, spot.z, now); this.sounds.rewardArrived(); }
+        }
         break;
       case 'playerRevived': {
         // The hellfire pillar where the player rises (M8 §3.1); the soul sinks back into the body.
@@ -858,7 +1625,45 @@ export class Game {
         this.abilityVfx(e, now);
         break;
       case 'bossCast':
-        this.hud.judgmentEvent(e.phase, now);
+        if (e.cast === undefined || e.cast === BOSS_CAST_JUDGMENT) this.hud.judgmentEvent(e.phase, now);
+        else if (e.cast === BOSS_CAST_TOLL && e.phase === 'start') this.hud.bossText('THE TOLL — jump the ring!', 1500, now);
+        if (e.cast === BOSS_CAST_TOLL && e.impactTick && !this.tollImpacts.includes(e.impactTick)) this.tollImpacts = [...this.tollImpacts, e.impactTick].slice(-2);
+        break;
+      case 'bossPhase': this.bossPhaseEvent(e, now); break;
+      case 'called': {
+        const mine = e.playerId === this.localId, who = this.roster.find((r) => r.id === e.playerId)?.name ?? 'An ally';
+        if (e.phase === 'tell') {
+          const at = this.playerPose(e.playerId);
+          if (at) this.vfx.ring(now, at.x, at.y, at.z + 0.05, 0xffd36a, 1.2, 0.3, 1000);
+          this.hud.bossText(mine ? 'He calls you by name!' : `He calls ${who}!`, 1200, now);
+        } else if (e.phase === 'held' && !mine) this.hud.bossText(`${who} is called: shoot the seal!`, 2000, now);
+        break;
+      }
+      case 'sealBroken': {
+        const at = this.playerPose(e.playerId);
+        if (at) this.vfx.burstSphere(now, at.x, at.y, at.z + 1.6, 0xffd36a, 0.2, 1.4, 350, 0.7);
+        if (e.playerId === this.localId) this.hud.bossText('Freed!', 1200, now);
+        break;
+      }
+      case 'judged':
+        if (e.by === 'seal') { this.hud.bossText('The Gatekeeper takes his due', 2200, now); this.hud.bossFlash('green'); }
+        else if (e.by === 'watcher' && e.playerId === this.localId) this.hud.bossText('A Watcher saw you', 1500, now);
+        break;
+      case 'watchersOpen':
+        if (e.first) this.hud.bossText('The Watchers open', 2500, now);
+        break;
+      case 'watcherBreak': {
+        const boss = this.bossPoint();
+        if (boss) this.vfx.beam(now, [[e.x, e.y, e.z], [boss.x, boss.y, boss.z + 4]], 0xff2a1a, 0.16, 450);
+        this.vfx.glow(now, e.x, e.y, e.z, 0xffd36a, 0.3, 1.6, 300);
+        this.hud.bossFlash('red');
+        break;
+      }
+      case 'hostDescend':
+        for (const [c, r] of this.map.rooms[this.snaps.newest?.activeRoom ?? -1]?.points?.addSpawns?.gate ?? []) {
+          const z = this.map.floor[r * this.map.w + c];
+          this.vfx.beam(now, [[c + 0.5, r + 0.5, z], [c + 0.5, r + 0.5, z + 9]], 0xffe08a, 0.6, 1400);
+        }
         break;
       case 'starLanded':
         // Others' landings show after the render delay; the own one showed when its leap ended (M12 §5.2).
@@ -886,6 +1691,20 @@ export class Game {
       case 'bursts':
         this.burstMemory.remember(e.list, now, (slot, id) => this.distToPlayer(slot, id));
         break;
+      case 'damage':
+        if (loadDamageNumbersSetting()) this.damageNumbers.add(e.hits, now);
+        if (Array.isArray(e.kills)) {
+          for (let k = 0; k + 1 < e.kills.length; k += 2) {
+            if (Number.isInteger(e.kills[k]) && Number.isInteger(e.kills[k + 1])) this.reportedKills.push(e.kills[k], e.kills[k + 1]);
+          }
+        }
+        break;
+      case 'hurt': {
+        // Felt hits (R06 follow-up §9): an arc toward the source, and a flinch scaled by the damage.
+        const largest = this.hitArcs.add(e.hits, now, this.maxHp);
+        if (largest > 0 && !this.dead) this.shake.add(now, hurtShake(largest, this.maxHp));
+        break;
+      }
       case 'dashCut':
         // Others' Shadowstep streaks after the render delay; the own one was drawn when its dash ended (M12 §5.7).
         if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.dashStreak(t, e.x0, e.y0, e.z0, e.x1, e.y1, e.z1) });
@@ -938,7 +1757,9 @@ export class Game {
    */
   private ownChains(now: number): void {
     const b = this.player.body;
-    const [px, py] = walkDestination(this.map, b.x, b.y, this.player.yaw, CHAINS_MAX);
+    // Cast Down drops the pile at the crosshair's floor point; All of Tartarus reaches every direction.
+    const [px, py] = this.talents.ownHas('binder.a.1a') ? aimedWalk(this.map, b.x, b.y, b.z, this.player.yaw, this.player.pitch, BINDER.castDownMin, BINDER.castDown) : walkDestination(this.map, b.x, b.y, this.player.yaw, CHAINS_MAX);
+    const everyWay = this.talents.ownHas('binder.a.cap');
     const ents = this.snaps.out;
     const ex = b.x;
     const ey = b.y;
@@ -953,7 +1774,7 @@ export class Game {
       const dz = this.zScratch[i] + def.height / 2 - ez;
       const len = Math.hypot(dx, dy, dz);
       if (len - def.radius > CHAINS_RANGE) continue;
-      if (len > 1e-9 && (dx * ax + dy * ay + dz * az) / len < cosMax) continue;
+      if (!everyWay && len > 1e-9 && (dx * ax + dy * ay + dz * az) / len < cosMax) continue;
       this.chainsDown(now, px, py, this.map.floor[Math.floor(py) * this.map.w + Math.floor(px)], this.localId);
       return;
     }
@@ -997,6 +1818,129 @@ export class Game {
     return [q.x + Math.cos(q.yaw) * OTHERS_MUZZLE, q.y + Math.sin(q.yaw) * OTHERS_MUZZLE, q.z + PLAYER_HEIGHT / 2];
   }
 
+  /** The Gatekeeper fight for the bot, read from the newest header at the screen's drawn time. */
+  private botBoss(): BotBoss | null {
+    const s = this.snaps.newest, boss = this.bossPoint();
+    if (!s || !boss) return null;
+    const v = this.snaps.view, reward = this.map.rooms[s.activeRoom]?.points?.reward;
+    const base = reward ? this.map.floor[(reward[1] + 1) * this.map.w + reward[0] + 1] : boss.z;
+    return { x: boss.x, y: boss.y, z: boss.z, eyeZ: boss.z + 5, tick: v.tick + v.gap * v.frac, cycleStart: s.bossCycleStart, tollImpact: this.tollImpacts[this.tollImpacts.length - 1] ?? 0, base };
+  }
+
+  /** The Gatekeeper's body (feet) in the newest snapshot, or null outside the fight. */
+  private bossPoint(): { x: number; y: number; z: number } | null {
+    const s = this.snaps.newest;
+    if (!s || s.bossMaxHp <= 0) return null;
+    for (let i = 0; i < s.enemyCount; i++) if (s.enemyType[i] === GATEKEEPER) return { x: s.enemyX[i], y: s.enemyY[i], z: s.enemyZ[i] };
+    return null;
+  }
+
+  /** The fight's phase lines: the seal, the silent trumpet at 50% (a feather burst), the victory. */
+  private bossPhaseEvent(e: Extract<GameEvent, { type: 'bossPhase' }>, now: number): void {
+    const boss = this.bossPoint();
+    if (e.phase === 1) this.hud.centerText(e.line, 3000, now);
+    else if (e.phase === 2) {
+      this.hud.centerText('He lifts the first trumpet', 2500, now, 'It stays silent. The Watchers will open.');
+      if (boss) {
+        this.vfx.ring(now, boss.x, boss.y, boss.z, 0xffffff, 2, 45, 1600);
+        this.vfx.burstSphere(now, boss.x, boss.y, boss.z + 6, 0xfff3cf, 1, 14, 1200, 0.5);
+        for (let i = 0; i < 40; i++) this.particles.trailFeather(boss.x + (Math.random() - 0.5) * 30, boss.y + (Math.random() - 0.5) * 30, boss.z + 4 + Math.random() * 6);
+      }
+    } else this.hud.centerText(e.line, 4000, now);
+  }
+
+  /**
+   * The local player's hold from the snapshot, when its reliable start or release was missed (a rejoin
+   * during a hold): the drag is predicted from the snapshot's position, and a release lands where the host has it.
+   */
+  private syncHold(s: Snapshot): void {
+    const me = s.players.find((p) => p.id === this.localId);
+    const heldHere = s.heldPlayer === this.localId;
+    this.hud.setCalled(heldHere && !this.dead ? 'You are called: shoot the seal!' : null);
+    if (!me) return;
+    const boss = this.bossPoint();
+    const current = (((me.teleportId ?? 0) - this.lastTeleportId) & 0xffff) < 0x8000;
+    if (heldHere && !this.player.held && boss && current) this.player.hold(this.map, me.x, me.y, me.z, boss.x, boss.y, 0);
+    else if (!heldHere && this.player.held && current && (me.teleportId ?? 0) !== this.lastTeleportId) { this.player.teleport(me.x, me.y, me.z); this.player.body.grounded = false; }
+  }
+
+  /** The Toll's ring at the screen's drawn time, the parts, the chain, the threads, the crosshair eye and the ring's whoosh. */
+  private drawGatekeeper(now: number, ents: InterpolatedEnemies, enemyZ: Float32Array): void {
+    const s = this.snaps.newest;
+    const boss = this.bossPoint();
+    const v = this.snaps.view, tick = v.tick + v.gap * v.frac;
+    const parts: PartView[] = boss ? partsOf(ents, enemyZ) : [];
+    const room = s && s.activeRoom !== 255 ? this.map.rooms[s.activeRoom] : undefined;
+    const reward = room?.points?.reward;
+    const base = reward ? this.map.floor[(reward[1] + 1) * this.map.w + reward[0] + 1] : boss?.z ?? 0;
+    const held = s && s.heldPlayer !== 255 ? (s.heldPlayer === this.localId ? this.player.body : this.playerPose(s.heldPlayer) ?? null) : null;
+    const me = this.dead ? null : this.player.body;
+    this.gatekeeperView.update({ map: this.map, tick, boss, base, rings: boss ? this.tollImpacts : [], tollTell: s?.bossCast === BOSS_CAST_TOLL ? s.bossCastProgress / 255 : null,
+      parts, held, heldLocal: s?.heldPlayer === this.localId, me, camera: this.scene.camera.position });
+    // The crosshair eye: every 100 ms from c 22 through c 28, and while Watchers are open.
+    let sight: 'full' | 'half' | 'none' | null = null;
+    if (s && boss && me && sightWindow(tick - s.bossCycleStart, (s.bossFlags & BOSS_FLAG_WATCHERS) !== 0)) {
+      if (now - this.sightAt >= 100) {
+        this.sightAt = now;
+        this.sight = sightState(this.map, me.x, me.y, me.z + PLAYER_EYE, [boss.x, boss.y, boss.z + 5], parts);
+      }
+      sight = this.sight;
+    }
+    this.hud.setSight(sight);
+    debugState.boss = s && boss ? { phase: s.bossPhase, cast: s.bossCast, cycle: tick - s.bossCycleStart, held: s.heldPlayer, heldLocal: !!this.player.held,
+      eyes: parts.filter((p) => !p.seal).length, seals: parts.filter((p) => p.seal).length, sight: sight ?? 'off', rings: [...this.tollImpacts], hp: s.bossHp, maxHp: s.bossMaxHp, flags: s.bossFlags,
+      at: [boss.x, boss.y, boss.z], eyesAt: parts.filter((p) => !p.seal).map((p) => [p.x, p.y, p.z] as [number, number, number]), seal: ((q) => q ? [q.x, q.y, q.z] as [number, number, number] : null)(parts.find((p) => p.seal)) } : null;
+    // Judgment's pre-warning at c 22: six seconds to its impact, the drone starts quietly.
+    if (s && boss && !this.dead) {
+      const c = tick - s.bossCycleStart;
+      if (c >= 22 * 30 && c < 25 * 30 && this.prewarned !== s.bossCycleStart) {
+        this.prewarned = s.bossCycleStart;
+        this.sounds.bossCue('judgmentPrewarn');
+        this.hud.bossText('Judgment gathers — find cover', 2500, now);
+      }
+    }
+    // A rising whoosh when the front is 1 s from you, forecast from the announced impact during the tell too.
+    const impact = this.tollImpacts[this.tollImpacts.length - 1] ?? 0;
+    if (boss && me && impact > 0 && impact !== this.whooshed && !this.player.held) {
+      const d = Math.hypot(me.x - boss.x, me.y - boss.y);
+      const floor = this.map.floor[Math.floor(me.y) * this.map.w + Math.floor(me.x)];
+      if (floor <= base + 1 + 1e-6 && ringContactIn(impact, tick, d) <= 1) { this.whooshed = impact; this.sounds.bossCue('tollPersonalWhoosh'); }
+    }
+  }
+
+  /**
+   * The Watchmen (rogue rooms.md §6.4): threads toward each target's drawn body center while aiming,
+   * the rising note, and per accepted shot one muzzle flash, tracer, crack and, on cover, a spark.
+   */
+  private drawWatchmen(now: number, ents: InterpolatedEnemies, enemyZ: Float32Array, tick: number): void {
+    const aims = this.watchmen.live(this.snaps.newest, tick);
+    const center = (id: number): [number, number, number] | undefined => {
+      const q = id === this.localId && this.dead ? undefined : this.playerPose(id);
+      return q ? [q.x, q.y, q.z + PLAYER_HEIGHT / 2] : undefined;
+    };
+    this.watchmanView.update(ents, enemyZ, aims, this.map, tick, this.scene.camera.position, center);
+    const at = (a: WatchmanAim) => {
+      for (let i = 0; i < ents.count; i++) if (ents.slot[i] === a.slot && ents.incarnation[i] === a.incarnation) return { x: ents.x[i], y: ents.y[i], z: enemyZ[i] };
+      return undefined;
+    };
+    const voiced: Array<{ aim: WatchmanAim; at: { x: number; y: number } }> = [];
+    for (const a of aims) { const p = at(a); if (p) voiced.push({ aim: a, at: p }); }
+    this.sounds.watchmen(this.paused ? [] : voiced, tick);
+    for (const a of this.watchmen.takeShots(aims)) {
+      const p = at(a);
+      if (!p) continue;
+      const dx = a.x - p.x, dy = a.y - p.y, h = Math.hypot(dx, dy) || 1;
+      const bell = Math.min(this.o.enemyAnims[WATCHMAN] ? BELL_FORWARD : ROD_BELL_FORWARD, h * 0.5);
+      const muzzle: [number, number, number] = [p.x + dx / h * bell, p.y + dy / h * bell, p.z + WATCHMAN_MUZZLE_Z];
+      this.vfx.sphere(now, muzzle[0], muzzle[1], muzzle[2], 0xffe7a0, 0.08, 0.35, 90, 0.8);
+      this.vfx.beam(now, [muzzle, [a.x, a.y, a.z]], 0xfff1c0, 0.07, 140);
+      this.sounds.watchmanShot(p);
+      // The host's end point is the target's body center on a hit; anywhere else it struck cover.
+      const t = center(a.targetId);
+      if (!t || Math.hypot(t[0] - a.x, t[1] - a.y, t[2] - a.z) > 0.75) this.particles.shotSpark(a.x, a.y, a.z, -dx, -dy);
+    }
+  }
+
   /** The Silver Bullet's tracer (M9 §5.1): ember, with a silver-white core drawn over it. */
   private silverTracer(now: number, from: readonly [number, number, number], to: readonly [number, number, number], ember = SILVER_EMBER): void {
     const pts: Array<[number, number, number]> = [[from[0], from[1], from[2]], [to[0], to[1], to[2]]];
@@ -1007,9 +1951,20 @@ export class Game {
   /** Ability VFX at the event position (§10). */
   private abilityVfx(e: Extract<GameEvent, { type: 'abilityUsed' }>, now: number): void {
     const cls = this.classOf(e.playerId);
-    const key = `${cls}:${e.slot}`;
+    const ab = this.talents.ability(e.playerId, e.slot);
+    // R4–R5 alternatives draw their own effects (talent areas and events); the base key never applies to them.
+    const key = ALT_SFX_KEYS.has(ab) ? `alt:${ab}` : `${cls}:${e.slot}`;
     const user = this.playerPose(e.playerId);
     switch (key) {
+      case 'alt:ring': // chains burst up from the 7 m circle and haul the crowd into the ring
+        this.vfx.ring(now, e.x, e.y, e.z, 0xd8401c, 7, 2.5, 320);
+        if (e.playerId !== this.localId) this.pendingFx.push({ at: now + this.snaps.delayTicks * TICK_MS, run: (t) => this.pileChains(t, e.x, e.y, e.z, e.playerId) });
+        else this.pileChains(now, e.x, e.y, e.z, e.playerId);
+        break;
+      case 'alt:castOut': // two wings of shock sweeping forward over the 10 m cone
+        if (user) this.vfx.gust(now, [user.x, user.y, user.z + 1.2], [Math.cos(user.yaw), Math.sin(user.yaw), 0], Math.PI / 4, 10);
+        this.vfx.ring(now, e.x, e.y, e.z, 0xe0301e, 0.5, 10, 350);
+        break;
       case 'fallen:Q': // taunt sphere, growing to Blasphemy's radius (M8 §3.1), and its shockwave (M12 §5.3)
         this.vfx.sphere(now, e.x, e.y, e.z + PLAYER_HEIGHT / 2, 0xe0301e, 1, BLASPHEMY_RADIUS, 400, 0.45);
         this.vfx.ring(now, e.x, e.y, e.z, BLASPHEMY_RING, 0.5, BLASPHEMY_RADIUS, BLASPHEMY_RING_MS);
@@ -1064,9 +2019,14 @@ export class Game {
    * 30 coins tossed from 0.5 m in front of the Betrayer's body center.
    */
   private startField(e: Extract<GameEvent, { type: 'abilityUsed' }>, user: { x: number; y: number; z: number; yaw: number } | undefined, now: number): void {
-    this.pool?.dispose();
-    this.pool = new BloodPool(this.map, e.x, e.y, e.z, now);
-    this.scene.scene.add(this.pool.group);
+    // Thrown Silver (classes-betrayer.md `c.1b`): the coins fly 0.5 s before the pool opens.
+    const open = (t: number): void => {
+      this.pool?.dispose();
+      this.pool = new BloodPool(this.map, e.x, e.y, e.z, t);
+      this.scene.scene.add(this.pool.group);
+    };
+    if (e.thrown) this.pendingFx.push({ at: now + 500, run: open });
+    else open(now);
     const from: [number, number, number] = user
       ? [user.x + Math.cos(user.yaw) * OTHERS_MUZZLE, user.y + Math.sin(user.yaw) * OTHERS_MUZZLE, user.z + PLAYER_HEIGHT / 2]
       : [e.x, e.y, e.z + PLAYER_HEIGHT / 2];
@@ -1121,15 +2081,19 @@ export class Game {
 
   private onGameOver(e: Extract<GameEvent, { type: 'gameOver' }>, now: number): void {
     if (this.over) return;
+    this.closeOverlay();
     this.resultAt = now;
     debugState.gameResult = e.result;
     this.resultData = {
       result: e.result,
       timeMs: e.timeMs,
+      unclaimed: e.unclaimed,
+      sentence: e.sentence ?? 0,
+      crown: e.crown ?? -1,
       players: Object.entries(e.stats)
         .map(([id, stats]) => ({ id: Number(id), stats }))
         .sort((a, b) => a.id - b.id)
-        .map(({ id, stats }) => ({ ...stats, name: this.roster.find((r) => r.id === id)?.name ?? `Player ${id}`, me: id === this.localId })),
+        .map(({ id, stats }) => ({ ...stats, id, name: this.roster.find((r) => r.id === id)?.name ?? `Player ${id}`, me: id === this.localId })),
     };
     this.hud.showResult(e.result === 'victory' ? 'Victory' : 'Defeat');
     this.hud.closeHints();
@@ -1143,22 +2107,46 @@ export class Game {
 
   private onSnapshot(s: Snapshot, prev: Snapshot | null): void {
     const now = performance.now();
-    // Doors follow from arenaIndex and arenaPhase (§8.2).
-    for (let ai = 0; ai < this.map.arenas.length; ai++) {
-      const phase = arenaPhaseOf(ai, s.arenaIndex, s.arenaPhase);
-      if (phase !== this.doorPhase[ai]) {
-        this.doorPhase[ai] = phase;
-        setArenaDoors(this.map, ai, phase);
-        const closed = doorsClosed(phase);
-        this.scene.setDoorsClosed(ai, closed.entry, closed.exit);
-      }
-    }
+    this.rooms.snapshot(s);
+    this.dominion.snapshot(s);
+    this.commanders.sync(s);
+    debugState.commanders = [...this.commanders.active.values()].map((c) => ({ ...c }));
+    this.watchmen.sync(s);
+    debugState.watchmen = [...this.watchmen.active.values()].map((a) => ({ ...a }));
+    debugState.watchmanBodies = [];
+    for (let i = 0; i < s.enemyCount; i++) if (s.enemyType[i] === WATCHMAN) debugState.watchmanBodies.push({ slot: s.enemySlot[i], incarnation: s.enemyIncarnation[i], x: s.enemyX[i], y: s.enemyY[i], z: s.enemyZ[i] });
+    debugState.dominion.actors = [];
+    for (let i = 0; i < s.enemyCount; i++) if (s.enemyType[i] === DOMINION) debugState.dominion.actors.push({ slot: s.enemySlot[i], incarnation: s.enemyIncarnation[i], x: s.enemyX[i], y: s.enemyY[i], z: s.enemyZ[i] });
+    // Every leaf follows from the header's activeRoom, activePhase and clearedMask (rogue game.md §3.4).
+    let changed = false;
+    let k = 0;
+    this.map.rooms.forEach((room, ri) => {
+      room.leaves.forEach((leaf, li) => {
+        const closed = leafOpen(ri, leaf, s.activeRoom, s.activePhase, s.clearedMask) ? 0 : 1;
+        if (closed !== this.leafDrawn[k]) {
+          this.leafDrawn[k] = closed;
+          this.scene.setLeafClosed(ri, li, closed === 1);
+          changed = true;
+        }
+        k++;
+      });
+    });
+    if (changed) applyLeaves(this.map, s);
     this.souls.update(s.players, now);
     const me = s.players.find((p) => p.id === this.localId);
     const was = prev?.players.find((p) => p.id === this.localId);
+    // The shots the host has fired or dropped are in this snapshot's HP now (netcode stage 3).
+    if (me) this.ownDamage.settle(me.shotsDone, now);
     // Healed by a Sacrament beam: its heals neither flash nor chime (M9 §5.1).
     const beamed = s.players.some((p) => p.beam === this.localId) || !!prev?.players.some((p) => p.beam === this.localId);
     if (me) {
+      const correction = me.teleportId ?? 0, forward = (correction - this.lastTeleportId) & 0xffff;
+      if ((me.carrySlot ?? -1) >= 0 && forward < 0x8000) {
+        this.player.teleport(me.x, me.y, me.z); this.player.carried = true; this.lastTeleportId = correction;
+        this.cancelCarriedActions();
+      } else if (this.player.carried && (me.carrySlot ?? -1) < 0 && forward < 0x8000) {
+        this.player.teleport(me.x, me.y, me.z); this.player.body.grounded = false; this.lastTeleportId = correction;
+      }
       // First seen already dead: joined during a fight, as a soul (M8 §6.2).
       if (!this.seenSelf && me.dead) this.joinedAsSoul = true;
       this.seenSelf = true;
@@ -1169,10 +2157,10 @@ export class Game {
         // The dead player's screen (M8 §4.5): a soul that joined gets an ember vignette instead of the
         // grey; outside the boss arena, clearing it also brings back a player who fell.
         this.canvas.classList.toggle('dead', this.dead && !this.joinedAsSoul);
-        const boss = this.map.arenas[s.arenaIndex]?.boss;
+        const boss = this.map.rooms[s.activeRoom]?.boss;
         if (!this.dead) this.hud.setDeath(null);
         else if (this.joinedAsSoul) this.hud.setDeath('Your party must revive you to join the fight', null, true);
-        else this.hud.setDeath('You have fallen — your party can revive you', boss ? null : 'or you rise when the arena is cleared');
+        else this.hud.setDeath('You have fallen — your party can revive you', boss ? null : 'or you rise when the room is cleared');
       }
       if (this.dead) {
         this.ownGround = me.z;
@@ -1182,7 +2170,8 @@ export class Game {
         this.ownRevive = progress;
         this.hud.setOwnRevive(progress);
       } else this.ownRevive = 0;
-      this.hud.setHp(me.hp, me.shield, this.maxHp);
+      this.hud.setHp(me.hp, me.shield, this.maxHp, this.hpCut);
+      this.hud.setWallet(me.wallet);
       this.ownHp = me.hp;
       // The steady blue edge while the own shield is up (M12 §6.1).
       this.hud.setShieldEdge(me.shield > 0 && !me.dead ? SHIELD_EDGE : 0);
@@ -1213,12 +2202,17 @@ export class Game {
       for (let i = 0; i < prev.enemyCount; i++) {
         const slot = prev.enemySlot[i];
         if (this.snaps.hasEnemy(slot)) continue;
+        // Its death already played when this screen predicted the kill (netcode stage 2).
+        if (this.deaths.confirm(slot, prev.enemyIncarnation[i], now)) {
+          this.burstMemory.forget(slot);
+          continue;
+        }
         const type = prev.enemyType[i];
         const def = ENEMIES[type];
         const g = groundHeight(this.map, prev.enemyX[i], prev.enemyY[i], def.radius, Infinity, false, true);
         const ground = g === -Infinity ? 0 : g;
         // A Cherub falls from its hover height to the ground while it dies (§11.1).
-        const feet = ground + (type === CHERUB ? CHERUB_HOVER : 0);
+        const feet = def.flying ? prev.enemyZ[i] : ground;
         this.pendingBursts.push({
           at: now + delay,
           censer: false,
@@ -1233,13 +2227,26 @@ export class Game {
           rippled: false,
         });
       }
+      // The local player's own censers new in this snapshot are matched to their local flights (netcode stage 4).
+      const had = new Set(prev.projSlot.subarray(0, prev.projectileCount));
+      for (let i = 0; i < s.projectileCount; i++) {
+        if (s.projKind[i] === PROJ_CENSER && s.projOwner[i] === this.localId && !had.has(s.projSlot[i])) this.ownCensers.claim(s.projSlot[i], now, s.projX[i], s.projY[i], s.projZ[i]);
+      }
       const alive = new Set(s.projSlot.subarray(0, s.projectileCount));
       for (let i = 0; i < prev.projectileCount; i++) {
         if (prev.projKind[i] !== PROJ_CENSER || alive.has(prev.projSlot[i])) continue;
+        // The local player's own censer already broke here, at once (netcode stage 4).
+        if (prev.projOwner[i] === this.localId && this.ownCensers.release(prev.projSlot[i], prev.projX[i], prev.projY[i], prev.projZ[i], now)) continue;
         // A censer that vanished over the void didn't break (M10 §3.4).
         if (overVoid(this.map, prev.projX[i], prev.projY[i])) continue;
         this.pendingBursts.push({ at: now + delay, censer: true, slot: -1, type: -1, x: prev.projX[i], y: prev.projY[i], z: prev.projZ[i], ground: 0, feet: 0, facing: 0, rippled: false });
       }
+    }
+    // A predicted kill the host's snapshots still show alive after the shot reached it reappears.
+    for (const slot of this.deaths.settle(s.tick, (q) => this.snaps.incarnationOf(q), now)) {
+      this.revealedKills++;
+      // Its predicted corpse goes with it.
+      for (let i = this.corpses.length - 1; i >= 0; i--) if (this.corpses[i].slot === slot && now - this.corpses[i].start < PREDICTION_MAX_MS) this.corpses.splice(i, 1);
     }
     if (prev) this.spawnGlows(s, prev, now + this.snaps.delayTicks * TICK_MS);
     // Where each enemy was last seen, and burst slots reused by new enemies forgotten (M12 §4.2).
@@ -1264,7 +2271,7 @@ export class Game {
             at: now + delay + (i * gap) / n,
             run: (t) => {
               const q = this.snaps.playersOut.find((o) => o.id === p.id);
-              if (q) this.vfx.scourgeArc(t, q.x, q.y, q.z, q.yaw);
+              if (q) this.scourgeShape(t, p.id, q.x, q.y, q.z, q.yaw);
             },
           });
         }
@@ -1274,10 +2281,15 @@ export class Game {
     debugState.lastSnapshotTick = s.tick;
     debugState.enemies = s.enemyCount;
     debugState.projectiles = s.projectileCount;
-    debugState.arenaIndex = s.arenaIndex;
-    debugState.arenaPhase = s.arenaPhase === PHASE_COMBAT ? 'combat' : s.arenaPhase === PHASE_CLEARED ? 'cleared' : s.arenaPhase === PHASE_COUNTDOWN ? 'countdown' : 'idle';
-    debugState.countdown = s.arenaPhase === PHASE_COUNTDOWN ? s.countdown / 10 : 0;
-    this.hud.setCountdown(s.arenaPhase === PHASE_COUNTDOWN ? s.countdown / 10 : null);
+    debugState.wallet = s.players.find((p) => p.id === this.localId)?.wallet ?? 0;
+    debugState.pickups = Array.from(s.pickupId, (id, i) => ({ id, kind: s.pickupKind[i], x: s.pickupX[i], y: s.pickupY[i] }));
+    debugState.activeRoom = s.activeRoom;
+    debugState.activePhase = s.activePhase === PHASE_COMBAT ? 'combat' : s.activePhase === PHASE_COUNTDOWN ? 'countdown' : 'idle';
+    this.sealed = s.activePhase === PHASE_COMBAT;
+    debugState.clearedMask = s.clearedMask;
+    debugState.countdown = s.activePhase === PHASE_COUNTDOWN ? s.countdown / 10 : 0;
+    this.hud.setCountdown(s.activePhase === PHASE_COUNTDOWN ? s.countdown / 10 : null,
+      s.hold & 0x80 ? `Waiting for the party (${(s.hold >> 3) & 7}/${s.hold & 7})` : null);
     debugState.enemyCountsByTick = Object.fromEntries(this.snaps.enemyCountsByTick);
     debugState.players = s.players.map((p) => ({
       id: p.id,
@@ -1294,12 +2306,18 @@ export class Game {
         .filter((p) => p.id !== this.localId)
         .flatMap((p) => {
           const r = this.roster.find((q) => q.id === p.id);
-          return r ? [{ id: p.id, name: r.name, classId: r.classId, hp: p.hp, shield: p.shield, dead: p.dead, revive: p.revive / 255 }] : [];
+          return r ? [{ id: p.id, name: r.name, classId: r.classId, hp: p.hp, shield: p.shield, dead: p.dead, revive: p.revive / 255, held: s.heldPlayer === p.id }] : [];
         }),
     );
-    this.hud.setRemaining(s.arenaPhase === PHASE_COMBAT ? s.enemiesRemaining : null);
-    this.hud.setBoss(s.bossHp, s.bossMaxHp, s.bossCast === BOSS_CAST_JUDGMENT ? s.bossCastProgress / 255 : null);
+    this.hud.setRemaining(s.activePhase === PHASE_COMBAT ? s.enemiesRemaining : null);
+    const castLabel = s.bossCast === BOSS_CAST_JUDGMENT ? 'Judgment' : s.bossCast === BOSS_CAST_TOLL ? 'The Toll' : s.bossCast === BOSS_CAST_CALL ? 'Called to the Gate' : s.bossCast === BOSS_CAST_VOLLEY ? 'Orb Volley' : '';
+    this.hud.setBoss(s.bossHp, s.bossMaxHp, castLabel ? { label: castLabel, progress: s.bossCastProgress / 255, brk: s.bossCast === BOSS_CAST_JUDGMENT ? s.bossBreak / 255 : 0 } : null,
+      { phase: s.bossPhase & 3, invulnerable: (s.bossPhase & BOSS_PHASE_INVULNERABLE) !== 0, deferred: (s.bossFlags & BOSS_FLAG_DEFERRED) !== 0 });
+    if (s.tollTick > 0 && !this.tollImpacts.includes(s.tollTick)) this.tollImpacts = [...this.tollImpacts, s.tollTick].slice(-2);
+    if (s.bossMaxHp <= 0) this.tollImpacts = [];
+    this.syncHold(s);
     this.bossCast = s.bossCast;
+    this.bossTransition = s.bossTransitionUntil > s.tick;
     this.bossCastProgress = s.bossCastProgress / 255;
     this.bench?.onSnapshot(s);
     this.sounds.snapshot(s, prev, beamed);
@@ -1307,15 +2325,15 @@ export class Game {
 
   /**
    * The spawn glow (M12 §2.4): an enemy slot that wasn't in the previous snapshot, within 2 m
-   * horizontally of a spawn or squad point of the snapshot's arena, flares that point when it appears on
+   * horizontally of a spawn or squad point of the snapshot's active room, flares that point when it appears on
    * screen (`at`, after the render delay). Gatekeeper summons glow the same way.
    */
   private spawnGlows(s: Snapshot, prev: Snapshot, at: number): void {
     // Squad points flare too (M12 follow-up §4.2).
-    const points = this.map.arenaSpawnPoints[s.arenaIndex]?.concat(this.map.arenaSquadPoints[s.arenaIndex]);
+    const points = this.map.roomSpawnPoints[s.activeRoom]?.concat(this.map.roomSquadPoints[s.activeRoom]);
     if (!points?.length) return;
     for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 1;
-    const flared = new Set<number>();
+    const flared = new Map<number, number>();
     for (let i = 0; i < s.enemyCount; i++) {
       if (this.prevSlots[s.enemySlot[i]]) continue;
       let best = -1;
@@ -1329,13 +2347,13 @@ export class Game {
           best = k;
         }
       }
-      if (best >= 0) flared.add(best);
+      if (best >= 0) flared.set(best, Math.max(flared.get(best) ?? 1, isCommander(s.enemyType[i]) ? 1.5 : 1));
     }
     for (let i = 0; i < prev.enemyCount; i++) this.prevSlots[prev.enemySlot[i]] = 0;
-    for (const k of flared) {
+    for (const [k, width] of flared) {
       const [c, r] = points[k];
       const z = this.map.floor[r * this.map.w + c];
-      this.pendingFx.push({ at, run: (t) => this.vfx.flareSpawn(t, c + 0.5, r + 0.5, z) });
+      this.pendingFx.push({ at, run: (t) => this.vfx.flareSpawn(t, c + 0.5, r + 0.5, z, width) });
     }
   }
 
@@ -1369,7 +2387,8 @@ export class Game {
     const ms = me ? (slot === 'Q' ? me.cdQ : me.cdE) : 0;
     // The frame timestamp can be slightly earlier than the snapshot's arrival time.
     let cd = Math.max(0, ms - Math.max(0, now - this.snaps.newestArrival)) / 1000;
-    if (slot === 'E' && ABILITIES[this.classId].E.movement) cd = Math.max(cd, (this.localEReadyAt - now) / 1000);
+    if (slot === 'E' && ms > 0) this.eAcked = true;
+    if (slot === 'E' && !this.eAcked && ABILITIES[this.classId].E.movement && (this.classId !== 'betrayer' || this.talents.ability(this.localId, 'E') === 'shadowstep')) cd = Math.max(cd, (this.localEReadyAt - now) / 1000);
     return Math.max(0, cd);
   }
 
@@ -1479,10 +2498,11 @@ export class Game {
   /**
    * Cosmetic attack feedback, local and immediate (§10, M9 §5.1): muzzle flash and recoil; hitscan
    * attacks also draw a tracer per pellet to where the local ray stops, and show a hit marker when it
-   * hits an interpolated enemy. The Silver Bullet draws its estimated tracer, the Scourge its arc and
-   * swing; Sacrament's beam is drawn every frame instead.
+   * hits an interpolated enemy. The Silver Bullet draws its predicted tracer, the Scourge its arc and
+   * swing; Sacrament's beam is drawn every frame instead. `shot` is the shot's counter: its pellets
+   * scatter as the host's do, and its predicted damage waits for the host under it (netcode stage 3).
    */
-  private cosmeticShot(now: number, slot: AttackSlot, ents: InterpolatedEnemies, enemyZ: Float32Array): void {
+  private cosmeticShot(now: number, slot: AttackSlot, ents: InterpolatedEnemies, enemyZ: Float32Array, shot: number): void {
     const w = attackDef(this.classId, slot);
     const secondary = slot === ATTACK_SECONDARY;
     const p = this.player;
@@ -1499,7 +2519,7 @@ export class Game {
       case 'scourge': {
         this.hud.swing(now);
         this.sounds.ownShot(this.classId, true);
-        this.vfx.scourgeArc(now, p.body.x, p.body.y, p.body.z, p.yaw);
+        this.scourgeShape(now, this.localId, p.body.x, p.body.y, p.body.z, p.yaw);
         const hits = this.scourgeHits(ents, enemyZ);
         if (hits.length) {
           this.hud.hit(now);
@@ -1507,16 +2527,21 @@ export class Game {
         }
         // Every Scourge kill bursts; each hit flinches away from the Binder (M12 §4.4).
         for (const i of hits) {
-          const r = predictHit(ents.type[i], w.damage, (ents.flags[i] & FLAG_ROOTED) !== 0, true);
-          this.predictedHit(now, ents.slot[i], ents.x[i] - p.body.x, ents.y[i] - p.body.y, r);
+          const hp = this.hpLeft(ents, i), factor = this.hitFactor(ents, i);
+          if (hp <= 0) continue;
+          const r = predictHit(ents.type[i], hp, w.damage, factor, true);
+          this.predictedHit(now, ents, enemyZ, i, ents.x[i] - p.body.x, ents.y[i] - p.body.y, r, w.damage, shot, Math.min(w.damage * factor, hp));
         }
         return;
       }
       case 'censer': {
         this.hudShot(now, slot);
         this.sounds.ownShot(this.classId, secondary);
+        // It leaves the painted launcher's muzzle (the stage 2 playtest) and flies from the eye, as on the host.
         const [msx, msy] = this.hud.muzzlePoint(now);
-        this.censerShots.push({ at: now, from: this.unproject(msx, msy, OWN_BEAM_DEPTH) });
+        const [mx, my, mz] = this.unproject(msx, msy, OWN_BEAM_DEPTH);
+        const [dx, dy, dz] = aimDir(p.yaw, p.pitch);
+        this.ownCensers.throw(now, ex, ey, ez, dx, dy, dz, Math.min(w.range, PROJECTILE_RANGE), mx, my, mz);
         return;
       }
     }
@@ -1528,27 +2553,31 @@ export class Game {
     const pts: Array<[number, number, number]> = [];
     let hit = false;
     const shotgun = this.classId === 'fallen' && slot === ATTACK_PRIMARY;
-    const chainGun = this.classId === 'binder' && slot === ATTACK_PRIMARY;
-    // Each pellet's ray and the enemies along it, nearest first; the shotgun's within 6 m of the
-    // Fallen's body center deal 20 and burst what they kill (M12 §5.1, §4.1).
-    const rays = Array.from({ length: w.pellets }, () => {
-      const yaw = p.yaw + (Math.random() * 2 - 1) * w.spreadYaw;
-      const pitch = p.pitch + (Math.random() * 2 - 1) * w.spreadPitch;
+    // Barbed Rounds: a Chain Gun bullet goes on into a second enemy (classes-binder.md `c.1a`).
+    const maxHits = this.classId === 'binder' && slot === ATTACK_PRIMARY && this.talents.ownHas('binder.c.1a') ? 2 : w.maxHits;
+    // Each pellet's ray, scattered as the host scatters it, and the enemies along it, nearest first, that
+    // the host still has alive; the shotgun's within 6 m of the Fallen's body center deal 20 and burst
+    // what they kill (M12 §5.1, §4.1).
+    const rays = Array.from({ length: w.pellets }, (_, k) => {
+      const yaw = p.yaw + shotSpread(this.localId, shot, k, 0) * w.spreadYaw;
+      const pitch = p.pitch + shotSpread(this.localId, shot, k, 1) * w.spreadPitch;
       const [dx, dy, dz] = aimDir(yaw, pitch);
       const stop = raycastTerrain(this.map, ex, ey, ez, dx, dy, dz, w.range);
-      const ts: PelletTarget[] = [];
+      const ts: Array<PelletTarget & { rooted: boolean; taunted: boolean }> = [];
       for (let i = 0; i < ents.count; i++) {
         const def = ENEMIES[ents.type[i]];
-        const t = rayCylinder(ex, ey, ez, dx, dy, dz, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height);
+        const t = rayEnemy(ex, ey, ez, dx, dy, dz, ents.type[i], ents.x[i], ents.y[i], enemyZ[i]);
         if (t > stop) continue;
+        const hp = this.hpLeft(ents, i);
+        if (hp <= 0) continue;
         const close = shotgun && distToCylinder(ex, ey, p.body.z + PLAYER_HEIGHT / 2, ents.x[i], ents.y[i], enemyZ[i], def.radius, def.height) <= SHOTGUN_KNOCKBACK_RANGE;
-        ts.push({ i, t, type: ents.type[i], rooted: (ents.flags[i] & FLAG_ROOTED) !== 0, close });
+        ts.push({ i, t, type: ents.type[i], hp, factor: this.hitFactor(ents, i), close, rooted: (ents.flags[i] & FLAG_ROOTED) !== 0, taunted: (ents.flags[i] & FLAG_TAUNTED) !== 0 });
       }
       ts.sort((a, b) => a.t - b.t);
       return { dx, dy, dz, stop, ts };
     });
     // Enemies an earlier pellet of this shot is predicted to kill: later pellets pass them, as on the host.
-    const predicted = w.kind === 'silverBullet' ? null : predictPellets(rays.map((r) => r.ts), w.damage, w.maxHits, shotgun ? 'shotgun' : chainGun ? 'chainGun' : 'other');
+    const predicted = w.kind === 'silverBullet' ? null : predictPellets(rays.map((r) => r.ts), w.damage, maxHits, shotgun ? 'shotgun' : 'other', SHOTGUN_CLOSE_DAMAGE);
     rays.forEach(({ dx, dy, dz, stop, ts }, k) => {
       // A shot that meets a wall ends on its drawn surface: a relief's front, or a window's glass (M10 §5.3).
       let end = stop < w.range ? this.scene.terrain.relief.adjust(ex, ey, ez, dx, dy, dz, stop) : stop;
@@ -1560,15 +2589,15 @@ export class Game {
       if (ts.length > 0) {
         hit = true;
         if (!predicted) {
-          // An estimate (M9 §5.1): every enemy at its type's full HP, doubled for the rooted flag.
-          const line = ts.map(({ type, rooted }) => ({ type, rooted }));
-          const r = estimateSilverBullet(line, w.damage);
-          if (r.stopped) end = ts[r.reached - 1].t;
-          predictSilverBullet(line.slice(0, r.reached), r.carried).forEach((res, n) => this.predictedHit(now, ents.slot[ts[n].i], dx, dy, res));
+          // The host's rule on the enemies' HP (netcode stage 3); Behind His Back halves a taunted one's cost.
+          const behind = this.talents.ownHas('betrayer.a.3b');
+          const r = predictSilverBullet(ts.map((t) => ({ type: t.type, hp: t.hp, factor: t.factor, rooted: t.rooted, half: behind && t.taunted })), w.damage);
+          if (r.stopped) end = ts[r.hits.length - 1].t;
+          r.hits.forEach((h, n) => this.predictedHit(now, ents, enemyZ, ts[n].i, dx, dy, h.result, w.damage, shot, h.dealt));
         } else {
           const hits = predicted[k];
-          if (hits.length >= w.maxHits) end = hits[hits.length - 1].target.t;
-          for (const h of hits) this.predictedHit(now, ents.slot[h.target.i], dx, dy, h.result);
+          if (hits.length >= maxHits) end = hits[hits.length - 1].target.t;
+          for (const h of hits) this.predictedHit(now, ents, enemyZ, h.target.i, dx, dy, h.result, shotgun && h.target.close ? SHOTGUN_CLOSE_DAMAGE : w.damage, shot, h.dealt);
         }
       }
       // A shot through a teammate's soul (for the revive hum).
@@ -1613,15 +2642,129 @@ export class Game {
   }
 
   /**
-   * A predicted hit of the local player's on an enemy slot, along the horizontal (dx, dy) (M12 §4.4):
-   * it flinches, and a predicted kill plays the kill marker (or the burst marker) and `killTick` now.
+   * The HP the host has left on the interpolated enemy `i`: the newest snapshot's, less what this
+   * screen's unresolved shots dealt it (netcode stage 3). At most 0 when the host has it dead.
    */
-  private predictedHit(now: number, slot: number, dx: number, dy: number, r: Predicted): void {
+  private hpLeft(ents: InterpolatedEnemies, i: number): number {
+    const slot = ents.slot[i], incarnation = ents.incarnation[i];
+    return this.snaps.hpOf(slot, incarnation) - this.ownDamage.pending(slot, incarnation);
+  }
+
+  /** The host's damage multiplier on the interpolated enemy `i`: ×2 rooted, a Cantor's hymnal toward the local player. */
+  private hitFactor(ents: InterpolatedEnemies, i: number): number {
+    let f = (ents.flags[i] & FLAG_ROOTED) !== 0 ? 2 : 1;
+    const c = this.commanders.active.get(ents.slot[i]);
+    if (c?.kind === 'beam' && (c.phase === 'tell' || c.phase === 'active') && c.incarnation === ents.incarnation[i]) {
+      f *= hymnalReduction(c.yaw, this.player.body.x - ents.x[i], this.player.body.y - ents.y[i], false);
+    }
+    return f;
+  }
+
+  /**
+   * A predicted hit of `damage` by the local player on the interpolated enemy `i`, along the horizontal
+   * (dx, dy) (M12 §4.4): it flinches, and a predicted kill plays the kill marker (or the burst marker),
+   * `killTick` and the enemy's death now, where it's drawn (netcode stage 2). The `dealt` damage waits
+   * under the shot's counter until the host resolves it, and shows its damage number now (netcode stage 3).
+   */
+  private predictedHit(now: number, ents: InterpolatedEnemies, enemyZ: Float32Array, i: number, dx: number, dy: number, r: Predicted, damage: number, shot: number, dealt: number): void {
+    const slot = ents.slot[i];
+    // Already dead on this screen: a second shot in the same frame passes it.
+    if (this.deaths.hides(slot, ents.incarnation[i])) return;
+    this.ownDamage.add(shot, slot, ents.incarnation[i], dealt, now);
+    if (dealt > 0 && loadDamageNumbersSetting()) {
+      this.damageNumbers.add([slot, ents.x[i], ents.y[i], enemyZ[i] + ENEMIES[ents.type[i]].shot.top + 0.3, dealt, r ? 1 : 0], now);
+    }
     this.flinches.add(slot, now, dx, dy, r ? KILL_FLINCH : HIT_FLINCH);
     if (!r) return;
+    this.confirmations.add(slot, now);
     this.sounds.kill(this.predicted.kill(now));
     if (r === 2) this.hud.burst(now);
     else this.hud.kill(now);
+    this.predictedDeath(now, ents, enemyZ, i, dx, dy, r === 2, damage);
+  }
+
+  /**
+   * The enemy `i` the local player's screen predicted it killed dies at once, where it's drawn, and is
+   * hidden until the snapshots confirm it (netcode stage 2). A predicted burst blasts it along the shot,
+   * heavy when the damage reaches 4× its max HP; the host's own burst wins if it already arrived.
+   */
+  private predictedDeath(now: number, ents: InterpolatedEnemies, enemyZ: Float32Array, i: number, dx: number, dy: number, bursts: boolean, damage: number): void {
+    const slot = ents.slot[i];
+    const type = ents.type[i];
+    const rtt = this.o.link ? this.o.link.rttMs : 0;
+    if (!this.deaths.add(slot, ents.incarnation[i], revealTick(this.snaps.estimatedTick(now), rtt, TICK_MS), now)) return;
+    // Killed on the host already, its death waiting for the render delay: it plays now instead.
+    const pending = this.pendingBursts.findIndex((b) => !b.censer && b.slot === slot);
+    if (pending >= 0) {
+      this.pendingBursts.splice(pending, 1);
+      this.deaths.confirm(slot, ents.incarnation[i], now);
+    }
+    const def = ENEMIES[type];
+    const x = ents.x[i];
+    const y = ents.y[i];
+    if (bursts && !this.burstMemory.peek(slot, now)) {
+      const heavy = ((ents.flags[i] & FLAG_ROOTED) !== 0 ? 2 : 1) * damage >= BURST_HEAVY * def.hp - 1e-9;
+      const angle = burstAngle(x - dx, y - dy, x, y, slot);
+      this.burstMemory.remember([slot, heavy ? angle + 360 : angle, this.localId], now, () => 0);
+    }
+    const g = groundHeight(this.map, x, y, def.radius, Infinity, false, true);
+    const ground = g === -Infinity ? 0 : g;
+    const feet = def.flying ? enemyZ[i] : ground;
+    this.playDeath({ at: now, censer: false, slot, type, x, y, z: feet + def.height / 2, ground, feet, facing: this.animator.facing[slot], rippled: true }, now);
+  }
+
+  /**
+   * The local player's kills the host reported (netcode stage 4): by an ability, fire, incense, a censer, a
+   * talent or a relic, which this screen doesn't predict. Each dies now where this screen draws it, like
+   * a predicted kill, instead of after the render delay. A burst's ripple still delays it once.
+   */
+  private playReportedKills(now: number, ents: InterpolatedEnemies): void {
+    const kills = this.reportedKills;
+    for (let k = 0; k + 1 < kills.length; k += 2) {
+      const slot = kills[k], incarnation = kills[k + 1];
+      this.reportedReceived++;
+      if (slot < 0 || slot >= ENEMY_SLOTS) continue;
+      if (this.deaths.hides(slot, incarnation)) { this.reportedHidden++; continue; }
+      const pending = this.pendingBursts.find((b) => !b.censer && b.slot === slot);
+      let i = -1;
+      for (let j = 0; j < ents.count; j++) if (ents.slot[j] === slot && ents.incarnation[j] === incarnation) { i = j; break; }
+      if (i < 0) {
+        // Not drawn now: its death, if the snapshots already dropped it, plays now.
+        if (pending) { pending.at = Math.min(pending.at, now); this.reportedUndrawnBurst++; } else this.reportedUndrawn++;
+        continue;
+      }
+      const rtt = this.o.link ? this.o.link.rttMs : 0;
+      if (!this.deaths.add(slot, incarnation, revealTick(this.snaps.estimatedTick(now), rtt, TICK_MS), now)) continue;
+      this.reportedEarly++;
+      if (pending) {
+        this.pendingBursts.splice(this.pendingBursts.indexOf(pending), 1);
+        this.deaths.confirm(slot, incarnation, now);
+      }
+      const type = ents.type[i], def = ENEMIES[type], x = ents.x[i], y = ents.y[i];
+      const g = groundHeight(this.map, x, y, def.radius, Infinity, false, true);
+      const ground = g === -Infinity ? 0 : g;
+      const feet = def.flying ? ents.z[i] : ground;
+      this.pendingBursts.push({ at: now, censer: false, slot, type, x, y, z: feet + def.height / 2, ground, feet, facing: this.animator.facing[slot], rippled: false });
+    }
+    kills.length = 0;
+  }
+
+  /** The world the local player's own censers fly through this frame, as this screen draws it (netcode stage 4). */
+  private censerWorld(ents: InterpolatedEnemies, enemyZ: Float32Array, now: number): CenserWorld {
+    const souls: Array<{ x: number; y: number; base: number }> = [];
+    for (const q of this.snaps.playersOut) if (q.id !== this.localId && q.dead) souls.push({ x: q.x, y: q.y, base: q.z + this.souls.rise(q.id, now) });
+    return { map: this.map, enemies: ents, enemyZ, souls, props: this.props.defs, broken: this.props.model.broken, passBlessed: this.talents.ownHas('heretic.a.3b') };
+  }
+
+  /** A local censer broke (M9 §5.1): its small burst and sound now; on an enemy, the hit marker and a flinch. */
+  private ownCenserBreak(now: number, b: CenserBreak, ents: InterpolatedEnemies): void {
+    this.particles.censerBreak(b.x, b.y, b.z);
+    this.vfx.glow(now, b.x, b.y, b.z, 0xf08a24, 0.15, 0.6, 250);
+    this.sounds.censerBreak(b);
+    if (b.enemy < 0) return;
+    this.hud.hit(now);
+    this.sounds.hit();
+    this.flinches.add(ents.slot[b.enemy], now, ents.x[b.enemy] - this.player.body.x, ents.y[b.enemy] - this.player.body.y, HIT_FLINCH);
   }
 
   /** An enemy slot's distance from a player, for the ripple: the local one's own position, others' interpolated. */
@@ -1646,8 +2789,8 @@ export class Game {
     this.particles.featherBurst(b.x, b.y, b.z);
     this.sounds.enemyDeath(b.type, b);
     if (this.o.enemyAnims[b.type]?.anims.death) {
-      const fallFrom = b.type === CHERUB ? b.feet : undefined;
-      this.corpses.push({ start: now, x: b.x, y: b.y, z: b.ground, facing: b.facing, type: b.type, fallFrom });
+      const fallFrom = ENEMIES[b.type].flying ? b.feet : undefined;
+      this.corpses.push({ start: now, x: b.x, y: b.y, z: b.ground, facing: b.facing, type: b.type, fallFrom, slot: b.slot });
       if (this.corpses.length > MAX_CORPSES) this.corpses.shift();
     }
   }
@@ -1664,7 +2807,7 @@ export class Game {
     const rx = -Math.sin(yaw) * side;
     const ry = Math.cos(yaw) * side;
     // A Cherub stays at its hover height and flies level.
-    const lift = b.type === CHERUB ? 0 : tier.lift;
+    const lift = ENEMIES[b.type].flying ? 0 : tier.lift;
     const blast: Blast = { start: now, type: b.type, x: b.x, y: b.y, feet: b.feet, facing: b.facing, ex: dx * tier.blast + rx, ey: dy * tier.blast + ry, lift, swell: tier.swell };
     this.blasts.push(blast);
     const mine = info.playerId === this.localId;
@@ -1787,9 +2930,13 @@ export class Game {
 
     // While singleplayer is paused, the simulation's clock stands still at the moment Pause opened.
     const simNow = this.paused && this.o.singleplayer ? this.pausedAt : now;
-    // Enemies at the render time, and their derived heights.
+    // Render authoritative altitude as well as horizontal movement (leaps, throws and hovering).
     const ents = this.snaps.interpolate(simNow);
-    const enemyZ = this.enemyHeights(ents, dt);
+    this.playReportedKills(now, ents);
+    this.deaths.filter(ents);
+    const enemyZ = this.zScratch;
+    enemyZ.set(ents.z.subarray(0, ents.count));
+    this.frameNo++;
     this.computeAllyTarget(now);
     this.party?.setAllyTarget(this.allyTargetId);
 
@@ -1797,6 +2944,9 @@ export class Game {
     let my = 0;
     let wantJump = false;
     let fire = 0;
+    // Mouse presses this frame; only a living player's own input keeps them (click latching).
+    const presses = this.input.takePresses();
+    let pressesKept = false;
     this.starPreview = null;
     if (this.over || this.paused || this.dead || this.bot || this.bench) {
       this.starAim.reset();
@@ -1826,29 +2976,40 @@ export class Game {
         e.x = ents.x[i];
         e.y = ents.y[i];
         e.z = enemyZ[i];
+        e.seal = (ents.flags[i] & FLAG_PART_SEAL) !== 0 && e.type === BOSS_PART;
+        e.opening = (ents.flags[i] & FLAG_PART_OPENING) !== 0 && e.type === BOSS_PART;
       }
       const s = this.snaps.newest;
       const out = this.bot.update(now, {
+        stair: this.victory,
         map: this.map,
         body: p.body,
         dead: this.dead,
         enemies: be,
-        arenaIndex: s?.arenaIndex ?? 0,
-        arenaPhase: s?.arenaPhase ?? 0,
-        // A client's bot follows the host's player (§2.5).
-        hostPlayer: this.o.host ? null : (this.snaps.playersOut.find((q) => q.id === 0) ?? null),
+        commanderCasts: this.commanders.live(s, this.snaps.estimatedTick(simNow)),
+        watchmanAims: this.watchmen.live(s, this.snaps.estimatedTick(simNow)),
+        dominionRings: s ? this.dominion.rings(s, this.snaps.estimatedTick(simNow)) : [],
+        activeRoom: s?.activeRoom ?? 255,
+        activePhase: s?.activePhase ?? 0,
+        clearedMask: s?.clearedMask ?? 0,
+        entrySocket: this.rooms.states[s?.activeRoom ?? 255]?.entrySocket,
+        followParty: !this.o.singleplayer,
+        // Follow the host human, then the lowest-id living human (rogue game.md §12.4).
+        hostPlayer: this.o.singleplayer ? null : (this.snaps.playersOut.find((q) => q.id === 0 && !q.dead && !this.roster.find((r) => r.id === q.id)?.bot) ?? this.snaps.playersOut.find((q) => !q.dead && !this.roster.find((r) => r.id === q.id)?.bot) ?? null),
         qReady: this.displayedCooldown('Q', now) <= 0,
         eReady: this.displayedCooldown('E', now) <= 0,
         blockedLastFrame: p.moveResult.blocked,
         entryIndex: this.entryIndex,
         souls: this.snaps.playersOut.filter((q) => q.dead && q.id !== this.localId),
+        humanSouls: this.snaps.playersOut.filter((q) => q.dead && q.id !== this.localId && !this.roster.find((r) => r.id === q.id)?.bot),
         classId: this.classId,
         teammates: this.snaps.playersOut.flatMap((q) => {
           const cls = this.classOf(q.id);
           const rec = s?.players.find((r) => r.id === q.id);
           if (q.id === this.localId || q.dead || !cls || !rec) return [];
-          return [{ x: q.x, y: q.y, z: q.z, hpFrac: rec.hp / CLASSES[cls].hp }];
+          return [{ x: q.x, y: q.y, z: q.z, hpFrac: rec.hp / CLASSES[cls].hp, human: !this.roster.find((r) => r.id === q.id)?.bot }];
         }),
+        boss: this.botBoss(),
       });
       if (out.yaw !== null) p.yaw = out.yaw;
       if (out.pitch !== null) p.pitch = out.pitch;
@@ -1861,28 +3022,46 @@ export class Game {
       if (out.pressE) this.pressAbility('E', now);
     } else if (!this.dead) {
       const { dx, dy } = this.input.takeMouse();
-      p.look(dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY);
+      if (this.input.mapHeld) this.mapView.moveCursor(dx, dy);
+      else p.look(dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY);
       const axes = this.input.moveAxes();
       [mx, my] = wasdDirection(p.yaw, axes.forward, axes.right);
       wantJump = this.input.jumpQueued || this.input.isDown('Space');
       fire = this.input.fireBits();
+      // A right press while aiming Falling Star or Rain of Fire cancels the aim instead of firing.
+      const aiming = this.starAim.aiming;
       if (this.classId === 'fallen') fire = this.updateStarAim(now, fire);
+      if (this.classId === 'fallen' && (aiming || this.starAim.rightBlocked)) presses[1] = 0;
+      pressesKept = true;
     } else {
       // Dead: the camera can only rotate.
       const { dx, dy } = this.input.takeMouse();
-      p.look(dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY);
+      if (this.input.mapHeld) this.mapView.moveCursor(dx, dy);
+      else p.look(dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY);
     }
     this.input.jumpQueued = false;
-    this.fire = this.dead || this.over ? 0 : fire;
+    this.fire = this.dead || this.over || p.carried || this.input.mapHeld ? 0 : fire;
     // Neither attack fires during Shadowstep's slash; held buttons resume afterwards (M12 §5.7).
     if (now - this.slashAt < SHADOWSTEP_TIME * 1000) this.fire = 0;
+    if (pressesKept && !this.dead && !this.over && !p.carried && !this.input.mapHeld && now - this.slashAt >= SHADOWSTEP_TIME * 1000) {
+      for (const b of [0, 1] as const) {
+        if (!presses[b]) continue;
+        if (b === 0) this.leftPresses = (this.leftPresses + presses[b]) & 0xff;
+        else this.rightPresses = (this.rightPresses + presses[b]) & 0xff;
+        latchPress(this.latch, b, this.fireTick);
+      }
+    } else if (this.dead || this.over || p.carried) latchClear(this.latch);
     const bx = p.body.x;
     const by = p.body.y;
     // Wading (M12 §3.1): the ground enemies of the newest snapshot pressing against the player slow
     // it. Counted every frame, in the benchmark too, which doesn't move the player.
     const newest = this.snaps.newest;
-    const pressing = newest && !this.dead ? wadeCount(this.map, p.body.x, p.body.y, p.body.z, newest, this.wadeLaunchedUntil, now) : 0;
-    p.wade = this.wading.update(pressing, Math.min(dt, MAX_FRAME_DT));
+    // Wading talents (R4–R5) leave some enemies out: Unbowed counts only bound ones, Iron Stride skips slowed
+    // ones, Walk in the Smoke skips all while in its owner's incense.
+    const ignore = this.talents.wadeIgnore(p.body.x, p.body.y, p.body.z);
+    const pressing = newest && !this.dead ? wadeCount(this.map, p.body.x, p.body.y, p.body.z, newest, this.wadeLaunchedUntil, now, ignore) : 0;
+    // Through the Throng (classes-betrayer.md `b.1a`): the crowd doesn't slow you; Gatebreaker's charge ignores it too.
+    p.wade = this.wading.update(this.talents.unslowed || p.charging ? 0 : pressing, Math.min(dt, MAX_FRAME_DT));
     debugState.wade.count = pressing;
     debugState.wade.factor = p.wade;
     if (!this.dead && !this.bench && !this.over) p.update(this.map, dt, mx, my, wantJump);
@@ -1905,19 +3084,38 @@ export class Game {
     // §2.2); Sacrament can fire while there's a local ally target.
     this.attack = chooseAttack(this.classId, this.fire, this.allyTargetId !== ALLY_NONE);
     this.fireAcc = Math.min(this.fireAcc + dt, 5 * TICK_DT);
+    let shotNow = false;
     while (this.fireAcc >= TICK_DT) {
       this.fireAcc -= TICK_DT;
-      if (this.attack !== ATTACK_NONE && this.fireTimer <= 1e-6) {
-        this.cosmeticShot(now, this.attack, ents, enemyZ);
-        this.fireTimer += attackDef(this.classId, this.attack).interval;
+      this.fireTick++;
+      // A latched press fires like a held button, as on the host (click latching).
+      const attack = chooseAttack(this.classId, this.fire | latchBits(this.latch, this.fireTick), this.allyTargetId !== ALLY_NONE);
+      if (attack !== ATTACK_NONE && this.fireTimer <= 1e-6) {
+        latchFired(this.latch, attack);
+        // The host fires this shot with the aim and view of the input sent this frame (client-timed shots),
+        // its pellets scattered by this counter (netcode stage 3).
+        this.shots = (this.shots + 1) & 0xff;
+        this.cosmeticShot(now, attack, ents, enemyZ, this.shots);
+        this.shotButton = attack === ATTACK_SECONDARY ? 1 : 0;
+        const view = this.snaps.view;
+        Object.assign(this.shotAim, { yaw: p.yaw, pitch: p.pitch, tick: view.tick, gap: view.gap, frac: view.frac });
+        shotNow = true;
+        // Whirl swings every 1.2 s (classes-binder.md `b.1a`).
+        this.fireTimer += this.classId === 'binder' && attack === ATTACK_SECONDARY && this.talents.ownHas('binder.b.1a') ? BINDER.whirlInterval : attackDef(this.classId, attack).interval;
       }
       this.fireTimer -= TICK_DT * this.localFireRate();
-      if (this.attack === ATTACK_NONE && this.fireTimer < 0) this.fireTimer = 0;
+      if (attack === ATTACK_NONE && this.fireTimer < 0) this.fireTimer = 0;
     }
 
-    // Input to the host at 30 Hz.
+    // The local player's own censers fly on and break where they meet what this screen draws (netcode stage 4).
+    for (const b of this.ownCensers.step(now, Math.min(dt, 0.25), this.censerWorld(ents, enemyZ, now))) this.ownCenserBreak(now, b, ents);
+
+    // Input to the host at 30 Hz, and in every frame that fired a shot.
     this.inputAcc += dt;
-    if (this.inputAcc >= TICK_DT && !this.over) {
+    if (shotNow && !this.over) {
+      this.inputAcc = 0;
+      this.sendInput();
+    } else if (this.inputAcc >= TICK_DT && !this.over) {
       this.inputAcc = Math.min(this.inputAcc - TICK_DT, TICK_DT);
       this.sendInput();
     }
@@ -1935,7 +3133,7 @@ export class Game {
         this.particles.censerBreak(b.x, b.y, b.z);
         this.vfx.glow(now, b.x, b.y, b.z, 0xf08a24, 0.15, 0.6, 250);
         this.sounds.censerBreak(b);
-        this.incense.add(now, b.x, b.y, (x, y) => this.cloudBase(x, y, b.z));
+        // The cloud itself comes from the host's published area (R5: worn, triple, pillar clouds, furrows).
       } else {
         // A burst's ripple delays it once (M12 §4.2).
         const ripple = this.burstMemory.peek(b.slot, now)?.ripple ?? 0;
@@ -2000,7 +3198,45 @@ export class Game {
       this.scene.setView(cam.x, cam.y, cam.z ?? (this.map.floor[ci] ?? 0) + PLAYER_EYE, cam.yaw, cam.pitch, 0);
     }
     this.drawStarPreview();
+    this.drawAimPreview();
     this.drawBillboards(now, ents, enemyZ);
+    this.pickups.update(this.snaps.newest, this.scene.camera, this.snaps.estimatedTick(now));
+    const rewardIds = this.o.floor ? rewardPickupIds([...this.pickups.model.records.values()].map((r) => r.pickup), this.o.floor, this.map) : new Set<number>();
+    // St Peter's key lies in its own narrow gold beam (§6.5).
+    for (const r of this.pickups.model.records.values()) if (r.pickup.kind === KEY) rewardIds.add(r.pickup.id);
+    this.rewardShafts.update(now, this.snaps.newest, rewardIds, (x, y) => this.map.floor[Math.floor(y) * this.map.w + Math.floor(x)], this.scene.camera.position);
+    const itemTick = this.snaps.estimatedTick(simNow);
+    this.itemView.update(itemTick);
+    this.relicView.update(itemTick);
+    debugState.relicAreas = this.relicView.areaEffects();
+    debugState.relicShots = this.relicView.shotCount();
+    this.relicHud.update(itemTick, now);
+    const sundial = this.sundialLeft();
+    this.relicHud.setSundial(this.o.floor && sundial > 0 ? sundial : null);
+    for (const [x, y, z] of this.featherTrails.step(now, (id) => id === this.localId ? (this.dead ? undefined : this.player.body) : this.playerPose(id))) this.particles.trailFeather(x, y, z);
+    this.player.speed = CLASSES[this.classId].speed + (!this.dead && itemTick < (this.inventory?.featherUntil ?? 0) ? FEATHER_SPEED : 0);
+    this.hud.setItemCooldown(this.inventory ? Math.max(0, this.inventory.itemReadyTick - itemTick) / 30 : 0);
+    this.props.update(this.scene.camera, this.snaps.estimatedTick(simNow));
+    const dominionTick = this.snaps.estimatedTick(simNow);
+    const dominionRings = this.snaps.newest ? this.dominion.rings(this.snaps.newest, dominionTick) : [];
+    this.dominionView.update(dominionRings, dominionTick);
+    const family = this.commanders.live(this.snaps.newest, dominionTick);
+    this.commanderView.update(family, this.map, dominionTick, this.scene.camera.position);
+    this.sounds.commanders(this.paused ? [] : family, dominionTick);
+    this.drawWatchmen(now, ents, enemyZ, dominionTick);
+    this.drawGatekeeper(now, ents, enemyZ);
+    debugState.spawnWarnings = this.spawnWarnings.live(dominionTick);
+    this.spawnView.update(debugState.spawnWarnings, dominionTick);
+    this.sounds.arrivals(this.paused ? [] : debugState.spawnWarnings, dominionTick);
+    this.sounds.dominions(this.paused ? [] : dominionRings, dominionTick);
+    debugState.dominion.casts = dominionRings;
+    const fireCells = this.hazards.update(this.snaps.newest, this.scene.camera, dominionTick, this.over);
+    const fireRoom = fireCells > 0 ? this.snaps.newest!.activeRoom : -1;
+    const fireOwnRoom = this.rooms.roomAt(p.body.x, p.body.y);
+    this.sounds.hazard(fireOwnRoom === fireRoom && !this.paused ? this.hazards.nearest(fireRoom, p.body.x, p.body.y, now) : null);
+    this.sounds.incense(this.paused ? null : this.incense.nearest(p.body.x, p.body.y, INCENSE_HEARD));
+    this.sounds.confessional(!this.paused && !this.over && fireOwnRoom >= 0 && fireOwnRoom === this.o.floor?.confessional);
+    debugState.hazards = { activeRoom: fireRoom, activeCells: fireCells };
     const beamed = this.drawHealBeams(now, Math.min(dt, MAX_FRAME_DT));
     this.hud.setHealing(this.ownBeamOn, now);
     this.hud.setBeamed(beamed.has(this.localId));
@@ -2008,20 +3244,60 @@ export class Game {
     this.scene.render();
     this.placeChevron(now);
     this.placeSoulMarkers(now);
+    this.damageNumbers.update(now, (x, y, z) => this.project(x, y, z));
+    this.hitArcs.update(now, (x, y) => {
+      const v = this.projScratch.set(x, this.scene.camera.position.y, y).applyMatrix4(this.scene.camera.matrixWorldInverse);
+      return arcAngle(v.x, v.z);
+    });
     this.updateReviveHum(now);
 
     // Low HP (M12 §6.2): the heartbeat and the crimson edge.
     if (this.lowHp.update(now, this.seenSelf && !this.dead && !this.over, this.ownHp, this.maxHp)) this.sounds.heartbeat();
     this.hud.setLowEdge(this.lowHp.edge(now));
-    this.hud.setCooldowns(this.displayedCooldown('Q', simNow), ABILITIES[this.classId].Q.cooldown, this.displayedCooldown('E', simNow), ABILITIES[this.classId].E.cooldown);
+    this.hud.setCooldowns(this.displayedCooldown('Q', simNow), this.talents.ownDef(this.classId, 'Q').cooldown, this.displayedCooldown('E', simNow), this.talents.ownDef(this.classId, 'E').cooldown);
+    this.talents.update(now, this.snaps.out, [...this.snaps.playersOut, { id: this.localId, x: p.body.x, y: p.body.y, z: p.body.z, dead: this.dead }], (x, y) => this.rooms.roomAt(x, y));
+    const waiting = this.talents.offers.filter((o) => o.source !== 'sundial' && o.source !== 'bargain').length + this.relicOffers.filter((o) => o.source === 'chest').length;
+    this.ritePip.hidden = !waiting || this.over;
+    this.ritePip.textContent = `Choice waiting · F (${waiting})`;
     this.hud.update(now);
+    this.mapView.open = this.input.mapHeld && !this.over && !this.paused && !this.hud.chatOpen;
+    debugState.mapHeld = this.mapView.open;
+    const ownRoom = this.rooms.roomAt(p.body.x, p.body.y);
+    const snap = this.snaps.newest;
+    this.hud.setRoomMessage(roomMessage(this.rooms, ownRoom, snap?.activeRoom ?? 255, snap?.activePhase ?? 0));
+    const mapPlayers: MapPlayer[] = this.snaps.playersOut.flatMap((q) => {
+      const r = this.roster.find((r) => r.id === q.id);
+      return r && q.id !== this.localId ? [{ ...q, name: r.name, classId: r.classId }] : [];
+    });
+    mapPlayers.push({ id: this.localId, name: this.roster.find((r) => r.id === this.localId)!.name, classId: this.classId, x: p.body.x, y: p.body.y, yaw: p.yaw });
+    this.mapView.update(now, mapPlayers, ownRoom);
+    const shopTarget = this.shop.target(this.player.body, this.player.yaw, this.player.pitch);
+    this.shopHint.textContent = this.dead || this.paused ? '' : shopTarget >= 0 ? this.shop.label(shopTarget, this.inventory)
+      : this.routeView.label(this.routeView.target(this.player.body), this.localId) || (this.advocateInReach() ? 'The Advocate · F: talents, relics, the bargain' : '');
+    this.routeView.update(this.scene.camera.position);
     debugState.fps = this.fps.frame(now);
     debugState.simMs = this.o.host ? this.o.host.simMs(now) : 0;
     debugState.director = this.o.host?.director ?? null;
+    debugState.carrierChecks = this.o.host?.carrierChecks ?? [];
+    debugState.weaponKills = this.o.host?.weaponKills ?? {};
     debugState.netInKBps = this.o.net ? this.o.net.inKBps(now) : 0;
     debugState.netOutKBps = this.o.net ? this.o.net.outKBps(now) : 0;
+    const link = this.o.link ?? null;
+    debugState.link = {
+      rttMs: link?.rttMs ?? null,
+      route: link?.route ?? null,
+      delayMs: this.snaps.delayTicks * TICK_MS,
+      jitterMs: this.snaps.jitterTicks * TICK_MS,
+      lines: link ? [link.text()] : this.o.host?.linkLines() ?? [],
+    };
+    const c = this.confirmations;
+    c.update(now, (slot) => this.snaps.hasEnemy(slot));
+    debugState.killMarkers = { predicted: c.predicted, confirmed: c.confirmed, missed: c.missed, revealed: this.revealedKills, reported: this.reportedEarly, undrawn: this.reportedUndrawn, undrawnBurst: this.reportedUndrawnBurst, received: this.reportedReceived, hidden: this.reportedHidden };
+    const oc = this.ownCensers;
+    debugState.censers = { thrown: oc.thrown, matched: oc.matched, agreed: oc.agreed, unmatched: oc.unmatched };
+    // Read-only own pose also supports the normal-menu multiplayer prop/catch-up fixture.
+    Object.assign(debugState.self, { x: b.x, y: b.y, z: b.z, yaw: p.yaw, pitch: p.pitch });
     if (this.params.dev) {
-      Object.assign(debugState.self, { x: b.x, y: b.y, z: b.z, yaw: p.yaw, pitch: p.pitch });
       let near = 0;
       let sx = 0;
       let sy = 0;
@@ -2077,6 +3353,7 @@ export class Game {
   };
 
   private drawBillboards(now: number, ents: { count: number; slot: Uint16Array; x: Float32Array; y: Float32Array; type: Uint8Array; state: Uint8Array; flags: Uint8Array }, enemyZ: Float32Array): void {
+    debugState.dominion.rendered.length = 0;
     const bb = this.billboards;
     bb.begin();
     const shadows = this.shadows;
@@ -2103,7 +3380,27 @@ export class Game {
       this.animator.update(slot, x, y, ents.state[i], now, dt, t.x, t.y, type);
       const stunned = (ents.flags[i] & FLAG_STUNNED) !== 0;
       this.animator.setStunned(slot, stunned, now);
-      const pick = this.animator.pick(slot, now, this.bossCast);
+      const pick = this.animator.pick(slot, now, this.bossCast, this.bossTransition);
+      if (type === DOMINION && ents.state[i] === ST_WINDUP && !stunned) {
+        const cast = this.dominion.active.get(slot);
+        if (cast && cast.incarnation === this.snaps.newest?.enemyIncarnation[this.snaps.newest.enemySlot.indexOf(slot)]) {
+          pick.anim = 'cast'; pick.frame = Math.max(0, Math.min(5, Math.floor((this.snaps.estimatedTick(now) - cast.startTick) / (cast.impactTick - cast.startTick) * 6)));
+        }
+      }
+      const commander = this.commanders.sample(slot, this.snaps.estimatedTick(now));
+      if (commander && commander.incarnation === this.snaps.newest?.enemyIncarnation[this.snaps.newest.enemySlot.indexOf(slot)]) {
+        if (type === CANTOR || commander.phase !== 'idle') this.animator.facing[slot] = commander.yaw;
+        if (!stunned && commander.phase !== 'idle') {
+          const age = Math.max(0, this.snaps.estimatedTick(now) - commander.phaseTick);
+          if (type === CANTOR) {
+            pick.anim = commander.phase === 'tell' ? 'cast' : commander.phase === 'active' ? 'sing' : 'close';
+            pick.frame = commander.phase === 'tell' ? Math.min(7, Math.floor(age / Math.max(1, commander.endTick - commander.phaseTick) * 8)) : commander.phase === 'active' ? Math.floor(age / 8) % 4 : Math.min(3, Math.floor(age / Math.max(1, commander.endTick - commander.phaseTick) * 4));
+          } else if (type === CARRIER) {
+            pick.anim = commander.phase === 'tell' ? 'mark' : commander.phase === 'active' ? 'swoop' : commander.phase === 'carry' ? 'carry' : 'fly';
+            pick.frame = commander.phase === 'tell' ? Math.min(5, Math.floor(age / 30 * 6)) : commander.phase === 'active' ? Math.min(3, Math.floor(age / CARRIER_SWOOP * 4)) : Math.floor(age / 5) % 6;
+          }
+        }
+      }
       const f = set.anims[pick.anim][spriteDirection(this.animator.facing[slot], eye.x - x, eye.y - y)][pick.frame];
       const height = f.height * ENEMIES[type].draw;
       const target = this.enemyBillboards.get(type)!;
@@ -2168,6 +3465,7 @@ export class Game {
       else if (judgment) glow = judgment;
       else if (ents.state[i] === ST_WINDUP) glow = GLOW_WINDUP;
       const grey = (flags & FLAG_SILENCED) !== 0;
+      if (type === DOMINION || ents.state[i] === ST_FALLING) debugState.dominion.rendered.push({ slot, type, z, floor: this.floorAt(x, y) });
       target.add(f, fx, fy, z, height * tall, false, grey ? 0.55 : 1, grey ? 0.55 : 1, grey ? 0.6 : 1, glow, 1, wide);
       // Contact shadows only under the players and the Gatekeeper, not the swarm: cut for the
       // performance gate (M10 §2.3 cut 3, decisions).
@@ -2206,7 +3504,6 @@ export class Game {
     const proj = this.snaps.projOut;
     const seen = this.projSeen;
     seen.clear();
-    while (this.censerShots.length && now - this.censerShots[0].at > CENSER_CLAIM_MS) this.censerShots.shift();
     for (let i = 0; i < proj.count; i++) {
       const k = proj.kind[i];
       const slot = proj.slot[i];
@@ -2214,21 +3511,8 @@ export class Game {
       let x = proj.x[i];
       let y = proj.y[i];
       let z = proj.z[i];
-      if (k === PROJ_CENSER) {
-        let own = this.ownCensers.get(slot);
-        // A censer new this frame, near the player, just after a local censer shot: the local player's.
-        if (!own && !this.projPrev.has(slot) && this.censerShots.length && Math.hypot(x - this.player.body.x, y - this.player.body.y) < CENSER_CLAIM_DIST) {
-          const shot = this.censerShots.shift()!;
-          own = { at: now, dx: shot.from[0] - x, dy: shot.from[1] - y, dz: shot.from[2] - z };
-          this.ownCensers.set(slot, own);
-        }
-        if (own) {
-          const f = Math.max(0, 1 - (now - own.at) / CENSER_BLEND_MS);
-          x += own.dx * f;
-          y += own.dy * f;
-          z += own.dz * f;
-        }
-      }
+      // The local player's own censers are drawn from their local flight instead (netcode stage 4).
+      if (k === PROJ_CENSER && proj.owner[i] === this.localId && this.ownCensers.hides(slot, now)) continue;
       if (k !== PROJ_ARROW) {
         bb.add(this.frames[PROJECTILE_SPRITES[k]], x, y, z, PROJECTILE_SIZES[k], true, 1, 1, 1, k === PROJ_GLOBE ? GLOW_GLOBE : NO_GLOW);
         continue;
@@ -2252,7 +3536,7 @@ export class Game {
         bb.add(this.frames.ember, x - dx * back, y - dy * back, z - dz * back, size, true, 1, 1, 1, GLOW_ARROW);
       });
     }
-    for (const slot of this.ownCensers.keys()) if (!seen.has(slot)) this.ownCensers.delete(slot);
+    this.ownCensers.drawn(now, (x, y, z) => bb.add(this.frames[PROJECTILE_SPRITES[PROJ_CENSER]], x, y, z, PROJECTILE_SIZES[PROJ_CENSER], true, 1, 1, 1, NO_GLOW));
     this.projSeen = this.projPrev;
     this.projPrev = seen;
     // Other players, facing their yaw (§11.1); the ally target is tinted gold (§10).
@@ -2373,35 +3657,10 @@ export class Game {
     return out;
   }
 
-  /** Enemy height isn't sent: ground height for ground enemies, ground height + 4 m (smoothed) for Cherubs (§9.4). */
-  private enemyHeights(ents: { count: number; slot: Uint16Array; x: Float32Array; y: Float32Array; type: Uint8Array }, dt: number): Float32Array {
-    const z = this.zScratch;
-    for (let i = 0; i < ents.count; i++) {
-      const type = ents.type[i];
-      const r = ENEMIES[type].radius;
-      const g = groundHeight(this.map, ents.x[i], ents.y[i], r, Infinity, false, true);
-      const ground = g === -Infinity ? 0 : g;
-      if (type === CHERUB) {
-        const slot = ents.slot[i];
-        const want = ground + CHERUB_HOVER;
-        const cur = this.cherubZ[slot];
-        const fresh = this.cherubFrame[slot] !== this.frameNo - 1;
-        this.cherubFrame[slot] = this.frameNo;
-        if (fresh) this.cherubZ[slot] = want;
-        else {
-          const max = CHERUB_CLIMB * Math.min(dt, 0.1);
-          this.cherubZ[slot] = cur + Math.max(-max, Math.min(max, want - cur));
-        }
-        z[i] = this.cherubZ[slot];
-      } else z[i] = ground;
-    }
-    this.frameNo++;
-    return z;
-  }
-
   dispose(): void {
     this.disposed = true;
     window.__heavenfallTeleport = undefined;
+    window.__heavenfallLook = undefined;
     cancelAnimationFrame(this.raf);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     document.removeEventListener('visibilitychange', this.onVisibility);
@@ -2409,12 +3668,30 @@ export class Game {
     this.input.dispose();
     this.overlay.dispose();
     this.pause.dispose();
+    this.overlayView?.view.el.remove();
+    this.overlayView = null;
+    document.removeEventListener('keydown', this.overlayKey, true);
+    this.talents.dispose();
     this.party?.dispose();
     this.sounds.dispose();
     this.pool?.dispose();
     this.incense.dispose();
+    this.pickups.dispose();
+    this.props.dispose();
+    this.dominionView.dispose();
+    this.commanderView.dispose();
+    this.watchmanView.dispose();
+    this.gatekeeperView.dispose();
+    this.rewardShafts.dispose();
+    this.spawnView.dispose();
+    this.hazards.dispose();
     this.hum?.stop();
     this.hud.dispose();
+    this.mapView.dispose();
+    this.shop.dispose();
+    this.itemView.dispose();
+    this.relicView.dispose();
+    this.routeView.dispose();
     this.bench?.dispose();
     this.scene.dispose();
     this.o.root.replaceChildren();

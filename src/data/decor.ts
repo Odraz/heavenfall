@@ -8,12 +8,12 @@ export interface DecorDef {
 }
 
 export const DECOR = {
-  candelabrum: { height: 1.8, large: false },
-  'lily-urn': { height: 1.0, large: false },
-  harp: { height: 1.4, large: false },
-  'cloud-tuft': { height: 1.0, large: false },
-  'angel-statue': { height: 3.0, large: true },
-  fountain: { height: 2.0, large: true },
+  candelabrum: { height: 2.25, large: false },
+  'lily-urn': { height: 1.25, large: false },
+  harp: { height: 1.75, large: false },
+  'cloud-tuft': { height: 1.25, large: false },
+  'angel-statue': { height: 3.75, large: true },
+  fountain: { height: 2.5, large: true },
 } as const satisfies Record<string, DecorDef>;
 
 export type DecorId = keyof typeof DECOR;

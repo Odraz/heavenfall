@@ -8,6 +8,9 @@ import { hostPeerId, randomGameId, REGISTER_ATTEMPTS } from './gameId';
 import type { CtrlMessage } from './messages';
 import { jsonBytes, NetStats } from './netStats';
 import { FLUSH_MS, PEER_OPTIONS, PEER_TIMEOUT_MS, SNAP_BUFFER_LIMIT, STALL_MS } from './peerConfig';
+import { SnapshotSender } from './snapshotCodec';
+import { CtrlJoiner, ctrlParts } from './ctrlParts';
+import { LinkQuality } from './linkQuality';
 
 /** How long the host waits for the signaling server to confirm a game ID. */
 const REGISTER_TIMEOUT_MS = 10000;
@@ -23,6 +26,11 @@ interface Remote {
   /** performance.now() when anything last arrived on either channel. */
   lastHeard: number;
   closed: boolean;
+  sender?: SnapshotSender;
+  /** The round trip to this client and the route (F3). */
+  link: LinkQuality;
+  /** Joins the client's `part` messages (ctrlParts.ts). */
+  joiner: CtrlJoiner;
 }
 
 /** Thrown when the game can't be created: `Couldn't reach the matchmaking server` (§3). */
@@ -77,6 +85,7 @@ export class HostNet {
   onClosed: (conn: number) => void = () => {};
   private readonly remotes = new Map<number, Remote>();
   private nextConn = 1;
+  private nextPart = 1;
   private destroyed = false;
   private lastBeat = performance.now();
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -114,7 +123,7 @@ export class HostNet {
     }
     let r = [...this.remotes.values()].find((q) => q.peer === dc.peer && !q.closed);
     if (!r) {
-      r = { conn: this.nextConn++, peer: dc.peer, ctrl: null, snap: null, lastHeard: performance.now(), closed: false };
+      r = { conn: this.nextConn++, peer: dc.peer, ctrl: null, snap: null, lastHeard: performance.now(), closed: false, link: new LinkQuality(), joiner: new CtrlJoiner() };
       this.remotes.set(r.conn, r);
     }
     const remote = r;
@@ -142,8 +151,20 @@ export class HostNet {
     }
     if (typeof data !== 'object' || data === null || typeof (data as { type?: unknown }).type !== 'string') return;
     this.stats.received(jsonBytes(data), now);
-    const msg = data as CtrlMessage;
-    if (msg.type === 'ping') return;
+    let msg = data as CtrlMessage;
+    if (msg.type === 'part') {
+      const joined = r.joiner.add(msg);
+      if (!joined) return;
+      msg = joined;
+    }
+    if (msg.type === 'ping') {
+      if (typeof msg.t === 'number') this.sendCtrl(r.conn, { type: 'pong', t: msg.t });
+      return;
+    }
+    if (msg.type === 'pong') {
+      r.link.pong(msg.t, now);
+      return;
+    }
     this.onCtrl(r.conn, msg);
   }
 
@@ -151,6 +172,7 @@ export class HostNet {
   private lose(r: Remote): void {
     if (r.closed) return;
     r.closed = true;
+    r.sender?.close();
     this.remotes.delete(r.conn);
     r.ctrl?.close();
     r.snap?.close();
@@ -160,21 +182,26 @@ export class HostNet {
   sendCtrl(conn: number, msg: CtrlMessage): void {
     const dc = this.remotes.get(conn)?.ctrl;
     if (!dc?.open) return;
-    dc.send(msg);
-    this.stats.sent(jsonBytes(msg));
+    const bytes = jsonBytes(msg);
+    // Too large for one JSON message: ordered parts the client joins (R9 review N1).
+    for (const part of ctrlParts(msg, this.nextPart++, bytes)) dc.send(part);
+    this.stats.sent(bytes);
   }
 
   /**
-   * Sends a snapshot part, unless the client's `snap` channel has more than 64 KB buffered, so a slow
+   * Sends a snapshot part, unless the client's `snap` channel would then hold more than SNAP_BUFFER_LIMIT, so a slow
    * connection can't build up lag (§9.1).
    */
-  sendSnap(conn: number, buf: ArrayBuffer): void {
-    const dc = this.remotes.get(conn)?.snap;
-    if (!dc?.open) return;
-    // Raw connections are buffered ones: PeerJS queues sends itself once the channel is full.
-    if (dc.dataChannel.bufferedAmount > SNAP_BUFFER_LIMIT || (dc as BufferedConnection).bufferSize > 0) return;
-    dc.send(buf);
-    this.stats.sent(buf.byteLength);
+  sendSnaps(conn: number, parts: readonly ArrayBuffer[]): void {
+    const remote = this.remotes.get(conn); if (!remote?.snap?.open || remote.closed) return;
+    remote.sender ??= new SnapshotSender((packed) => {
+      const dc = remote.snap;
+      if (remote.closed || !dc?.open) return;
+      // Admit a whole tick, so buffer pressure cannot deliberately leave a half-sent group.
+      if (dc.dataChannel.bufferedAmount + packed.reduce((n, b) => n + b.byteLength, 0) > SNAP_BUFFER_LIMIT || (dc as BufferedConnection).bufferSize > 0) return;
+      for (const buf of packed) { dc.send(buf); this.stats.sent(buf.byteLength); }
+    });
+    remote.sender.offer(parts);
   }
 
   /**
@@ -185,6 +212,7 @@ export class HostNet {
     const r = this.remotes.get(conn);
     if (!r || r.closed) return;
     r.closed = true;
+    r.sender?.close();
     this.remotes.delete(conn);
     setTimeout(() => {
       r.ctrl?.close();
@@ -207,8 +235,14 @@ export class HostNet {
         this.lose(r);
         continue;
       }
-      this.sendCtrl(r.conn, { type: 'ping' });
+      this.sendCtrl(r.conn, { type: 'ping', t: now });
+      void r.link.probe(r.snap?.peerConnection);
     }
+  }
+
+  /** Each open connection's round trip and route, for the host's F3 overlay. */
+  links(): Array<{ conn: number; link: LinkQuality }> {
+    return [...this.remotes.values()].filter((r) => !r.closed).map((r) => ({ conn: r.conn, link: r.link }));
   }
 
   /**
@@ -220,7 +254,7 @@ export class HostNet {
     if (sendLeave) for (const r of this.remotes.values()) this.sendCtrl(r.conn, { type: 'leave' });
     this.destroyed = true;
     clearTimeout(this.reconnectTimer);
-    for (const r of this.remotes.values()) r.closed = true;
+    for (const r of this.remotes.values()) { r.closed = true; r.sender?.close(); }
     this.remotes.clear();
     const peer = this.peer;
     if (sendLeave) setTimeout(() => peer.destroy(), FLUSH_MS);

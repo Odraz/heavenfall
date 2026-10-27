@@ -27,8 +27,8 @@ describe('shotgun knockback (M9 §3.1)', () => {
     const c = enemyAt(sim, CHORISTER, 9.5, 5.5);
     sim.eHp[c] = 1000;
     sim.fireWeapon(p, ATTACK_PRIMARY);
-    // All 8 pellets of 20 hit it (no spread, within 6 m), but it's knocked back once: 2 m over 6 ticks, away from the Fallen.
-    expect(sim.eHp[c]).toBe(1000 - 160);
+    // All 8 pellets of 25 hit it (no spread, within 6 m), but it's knocked back once: 2 m over 6 ticks, away from the Fallen.
+    expect(sim.eHp[c]).toBe(1000 - 200);
     expect(sim.eKbUntil[c]).toBe(sim.tick + 6);
     sim.root(c, 10); // so it doesn't walk; knockbacks still move rooted enemies (MVP §5.6)
     for (let i = 0; i < 6; i++) sim.step();

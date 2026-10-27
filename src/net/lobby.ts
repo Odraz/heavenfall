@@ -4,7 +4,10 @@
  * simulation worker owns one and sends the messages it produces.
  */
 import { isClassId, type ClassId } from '../data/classes';
-import type { CtrlMessage, LobbyPlayer, RejectReason } from './messages';
+import type { CtrlMessage, LobbyPlayer, RejectReason, RunConfig } from './messages';
+import { newRunIdentity } from './version';
+import { cleanEdicts } from '../data/edicts';
+import type { Profile } from '../profile/model';
 
 export const MAX_PLAYERS = 4;
 export const NAME_MAX = 16;
@@ -18,11 +21,18 @@ export const LOAD_TIMEOUT_MS = 20000;
 export type LobbyPhase = 'lobby' | 'loading' | 'game';
 
 export interface LobbyOptions {
-  dungeonId: string;
+  heaven: 1;
+  fixture: string | null;
   /** Empty means an open game. */
   password: string;
   version: string;
   hostName: string;
+  hostBot?: boolean;
+  progressionEnabled?: boolean;
+  profile?: Profile;
+  /** A dev co-op host's fixed floor seed and starting room; disposable runs only. */
+  devSeed?: number;
+  devStartRoom?: number;
 }
 
 export type JoinResult = { ok: true; playerId: number; inProgress: boolean } | { ok: false; reason: RejectReason };
@@ -36,6 +46,8 @@ export type StartPlayer = Extract<CtrlMessage, { type: 'start' }>['players'][num
 type MemberState = 'lobby' | 'loading' | 'game' | 'results';
 
 interface Member extends LobbyPlayer {
+  profile?: Profile;
+  bot: boolean;
   state: MemberState;
   /** Host time (ms) of this player's `start`. */
   startedAt: number;
@@ -55,18 +67,32 @@ export function cleanChat(raw: unknown): string | null {
 
 export class Lobby {
   phase: LobbyPhase = 'lobby';
-  readonly dungeonId: string;
+  readonly heaven: 1 = 1;
+  readonly fixture: string | null;
+  /** Created at Start, retained through Loading and late admission. */
+  private runConfig: RunConfig | null = null;
   private readonly password: string;
   private readonly version: string;
   /** Connected players by id; the host is 0. */
   private readonly players = new Map<number, Member>();
   private readonly readyIds = new Set<number>();
+  private readonly retained = new Map<string, Member>();
+  readonly progressionEnabled: boolean;
+  /** The host's Edicts for the next run (§2.5). */
+  edicts: number[] = [];
+
+  /** A dev co-op host's fixed floor seed (R7 observation setups). */
+  private readonly devSeed: number | undefined;
+  private readonly devStartRoom: number | undefined;
 
   constructor(o: LobbyOptions) {
-    this.dungeonId = o.dungeonId;
+    this.fixture = o.fixture;
     this.password = o.password;
     this.version = o.version;
-    this.players.set(0, { id: 0, name: cleanName(o.hostName), classId: null, isHost: true, inResults: false, state: 'lobby', startedAt: 0 });
+    this.progressionEnabled = o.progressionEnabled ?? false;
+    this.devSeed = this.progressionEnabled ? undefined : o.devSeed;
+    this.devStartRoom = this.progressionEnabled || this.fixture !== null ? undefined : o.devStartRoom;
+    this.players.set(0, { id: 0, name: cleanName(o.hostName), classId: null, bot: !!o.hostBot, isHost: true, inResults: false, state: 'lobby', startedAt: 0, profile: o.profile });
   }
 
   /**
@@ -74,13 +100,20 @@ export class Lobby {
    * password, full (M8 §6.2). An accepted client gets the lowest free id from 1 to 3; during the game
    * it waits in the in-progress Lobby.
    */
-  join(name: unknown, password: unknown, version: unknown): JoinResult {
+  join(name: unknown, password: unknown, version: unknown, bot: unknown = false, profile?: Profile): JoinResult {
     if (version !== this.version) return { ok: false, reason: 'version' };
     if (this.phase === 'loading') return { ok: false, reason: 'in_progress' };
     if (password !== this.password) return { ok: false, reason: 'bad_password' };
+    if (profile && [...this.players.values()].some(p => p.profile?.id === profile.id)) return { ok: false, reason: 'full' };
+    const retained = profile && this.retained.get(profile.id);
+    if (retained) {
+      retained.state = 'lobby'; retained.profile = profile;
+      this.players.set(retained.id, retained); this.retained.delete(profile.id);
+      return { ok: true, playerId: retained.id, inProgress: this.phase === 'game' };
+    }
     for (let id = 1; id < MAX_PLAYERS; id++) {
-      if (this.players.has(id)) continue;
-      this.players.set(id, { id, name: cleanName(name), classId: null, isHost: false, inResults: false, state: 'lobby', startedAt: 0 });
+      if (this.players.has(id) || [...this.retained.values()].some(p => p.id === id)) continue;
+      this.players.set(id, { id, name: cleanName(name), classId: null, bot: bot === true, isHost: false, inResults: false, state: 'lobby', startedAt: 0, profile });
       return { ok: true, playerId: id, inProgress: this.phase === 'game' };
     }
     return { ok: false, reason: 'full' };
@@ -94,8 +127,8 @@ export class Lobby {
   lobbyMessage(): Extract<CtrlMessage, { type: 'lobby' }> {
     const players = [...this.players.values()]
       .sort((a, b) => a.id - b.id)
-      .map(({ id, name, classId, isHost, state }) => ({ id, name, classId, isHost, inResults: state === 'results' }));
-    return { type: 'lobby', dungeonId: this.dungeonId, players };
+      .map(({ id, name, classId, bot, isHost, state }) => ({ id, name, classId, bot, isHost, inResults: state === 'results' }));
+    return { type: 'lobby', heaven: this.heaven, fixture: this.fixture, players, edicts: [...this.edicts] };
   }
 
   /**
@@ -111,15 +144,34 @@ export class Lobby {
       return true;
     }
     for (const q of this.players.values()) if (q.classId === classId) return false;
+    for (const q of this.retained.values()) if (q.classId === classId) return false;
     p.classId = classId;
     return true;
   }
 
   /** A player left or disconnected: frees their slot and class, and drops them from Loading. */
-  remove(id: number): boolean {
-    if (id === 0 || !this.players.delete(id)) return false;
+  remove(id: number, retain = false): boolean {
+    const member = this.players.get(id);
+    if (id === 0 || !member || !this.players.delete(id)) return false;
+    if (retain && member.profile) this.retained.set(member.profile.id, member);
     this.readyIds.delete(id);
     return true;
+  }
+
+  profile(id: number): Profile | undefined { return this.players.get(id)?.profile; }
+  /** The host's Edicts, in the Lobby only, once its profile has cleared the heaven (or the run saves nothing). */
+  setEdicts(id: number, edicts: unknown): boolean {
+    const host = this.players.get(0);
+    if (id !== 0 || this.phase !== 'lobby' || !host) return false;
+    if (this.progressionEnabled && (host.profile?.heavens.clears[this.heaven] ?? 0) < 1) return false;
+    this.edicts = cleanEdicts(edicts);
+    return true;
+  }
+  setProfile(id: number, profile: Profile): boolean {
+    const p = this.players.get(id);
+    if (!p || p.bot || p.state !== 'lobby' || this.phase === 'loading' || p.profile && p.profile.id !== profile.id) return false;
+    if ([...this.players.values()].some(q => q.id !== id && q.profile?.id === profile.id)) return false;
+    p.profile = profile; p.name = profile.name; return true;
   }
 
   /**
@@ -128,7 +180,7 @@ export class Lobby {
    */
   canStart(): boolean {
     if (this.phase !== 'lobby') return false;
-    for (const p of this.players.values()) if (!p.classId || p.state !== 'lobby') return false;
+    for (const p of this.players.values()) if (!p.classId || p.state !== 'lobby' || this.progressionEnabled && !p.bot && !p.profile) return false;
     return true;
   }
 
@@ -137,18 +189,28 @@ export class Lobby {
     return [...this.players.values()]
       .filter((p) => p.state !== 'lobby' && p.classId)
       .sort((a, b) => a.id - b.id)
-      .map((p) => ({ id: p.id, name: p.name, classId: p.classId as ClassId }));
+      .map((p) => ({ id: p.id, name: p.name, classId: p.classId as ClassId, bot: p.bot }));
+  }
+
+  get run(): RunConfig | null {
+    return this.runConfig;
+  }
+
+  private startMessage(): Extract<CtrlMessage, { type: 'start' }> {
+    return { type: 'start', ...this.runConfig!, players: this.startPlayers() };
   }
 
   /** Starts Loading: returns the `start` message, or null if the lobby can't start. */
   start(nowMs: number): Extract<CtrlMessage, { type: 'start' }> | null {
     if (!this.canStart()) return null;
+    this.runConfig = { ...newRunIdentity(this.devSeed), heaven: this.heaven, floor: 1, edicts: [...this.edicts], progressionEnabled: this.progressionEnabled, fixture: this.fixture,
+      ...(this.devStartRoom !== undefined ? { devStartRoom: this.devStartRoom } : {}) };
     this.phase = 'loading';
     for (const p of this.players.values()) {
       p.state = 'loading';
       p.startedAt = nowMs;
     }
-    return { type: 'start', dungeonId: this.dungeonId, players: this.startPlayers() };
+    return this.startMessage();
   }
 
   /**
@@ -161,7 +223,7 @@ export class Lobby {
     if (this.phase !== 'game' || !p || p.state !== 'lobby' || !p.classId) return null;
     p.state = 'loading';
     p.startedAt = nowMs;
-    return { type: 'start', dungeonId: this.dungeonId, players: this.startPlayers() };
+    return this.startMessage();
   }
 
   /**
@@ -177,7 +239,7 @@ export class Lobby {
       return null;
     }
     p.state = 'game';
-    return { id: p.id, name: p.name, classId: p.classId as ClassId };
+    return { id: p.id, name: p.name, classId: p.classId as ClassId, bot: p.bot };
   }
 
   /** Players still loading (between their `start` and their `ready`). */
@@ -213,6 +275,7 @@ export class Lobby {
   endGame(): void {
     if (this.phase !== 'game') return;
     this.phase = 'lobby';
+    this.retained.clear();
     for (const p of this.players.values()) p.state = p.state === 'game' ? 'results' : 'lobby';
   }
 

@@ -3,47 +3,49 @@ import { BLESSED, GATEKEEPER } from '../data/enemies';
 import { getDungeon } from '../data/dungeons/index';
 import { PHASE_COMBAT, PHASE_IDLE } from '../net/protocol';
 import { MAX_LIVING_ENEMIES } from './constants';
+import { PART_RESERVE } from '../data/gatekeeper';
 import { Simulation } from './sim';
 
 describe('benchmark arena (M10 gate §4)', () => {
   it('starts the boss arena on the first tick and tops it up to 1 500 living enemies', () => {
     const dungeon = getDungeon('pearly-gates')!;
-    const boss = dungeon.arenas.findIndex((a) => a.boss);
-    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchArena: boss });
+    const boss = dungeon.rooms.findIndex((a) => a.boss);
+    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchRoom: boss });
     const p = sim.players[0];
-    const [ec, er] = dungeon.arenas[boss].entryCells[0];
+    const [ec, er] = dungeon.rooms[boss].entry[0].cells[0];
     expect([Math.floor(p.x), Math.floor(p.y)]).toEqual([ec, er]);
 
     sim.step();
-    expect(sim.arenas[boss].phase).toBe(PHASE_COMBAT);
+    expect(sim.rooms[boss].phase).toBe(PHASE_COMBAT);
     // The earlier arenas weren't cleared, and stay idle.
-    for (let i = 0; i < boss; i++) expect(sim.arenas[i].phase).toBe(PHASE_IDLE);
+    for (let i = 0; i < boss; i++) expect(sim.rooms[i].phase).toBe(PHASE_IDLE);
     expect(sim.bossSlot).toBeGreaterThanOrEqual(0);
     expect(sim.eType[sim.bossSlot]).toBe(GATEKEEPER);
     expect([Math.floor(sim.eX[sim.bossSlot]), Math.floor(sim.eY[sim.bossSlot])]).toEqual(sim.map.boss);
     expect([Math.floor(p.x), Math.floor(p.y)]).toEqual([ec, er]);
 
-    // The Gatekeeper counts toward the 1 500.
+    // The Gatekeeper counts toward the 1 500, less the slots kept for his eyes and Seal (rogue bosses.md §3.5).
     let n = 0;
-    for (let t = 0; t < 3000 && n < MAX_LIVING_ENEMIES; t++) {
+    const full = MAX_LIVING_ENEMIES - PART_RESERVE;
+    for (let t = 0; t < 3000 && n < full; t++) {
       sim.step();
       n = sim.living + (sim.bossSlot >= 0 ? 1 : 0);
     }
-    expect(n).toBe(MAX_LIVING_ENEMIES);
+    expect(n).toBe(full);
     expect(p.dead).toBe(false);
   });
 
   it('benches arena 0 by default', () => {
     const dungeon = getDungeon('pearly-gates')!;
-    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchArena: 0 });
+    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchRoom: 0 });
     sim.step();
-    expect(sim.arenas[0].phase).toBe(PHASE_COMBAT);
+    expect(sim.rooms[0].phase).toBe(PHASE_COMBAT);
     expect(sim.bossSlot).toBe(-1);
   });
 
   it('benchBurst: every 0.5 s, 40 damage credited to player 0 bursts the 20 Blessed nearest a point 8 m ahead of it (M12 §10)', () => {
     const dungeon = getDungeon('sandbox')!;
-    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchArena: 0, benchBurst: true });
+    const sim = new Simulation({ dungeon, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }], seed: 1, benchRoom: 0, benchBurst: true });
     const p = sim.players[0];
     for (let t = 0; t < 600 && sim.living < 200; t++) sim.step();
     sim.events.length = 0;
@@ -70,4 +72,22 @@ describe('benchmark arena (M10 gate §4)', () => {
       if (sim.eType[s] === BLESSED) expect(Math.hypot(sim.eX[s] - ax, sim.eY[s] - ay)).toBeGreaterThan(far - 1);
     }
   });
+});
+
+describe('the rogue benchmark workloads (R9 stage 4)', () => {
+  it('fills a generated room to the count the measurement starts at, the Gate to 1 500 less the parts reserve', async () => {
+    const { generateFloor } = await import('../gen');
+    const { PINNED } = await import('../gen/pinned');
+    const { PEARLY_POOL } = await import('../data/rooms/1');
+    const g = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
+    for (const room of [3, g.floor.boss]) {
+      const sim = new Simulation({ dungeon: g.def, map: g.map, floor: g.floor, seed: 1, benchRoom: room, players: [{ id: 0, name: 'Bench', classId: 'betrayer' }] });
+      // What the client's BenchRunner waits for (`benchFull`).
+      const full = room === g.floor.boss ? MAX_LIVING_ENEMIES - PART_RESERVE : MAX_LIVING_ENEMIES;
+      let t = 0;
+      for (; t < 30 * 30 && sim.activeCount < full; t++) sim.step();
+      expect(sim.activeCount, `room ${room}`).toBe(full);
+      expect(sim.roomAt(sim.players[0].x, sim.players[0].y)).toBe(room);
+    }
+  }, 60_000);
 });

@@ -2,7 +2,7 @@
  * Wading (M12 §3.1): each ground enemy pressing against the local player slows them. Client only:
  * movement is the client's, and the host's speed check only caps from above. Pure, for tests.
  */
-import { BLESSED, CHORISTER, ENEMIES } from '../data/enemies';
+import { BLESSED, CHORISTER, ENEMIES, WATCHMAN } from '../data/enemies';
 import { FLAG_STUNNED } from '../net/protocol';
 import { PLAYER_RADIUS } from '../sim/constants';
 import type { GameMap } from '../sim/map';
@@ -32,23 +32,23 @@ export interface WadeEnemies {
 }
 
 /**
- * The living ground enemies (Blessed and Choristers) pressing against a player whose feet are at
+ * The living ground enemies (Blessed, Choristers and Watchmen) pressing against a player whose feet are at
  * (x, y, z): centers within the player's radius + the enemy's + 0.45 m horizontally and feet within
  * 1.5 m vertically. An enemy's feet are the ground under it (snapshots carry no height), computed only
  * for enemies within reach. Stunned enemies (`FLAG_STUNNED`, M12 §5.3) don't count, nor launched ones
- * until `launchedUntil[slot]` (ms).
+ * until `launchedUntil[slot]` (ms), nor those a wading talent leaves out (`ignore`, by snapshot flags).
  */
-export function wadeCount(map: GameMap, x: number, y: number, z: number, e: WadeEnemies, launchedUntil: ArrayLike<number>, now: number): number {
+export function wadeCount(map: GameMap, x: number, y: number, z: number, e: WadeEnemies, launchedUntil: ArrayLike<number>, now: number, ignore?: (flags: number) => boolean): number {
   let n = 0;
   for (let i = 0; i < e.enemyCount; i++) {
     const type = e.enemyType[i];
-    if (type !== BLESSED && type !== CHORISTER) continue;
+    if (type !== BLESSED && type !== CHORISTER && type !== WATCHMAN) continue;
     const r = ENEMIES[type].radius;
     const reach = PLAYER_RADIUS + r + WADE_REACH;
     const dx = e.enemyX[i] - x;
     const dy = e.enemyY[i] - y;
     if (dx * dx + dy * dy > reach * reach) continue;
-    if (now < launchedUntil[e.enemySlot[i]] || e.enemyFlags[i] & FLAG_STUNNED) continue;
+    if (now < launchedUntil[e.enemySlot[i]] || e.enemyFlags[i] & FLAG_STUNNED || ignore?.(e.enemyFlags[i])) continue;
     const g = groundHeight(map, e.enemyX[i], e.enemyY[i], r, Infinity, false, true);
     if (g === -Infinity || Math.abs(g - z) > WADE_HEIGHT) continue;
     n++;

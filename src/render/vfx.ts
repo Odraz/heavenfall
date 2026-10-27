@@ -143,7 +143,7 @@ const CHAIN_CONE_FADE_MS = 400;
 const CHAIN_CONE_RING = 0xff5a1e;
 
 /** Line segments drawn as strips that face the camera, the texture repeating along each one. */
-class Ribbon {
+export class Ribbon {
   readonly mesh: THREE.Mesh;
   /** Segment endpoints in three.js coordinates, two per segment. */
   private readonly ends: THREE.Vector3[];
@@ -156,7 +156,7 @@ class Ribbon {
 
   constructor(
     points: Array<[number, number, number]>,
-    private readonly width: number,
+    public width: number,
     material: THREE.Material,
     private readonly tileLength: number,
   ) {
@@ -234,7 +234,7 @@ export class Vfx {
   /** Spawn rays (M12 §2.4) by spawn point, reused; `since` is when the ray last appeared. */
   private readonly spawnRays = new Map<
     string,
-    { mesh: THREE.Mesh; material: THREE.ShaderMaterial; since: number; flare: number; ring: number }
+    { mesh: THREE.Mesh; material: THREE.ShaderMaterial; since: number; flare: number; ring: number; width: number }
   >();
   private readonly liveBeamMaterial: THREE.MeshBasicMaterial;
   /** Falling Star's preview (M12 §5.2), made on first use and reused. */
@@ -281,6 +281,45 @@ export class Vfx {
       r.mesh.scale.set(radius / RING_RADIUS, 1, radius / RING_RADIUS);
       r.material.color.setHex(color);
     });
+  }
+
+  /** An aimed cast's preview (R5: Rain of Fire, the Well, the Boundary Chain): a floor ring and an optional line. */
+  private aimRing: { mesh: THREE.Mesh; material: THREE.MeshBasicMaterial } | null = null;
+  private aimLine: Ribbon | null = null;
+
+  /**
+   * Shows the aimed cast's ring of `radius` at `at` (feet), orange when valid and red when not, and, with
+   * `line`, the segment it will lay; null hides both.
+   */
+  setAimPreview(at: readonly [number, number, number] | null, radius: number, valid: boolean, camera: THREE.Vector3, line?: readonly [readonly [number, number, number], readonly [number, number, number]]): void {
+    if (at && !this.aimRing) {
+      const material = this.material(this.tex.ring, STAR_VALID);
+      material.opacity = 0.85;
+      const mesh = new THREE.Mesh(groundGeo, material);
+      this.group.add(mesh);
+      this.aimRing = { mesh, material };
+    }
+    if (line && !this.aimLine) {
+      this.aimLine = new Ribbon([[0, 0, 0], [0, 0, 1]], STAR_ARC_WIDTH * 2, this.material(this.tex.beam, STAR_VALID), BEAM_TILE);
+      this.group.add(this.aimLine.mesh);
+    }
+    const color = valid ? STAR_VALID : STAR_INVALID;
+    if (this.aimRing) {
+      this.aimRing.mesh.visible = !!at && radius > 0;
+      if (at) {
+        this.aimRing.mesh.position.set(at[0], at[2] + 0.06, at[1]);
+        this.aimRing.mesh.scale.set(radius / RING_RADIUS, 1, radius / RING_RADIUS);
+        this.aimRing.material.color.setHex(color);
+      }
+    }
+    if (this.aimLine) {
+      this.aimLine.mesh.visible = !!at && !!line;
+      if (at && line) {
+        this.aimLine.setPoints([[line[0][0], line[0][1], line[0][2] + 0.15], [line[1][0], line[1][1], line[1][2] + 0.15]]);
+        this.aimLine.face(camera);
+        (this.aimLine.mesh.material as THREE.MeshBasicMaterial).color.setHex(color);
+      }
+    }
   }
 
   /**
@@ -588,7 +627,7 @@ export class Vfx {
    * last flare; at most every 0.4 s a gold ground ring grows from it. (x, y, z) is the point's cell
    * center on its floor.
    */
-  flareSpawn(now: number, x: number, y: number, z: number): void {
+  flareSpawn(now: number, x: number, y: number, z: number, width = 1): void {
     const key = `${x},${y}`;
     let g = this.spawnRays.get(key);
     if (!g) {
@@ -610,12 +649,13 @@ export class Vfx {
       mesh.frustumCulled = false;
       this.columns.add(mesh);
       this.group.add(mesh);
-      g = { mesh, material, since: now, flare: -Infinity, ring: -Infinity };
+      g = { mesh, material, since: now, flare: -Infinity, ring: -Infinity, width };
       this.spawnRays.set(key, g);
     }
     // A ray that had faded out comes down from the sky again.
     if (now - g.flare >= SPAWN_RAY_HOLD_MS + SPAWN_GLOW_FADE_MS) g.since = now;
     g.flare = now;
+    g.width = width;
     if (now - g.ring >= SPAWN_RING_GAP_MS) {
       g.ring = now;
       this.ring(now, x, y, z, SPAWN_GOLD, 0.3, SPAWN_RING_RADIUS, SPAWN_RING_GAP_MS);
@@ -629,7 +669,7 @@ export class Vfx {
       g.mesh.visible = f > 0;
       if (!g.mesh.visible) continue;
       const drop = Math.min(1, Math.max(0, (now - g.since) / SPAWN_RAY_DROP_MS));
-      g.mesh.scale.set(SPAWN_RAY_WIDTH, SPAWN_RAY_HEIGHT * Math.max(1e-3, 1 - (1 - drop) ** 3), 1);
+      g.mesh.scale.set(SPAWN_RAY_WIDTH * g.width, SPAWN_RAY_HEIGHT * Math.max(1e-3, 1 - (1 - drop) ** 3), 1);
       g.material.uniforms.opacity.value = Math.min(1, f);
       g.material.uniforms.time.value = now / 1000;
     }

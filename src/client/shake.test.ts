@@ -1,6 +1,6 @@
 /** M12 stage 3: screen shake (M12 §4.5, §11.1). */
 import { describe, expect, it } from 'vitest';
-import { envelope, massKillShake, Shake, SHAKE_BLASPHEMY, SHAKE_CAP, SHAKE_LANDING, SHAKE_SHROUD } from './shake';
+import { dominionShake, envelope, massKillShake, Shake, SHAKE_BLASPHEMY, SHAKE_CAP, SHAKE_LANDING, SHAKE_SHROUD } from './shake';
 
 /** Noise that always picks +1, so each axis shows its full amplitude. */
 const full = () => 1;
@@ -77,4 +77,16 @@ describe('screen shake (M12 §4.5)', () => {
     s.add(10, SHAKE_BLASPHEMY);
     expect(s.sample(10).yaw).toBeGreaterThan(0);
   });
+});
+
+it('Dominion impacts fade with distance, expire quickly and respect disabled shake', () => {
+  expect(dominionShake(0)).toEqual(dominionShake(6));
+  expect(dominionShake(9)!.amp).toBeCloseTo(dominionShake(6)!.amp / 2);
+  for (const d of [12, 100, Infinity, NaN]) expect(dominionShake(d)).toBeNull();
+  const on = new Shake(() => true, full), off = new Shake(() => false, full);
+  on.add(0, dominionShake(3)!); off.add(0, dominionShake(3)!);
+  on.sample(0);
+  expect(on.sample(30).yaw).toBeGreaterThan(0);
+  expect(off.sample(30)).toEqual({ yaw: 0, pitch: 0, roll: 0 });
+  expect(on.sample(250)).toEqual({ yaw: 0, pitch: 0, roll: 0 });
 });

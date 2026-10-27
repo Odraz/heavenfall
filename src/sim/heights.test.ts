@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { DUNGEONS } from '../data/dungeons/index';
 import { BOSS_EYE } from './sim';
-import { PHASE_COMBAT } from '../net/protocol';
 import { PLAYER_EYE, PLAYER_HEIGHT, WALL_TOP, JUMP_VZ, GRAVITY } from './constants';
 import { computeHeights, CROWN, HEADROOM, K_DOOR, K_FLOOR, K_OPEN, K_PILLAR, K_VOID, K_WALL, PARAPET, WALL_MIN, type Heights } from './heights';
 import { lineOfSight } from './los';
-import { loadMap, setArenaDoors, type GameMap } from './map';
+import { loadMap, setLeafCells, type GameMap } from './map';
 
 const MAPS = ['sandbox', 'pearly-gates'] as const;
 const DX8 = [1, -1, 0, 0, 1, 1, -1, -1];
@@ -14,7 +13,7 @@ const DY8 = [0, 0, 1, -1, 1, -1, 1, -1];
 /** The map with every door closed. */
 function closedMap(id: string): GameMap {
   const map = loadMap(DUNGEONS[id]);
-  map.arenas.forEach((_, ai) => setArenaDoors(map, ai, PHASE_COMBAT));
+  for (const room of map.rooms) for (const leaf of room.leaves) setLeafCells(map, leaf.cells, true);
   return map;
 }
 
@@ -178,7 +177,7 @@ describe('wall heights (M10 §3.2)', () => {
   it('the Pearly Gates has at least one open edge in every arena, and bays', () => {
     const map = loadMap(DUNGEONS['pearly-gates']);
     const hz = map.heights;
-    map.arenas.forEach((_, ai) => {
+    map.rooms.forEach((_, ai) => {
       let found = false;
       for (let i = 0; i < map.w * map.h && !found; i++) {
         if (hz.kind[i] !== K_OPEN) continue;
@@ -246,7 +245,7 @@ describe('gameplay inside a zone is unchanged (M10 §3.4)', () => {
     const ex = bc + 0.5;
     const ey = br + 0.5;
     const ez = map.floor[br * map.w + bc] + BOSS_EYE;
-    const boss = map.arenas[map.arenas.length - 1];
+    const boss = map.rooms[map.rooms.length - 1];
     const jump = (JUMP_VZ * JUMP_VZ) / (2 * GRAVITY);
     let hidden = 0;
     for (let r = boss.rect.y0; r <= boss.rect.y1; r++) {

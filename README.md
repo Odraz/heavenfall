@@ -24,6 +24,8 @@ Then clone as usual; LFS files download automatically.
 
 The game runs in the browser and needs Node 22. The working title is **Heavenfall**; the MVP specification is [docs/mvp.md](docs/mvp.md), and implementation decisions are in [docs/decisions.md](docs/decisions.md).
 
+The generated Pearly Gates expansion is documented in [docs/rogue/game.md](docs/rogue/game.md). Current R01/R02 changes and playtest checks are in [the October 13 follow-up](docs/rogue/r02-playtest-report.md). Its art and audio use the shared asset directories and the original cutout/Blender pipelines.
+
 | Command | Does |
 |---|---|
 | `npm install` | Install dependencies |
@@ -32,6 +34,7 @@ The game runs in the browser and needs Node 22. The working title is **Heavenfal
 | `npm run preview` | Serve `dist/` at http://localhost:4173/ |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | Unit tests (Vitest) |
+| `npm run test:gen` | Validate the generated floor pool across 1,000 pinned seeds |
 | `npm run e2e` | Builds, serves the build and runs the Playwright tests |
 | `npm run bench` | Builds, serves the build and runs the browser benchmark |
 
@@ -47,6 +50,7 @@ These work on the dev server (port 5173), the preview server (port 4173) and the
 | http://localhost:5173/?dev=1&map=sandbox&class=fallen | Skips the menus into a singleplayer game. `map` is `sandbox` (a small test map) or `pearly-gates` (the dungeon); `class` is `fallen`, `heretic`, `binder` or `betrayer`; add `&seed=N` for a fixed seed. |
 | http://localhost:5173/?dev=1&god=1 | God mode: every player is invulnerable. |
 | http://localhost:5173/?dev=1&map=pearly-gates&arena=2 | Starts in arena `N` (0-based: `1` the Cloudbridge, `2` the Cloister of Hymns, `3` the Gatekeeper), the arenas before it cleared. |
+| http://localhost:5173/?dev=1&map=rogue&seed=317434499&room=3&class=betrayer | Current R02 generated-floor checkpoint, entering the Courtyard of Clouds. Use room `4` for Dominion or `1` for fire. |
 | http://localhost:5173/?dev=1&bot=1 | A bot plays the local player. |
 | http://localhost:5173/?bench=1 | The benchmark: 1 500 enemies for 30 s, then shows FPS and simulation time. |
 | http://localhost:5173/?join=ABC234 | An invite link: Title offers `Join game ABC234`, which opens the Join screen with the ID filled in. |

@@ -1,3 +1,7 @@
+import cantorUrl from '../../assets/sprites/cantor/atlas.png';
+import cantorManifest from '../../assets/sprites/cantor/atlas.json';
+import carrierUrl from '../../assets/sprites/carrier/atlas.png';
+import carrierManifest from '../../assets/sprites/carrier/atlas.json';
 /**
  * Animated 8-direction sprites rendered from 3D models (scripts/blender/): one PNG atlas and a
  * manifest of frames per animation and direction for each character (§11.2).
@@ -20,14 +24,20 @@ import binderManifest from '../../assets/sprites/binder/atlas.json';
 import betrayerUrl from '../../assets/sprites/betrayer/atlas.png';
 import betrayerManifest from '../../assets/sprites/betrayer/atlas.json';
 import type { ClassId } from '../data/classes';
-import { BLESSED, CHERUB, CHORISTER, GATEKEEPER } from '../data/enemies';
+import { CANTOR, CARRIER, BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER, WATCHMAN } from '../data/enemies';
+import watchmanUrl from '../../assets/sprites/watchman/atlas.png';
+import watchmanManifest from '../../assets/sprites/watchman/atlas.json';
+import dominionUrl from '../../assets/sprites/dominion/atlas.png';
+import dominionManifest from '../../assets/sprites/dominion/atlas.json';
 import type { SpriteFrame } from './atlas';
 
 export const ANIM_NAMES = ['idle', 'walk', 'attack', 'pain', 'death'] as const;
 export type AnimName = (typeof ANIM_NAMES)[number];
 export const CHORISTER_ANIM_NAMES = ['idle', 'walk', 'cast', 'pain', 'death'] as const;
 export const CHERUB_ANIM_NAMES = ['fly', 'cast', 'pain', 'death'] as const;
-export const GATEKEEPER_ANIM_NAMES = ['idle', 'volley', 'judgment', 'death'] as const;
+export const GATEKEEPER_ANIM_NAMES = ['idle', 'volley', 'judgment', 'death', 'trumpet'] as const;
+/** The Watchman's (scripts/blender/watchman.py): `cast` aims and fires, `reload` lowers the Clarion. */
+export const WATCHMAN_ANIM_NAMES = ['idle', 'walk', 'cast', 'reload', 'pain', 'death'] as const;
 export const PLAYER_ANIM_NAMES = ['idle', 'walk'] as const;
 export type PlayerAnimName = (typeof PLAYER_ANIM_NAMES)[number];
 
@@ -97,15 +107,19 @@ async function loadAnimSet<N extends string>(url: string, manifest: Manifest, na
 /** An enemy's animations by name; which ones it has depends on its type (§11.2). */
 export type EnemyAnimSet = AnimSet<string>;
 
-/** The atlases of every enemy type that has one, by type. */
-export async function loadEnemyAnims(): Promise<Partial<Record<number, EnemyAnimSet>>> {
-  const [blessed, chorister, cherub, gatekeeper] = await Promise.all([
+/** The atlases of every enemy type that has one, by type; the elites' and the Watchman's only on maps that have them. */
+export async function loadEnemyAnims(includeDominion = true, includeCantor = includeDominion, includeCarrier = includeDominion, includeWatchman = includeDominion): Promise<Partial<Record<number, EnemyAnimSet>>> {
+  const [blessed, chorister, cherub, gatekeeper, cantor, carrier, dominion, watchman] = await Promise.all([
     loadAnimSet(blessedUrl, blessedManifest as Manifest, ANIM_NAMES),
     loadAnimSet(choristerUrl, choristerManifest as Manifest, CHORISTER_ANIM_NAMES),
     loadAnimSet(cherubUrl, cherubManifest as Manifest, CHERUB_ANIM_NAMES),
     loadAnimSet(gatekeeperUrl, gatekeeperManifest as Manifest, GATEKEEPER_ANIM_NAMES),
+    includeCantor ? loadAnimSet(cantorUrl, cantorManifest as Manifest, Object.keys(cantorManifest.anims)) : Promise.resolve(undefined),
+    includeCarrier ? loadAnimSet(carrierUrl, carrierManifest as Manifest, Object.keys(carrierManifest.anims)) : Promise.resolve(undefined),
+    includeDominion ? loadAnimSet(dominionUrl, dominionManifest as Manifest, CHORISTER_ANIM_NAMES) : Promise.resolve(undefined),
+    includeWatchman ? loadAnimSet(watchmanUrl, watchmanManifest as Manifest, WATCHMAN_ANIM_NAMES) : Promise.resolve(undefined),
   ]);
-  return { [BLESSED]: blessed, [CHORISTER]: chorister, [CHERUB]: cherub, [GATEKEEPER]: gatekeeper };
+  return { [BLESSED]: blessed, ...(watchman ? { [WATCHMAN]: watchman } : {}), [CHORISTER]: chorister, [CHERUB]: cherub, [GATEKEEPER]: gatekeeper, ...(dominion ? { [DOMINION]: dominion } : {}), ...(cantor ? { [CANTOR]: cantor } : {}), ...(carrier ? { [CARRIER]: carrier } : {}) };
 }
 
 const PLAYER_ATLASES: Record<ClassId, { url: string; manifest: Manifest }> = {

@@ -1,6 +1,7 @@
 /** Flow fields (§7.3), shared by the simulation and the bot. */
 import { EPS, STEP_UP } from './constants';
 import type { GameMap } from './map';
+import type { Rect } from '../data/dungeons/types';
 
 export const UNREACHABLE = 0x7fffffff;
 export const COST_ORTHO = 10;
@@ -10,29 +11,37 @@ export const COST_DIAG = 14;
 const DX = [1, -1, 0, 0, 1, 1, -1, -1];
 const DY = [0, 0, 1, -1, 1, -1, 1, -1];
 
+/** Adjacent steering must obey the same ledges and corner rules as the field. */
+export function directStepAllowed(field: FlowField, c: number, r: number, tc: number, tr: number): boolean {
+  const dx = tc - c, dy = tr - r;
+  if (dx === 0 && dy === 0) return field.at(c, r) !== UNREACHABLE;
+  const k = DX.findIndex((x, i) => x === dx && DY[i] === dy);
+  return k >= 0 && stepAllowed(field.map, c, r, k, field.air, field.excluded);
+}
+
 /**
  * Whether a one-way step from cell `a` to the orthogonal neighbor at offset (dx, dy) is allowed.
  * Ground: the target is floor and at most 0.5 m higher; dropping is allowed. Air: any floor.
  */
-function orthoAllowed(map: GameMap, ac: number, ar: number, dx: number, dy: number, air: boolean): boolean {
+function orthoAllowed(map: GameMap, ac: number, ar: number, dx: number, dy: number, air: boolean, excluded?: Uint8Array): boolean {
   const bc = ac + dx;
   const br = ar + dy;
   if (bc < 0 || br < 0 || bc >= map.w || br >= map.h) return false;
   const b = br * map.w + bc;
-  if (map.solid[b]) return false;
+  if (map.solid[b] || excluded?.[b]) return false;
   if (air) return true;
   return map.floor[b] - map.floor[ar * map.w + ac] <= STEP_UP + EPS;
 }
 
 /** Whether a step from cell (ac, ar) to its neighbor k (0–7) is allowed (§7.3). */
-export function stepAllowed(map: GameMap, ac: number, ar: number, k: number, air: boolean): boolean {
+export function stepAllowed(map: GameMap, ac: number, ar: number, k: number, air: boolean, excluded?: Uint8Array): boolean {
   const dx = DX[k];
   const dy = DY[k];
-  if (k < 4) return orthoAllowed(map, ac, ar, dx, dy, air);
+  if (k < 4) return orthoAllowed(map, ac, ar, dx, dy, air, excluded);
   return (
-    orthoAllowed(map, ac, ar, dx, 0, air) &&
-    orthoAllowed(map, ac, ar, 0, dy, air) &&
-    orthoAllowed(map, ac, ar, dx, dy, air)
+    orthoAllowed(map, ac, ar, dx, 0, air, excluded) &&
+    orthoAllowed(map, ac, ar, 0, dy, air, excluded) &&
+    orthoAllowed(map, ac, ar, dx, dy, air, excluded)
   );
 }
 
@@ -44,6 +53,7 @@ export class FlowField {
   constructor(
     readonly map: GameMap,
     readonly air: boolean,
+    readonly excluded?: Uint8Array,
   ) {
     this.dist = new Int32Array(map.w * map.h).fill(UNREACHABLE);
     this.buckets = Array.from({ length: COST_DIAG + 1 }, () => []);
@@ -53,14 +63,16 @@ export class FlowField {
    * Dijkstra over 8 neighbors with a bucket queue, computed backward from the target cell
    * over one-way steps, so distances measure paths to it.
    */
-  compute(tc: number, tr: number): void {
+  compute(tc: number, tr: number, clamp?: Rect): void {
     const { map, dist, air, buckets } = this;
     const w = map.w;
     dist.fill(UNREACHABLE);
     this.targetCell = -1;
+    const inside = (c: number, r: number) => !clamp || (c >= clamp.x0 && c <= clamp.x1 && r >= clamp.y0 && r <= clamp.y1);
     if (tc < 0 || tr < 0 || tc >= w || tr >= map.h) return;
+    if (!inside(tc, tr)) return;
     const t = tr * w + tc;
-    if (map.solid[t]) return;
+    if (map.solid[t] || this.excluded?.[t]) return;
     this.targetCell = t;
     const nb = buckets.length;
     for (const b of buckets) b.length = 0;
@@ -81,10 +93,11 @@ export class FlowField {
           const ac = bc + DX[k];
           const ar = br + DY[k];
           if (ac < 0 || ar < 0 || ac >= w || ar >= map.h) continue;
+          if (!inside(ac, ar)) continue;
           const a = ar * w + ac;
-          if (map.solid[a]) continue;
+          if (map.solid[a] || this.excluded?.[a]) continue;
           // The step from A to B has offset (-DX[k], -DY[k]), which is neighbor index opposite(k).
-          if (!stepAllowed(map, ac, ar, OPPOSITE[k], air)) continue;
+          if (!stepAllowed(map, ac, ar, OPPOSITE[k], air, this.excluded)) continue;
           const nd = d + (k < 4 ? COST_ORTHO : COST_DIAG);
           if (nd < dist[a]) {
             dist[a] = nd;
@@ -113,7 +126,7 @@ export class FlowField {
       const n = nr * w + nc;
       const d = dist[n];
       if (d >= bestD) continue;
-      if (!stepAllowed(map, c, r, k, air)) continue;
+      if (!stepAllowed(map, c, r, k, air, this.excluded)) continue;
       best = n;
       bestD = d;
     }

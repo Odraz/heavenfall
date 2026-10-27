@@ -1,5 +1,5 @@
 /** Ray and swept-segment tests against vertical cylinders (§5.3, §5.4). Shared by the host and the client's cosmetic rays. */
-import { ENEMIES, GATEKEEPER } from '../data/enemies';
+import { ENEMIES } from '../data/enemies';
 
 /**
  * Distance along a ray (unit direction) to where it enters a vertical cylinder with its feet at
@@ -48,6 +48,15 @@ export function rayCylinder(
   return best;
 }
 
+/**
+ * Distance along a ray to an enemy's shot volume (R06 follow-up §5): the cylinder matching its drawn
+ * sprite, with its feet at (x, y, z). Shots, hit markers and bots use this; movement uses the body.
+ */
+export function rayEnemy(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, type: number, x: number, y: number, z: number): number {
+  const s = ENEMIES[type].shot;
+  return rayCylinder(ox, oy, oz, dx, dy, dz, x, y, z + s.base, s.radius, s.top - s.base);
+}
+
 /** A burst death's force thresholds, in multiples of the type's max HP (M12 §4.1). */
 export const BURST_LIGHT = 2;
 export const BURST_HEAVY = 4;
@@ -84,47 +93,34 @@ export interface BulletTarget {
   rooted: boolean;
   /** The Gatekeeper takes whatever is left. */
   boss: boolean;
+  /** Behind His Back: a taunted enemy costs half, like a bound one, without the Bound step's doubling. */
+  half?: boolean;
 }
 
 /**
  * The Silver Bullet's damage carried through the line (M9 §2.4): each enemy, nearest first, takes
- * what's left, a rooted one costing half its HP; the bullet stops when nothing is left, at an enemy
- * it can't kill, or at the Gatekeeper. Returns the damage to deal to each (before the Bound step) and
- * whether it stopped at the last one. Shared by the host and the client's tracer estimate.
+ * what's left, a rooted (or, with Behind His Back, taunted) one costing half its HP; the bullet stops
+ * when nothing is left, at an enemy it can't kill, or at the Gatekeeper. Returns the damage to deal to
+ * each (before the Bound step), what each cost the bullet, and whether it stopped at the last one.
+ * Shared by the host and the shooter's prediction (from the snapshot's HP since netcode stage 3).
  */
 export function silverBulletHits(
   targets: readonly BulletTarget[],
   damage: number,
-): { hits: Array<{ s: number; amount: number; carried: number }>; stopped: boolean } {
-  const hits: Array<{ s: number; amount: number; carried: number }> = [];
+): { hits: Array<{ s: number; amount: number; carried: number; cost: number }>; stopped: boolean } {
+  const hits: Array<{ s: number; amount: number; carried: number; cost: number }> = [];
   let remaining = damage;
   for (const t of targets) {
-    const m = t.rooted ? 2 : 1;
+    const m = t.rooted || (t.half && !t.boss) ? 2 : 1;
     if (!t.boss && remaining * m >= t.hp - 1e-9) {
-      hits.push({ s: t.s, amount: t.hp / m, carried: remaining });
+      hits.push({ s: t.s, amount: t.rooted ? t.hp / m : t.hp, carried: remaining, cost: t.hp / m });
       remaining -= t.hp / m;
       if (remaining <= 1e-9) return { hits, stopped: true };
     } else {
-      hits.push({ s: t.s, amount: remaining, carried: remaining });
+      hits.push({ s: t.s, amount: t.rooted ? remaining : remaining * m, carried: remaining, cost: remaining });
       return { hits, stopped: true };
     }
   }
   return { hits, stopped: false };
 }
 
-/**
- * The client's estimate of the Silver Bullet (M9 §5.1): snapshots carry no enemy HP, so each enemy
- * along the line, nearest first, is taken at its type's full HP, doubled for the rooted flag. Returns
- * how many of them it reaches, whether it stops at the last, and what the bullet still carried on
- * reaching each (M12 §4.4).
- */
-export function estimateSilverBullet(
-  line: ReadonlyArray<{ type: number; rooted: boolean }>,
-  damage: number,
-): { reached: number; stopped: boolean; carried: number[] } {
-  const r = silverBulletHits(
-    line.map((e, i) => ({ s: i, hp: ENEMIES[e.type].hp, rooted: e.rooted, boss: e.type === GATEKEEPER })),
-    damage,
-  );
-  return { reached: r.hits.length, stopped: r.stopped, carried: r.hits.map((h) => h.carried) };
-}

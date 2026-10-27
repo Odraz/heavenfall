@@ -1,27 +1,38 @@
 /** Internal messages between the main thread and the simulation worker (not part of §9.2). */
-import type { CtrlMessage } from '../net/messages';
+import type { CtrlMessage, RunConfig } from '../net/messages';
+import type { CarrierCheck } from '../data/commanders';
 import type { DirectorInfo } from './director';
 import type { Simulation, SimPlayerInit } from './sim';
+import type { Profile } from '../profile/model';
+import type { EvidenceRecord } from './evidence';
 
 export type MainToWorker =
   /** Singleplayer (and dev and bench modes): starts the game at once. */
-  | {
+  | ({
       t: 'start';
-      dungeonId: string;
       players: SimPlayerInit[];
-      seed: number;
       god: boolean;
       /** The benchmark's arena, or -1 when not benchmarking (M10 gate §4). */
       benchArena: number;
       /** The benchmark's bursts (M12 §10). */
       benchBurst: boolean;
-      singleplayer: boolean;
       localPlayerId: number;
-      /** Dev `arena=N`: start in arena N with the ones before it cleared; 0 as usual. */
-      startArena?: number;
-    }
+      /** Dev room/arena override, resolved after loading the generated floor or fixture. */
+      startRoom?: number;
+      /** `dev=1`: the host records local debug diagnostics. */
+      diagnostics?: boolean;
+      /** `build=<name>` with dev=1: a development quick build for the human players. */
+      devBuild?: string;
+      devRelics?: string[];
+      /** `evidence=1`: the host logs one record per room and run (R9 stage 3). */
+      evidence?: boolean;
+      /** `bosshp` with dev=1: the Gatekeeper's starting HP fraction (R9 B5). */
+      bossHp?: number;
+    } & RunConfig)
   /** Multiplayer: the host clicked `Create`; the worker opens the lobby with the host as player 0. */
-  | { t: 'host'; dungeonId: string; password: string; name: string; god: boolean }
+  | { t: 'host'; heaven: 1; fixture: string | null; password: string; name: string; god: boolean; bot: boolean; profile?: Profile; progressionEnabled?: boolean; diagnostics?: boolean;
+      /** Dev co-op setups (`dev=1`, disposable runs only): the floor seed and the room the party starts in. */
+      devSeed?: number; devStartRoom?: number; evidence?: boolean }
   /** The host clicked `Start` in the Lobby. */
   | { t: 'startGame' }
   /** A `ctrl` message from the host's own player, through `LocalTransport`. */
@@ -34,6 +45,10 @@ export type MainToWorker =
   | { t: 'pause'; paused: boolean }
   | { t: 'killAll'; blessedOnly?: boolean }
   | { t: 'toggleGod'; playerId: number }
+  | { t: 'devItems'; playerId: number }
+  /** Dev key B: the next quick build; dev key R: a Rite offer now. */
+  | { t: 'devBuild'; playerId: number }
+  | { t: 'devRite'; playerId: number }
   | { t: 'stop' };
 
 export type WorkerToMain =
@@ -41,7 +56,7 @@ export type WorkerToMain =
    * All parts of one tick's snapshot for one player, and that tick's simulation time. The local
    * player's also carry the director's state (M12 §2.3), null when no combat arena is in combat.
    */
-  | { t: 'snap'; to: number; bufs: ArrayBuffer[]; simMs: number; director?: DirectorInfo | null }
+  | { t: 'snap'; to: number; bufs: ArrayBuffer[]; simMs: number; director?: DirectorInfo | null; carrierChecks?: CarrierCheck[]; weaponKills?: Record<number, number> }
   | { t: 'ctrl'; to: number | 'all'; msg: CtrlMessage }
   /** A `ctrl` message to a connection that has no player (the `reject` of a `hello`). */
   | { t: 'connCtrl'; conn: number; msg: CtrlMessage }
@@ -53,9 +68,14 @@ export type WorkerToMain =
    * Every 1 s while hosting: send `ping` to every client and check the heartbeat timeouts (§9.1),
    * except for `loading`, the players still loading during Loading.
    */
-  | { t: 'heartbeat'; loading: number[] };
+  | { t: 'heartbeat'; loading: number[] }
+  /** One acceptance evidence record (R9 stage 3, `evidence=1`). */
+  | { t: 'evidence'; record: EvidenceRecord };
 
-/** The `snap` message for the host's own player: it also carries the director's state (M12 §2.3). */
-export function localSnap(sim: Pick<Simulation, 'directorInfo'>, to: number, bufs: ArrayBuffer[], simMs: number): WorkerToMain {
-  return { t: 'snap', to, bufs, simMs, director: sim.directorInfo() };
+/**
+ * The `snap` message for the host's own player: it also carries the director's state (M12 §2.3) and
+ * each player's weapon kills (netcode stage 3).
+ */
+export function localSnap(sim: Pick<Simulation, 'directorInfo' | 'commanders' | 'weaponKills'>, to: number, bufs: ArrayBuffer[], simMs: number): WorkerToMain {
+  return { t: 'snap', to, bufs, simMs, director: sim.directorInfo(), carrierChecks: sim.commanders.diagnostics(), weaponKills: sim.weaponKills() };
 }

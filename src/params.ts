@@ -2,9 +2,20 @@
 import { isClassId, type ClassId } from './data/classes';
 import { getDungeon } from './data/dungeons/index';
 import { parseJoinId } from './net/invite';
+import { DEV_BUILDS } from './data/talents';
+import { isRelicId } from './data/relics';
+import { cleanEdicts } from './data/edicts';
+import { parseNetLag, type NetLag } from './net/lagSim';
+import { PINNED } from './gen/pinned';
+
+/** The rogue benchmark's default room on its pinned seed: the 2×2 crest room (R9 stage 4). */
+export const ROGUE_BENCH_ROOM = 3;
 
 export interface Params {
   dev: boolean;
+  /** Dev encounter through the real multiplayer menus/handshake. */
+  devMenu: boolean;
+  readyHold: boolean;
   /**
    * The benchmark's arena (M10 gate §4), or -1 when not benchmarking: the boss arena in the gate
    * view, arena 0 otherwise (and in the gate view on a map with no boss arena).
@@ -43,6 +54,20 @@ export interface Params {
    * cleared and the player stands on its entry cells. 0 starts as usual.
    */
   startArena: number;
+  /** With dev=1 on a generated floor, start on room N's first entry; clamped after generation. */
+  startRoom: number | null;
+  /** With dev=1: a development quick build by name (`build=marksman`, data/talents.ts DEV_BUILDS), or null. */
+  devBuild: string | null;
+  /** With dev=1: up to two relic ids owned and equipped for the run (`relics=usher,link`), never with saved progression. */
+  devRelics: string[];
+  /** With dev=1: the run's Edicts (`edicts=1,3`). */
+  devEdicts: number[];
+  /** A simulated bad connection for a joining client (`lag=ms&jitter=ms&loss=%`), or null. */
+  netLag: NetLag | null;
+  /** With dev=1 on the generated floor: the Gatekeeper's starting HP fraction (`bosshp=0.52`), or null (R9 §3). */
+  bossHp: number | null;
+  /** The host logs one `EVIDENCE` record per room and run (`evidence=1`, R9 §3); allowed on normal runs: it only reads. */
+  evidence: boolean;
 }
 
 export type BenchView = 'turn' | 'arcade' | 'gate';
@@ -65,22 +90,35 @@ function parseCam(v: string | null): DevCamera | null {
   return { x, y, z, yaw: (yaw * Math.PI) / 180, pitch: (pitch * Math.PI) / 180 };
 }
 
+/** A number in [0, 1], or null. */
+function parseFraction(v: string | null): number | null {
+  if (v === null || v.trim() === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : null;
+}
+
 export function parseParams(search: string): Params {
   const q = new URLSearchParams(search);
   const bench = q.get('bench') === '1';
   const mapParam = q.get('map');
-  const mapId = getDungeon(mapParam) ? (mapParam as string) : 'sandbox';
+  const mapId = mapParam === 'rogue' ? 'rogue' : getDungeon(mapParam) ? (mapParam as string) : 'sandbox';
   if (bench) {
     const view = q.get('view');
     const benchView: BenchView = view === 'arcade' || view === 'gate' ? view : 'turn';
-    const boss = benchView === 'gate' ? getDungeon(mapId)!.arenas.findIndex((a) => a.boss) : -1;
-    const benchArena = Math.max(0, boss);
+    // The rogue workloads (R9 stage 4): a generated room by `seed` (default the pinned one) and `room`
+    // (default the crest room); in the gate view the floor's boss room, resolved after generation.
+    const rogue = mapId === 'rogue';
+    const roomParam = q.get('room'), seedParam = q.get('seed');
+    const rogueRoom = roomParam !== null && /^\d+$/.test(roomParam) ? Math.min(Number(roomParam), 31) : ROGUE_BENCH_ROOM;
+    const boss = benchView === 'gate' && !rogue ? getDungeon(mapId)!.rooms.findIndex((a) => a.boss) : -1;
+    const benchArena = rogue ? rogueRoom : Math.max(0, boss);
+    const seed = rogue ? (seedParam !== null && /^\d+$/.test(seedParam) ? Number(BigInt(seedParam) % 4294967296n) : PINNED.seed) : null;
     // The class the benchmark plays: the `class` parameter (M11 §5), the Betrayer by default.
     const cls = q.get('class');
     const classId: ClassId = isClassId(cls) ? cls : 'betrayer';
     const benchHudFire = q.get('hudfire') === '1';
     const benchBurst = q.get('burst') === '1';
-    return { dev: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed: null, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0 };
+    return { dev: false, devMenu: false, readyHold: false, benchArena, bot: false, god: false, mapId, classId, classParam: null, seed, join: null, autojoin: false, name: null, benchView, benchHudFire, benchBurst, cam: parseCam(q.get('cam')), startArena: 0, startRoom: null, devBuild: null, devRelics: [], devEdicts: [], netLag: null, bossHp: null, evidence: q.get('evidence') === '1' };
   }
   // Without dev=1 (or bench=1) the page opens the menus.
   const dev = q.get('dev') === '1';
@@ -91,11 +129,15 @@ export function parseParams(search: string): Params {
   if (dev && seedParam !== null && /^\d+$/.test(seedParam)) seed = Number(BigInt(seedParam) % 4294967296n);
   const bot = q.get('bot') === '1';
   const arenaParam = q.get('arena');
-  const arenas = getDungeon(mapId)!.arenas.length;
-  const startArena = dev && arenaParam !== null && /^\d+$/.test(arenaParam) ? Math.min(Number(arenaParam), arenas - 1) : 0;
+  const fixture = getDungeon(mapId);
+  const startArena = dev && fixture && arenaParam !== null && /^\d+$/.test(arenaParam) ? Math.min(Number(arenaParam), fixture.rooms.length - 1) : 0;
+  const roomParam = q.get('room');
+  const startRoom = dev && mapId === 'rogue' && roomParam !== null && /^\d+$/.test(roomParam) ? Math.min(Number(roomParam), 31) : null;
   const join = parseJoinId(q.get('join'));
   return {
     dev,
+    devMenu: dev && q.get('menu') === '1',
+    readyHold: dev && q.get('menu') === '1' && q.get('readyHold') === '1',
     benchArena: -1,
     bot,
     god: q.get('god') === '1',
@@ -111,5 +153,26 @@ export function parseParams(search: string): Params {
     benchBurst: false,
     cam: dev ? parseCam(q.get('cam')) : null,
     startArena,
+    startRoom,
+    devBuild: dev && q.get('build') && Object.hasOwn(DEV_BUILDS, q.get('build')!) ? q.get('build') : null,
+    devRelics: dev ? (q.get('relics') ?? '').split(',').filter(isRelicId).slice(0, 2) : [],
+    devEdicts: dev ? cleanEdicts((q.get('edicts') ?? '').split(',').filter(Boolean).map(Number)) : [],
+    netLag: parseNetLag(q),
+    bossHp: dev && mapId === 'rogue' ? parseFraction(q.get('bosshp')) : null,
+    evidence: q.get('evidence') === '1',
   };
+}
+
+/**
+ * A disposable run never stakes, saves or settles a profile (rogue game.md §13, R9 stage 1): every
+ * development switch makes the page disposable. `god` is also ignored by a progression host
+ * (src/sim/worker.ts), and the switches that only parse with `dev=1` can't reach a normal page.
+ */
+export function disposableRun(p: Params): boolean {
+  return p.dev || p.benchArena >= 0 || p.bot || p.god || p.netLag !== null;
+}
+
+/** Whether a run started from this page records progression (the run's `progressionEnabled`). */
+export function runProgression(p: Params, hasProfile: boolean, dungeonId: string): boolean {
+  return !disposableRun(p) && hasProfile && dungeonId === 'rogue';
 }

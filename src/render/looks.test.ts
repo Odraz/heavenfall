@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { DUNGEONS } from '../data/dungeons/index';
 import { K_DOOR, K_FLOOR, K_WALL } from '../sim/heights';
 import { loadMap } from '../sim/map';
-import { BAND_MAX, bandTop, CORNICE, floorLooks, FRIEZE, FRIEZE_V, L_CORNICE, L_FLOOR, L_FLOOR_PLAIN, L_MEDALLION, L_PILASTER, L_WALL, L_WINDOW, segmentLook, TILE, wallPieces } from './looks';
+import { BAND_MAX, bandTop, CORNICE, floorLooks, FRIEZE, FRIEZE_V, L_CONFESSIONAL, L_CORNICE, L_FLOOR, L_FLOOR_PLAIN, L_MEDALLION, L_PILASTER, L_WALL, L_WINDOW, segmentLook, TILE, wallPieces } from './looks';
+import { generateFloor } from '../gen';
+import { PINNED } from '../gen/pinned';
+import { PEARLY_POOL } from '../data/rooms/1';
 
 const MAPS = ['sandbox', 'pearly-gates'] as const;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
@@ -67,15 +70,15 @@ describe('texture choice (M10 §5.1)', () => {
             }
           }
         }
-        map.arenas.forEach((a) => {
+        map.rooms.forEach((a) => {
           const cx = (a.rect.x0 + a.rect.x1 + 1) / 2;
           const cy = (a.rect.y0 + a.rect.y1 + 1) / 2;
           const center = looks.medallions.find(([c0, r0]) => Math.hypot(c0 + 2 - cx, r0 + 2 - cy) <= 6);
           expect(center, a.id).toBeDefined();
         });
         // Every other medallion is in front of a door: it touches a floor cell next to one.
-        const doors = map.arenas.flatMap((a) => [a.doors, a.exitDoors ?? []]).filter((d) => d.length > 0);
-        const centers = map.arenas.map((a) => {
+        const doors = map.rooms.flatMap((a) => a.leaves.map((l) => l.cells)).filter((d) => d.length > 0);
+        const centers = map.rooms.map((a) => {
           const cx = (a.rect.x0 + a.rect.x1 + 1) / 2;
           const cy = (a.rect.y0 + a.rect.y1 + 1) / 2;
           return looks.medallions.findIndex(([c0, r0]) => Math.hypot(c0 + 2 - cx, r0 + 2 - cy) <= 6);
@@ -86,10 +89,10 @@ describe('texture choice (M10 §5.1)', () => {
           expect(touching, `medallion ${c0},${r0}`).toBe(true);
         });
         // The Pearly Gates has door medallions (Arena 2's entry walkway is too narrow for one).
-        if (id === 'pearly-gates') expect(looks.medallions.length).toBeGreaterThan(map.arenas.length + 3);
+        if (id === 'pearly-gates') expect(looks.medallions.length).toBeGreaterThan(map.rooms.length + 3);
         // Nowhere else: one per arena center and at most one per door.
-        const doorCount = map.arenas.reduce((n, a) => n + (a.doors.length ? 1 : 0) + ((a.exitDoors ?? []).length ? 1 : 0), 0);
-        expect(looks.medallions.length).toBeLessThanOrEqual(map.arenas.length + doorCount);
+        const doorCount = map.rooms.reduce((n, a) => n + a.leaves.filter((l) => l.cells.length > 0).length, 0);
+        expect(looks.medallions.length).toBeLessThanOrEqual(map.rooms.length + doorCount);
       });
 
       it('tex-floor covers exactly the runners, whose edges lie on the 4 m grid', () => {
@@ -104,7 +107,7 @@ describe('texture choice (M10 §5.1)', () => {
           expect(looks.layer[i]).toBe(inRunner ? L_FLOOR : L_FLOOR_PLAIN);
         }
         // Every arena has a cross of two runners; the Lobby and corridors one each.
-        map.arenas.forEach((_, ai) => expect(looks.runners.filter((run) => run.zone === ai).map((run) => run.axis).sort()).toEqual(['x', 'y']));
+        map.rooms.forEach((_, ai) => expect(looks.runners.filter((run) => run.zone === ai).map((run) => run.axis).sort()).toEqual(['x', 'y']));
       });
     });
   }
@@ -145,4 +148,28 @@ describe('the decorated band (M10 §5.1)', () => {
       expect(cornice.v1).toBeCloseTo(1);
     });
   }
+});
+
+describe('the Confessional wood walls (R8, art-prompts B4)', () => {
+  it('panels exactly the decorated wall segments that look into the Confessional', () => {
+    const { map, floor } = generateFloor(PINNED.seed, 1, 1, PEARLY_POOL);
+    const { w, h } = map;
+    let wood = 0, decoratedInside = 0;
+    for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
+      if (map.heights.kind[r * w + c] !== K_WALL) continue;
+      for (const [dx, dy] of DIRS) {
+        const fc = c + dx, fr = r + dy;
+        if (fc < 0 || fr < 0 || fc >= w || fr >= h || map.heights.kind[fr * w + fc] !== K_FLOOR) continue;
+        const plain = segmentLook(map, c, r, dx, dy), look = segmentLook(map, c, r, dx, dy, floor.confessional);
+        if (look === L_CONFESSIONAL) {
+          wood++;
+          expect(map.roomOf[fr * w + fc]).toBe(floor.confessional);
+          expect([L_WINDOW, L_PILASTER]).toContain(plain);
+        } else expect(look).toBe(plain);
+        if (plain !== L_WALL && map.roomOf[fr * w + fc] === floor.confessional) decoratedInside++;
+      }
+    }
+    expect(wood).toBeGreaterThan(0);
+    expect(wood).toBe(decoratedInside);
+  });
 });

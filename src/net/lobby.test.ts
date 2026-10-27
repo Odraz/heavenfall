@@ -5,7 +5,7 @@ import { cleanChat, cleanName, LOAD_TIMEOUT_MS, Lobby } from './lobby';
 const V = '0.1.0-abc1234';
 
 function lobby(password = 'pw'): Lobby {
-  return new Lobby({ dungeonId: 'pearly-gates', password, version: V, hostName: 'Host' });
+  return new Lobby({ heaven: 1, fixture: 'pearly-gates', password, version: V, hostName: 'Host' });
 }
 
 describe('lobby', () => {
@@ -68,12 +68,12 @@ describe('lobby', () => {
     l.join('B', 'pw', V);
     l.pickClass(0, 'fallen');
     l.pickClass(1, 'heretic');
-    l.start(0);
+    const original = l.start(0)!;
     l.ready(0);
     l.ready(1);
     expect(l.go()).toEqual([
-      { id: 0, name: 'Host', classId: 'fallen' },
-      { id: 1, name: 'B', classId: 'heretic' },
+      { id: 0, name: 'Host', classId: 'fallen', bot: false },
+      { id: 1, name: 'B', classId: 'heretic', bot: false },
     ]);
     // Players in the game can't switch classes any more.
     expect(l.pickClass(1, 'binder')).toBe(false);
@@ -90,11 +90,12 @@ describe('lobby', () => {
     const start = l.enterGame(2, 1000)!;
     expect(start).toEqual({
       type: 'start',
-      dungeonId: 'pearly-gates',
+      runId: original.runId, seed: original.seed, simSeed: original.simSeed,
+      heaven: 1, floor: 1, fixture: 'pearly-gates', edicts: [], progressionEnabled: false,
       players: [
-        { id: 0, name: 'Host', classId: 'fallen' },
-        { id: 1, name: 'B', classId: 'heretic' },
-        { id: 2, name: 'C', classId: 'betrayer' },
+        { id: 0, name: 'Host', classId: 'fallen', bot: false },
+        { id: 1, name: 'B', classId: 'heretic', bot: false },
+        { id: 2, name: 'C', classId: 'betrayer', bot: false },
       ],
     });
     // Loading: no second start, no class change, and the heartbeat spares it.
@@ -102,7 +103,7 @@ describe('lobby', () => {
     expect(l.pickClass(2, 'binder')).toBe(false);
     expect(l.loadingIds()).toEqual([2]);
     expect(l.ready(1)).toBeNull();
-    expect(l.ready(2)).toEqual({ id: 2, name: 'C', classId: 'betrayer' });
+    expect(l.ready(2)).toEqual({ id: 2, name: 'C', classId: 'betrayer', bot: false });
     expect(l.loadingIds()).toEqual([]);
     expect(l.ready(2)).toBeNull();
   });
@@ -162,9 +163,9 @@ describe('lobby', () => {
     l.pickClass(1, 'heretic');
     const start = l.start(1000)!;
     expect(start.players).toEqual([
-      { id: 0, name: 'Host', classId: 'fallen' },
-      { id: 1, name: 'B', classId: 'heretic' },
-      { id: 2, name: 'C', classId: 'binder' },
+      { id: 0, name: 'Host', classId: 'fallen', bot: false },
+      { id: 1, name: 'B', classId: 'heretic', bot: false },
+      { id: 2, name: 'C', classId: 'binder', bot: false },
     ]);
     expect(l.pickClass(1, 'betrayer')).toBe(false);
     l.ready(0);
@@ -227,6 +228,69 @@ describe('lobby', () => {
     expect(cleanName('abcdefghijklmnopqrstuvwxyz')).toBe('abcdefghijklmnop');
     expect(cleanName('   ')).toBe('Player');
     expect(cleanName(42)).toBe('Player');
+  });
+
+  it('a dev co-op host fixes the floor seed and starting room for every client, never for a saved run (R7 setups)', () => {
+    const lobby = (progressionEnabled: boolean) => new Lobby({ heaven: 1, fixture: null, password: '', version: V, hostName: 'Host', progressionEnabled, devSeed: 317434499, devStartRoom: 10 });
+    const l = lobby(false);
+    l.join('Guest', '', V);
+    l.pickClass(0, 'fallen');
+    l.pickClass(1, 'binder');
+    const dev = l.start(0)!;
+    expect([dev.seed, dev.devStartRoom]).toEqual([317434499, 10]);
+    // A saved (progression) run ignores both.
+    const saved = lobby(true) as unknown as { devSeed?: number; devStartRoom?: number };
+    expect([saved.devSeed, saved.devStartRoom]).toEqual([undefined, undefined]);
+  });
+
+  it('retains one generated-run identity through loading, a dropped loader and late admission', () => {
+    const l = new Lobby({ heaven: 1, fixture: null, password: '', version: V, hostName: 'Host', hostBot: true });
+    expect(l.run).toBeNull();
+    expect(l.start(0)).toBeNull();
+    expect(l.run).toBeNull();
+    l.join('Bot', '', V, true);
+    l.join('Slow', '', V);
+    l.pickClass(0, 'fallen');
+    l.pickClass(1, 'binder');
+    l.pickClass(2, 'heretic');
+    const start = l.start(1000)!;
+    expect(start).toMatchObject({ heaven: 1, floor: 1, fixture: null, progressionEnabled: false, edicts: [] });
+    expect(start.runId).toMatch(/^[0-9a-f]{32}$/);
+    for (const seed of [start.seed, start.simSeed]) expect(seed >>> 0).toBe(seed);
+    expect(start.players.map((p) => [p.id, p.bot])).toEqual([[0, true], [1, true], [2, false]]);
+    const { type: _type, players: _players, ...identity } = start;
+    expect(l.run).toEqual(identity);
+    l.ready(0);
+    l.ready(1);
+    expect(l.loadTimedOut(1000 + LOAD_TIMEOUT_MS)).toEqual([2]);
+    l.remove(2);
+    expect(l.allReady()).toBe(true);
+    expect(l.go().map((p) => p.id)).toEqual([0, 1]);
+    expect(l.run).toEqual(identity);
+    l.join('Human', '', V, 'true'); // Only the boolean true identifies a bot.
+    l.pickClass(2, 'heretic');
+    const late = l.enterGame(2, 30_000)!;
+    expect(late).toMatchObject(identity);
+    expect(late.players[2]).toEqual({ id: 2, name: 'Human', classId: 'heretic', bot: false });
+    expect(l.ready(2)?.bot).toBe(false);
+    expect(l.run).toEqual(identity);
+  });
+
+  it('draws a fresh identity only when the next round can start', () => {
+    const l = lobby();
+    l.pickClass(0, 'fallen');
+    const first = l.start(0)!;
+    expect(l.start(1)).toBeNull();
+    expect(l.run?.runId).toBe(first.runId);
+    l.ready(0);
+    l.go();
+    l.endGame();
+    expect(l.start(2)).toBeNull(); // Still on Results.
+    expect(l.run?.runId).toBe(first.runId);
+    l.backToLobby(0);
+    const second = l.start(3)!;
+    expect(second.runId).not.toBe(first.runId);
+    expect(l.run?.runId).toBe(second.runId);
   });
 });
 

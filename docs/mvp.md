@@ -592,7 +592,7 @@ Layout: Lobby → corridor → **Arena 1** → corridor → **Arena 2** → corr
 - **Topology:** a star. Each client connects only to the host. The host accepts at most 3 clients.
 - **Connections:** each client opens two PeerJS DataConnections to the host:
   - `ctrl`: reliable, JSON. Used for lobby and game events.
-  - `snap`: `reliable: false` and `serialization: 'raw'` (an `ArrayBuffer` with no PeerJS serialization). Used for client input and host snapshots. PeerJS implements `reliable: false` only as `ordered: false`: messages may arrive out of order, but lost ones are still retransmitted. So neither side relies on order (§9.3, §9.4), and the host skips sending a snapshot part to a client whose `snap` channel has more than **64 KB** in `bufferedAmount`, so a slow connection can't build up lag.
+  - `snap`: `reliable: false` and `serialization: 'raw'` (an `ArrayBuffer` with no PeerJS serialization). Used for client input and host snapshots. PeerJS implements `reliable: false` only as `ordered: false`: messages may arrive out of order, but lost ones are still retransmitted. So neither side relies on order (§9.3, §9.4), and the host skips sending a snapshot part to a client whose `snap` channel would have more than **24 KB** in `bufferedAmount` (64 KB until the netcode stage, [report](rogue/netcode-report.md)), so a slow connection can't build up lag.
 - **Password:** kept only in the host's memory. It's sent in `hello` over the DTLS-encrypted `ctrl` channel.
 - **Heartbeat:** both sides send `ping` on `ctrl` every 1 s. Any message on either channel counts as a sign of life. If nothing arrives from a peer for **5 s**, that peer is disconnected.
 
@@ -654,7 +654,7 @@ Layout: Lobby → corridor → **Arena 1** → corridor → **Arena 2** → corr
     - applies invulnerability;
     - for Falling Star, applies the landing damage and knockback 0.4 s later, at the Fallen's latest reported position.
   - **Displayed cooldown:** the newest snapshot value minus the time since it arrived. For movement abilities, the client also starts its own timer on use and shows the larger of the two.
-- **Firing:** the host resolves `fireHeld` each tick using the latest reported position and aim.
+- **Firing:** the host resolves `fireHeld` each tick using the latest reported position and aim. Since the netcode stage ([report](rogue/netcode-report.md)): each mouse press is also counted and fires once within 0.3 s even if already released (click latching), and the attack is resolved against the enemies where the shooter's screen drew them (lag compensation, at most 0.4 s back). Since stage 2 the shooter's screen times the shots: each input counts the shots its cosmetic fire timer fired, and the host fires those, each with the aim and view of the input that carried it, no faster than the weapon allows. Enemy projectiles hit each player where that player's screen drew them (dodge compensation). Since stage 3 each snapshot carries every enemy's HP (rounded up) and, per player, the shot counter up to which the host has fired or dropped that player's shots; the shooter's screen predicts each hit from that HP less its own unresolved damage, a client-timed shot's pellets scatter by the shooter's id and shot counter on both sides, and the shooter shows its own hits' damage numbers at once.
 
 ### 9.4 Snapshots
 The host sends a snapshot to each client at **10 Hz**, and to its own player at **30 Hz** (every tick). The format is binary and little-endian, the same through both transports (`LocalTransport` transfers the `ArrayBuffer`).
@@ -684,7 +684,7 @@ The counts give the number of records of each block in that part; blocks follow 
 - **Slots:** enemies use a pool of 4 096 slots and projectiles a pool of 1 024. A freed slot isn't reused for **1 s**, so interpolation never connects two different entities. If no slot is free, enemy spawning waits and a new projectile isn't created.
 - **Enemy height isn't sent.** Clients derive it from the heightfield: ground height for ground enemies (snapping to the floor while falling, an accepted cosmetic glitch), and ground height + 4 m for Cherubs, smoothed.
 - **Interpolation:** clients render remote players, enemies and projectiles **1.5 snapshot intervals in the past**: 4.5 ticks (150 ms) on remote clients, 1.5 ticks (50 ms) on the host.
-  - The client's estimate of the current tick is the newest complete snapshot's tick plus the time since it arrived × 30. It renders at that estimate minus the delay.
+  - The client's estimate of the current tick is the newest complete snapshot's tick plus the time since it arrived × 30. It renders at that estimate minus the delay. Since the netcode stage the estimate is a smoothed clock that never runs backwards, and jitter adds up to 3 ticks of delay ([report](rogue/netcode-report.md)).
   - Positions are interpolated linearly between the two complete snapshots around the render tick. If there's no newer one, the newest is held; there's no extrapolation.
   - The local player is drawn from local movement.
 - **Feather burst:** when an enemy slot disappears from a complete snapshot, the client plays the burst at its last position. When a censer projectile disappears, the client plays the censer explosion (§10).

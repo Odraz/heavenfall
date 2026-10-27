@@ -1,3 +1,4 @@
+import { INPUT_DEFAULTS } from './testutil/sims';
 import { describe, expect, it } from 'vitest';
 import { BLESSED, CHORISTER } from '../data/enemies';
 import { WEAPONS } from '../data/weapons';
@@ -205,8 +206,9 @@ describe('souls and reviving (M8 §4)', () => {
     expect(dead.dead).toBe(false);
     expect(dead.hp).toBe(75);
     expect(dead.revive).toBe(0);
-    expect(sim.events).toContainEqual({ to: 'all', event: { type: 'playerRevived', playerId: 1 } });
-    expect(sim.events).toContainEqual({ to: 1, event: expect.objectContaining({ type: 'teleport', x: 10.5, y: 3.5, z: 0 }) });
+    // Revision 2 is the lethal hit's `hurt` (R06 follow-up §9).
+    expect(sim.events).toContainEqual({ to: 'all', tick: RISE_TICKS, revision: 3, event: { type: 'playerRevived', playerId: 1 } });
+    expect(sim.events).toContainEqual({ to: 1, tick: RISE_TICKS, revision: 4, event: expect.objectContaining({ type: 'teleport', x: 10.5, y: 3.5, z: 0 }) });
     sim.damagePlayer(dead, 50);
     expect(dead.hp).toBe(75);
     for (let i = 0; i < 61; i++) sim.step();
@@ -218,7 +220,7 @@ describe('souls and reviving (M8 §4)', () => {
     const sim = makeSim(room(20, 5), ['binder', 'heretic']);
     const [binder, heretic] = sim.players;
     sim.damagePlayer(binder, 10000);
-    sim.applyInput(0, { seq: 1, x: binder.x, y: binder.y, z: 0, yaw: 0, pitch: 0, fire: 1, qPresses: 0, ePresses: 0, allyTargetId: 255, lastTeleportId: 0 }, 0);
+    sim.applyInput(0, { seq: 1, x: binder.x, y: binder.y, z: 0, yaw: 0, pitch: 0, fire: 1, qPresses: 0, ePresses: 0, allyTargetId: 255, ...INPUT_DEFAULTS, lastTeleportId: 0 }, 0);
     sim.step();
     expect(binder.shots).toBe(0);
     binder.revive = 0.5;

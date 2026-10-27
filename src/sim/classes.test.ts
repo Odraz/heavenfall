@@ -1,3 +1,4 @@
+import { INPUT_DEFAULTS } from './testutil/sims';
 /** M12 stage 4: every class clears a stack, on the host (M12 §5, §11.1). */
 import { describe, expect, it } from 'vitest';
 import { BLESSED, CHORISTER, GATEKEEPER, ST_IDLE } from '../data/enemies';
@@ -21,11 +22,11 @@ function burstsBySlot(sim: Simulation): Map<number, [number, number]> {
 const hold = (sim: Simulation, s: number) => (sim.eStunUntil[s] = 1e9);
 
 describe('the shotgun (M12 §5.1)', () => {
-  it('20 per pellet within 6 m and 10 beyond, ±11°, 0.9 s', () => {
+  it('25 per pellet within 6 m and 10 beyond, ±11°, 0.9 s', () => {
     expect(WEAPONS.fallen).toMatchObject({ interval: 0.9, damage: 10, pellets: 8 });
     expect(WEAPONS.fallen.spreadYaw).toBeCloseTo((11 * Math.PI) / 180, 12);
     for (const [dist, perPellet] of [
-      [5, 20],
+      [5, 25],
       [8, 10],
     ]) {
       const sim = makeSim(room(30, 11), ['fallen']);
@@ -315,7 +316,7 @@ describe('the Scourge (M12 §5.5)', () => {
 });
 
 describe('Shadowstep cuts (M12 §5.7)', () => {
-  const input = (seq: number, x: number, ePresses: number, y = 5.5): InputMsg => ({ seq, x, y, z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses, allyTargetId: 255, lastTeleportId: 0 });
+  const input = (seq: number, x: number, ePresses: number, y = 5.5): InputMsg => ({ seq, x, y, z: 0, yaw: 0, pitch: 0, fire: 0, qPresses: 0, ePresses, allyTargetId: 255, ...INPUT_DEFAULTS, lastTeleportId: 0 });
 
   /** A Betrayer at (2.5, 5.5) dashing along +x: the press input, then one input per tick 1.33 m on, `n` in all. */
   function dash(sim: Simulation, n = 8, path = (k: number) => 2.5 + 0.8 + 1.33 * k) {

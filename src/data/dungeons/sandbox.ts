@@ -1,6 +1,6 @@
 /** Sandbox: a small dev-only test map (§8.4). */
 import { GridBuilder } from './build';
-import type { DungeonDef } from './types';
+import type { FixtureDef } from './types';
 
 const g = new GridBuilder(48, 48);
 
@@ -35,7 +35,7 @@ g.fillRect(42, 37, 42, 37, 1.5).marker(42, 37, 'f');
 
 const grids = g.build();
 
-export const sandbox: DungeonDef = {
+export const sandbox: FixtureDef = {
   id: 'sandbox',
   name: 'Sandbox',
   heights: grids.heights,

@@ -1,7 +1,9 @@
 /** Benchmark measurement (§2.5, §12): starts when 1 500 Blessed are alive for the first time, lasts 30 s. */
 import { MAX_LIVING_ENEMIES } from '../sim/constants';
+import { PART_RESERVE } from '../data/gatekeeper';
 import type { Snapshot } from '../net/protocol';
 import type { HostSession } from './hostSession';
+import { debugState } from '../debug';
 
 const DURATION_MS = 30000;
 
@@ -17,6 +19,11 @@ export interface BenchResult {
   /** Frames over 20 ms, and the median time between them in ms (a diagnostic for hitches). */
   slow: number;
   slowGapMs: number;
+  /** The workload's floor (R9 stage 4): its seed (null on a fixture), generation, client map build and Loading, ms. */
+  seed: number | null;
+  genMs: number;
+  mapBuildMs: number;
+  loadMs: number;
 }
 
 /** What the renderer drew in one frame, and the GPU memory its textures take (M10 §2.1). */
@@ -25,6 +32,11 @@ export interface RenderStats {
   triangles: number;
   textures: number;
   textureMB: number;
+}
+
+/** The enemy count the measurement starts at: 1 500, less the boss parts' reserve while the Gatekeeper fights. */
+export function benchFull(bossPhase: number): number {
+  return bossPhase > 0 ? MAX_LIVING_ENEMIES - PART_RESERVE : MAX_LIVING_ENEMIES;
 }
 
 export class BenchRunner {
@@ -52,7 +64,8 @@ export class BenchRunner {
   }
 
   onSnapshot(s: Snapshot): void {
-    if (this.startTime < 0 && s.enemyCount >= MAX_LIVING_ENEMIES) {
+    // In the Gatekeeper's fight 8 slots stay reserved for his eyes and Seal (R7), so the room tops out lower (R9).
+    if (this.startTime < 0 && s.enemyCount >= benchFull(s.bossPhase)) {
       this.startTime = performance.now();
       this.el.textContent = 'Benchmark: measuring for 30 s…';
     }
@@ -82,7 +95,8 @@ export class BenchRunner {
     const frameMs = this.frameMs.length ? this.frameMs.reduce((a, b) => a + b, 0) / this.frameMs.length : 0;
     const gaps = this.slowAt.slice(1).map((t, i) => t - this.slowAt[i]).sort((a, b) => a - b);
     const slowGapMs = gaps.length ? round2(gaps[gaps.length >> 1]) : 0;
-    const r: BenchResult = { fps: round2(fps), fpsLow: round2(fpsLow), frameMs: round2(frameMs), simMs: round2(simMs), simMsMax: round2(simMsMax), stats: this.renderStats(), slow: this.slowAt.length, slowGapMs };
+    const r: BenchResult = { fps: round2(fps), fpsLow: round2(fpsLow), frameMs: round2(frameMs), simMs: round2(simMs), simMsMax: round2(simMsMax), stats: this.renderStats(), slow: this.slowAt.length, slowGapMs,
+      seed: debugState.seed, genMs: round2(debugState.genMs), mapBuildMs: round2(debugState.mapBuildMs), loadMs: round2(debugState.loadMs) };
     this.el.textContent = [
       'Benchmark finished (30 s, 1 500 enemies)',
       `Average FPS: ${r.fps}`,

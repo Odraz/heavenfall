@@ -28,6 +28,28 @@
   --gold: #f3c64b;
   --ivory: #f7f0dc;
   --sky: #cfe2f3;
+  /* Health by share (audit batch 2): healing is green everywhere, so healthy HP is too. */
+  --heal: #4fd67a;
+  --heal-deep: #1f8f45;
+  --danger: #e0402a;
+  --danger-deep: #8e1a12;
+  /* Experience and halos: gold, never the orange of health. */
+  --xp: #ffe08a;
+  --xp-deep: #c08a22;
+  /* The dark band behind HUD text over the bright world. */
+  --hud-band: rgba(18, 13, 12, 0.78);
+  /* Secondary text, a step down from ivory: counts, notes, empty states. */
+  --parchment: #e8dcc0;
+  --parchment-dim: #cdbfa3;
+  --parchment-faint: #b9ac97;
+  /* Risk and discard lines in the menus. */
+  --warning: #e8a08a;
+  /* Round item slots: gold, dark and deep-gold rings around a dark well. */
+  --rim-gold: #e2b54a;
+  --rim-dark: #15100d;
+  --rim-deep: #b8862b;
+  --well: #2a211b;
+  --well-deep: #120d0b;
 }
 
 * {
@@ -259,6 +281,49 @@ body {
 }
 
 /* Hit and kill markers (M8 §3.2): four ticks on the diagonals, starting 7 px from the center. */
+/* Felt hits (R06 follow-up §9): a red arc on a ring around the crosshair, rotated toward the source. */
+.hit-arcs {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+
+.hit-arc {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 280px;
+  height: 280px;
+  border: 8px solid transparent;
+  border-top-color: var(--danger);
+  border-radius: 50%;
+  filter: drop-shadow(0 0 3px var(--danger-deep)) drop-shadow(0 0 2px #000);
+}
+
+/* Damage numbers (R06 follow-up §8): your own host-accepted damage over the enemy, readable on any background. */
+.damage-numbers {
+  position: absolute;
+  inset: 0;
+}
+
+.damage-number {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font: 700 17px/1 var(--display-font);
+  color: var(--ivory);
+  text-shadow: 0 0 2px #000, 0 1px 3px #000, 0 0 6px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+
+.damage-number.kill {
+  font-size: 23px;
+  color: var(--xp);
+}
+
 .marker {
   position: absolute;
   left: 50%;
@@ -423,7 +488,35 @@ body {
   left: 0;
   top: 0;
   bottom: 0;
-  background: linear-gradient(var(--brimstone), var(--ember));
+  background: linear-gradient(var(--heal), var(--heal-deep));
+}
+
+/* Health tiers (audit batch 2): green above half, amber to a quarter, red and pulsing below it. */
+.hp-fill[data-tier='warn'],
+.party-hp[data-tier='warn'] {
+  background: linear-gradient(#ffb347, var(--brimstone));
+}
+
+.hp-fill[data-tier='low'],
+.party-hp[data-tier='low'] {
+  background: linear-gradient(var(--danger), var(--danger-deep));
+  animation: hp-low-pulse 1s ease-in-out infinite;
+}
+
+@keyframes hp-low-pulse {
+  50% {
+    filter: brightness(1.35);
+  }
+}
+
+.wrath-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #8a1a08, #ff5a1c);
+  box-shadow: 0 0 6px #ff5a1c;
+  transition: width 0.12s linear;
 }
 
 .shield-fill {
@@ -431,6 +524,15 @@ body {
   top: 0;
   bottom: 0;
   background: linear-gradient(#9fd2ff, #3b8fe0);
+}
+
+/* The Advocate's bargain: the max HP pawned until the run ends, dark at the bar's right end (§9.6). */
+.hp-cut {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(135deg, var(--soot) 0 4px, var(--danger-deep) 4px 6px);
 }
 
 .hp-text {
@@ -636,7 +738,7 @@ body {
 
 .party-hp {
   left: 0;
-  background: linear-gradient(var(--brimstone), var(--ember));
+  background: linear-gradient(var(--heal), var(--heal-deep));
 }
 
 .party-shield {
@@ -740,8 +842,10 @@ div.weapon-swing {
   position: absolute;
   right: 16px;
   bottom: 16px;
-  display: flex;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, 64px);
+  gap: 34px 12px;
+  justify-items: center;
   padding: 8px 8px 34px;
   background: rgba(14, 10, 8, 0.7);
   border-radius: 10px;
@@ -822,8 +926,11 @@ div.weapon-swing {
 /* Hints (M8 §2.2): toggled with H, top right under the enemies remaining counter. */
 .hints {
   position: absolute;
+  z-index: 3;
   right: 24px;
-  top: 64px;
+  top: 266px;
+  max-height: calc(100% - 280px);
+  overflow-y: auto;
   max-width: 340px;
   padding: 2px 4px;
   border-style: solid;
@@ -851,6 +958,27 @@ div.weapon-swing {
 
 .hint-general {
   color: rgba(247, 240, 220, 0.75);
+}
+
+/* Carried items in the hint window (audit batch 3). */
+.hint-section {
+  margin-top: 2px;
+  font: 700 12px/1 var(--display-font);
+  letter-spacing: 1px;
+  color: var(--gold);
+}
+
+.hint-carried {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hint-round {
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--well) 55%, var(--well-deep) 100%);
+  box-shadow: 0 0 0 1px var(--rim-gold), 0 0 0 3px var(--rim-dark), 0 0 0 4px var(--rim-deep);
+  object-fit: contain;
 }
 
 /* An attack's line shows the mouse glyph where an ability's shows its icon (M9 §6.2). */
@@ -893,14 +1021,169 @@ div.weapon-swing {
   font: 700 12px/1 Consolas, monospace;
 }
 
+/*
+ * Consumables (audit batch 2): smaller round slots centered above Q and E, so they never read as a
+ * second pair of abilities. The rim repeats the square frame's gold, dark and gold bands as rings.
+ */
+.item-slot {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--well) 55%, var(--well-deep) 100%);
+  box-shadow: 0 0 0 2px var(--rim-gold), 0 0 0 5px var(--rim-dark), 0 0 0 7px var(--rim-deep), 0 2px 6px 7px rgba(0, 0, 0, 0.45);
+}
+
+.item-slot.empty {
+  background: radial-gradient(circle, var(--soot) 55%, #0e0a08 100%);
+  box-shadow: 0 0 0 2px #7c6538, 0 0 0 5px var(--rim-dark), 0 0 0 7px #5d4a2a;
+}
+
+.item-icon {
+  position: absolute;
+  inset: 5px;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+/* Cooling down: a dark sweep over the icon that empties clockwise, like the abilities' ring. */
+.item-slot:not(.ready)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 50%;
+  background: conic-gradient(rgba(14, 10, 8, 0.7) var(--item-cooldown), transparent 0);
+  pointer-events: none;
+}
+
+.item-count {
+  position: absolute;
+  z-index: 2;
+  right: -6px;
+  bottom: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--rim-dark);
+  border: 1px solid var(--rim-gold);
+  font: 700 12px/1 var(--display-font);
+}
+
+.item-count:empty {
+  display: none;
+}
+
+/* A newly arrived, untried item type: its slot pulses three times (audit batch 3). */
+.item-slot.pulse {
+  animation: item-slot-pulse 1.2s ease-out 3;
+}
+
+@keyframes item-slot-pulse {
+  0% {
+    box-shadow: 0 0 0 2px var(--rim-gold), 0 0 0 5px var(--rim-dark), 0 0 0 7px var(--rim-deep), 0 0 0 7px rgba(255, 220, 120, 0.9);
+  }
+  100% {
+    box-shadow: 0 0 0 2px var(--rim-gold), 0 0 0 5px var(--rim-dark), 0 0 0 7px var(--rim-deep), 0 0 0 22px rgba(255, 220, 120, 0);
+  }
+}
+
+/* The round rim reaches 7 px past the slot, so its key label sits a little lower. */
+.item-slot .ability-key {
+  top: calc(100% + 10px);
+}
+
 /* Enemies remaining (M9 §6.4): a band flush with the right edge, fading out to the left. */
 .remaining {
   position: absolute;
   right: 0;
-  top: 20px;
+  top: 290px;
   padding: 6px 24px 6px 64px;
   background: linear-gradient(to left, rgba(18, 13, 12, 0.75) 60%, transparent);
   font: 600 18px/1.2 var(--display-font);
+}
+
+/* Halos (audit batch 2): the in-world halo in a band flush with the left edge, like Enemies remaining. */
+.halo-wallet {
+  position: absolute;
+  left: 0;
+  top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 56px 6px 18px;
+  background: linear-gradient(to right, var(--hud-band) 60%, transparent);
+  font: 700 26px/1 var(--display-font);
+  color: var(--ivory);
+  text-shadow: 0 1px 2px #000, 0 0 6px #000;
+}
+
+.halo-icon {
+  width: 34px;
+  height: 34px;
+  filter: drop-shadow(0 0 4px rgba(243, 198, 75, 0.6));
+}
+
+/*
+ * Experience (audit batch 2): the level and count above a slim bar drawn in the HP bar's own frame,
+ * on a band that fades out at both ends so the text reads over the bright sky.
+ */
+.xp-line {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(360px, 40vw);
+  padding: 6px 30px 4px;
+  background: linear-gradient(to right, transparent, var(--hud-band) 16%, var(--hud-band) 84%, transparent);
+}
+
+.xp-label {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px 2px;
+  font: 600 15px/1 var(--display-font);
+  text-shadow: 0 1px 2px #000, 0 0 6px #000;
+}
+
+.xp-count {
+  font-size: 13px;
+  color: var(--parchment);
+}
+
+.xp-bar {
+  --frame-y: 6px;
+  --frame-x: 27px;
+  --reach-y: 5px;
+  --reach-x: 21px;
+  position: relative;
+  height: 12px;
+  margin: var(--reach-y) var(--reach-x);
+  background: rgba(27, 21, 19, 0.85);
+}
+
+.xp-bar::after {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--reach-y)) calc(-1 * var(--reach-x));
+  border-style: solid;
+  border-width: var(--frame-y) var(--frame-x);
+  border-image: url('../assets/ui/ui-bar-frame.png') 25 120 / var(--frame-y) var(--frame-x) stretch;
+  pointer-events: none;
+}
+
+.xp-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(var(--xp), var(--xp-deep));
 }
 
 .center-text,
@@ -919,6 +1202,12 @@ div.weapon-swing {
   font: 700 38px/1.2 var(--display-font);
 }
 
+/* The reward named under "Room cleared" (audit batch 3). */
+.center-sub {
+  font: 600 20px/1.3 var(--display-font);
+  color: #fff4c8;
+}
+
 .death-text {
   top: 42%;
   font: 600 28px/1.3 var(--display-font);
@@ -931,11 +1220,11 @@ div.weapon-swing {
   color: var(--gold);
 }
 
-/* Boss arena: Gatekeeper HP bar with the Judgment cast bar under it (§10). */
+/* Boss arena: Gatekeeper HP bar with the Judgment cast bar under it (§10), below the experience bar. */
 .boss {
   position: absolute;
   left: 50%;
-  top: 18px;
+  top: 72px;
   width: min(640px, 60vw);
   transform: translateX(-50%);
   text-align: center;
@@ -979,6 +1268,101 @@ div.weapon-swing {
   background: linear-gradient(#ffffff, #f7e7a8);
 }
 
+/* Judgment's red break fill rides over the cast bar's lower half (rogue bosses.md §3.2). */
+.boss-break-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 45%;
+  width: 0;
+  background: linear-gradient(#ff6a50, #c4140c);
+}
+
+.boss-cast-label {
+  margin-top: 6px;
+  font: 600 13px/1 var(--display-font);
+  color: var(--parchment);
+  text-shadow: 0 1px 3px #000;
+}
+
+.boss-cast-label[hidden],
+.boss-note[hidden] {
+  display: none;
+}
+
+.boss-note {
+  margin-top: 4px;
+  font: 600 13px/1 var(--display-font);
+  color: #ff8a70;
+  text-shadow: 0 1px 3px #000;
+}
+
+/* The 1.5 s transition: he can't be damaged (pale grey). */
+.boss.invulnerable .boss-fill {
+  background: linear-gradient(#f2f2f2, #a8a8a8);
+}
+
+/* The crosshair eye: open while he sees you, half-shut while only a Watcher does. */
+.sight-eye {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 26px);
+  width: 34px;
+  height: 18px;
+  transform: translateX(-50%);
+  border: 2px solid var(--gold);
+  border-radius: 50%;
+  background: radial-gradient(circle, #3a1d05 0 22%, var(--gold) 24% 46%, rgba(255, 246, 214, 0.85) 48%);
+  box-shadow: 0 0 6px #000;
+  pointer-events: none;
+}
+
+.sight-eye[data-state='half'] {
+  height: 9px;
+  margin-top: 5px;
+  border-color: #d81e1e;
+}
+
+.sight-eye[hidden],
+.called-text[hidden] {
+  display: none;
+}
+
+/* A Gatekeeper cue under his bar: the Toll, a Call, the Watchers. */
+.boss-cue {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 33%;
+  text-align: center;
+  font: 700 clamp(16px, 3.2vw, 30px)/1.2 var(--display-font);
+  color: #fff3cf;
+  text-shadow: 0 0 10px #c99a2e, 0 2px 4px #000;
+  pointer-events: none;
+}
+
+.boss-cue[hidden] {
+  display: none;
+}
+
+/* The held player's own instruction while the Call drags them. */
+.called-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 40%;
+  text-align: center;
+  font: 700 clamp(16px, 2.8vw, 26px)/1.2 var(--display-font);
+  color: #ffe08a;
+  text-shadow: 0 0 6px #000, 0 2px 4px #000;
+  pointer-events: none;
+}
+
+/* A held teammate's party frame: a gold padlock rim. */
+.party-frame.held {
+  box-shadow: 0 0 0 2px var(--gold), 0 0 10px rgba(255, 210, 74, 0.8);
+}
+
 .judgment-text {
   position: absolute;
   left: 0;
@@ -999,6 +1383,28 @@ div.weapon-swing {
 
 .game-canvas.dead {
   filter: grayscale(1) brightness(0.9);
+}
+
+/* Small or short windows: the abilities shrink, and the counter and hints move up beside the smaller minimap. */
+@media (max-width: 800px), (max-height: 540px) {
+  .remaining {
+    top: 138px;
+    padding-right: 16px;
+    font-size: 14px;
+  }
+
+  .abilities {
+    transform: scale(0.75);
+    transform-origin: bottom right;
+  }
+
+  .hints {
+    top: 172px;
+    right: 190px;
+    max-width: 220px;
+    gap: 4px;
+    font-size: 12px;
+  }
 }
 
 /* ---------------------------------------------------------------- Results */
@@ -1048,6 +1454,38 @@ div.weapon-swing {
 
 .results tr.me td:first-child {
   color: var(--gold);
+}
+
+/* Small or short windows: Results scrolls instead of clipping, at a smaller size. */
+@media (max-width: 800px), (max-height: 540px) {
+  .results {
+    justify-content: safe center;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .results h1 {
+    font-size: 48px;
+  }
+
+  .results .panel {
+    border-width: 24px;
+    gap: 8px;
+    margin-bottom: 0;
+  }
+
+  .results .run-time {
+    font-size: 18px;
+  }
+
+  .results table {
+    font-size: 16px;
+  }
+
+  .results th,
+  .results td {
+    padding: 6px 12px;
+  }
 }
 
 /* Reserved, so the buttons don't move when the host leaves. */
@@ -1245,6 +1683,16 @@ div.weapon-swing {
   text-align: center;
 }
 
+/* Persistent class cards add an eighth aligned row for their level. */
+.class-card:has(.class-level) {
+  grid-row: span 8;
+}
+
+/* A Talents button takes a ninth row; every card reserves it, so the rows still line up. */
+.class-cards:has(.class-actions) .class-card:has(.class-level) {
+  grid-row: span 9;
+}
+
 .class-card:hover,
 .dungeon-option:hover {
   border-color: #6b5047;
@@ -1377,6 +1825,7 @@ div.weapon-swing {
 .tooltip-text {
   font-size: 14px;
   line-height: 1.35;
+  white-space: pre-line;
 }
 
 .dungeon-picker {
@@ -1597,8 +2046,10 @@ div.weapon-swing {
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
+  align-items: safe center;
   justify-content: center;
+  overflow-y: auto;
+  padding: 16px;
   background: rgba(18, 12, 10, 0.55);
   z-index: 60;
 }
@@ -1623,11 +2074,16 @@ div.weapon-swing {
 .volume-sliders {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  /* 4 px (was 6) so the Damage numbers row (R06 follow-up §8) fits the panel Settings replaces. */
+  gap: 4px;
   padding: 2px 4px;
 }
 
-/* Settings (M8 §9.3): replaces the panel's contents, at the panel's size. */
+/* Settings replaces the panel's contents, at the panel's size; it must not shrink below them either. */
+.panel.settings-open {
+  flex-shrink: 0;
+}
+
 .panel > [hidden] {
   display: none;
 }
@@ -1640,21 +2096,28 @@ div.weapon-swing {
 }
 
 .settings-title {
-  margin: 0 0 6px;
+  margin: 0 0 5px;
   font: 700 36px/1 var(--display-font);
   text-align: center;
   color: var(--gold);
 }
 
-.settings-view .button {
+/* Profile and Back share the bottom row, so Settings fits the Title panel (M8 §9.3). */
+.settings-view .settings-buttons {
+  flex-direction: row;
   margin-top: auto;
+}
+
+.settings-buttons .button {
+  flex: 1 1 0;
+  padding: 4px 0;
 }
 
 .volume-row {
   display: grid;
   text-align: left;
-  /* Wide enough for "Screen shake", so every row's control starts at the same x (M12 §4.5). */
-  grid-template-columns: 96px 1fr 44px;
+  /* Wide enough for "Damage numbers" on one line, so every row's control starts at the same x (M12 §4.5). */
+  grid-template-columns: 122px 1fr 44px;
   align-items: center;
   gap: 10px;
   font-size: 14px;
@@ -1751,7 +2214,7 @@ div.weapon-swing {
   position: absolute;
   left: 0;
   right: 0;
-  top: 18px;
+  top: 72px;
   text-align: center;
   font: 600 20px/1.2 var(--display-font);
   color: var(--ivory);
@@ -1782,4 +2245,1084 @@ div.weapon-swing {
   bottom: 0;
   width: 0;
   background: linear-gradient(90deg, #f08a24, #ff7a3a);
+}
+
+/*
+ * Floor maps (rogue game.md §5): the minimap in the ability slots' painted frame, the full map on the
+ * hint window's panel. The full plate sits below HP and abilities and uses pointer-lock mouse deltas.
+ */
+.minimap {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  box-sizing: content-box;
+  width: 200px;
+  height: 200px;
+  border: 8px solid transparent;
+  border-image: url('../assets/ui/ui-slot-frame.png') 24 / 8px stretch;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
+}
+
+.hud > .full-map {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(14, 10, 8, 0.4);
+}
+
+.map-layout {
+  display: flex;
+  gap: 16px;
+  padding: 2px 4px;
+  border-style: solid;
+  border-width: 24px;
+  /* The panel's own fill would tile into a visible grid at this size; soot fills it instead. */
+  border-image: url('../assets/ui/ui-panel.png') 96 / 24px round;
+  background: var(--soot) padding-box;
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.5));
+}
+
+/* 588 px where it fits; shorter windows shrink it so the frame stays clear of the experience bar. */
+.map-layout > canvas {
+  width: min(588px, calc(100vh - 196px));
+  height: min(588px, calc(100vh - 196px));
+}
+
+.map-legend {
+  width: 190px;
+  color: var(--parchment);
+}
+
+.map-player-names {
+  padding: 8px 4px;
+  white-space: pre-line;
+  font: 600 14px/1.5 var(--display-font);
+}
+
+/* The known rooms as text, for screen readers only. */
+.map-room-list {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.hud.map-open .crosshair {
+  display: none;
+}
+
+/* The full map covers the play area; the minimap and counter would only cover its legend. */
+.hud.map-open .minimap,
+.hud.map-open .remaining {
+  visibility: hidden;
+}
+
+@media (max-width: 800px), (max-height: 540px) {
+  .minimap {
+    width: 112px;
+    height: 112px;
+  }
+}
+
+/* Class levels on the class cards (audit batch 2). */
+.class-level {
+  margin: 5px 0;
+  font: 600 15px/1.2 var(--display-font);
+  color: var(--gold);
+}
+
+/* Small buttons share a row and its width (Profile, carried items). */
+.button.small {
+  font-size: 16px;
+  border-width: 12px 22px;
+  border-image-width: 12px 22px;
+}
+
+.profile-panel .buttons > .button {
+  flex: 1 1 0;
+}
+
+/*
+ * Profile (audit batch 2): one fixed panel. Progress first, save tools second; the Import view
+ * replaces it at the same size, and confirmations use the reserved message line.
+ */
+.profile-panel {
+  flex-shrink: 0;
+  width: min(520px, 92vw);
+  height: 500px;
+}
+
+.profile-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.profile-view[hidden] {
+  display: none;
+}
+
+.profile-stats {
+  display: flex;
+  gap: 24px;
+  font: 600 16px/1 var(--display-font);
+  color: var(--parchment);
+}
+
+.profile-stats b {
+  color: var(--gold);
+}
+
+.profile-classes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 18px;
+}
+
+.profile-class {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.profile-portrait {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 44px;
+}
+
+.profile-portrait img {
+  position: absolute;
+  inset: 4px;
+  width: 36px;
+  height: 36px;
+}
+
+.profile-portrait::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('../assets/ui/ui-slot-frame.png') center / 100% 100%;
+}
+
+.profile-class-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-class-name {
+  font: 600 14px/1.2 var(--display-font);
+}
+
+.profile-class-level {
+  font-size: 12px;
+  color: var(--parchment-dim);
+}
+
+.profile-xp {
+  height: 5px;
+  margin-top: 4px;
+  background: var(--well-deep);
+  border: 1px solid #5d4a2a;
+}
+
+.profile-xp i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(var(--xp), var(--xp-deep));
+}
+
+.profile-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--parchment-dim);
+}
+
+.profile-panel textarea {
+  min-height: 120px;
+  resize: none;
+}
+
+/* Confirmations and errors appear in a line that is always there, so the panel never grows or moves. */
+.profile-panel .message,
+.profile-panel .message:empty {
+  display: block;
+  min-height: 2lh;
+  font-size: 15px;
+}
+
+.profile-footer {
+  margin-top: auto;
+}
+
+/* Carried items on the class screen and lobby (audit batch 2): the in-game round slots and each rule. */
+.profile-loadout {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 18px 0;
+  padding: 14px 16px;
+  background: rgba(14, 10, 8, 0.55);
+  border: 1px solid rgba(243, 198, 75, 0.35);
+}
+
+.loadout-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+}
+
+.loadout-item {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 16px;
+  min-width: 280px;
+  min-height: 64px;
+}
+
+.loadout-item .item-slot {
+  flex: none;
+  margin: 7px;
+}
+
+.loadout-text {
+  flex: 1;
+}
+
+.loadout-name {
+  font: 600 16px/1.2 var(--display-font);
+}
+
+.loadout-name.empty {
+  color: var(--parchment-faint);
+}
+
+.loadout-rule {
+  font-size: 13px;
+  color: var(--parchment-dim);
+}
+
+.loadout-discard {
+  padding: 0;
+  font: 13px/1.2 'Segoe UI', system-ui, sans-serif;
+  color: var(--warning);
+  background: none;
+  border: 0;
+  border-bottom: 1px dotted;
+  cursor: pointer;
+}
+
+.loadout-risk {
+  font-size: 13px;
+  color: var(--warning);
+}
+
+/*
+ * Room, shop and victory messages: Cinzel on the HUD band, fading out at both ends like the experience
+ * bar's, so they read over the bright world.
+ */
+.room-message,
+.shop-hint,
+.victory-hint {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 80vw;
+  padding: 7px 48px;
+  background: linear-gradient(to right, transparent, var(--hud-band) 16%, var(--hud-band) 84%, transparent);
+  font: 600 17px/1.3 var(--display-font);
+  color: var(--ivory);
+  text-align: center;
+  text-shadow: 0 1px 2px #000, 0 0 6px #000;
+}
+
+.room-message {
+  top: 116px;
+}
+
+/* The boss bar takes the room message's place; the message moves below the cast bar. */
+.hud:has(.boss:not([hidden])) .room-message {
+  top: 150px;
+}
+
+/* The Pardoner's offer, under the crosshair. */
+.shop-hint {
+  top: 62%;
+}
+
+/* Under the room message, which also shows while shopping after the victory. */
+.victory-hint {
+  top: 160px;
+  color: var(--gold);
+}
+
+.shop-hint:empty,
+.victory-hint:empty {
+  display: none;
+}
+
+/* A refused save (main.ts): a full-width alert above everything. */
+.save-notice {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  padding: 10px 16px;
+  background: var(--danger-deep);
+  border-bottom: 1px solid var(--danger);
+  color: var(--ivory);
+}
+
+/* ---------------------------------------------------------------- Talents and Rites (R4) */
+
+.talent-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: safe center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 16px;
+  background: rgba(18, 12, 10, 0.6);
+  z-index: 70;
+}
+
+.talent-overlay[hidden] {
+  display: none;
+}
+
+.talent-panel {
+  width: min(980px, 100%);
+}
+
+.rite-panel {
+  width: min(720px, 100%);
+}
+
+.talent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.talent-title {
+  margin: 0;
+  font: 700 30px/1 var(--display-font);
+  color: var(--gold);
+}
+
+.talent-points {
+  font: 600 18px/1 var(--display-font);
+  color: var(--xp);
+}
+
+.talent-trees {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.talent-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--hud-band);
+  border: 1px solid var(--rim-deep);
+}
+
+.talent-tree-name {
+  font: 700 18px/1.1 var(--display-font);
+  color: var(--ivory);
+  text-align: center;
+  cursor: help;
+}
+
+/* Icon tiles (R06 follow-up §1): two per tier, the capstone alone, centered; names live in the tooltips. */
+.talent-tier {
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+  min-height: 60px;
+}
+
+.talent-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  font: 600 11px/1.1 var(--display-font);
+  color: var(--parchment-faint);
+  text-align: center;
+  background: var(--well-deep);
+  border: 3px solid var(--well);
+  cursor: pointer;
+}
+
+/* The shared button hover paints a border image; tiles keep their state frame and only brighten. */
+.talent-node:hover,
+.talent-ability:hover {
+  border-image: none;
+}
+
+/* Open: a plain parchment frame; learned: gold with a glow, so the two never look alike. */
+.talent-node.open {
+  border-color: rgba(185, 172, 151, 0.55);
+}
+
+.talent-node.learned {
+  border-color: var(--xp);
+  box-shadow: 0 0 0 1px var(--rim-deep), 0 0 12px 2px rgba(243, 198, 75, 0.7);
+}
+
+.talent-node.rite {
+  border-color: var(--sky);
+  box-shadow: 0 0 8px 1px rgba(207, 226, 243, 0.5);
+}
+
+.talent-node.dormant,
+.talent-node.suppressed {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+.talent-node.locked {
+  cursor: not-allowed;
+}
+
+.talent-node:not(.view):not(.locked):hover {
+  filter: brightness(1.2);
+}
+
+.talent-node.open:hover {
+  border-color: var(--ivory);
+}
+
+/* Talent icons (B11) fill the tile. */
+.talent-icon {
+  flex: none;
+  width: 54px;
+  height: 54px;
+}
+
+.talent-node .talent-icon {
+  display: block;
+}
+
+.talent-node.open .talent-icon {
+  filter: brightness(0.85);
+}
+
+.talent-node.locked .talent-icon {
+  filter: grayscale(0.85) brightness(0.5);
+}
+
+/* Only when an icon is missing. */
+.talent-node-name {
+  padding: 2px;
+}
+
+/* A click answers at once with a short press, before any reply. */
+.talent-node.pressed,
+.talent-ability.pressed {
+  animation: talent-press 160ms ease-out;
+}
+
+@keyframes talent-press {
+  0% {
+    transform: scale(0.9);
+    filter: brightness(1.5);
+  }
+
+  100% {
+    transform: scale(1);
+    filter: none;
+  }
+}
+
+.rite-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rite-head .talent-icon {
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--rim-gold);
+}
+
+.talent-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.talent-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.talent-slot-key {
+  font: 700 22px/1 var(--display-font);
+  color: var(--gold);
+}
+
+.talent-ability {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 3px;
+  font: 600 14px/1 var(--display-font);
+  color: var(--parchment);
+  background: var(--well-deep);
+  border: 2px solid var(--well);
+  cursor: pointer;
+}
+
+.talent-ability:not(.view):hover {
+  color: var(--ivory);
+  border-color: var(--rim-deep);
+}
+
+/* The assigned ability keeps its gold frame while hovered. */
+.talent-ability[aria-pressed='true'],
+.talent-ability[aria-pressed='true']:hover {
+  color: var(--ivory);
+  border-color: var(--gold);
+  box-shadow: 0 0 8px 1px rgba(243, 198, 75, 0.45);
+}
+
+.talent-ability img {
+  width: 36px;
+  height: 36px;
+}
+
+.talent-message {
+  min-height: 1.3em;
+}
+
+.talent-footer {
+  justify-content: flex-end;
+}
+
+.rite-sub {
+  font-size: 15px;
+  color: var(--parchment);
+}
+
+.rite-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rite-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 220px;
+  padding: 10px;
+  background: var(--hud-band);
+  border: 2px solid var(--rim-gold);
+}
+
+.rite-card.disabled {
+  opacity: 0.6;
+  border-color: var(--well);
+}
+
+.rite-tree {
+  font-size: 13px;
+  color: var(--parchment-dim);
+}
+
+.rite-name {
+  font: 700 22px/1.1 var(--display-font);
+  color: var(--gold);
+}
+
+.rite-rule {
+  font-size: 16px;
+  color: var(--ivory);
+}
+
+.rite-notes {
+  flex: 1;
+  font-size: 14px;
+  color: var(--warning);
+}
+
+.rite-pip {
+  position: absolute;
+  left: 50%;
+  bottom: 118px;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  font: 600 15px/1 var(--display-font);
+  color: var(--xp);
+  background: var(--hud-band);
+  pointer-events: none;
+}
+
+.rite-pip[hidden] {
+  display: none;
+}
+
+.class-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.hidden-mark {
+  position: absolute;
+  left: 50%;
+  bottom: 148px;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  font: 600 14px/1 var(--display-font);
+  color: var(--parchment);
+  background: var(--hud-band);
+  border: 1px solid var(--parchment-faint);
+  pointer-events: none;
+}
+
+.hidden-mark[hidden] {
+  display: none;
+}
+
+/* The look-only Talents view (T in a run): tooltips on hover, nothing to click. */
+.talent-node.view,
+.talent-ability.view {
+  cursor: help;
+}
+
+/* ------------------------------------------------------------------ R6 relics and streaks */
+
+/* The two equipped relics (rogue game.md §8.1): beside the ability box, each with its cooldown swept over it. */
+.relic-strip {
+  position: absolute;
+  right: 184px;
+  bottom: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, 44px);
+  gap: 10px;
+  justify-items: center;
+  padding: 8px;
+  background: var(--hud-band);
+  border-radius: 10px;
+}
+
+.relic-slot {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: radial-gradient(circle, var(--well) 55%, var(--well-deep) 100%);
+  box-shadow: 0 0 0 2px var(--rim-gold), 0 0 0 4px var(--rim-dark);
+}
+
+.relic-slot.empty {
+  background: var(--soot);
+  box-shadow: 0 0 0 2px var(--rim-deep), 0 0 0 4px var(--rim-dark);
+}
+
+.relic-icon {
+  position: absolute;
+  inset: 3px;
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+}
+
+.relic-slot:not(.ready)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 8px;
+  background: conic-gradient(rgba(14, 10, 8, 0.72) var(--relic-cooldown), transparent 0);
+  pointer-events: none;
+}
+
+.relic-combo {
+  grid-column: 1 / -1;
+  max-width: 98px;
+  font: 600 11px/1.2 var(--display-font);
+  color: var(--gold);
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+}
+
+/* Your streak's tier (m12-followup-2.md §3.2): top center, 18% down, gold capitals over the count. */
+.streak-banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18%;
+  text-align: center;
+  pointer-events: none;
+}
+
+.streak-banner.pop {
+  animation: streak-pop 120ms ease-out;
+}
+
+@keyframes streak-pop {
+  from {
+    transform: scale(1.3);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.streak-name {
+  font: 800 66px/1 var(--display-font);
+  color: var(--gold);
+  text-shadow: 0 2px 8px #000, 0 0 3px #000;
+}
+
+.streak-sub {
+  font: 600 18px/1.4 var(--display-font);
+  color: var(--ivory);
+  text-shadow: 0 1px 3px #000;
+}
+
+/* The Relics view (rogue game.md §2.2): the collection grid, the two slots, the card and the combos. */
+.relic-panel {
+  width: min(900px, 100%);
+}
+
+.relic-body {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+}
+
+.relic-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.relic-cell,
+.relic-equip-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 84px;
+  padding: 6px;
+  font: 600 12px/1.15 var(--display-font);
+  color: var(--parchment);
+  text-align: center;
+  background: var(--well-deep);
+  border: 2px solid var(--parchment-dim);
+  cursor: pointer;
+}
+
+.relic-cell.rare {
+  border-color: #6fa4e8;
+}
+
+.relic-cell.legendary {
+  border-color: var(--gold);
+}
+
+.relic-cell.unowned {
+  color: var(--parchment-faint);
+  background: var(--soot);
+  border-color: var(--well);
+}
+
+.relic-cell.selected {
+  box-shadow: 0 0 0 3px var(--gold);
+}
+
+.relic-cell.equipped::after {
+  content: 'Equipped';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 1px 4px;
+  font: 600 10px/1.2 var(--display-font);
+  color: var(--soot);
+  background: var(--gold);
+}
+
+.relic-cell-icon {
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+}
+
+.relic-cell-unknown {
+  font: 800 30px/46px var(--display-font);
+  color: var(--well);
+}
+
+.relic-cell-tag {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 1px 4px;
+  font: 600 10px/1.2 var(--display-font);
+  color: var(--ivory);
+  background: var(--danger-deep);
+}
+
+.relic-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.relic-equip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.relic-equip-slot {
+  border-color: var(--rim-gold);
+}
+
+.relic-equip-slot.empty {
+  border-style: dashed;
+  border-color: var(--rim-deep);
+}
+
+.relic-equip-slot.view {
+  cursor: default;
+}
+
+.relic-equip-combo {
+  grid-column: 1 / -1;
+  min-height: 18px;
+  font: 700 14px/1.2 var(--display-font);
+  color: var(--gold);
+  text-align: center;
+}
+
+.relic-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 172px;
+  padding: 8px 10px;
+  color: var(--parchment);
+  background: var(--well-deep);
+  border: 1px solid var(--well);
+}
+
+.relic-card-rarity {
+  font: 600 11px/1.2 'Segoe UI', system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--parchment-dim);
+}
+
+.relic-card-rarity.rare {
+  color: #8db8ee;
+}
+
+.relic-card-rarity.legendary {
+  color: var(--gold);
+}
+
+.relic-card-name {
+  font: 700 18px/1.2 var(--display-font);
+  color: var(--ivory);
+}
+
+.relic-card-rule {
+  font: 14px/1.35 'Segoe UI', system-ui, sans-serif;
+}
+
+.relic-card-cooldown {
+  font: 600 12px/1.35 'Segoe UI', system-ui, sans-serif;
+  color: var(--parchment-dim);
+}
+
+/* The flavor is set apart from the rule (R06 follow-up §2). */
+.relic-card-flavor {
+  margin-top: 6px;
+  padding-top: 6px;
+  font: italic 12px/1.35 'Segoe UI', system-ui, sans-serif;
+  color: var(--parchment-faint);
+  border-top: 1px solid var(--well);
+}
+
+.relic-card-note {
+  font: 600 12px/1.35 'Segoe UI', system-ui, sans-serif;
+  color: var(--warning);
+}
+
+.relic-combos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 16px;
+}
+
+.relic-combos .section-label {
+  grid-column: 1 / -1;
+}
+
+.relic-combo-row {
+  display: flex;
+  flex-direction: column;
+  min-height: 34px;
+  font: 12px/1.3 'Segoe UI', system-ui, sans-serif;
+  color: var(--parchment);
+}
+
+.relic-combo-row.undiscovered {
+  color: var(--parchment-faint);
+}
+
+.relic-combo-row.active .relic-combo-name {
+  color: var(--gold);
+}
+
+.relic-combo-name {
+  font: 700 14px/1.2 var(--display-font);
+  color: var(--ivory);
+}
+
+.relic-offer-card.rare {
+  border-color: #6fa4e8;
+}
+
+.relic-offer-card.legendary {
+  border-color: var(--gold);
+}
+
+/* The Advocate's view (rogue game.md §9.6): one row per thing it offers. */
+.advocate-panel {
+  width: min(560px, 100%);
+}
+
+.advocate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.advocate-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 14px;
+  text-align: left;
+  color: var(--parchment);
+  background: var(--well-deep);
+  border: 2px solid var(--rim-deep);
+  cursor: pointer;
+}
+
+.advocate-row:disabled {
+  color: var(--parchment-faint);
+  border-color: var(--well);
+  cursor: default;
+}
+
+.advocate-row-name {
+  font: 700 17px/1.2 var(--display-font);
+  color: var(--ivory);
+}
+
+.advocate-row:disabled .advocate-row-name {
+  color: var(--parchment-faint);
+}
+
+.advocate-row-line {
+  font: 13px/1.35 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Under the minimap (rogue game.md §5.1): the key's holder and the lit Sundial, in fixed rows. */
+.route-line {
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 24px 4px 48px;
+  background: linear-gradient(to left, var(--hud-band) 60%, transparent);
+  font: 600 16px/1.2 var(--display-font);
+  color: var(--ivory);
+  text-shadow: 0 1px 2px #000;
+}
+
+.key-line {
+  top: 220px;
+}
+
+.sundial-line {
+  top: 254px;
+  color: var(--gold);
+}
+
+.route-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+/* Under the XP bar while a Sentence is on (§2.5). */
+.xp-sentence {
+  font: 600 12px/1.2 var(--display-font);
+  color: var(--gold);
+  text-shadow: 0 1px 2px #000;
+}
+
+.results-crown,
+.results-deed {
+  font: 600 16px/1.4 var(--display-font);
+  color: var(--gold);
+  text-align: center;
+}
+
+/* The Edicts row (rogue game.md §2.5): one fixed line above the buttons. */
+.edicts-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+}
+
+.edicts-text {
+  font: 600 14px/1.3 var(--display-font);
+  color: var(--parchment);
+}
+
+.advocate-row.edict.on {
+  border-color: var(--gold);
+}
+
+.advocate-row.edict.on .advocate-row-name {
+  color: var(--gold);
 }

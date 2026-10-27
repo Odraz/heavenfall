@@ -6,6 +6,7 @@
 import type { Bay } from '../sim/heights';
 import { HEADROOM, K_DOOR, K_FLOOR, PARAPET } from '../sim/heights';
 import type { GameMap } from '../sim/map';
+import { gateOutside } from '../sim/gate';
 import { ARCH_OPENING } from './arch.gen';
 import { CORNICE, TILE } from './looks';
 
@@ -89,7 +90,10 @@ export interface Arches {
 export function computeArches(map: GameMap): Arches {
   const { w, h } = map;
   const hz = map.heights;
-  const bays: ArcadeBay[] = hz.bays.map((bay) => {
+  // Generated outer walls can contain arcade bays behind the Gate. Exclude an entire bay
+  // if any of its cells belongs to the Gate: painted faces and stone reveals share this list,
+  // as do their light, shadow and tracer queries.
+  const bays: ArcadeBay[] = hz.bays.filter((bay) => !map.gate || !bay.cells.some(([c, r]) => gateOutside(map.gate!, c, r))).map((bay) => {
     const [c, r] = bay.cells[0];
     const nx = -bay.ox;
     const ny = -bay.oy;
@@ -99,8 +103,8 @@ export function computeArches(map: GameMap): Arches {
   });
 
   const doors: DoorArch[] = [];
-  for (const a of map.arenas) {
-    for (const cells of [a.doors, a.exitDoors ?? []]) {
+  for (const a of map.rooms) {
+    for (const { cells } of a.leaves) {
       if (cells.length === 0) continue;
       const xs = cells.map(([c]) => c);
       const ys = cells.map(([, r]) => r);

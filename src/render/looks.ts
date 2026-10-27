@@ -17,6 +17,8 @@ export const L_PILASTER = 6;
 export const L_CORNICE = 7;
 export const L_ARCADE_LOWER = 8;
 export const L_ARCADE_UPPER = 9;
+/** The Confessional's dark wood panels (rogue art-prompts B4), on the walls of that room only. */
+export const L_CONFESSIONAL = 10;
 
 /** Every tiling texture covers this many meters. */
 export const TILE = 4;
@@ -100,7 +102,7 @@ export function floorLooks(map: GameMap): FloorLooks {
   const overlaps = (c0: number, r0: number) => medallions.some(([c, r]) => Math.abs(c - c0) < 4 && Math.abs(r - r0) < 4);
   const runners: FloorLooks['runners'] = [];
 
-  map.arenas.forEach((a, ai) => {
+  map.rooms.forEach((a, ai) => {
     const inRect = (c0: number, r0: number) => c0 >= a.rect.x0 && r0 >= a.rect.y0 && c0 + 3 <= a.rect.x1 && r0 + 3 <= a.rect.y1;
     const cx = (a.rect.x0 + a.rect.x1 + 1) / 2;
     const cy = (a.rect.y0 + a.rect.y1 + 1) / 2;
@@ -122,8 +124,8 @@ export function floorLooks(map: GameMap): FloorLooks {
     const colFrom = best ? best[0] : Math.round((cx - 2) / 4) * 4;
     runners.push({ zone: ai, axis: 'x', from: rowFrom }, { zone: ai, axis: 'y', from: colFrom });
 
-    // One in front of each door, inside the arena, touching the cells next to the door.
-    for (const door of [a.doors, a.exitDoors ?? []]) {
+    // One in front of each door, inside the room, touching the cells next to the door.
+    for (const { cells: door } of a.leaves) {
       if (door.length === 0) continue;
       const next = new Set<number>();
       for (const [c, r] of door) {
@@ -155,7 +157,7 @@ export function floorLooks(map: GameMap): FloorLooks {
   });
 
   // The Lobby and each corridor: one runner along its long axis, through its middle.
-  for (let z = map.arenas.length; z < hz.zoneCount; z++) {
+  for (let z = map.rooms.length; z < hz.zoneCount; z++) {
     let x0 = Infinity;
     let x1 = -Infinity;
     let y0 = Infinity;
@@ -201,7 +203,11 @@ export function floorLooks(map: GameMap): FloorLooks {
  * on its face with normal (dx, dy), toward the floor: window and pilaster alternate; a segment that isn't 4 whole wall cells whose faces all
  * look onto floor at one height (cut by a corner or a door, beside stairs) is plain.
  */
-export function segmentLook(map: GameMap, c: number, r: number, dx: number, dy: number): number {
+/**
+ * The decorated band's layer for a wall segment; walls looking into room `woodRoom` (the Confessional)
+ * take its wood panels instead of the window and pilaster rhythm.
+ */
+export function segmentLook(map: GameMap, c: number, r: number, dx: number, dy: number, woodRoom = -1): number {
   const { w, h } = map;
   const hz = map.heights;
   const alongX = dy !== 0;
@@ -218,5 +224,6 @@ export function segmentLook(map: GameMap, c: number, r: number, dx: number, dy: 
     if (j === 0) floor = f;
     else if (f !== floor) return L_WALL;
   }
+  if (woodRoom >= 0 && map.roomOf[(alongX ? r + dy : k * TILE + dy) * w + (alongX ? k * TILE + dx : c + dx)] === woodRoom) return L_CONFESSIONAL;
   return k % 2 === 0 ? L_WINDOW : L_PILASTER;
 }

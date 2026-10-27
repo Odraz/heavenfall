@@ -36,7 +36,7 @@ import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOC = ROOT / "docs" / "rogue" / "audio-prompts.md"
-SRC = ROOT / "assets" / "audio-src" / "rogue" / "sfx"
+SRC = ROOT / "assets" / "audio-src" / "sfx"
 INBOX = SRC / "inbox"
 SR = 48000
 AUDIO_EXTENSIONS = (".wav", ".mp3")
@@ -295,7 +295,7 @@ def main() -> None:
     for parser in (imp, a, p):
         parser.add_argument("--kind", choices=("sfx", "loops", "voice"), default="sfx")
     args = ap.parse_args()
-    SRC = ROOT / "assets" / "audio-src" / "rogue" / args.kind
+    SRC = ROOT / "assets" / "audio-src" / args.kind
     INBOX = SRC / "inbox"
     if args.cmd == "analyze":
         analyze(args.ids)

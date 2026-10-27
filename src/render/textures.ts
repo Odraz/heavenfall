@@ -1,6 +1,7 @@
 /** Terrain and effect textures (§11.1, §11.2), made from generated images by scripts/cutout.py. */
 import * as THREE from 'three';
 import floorUrl from '../../assets/textures/tex-floor.jpg';
+import refinerUrl from '../../assets/textures/tex-refiner-channel.jpg';
 import floorPlainUrl from '../../assets/textures/tex-floor-plain.jpg';
 import medallionUrl from '../../assets/textures/tex-floor-medallion.jpg';
 import riserUrl from '../../assets/textures/tex-riser.jpg';
@@ -8,6 +9,7 @@ import wallUrl from '../../assets/textures/tex-wall.jpg';
 import windowUrl from '../../assets/textures/tex-wall-window.jpg';
 import pilasterUrl from '../../assets/textures/tex-wall-pilaster.jpg';
 import corniceUrl from '../../assets/textures/tex-cornice.jpg';
+import confessionalUrl from '../../assets/textures/tex-confessional-wood.jpg';
 import arcadeLowerUrl from '../../assets/textures/arcade-lower.png';
 import arcadeUpperUrl from '../../assets/textures/arcade-upper.png';
 import doorUrl from '../../assets/textures/tex-door.jpg';
@@ -16,6 +18,7 @@ import beamUrl from '../../assets/textures/fx-beam.png';
 import chainUrl from '../../assets/textures/fx-chain.png';
 import glowUrl from '../../assets/textures/fx-glow.png';
 import smokeUrl from '../../assets/textures/fx-smoke.png';
+import flamesUrl from '../../assets/textures/fx-flames.png';
 import skyUrl from '../../assets/textures/sky-day.jpg';
 import shaftUrl from '../../assets/textures/fx-lightshaft.png';
 import atmosphereUrl from '../../assets/textures/fx-atmosphere.png';
@@ -34,6 +37,7 @@ export interface TerrainTextures {
   array: THREE.DataArrayTexture;
   /** Closed doors. */
   door: THREE.Texture;
+  refiner: THREE.Texture;
   /** The sky's horizon band (M10 §4.2). */
   sky: THREE.Texture;
   /** The light shaft (M10 §7.1). */
@@ -57,6 +61,8 @@ export interface EffectTextures {
   chain: THREE.Texture;
   glow: THREE.Texture;
   smoke: THREE.Texture;
+  /** Painted white flames on transparent (rogue art-prompts B10), tinted by the fire views. */
+  flames: THREE.Texture;
 }
 
 export interface GameTextures {
@@ -75,18 +81,18 @@ async function load(url: string): Promise<THREE.Texture> {
 
 /** Loads the textures of a game; the gate array only for a map with a gate (M10 gate §2). */
 export async function loadGameTextures(withGate: boolean): Promise<GameTextures> {
-  const layers = [floorUrl, floorPlainUrl, medallionUrl, riserUrl, wallUrl, windowUrl, pilasterUrl, corniceUrl, arcadeLowerUrl, arcadeUpperUrl];
+  const layers = [floorUrl, floorPlainUrl, medallionUrl, riserUrl, wallUrl, windowUrl, pilasterUrl, corniceUrl, arcadeLowerUrl, arcadeUpperUrl, confessionalUrl];
   // Nothing in the gate wraps: the shafts repeat by geometry.
   const gateLayers = [gateLeavesUrl, gateRailingUrl, gatePostTopUrl, gateShaftUrl];
-  const [array, gate, [door, sky, shaft, atmosphere, ring, beam, chain, glow, smoke]] = await Promise.all([
+  const [array, gate, [door, sky, shaft, atmosphere, ring, beam, chain, glow, smoke, refiner, flames]] = await Promise.all([
     loadTextureArray(layers, 1024),
     withGate ? loadTextureArray(gateLayers, GATE_LAYER_W, GATE_LAYER_H, THREE.ClampToEdgeWrapping) : Promise.resolve(null),
-    Promise.all([doorUrl, skyUrl, shaftUrl, atmosphereUrl, ringUrl, beamUrl, chainUrl, glowUrl, smokeUrl].map(load)),
+    Promise.all([doorUrl, skyUrl, shaftUrl, atmosphereUrl, ringUrl, beamUrl, chainUrl, glowUrl, smokeUrl, refinerUrl, flamesUrl].map(load)),
   ]);
   prepareSkyTexture(sky);
   for (const t of [shaft, atmosphere]) {
     t.wrapS = THREE.ClampToEdgeWrapping;
     t.wrapT = THREE.ClampToEdgeWrapping;
   }
-  return { terrain: { array, door, sky, shaft, atmosphere, gate }, fx: { ring, beam, chain, glow, smoke } };
+  return { terrain: { array, door, sky, shaft, atmosphere, gate, refiner }, fx: { ring, beam, chain, glow, smoke, flames } };
 }

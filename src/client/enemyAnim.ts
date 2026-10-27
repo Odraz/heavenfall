@@ -6,16 +6,17 @@
  * the 8th tick in range, then every 1 s: M12 §3.2), and casts from when the wind-up began and when the shot fired. Cherubs flap their
  * wings on a clock instead of walking; the Gatekeeper's casts follow the boss cast in the snapshot.
  */
-import { BLESSED, CHERUB, CHORISTER, GATEKEEPER, ST_ATTACKING, ST_FALLING, ST_MOVING, ST_WINDUP } from '../data/enemies';
-import { BOSS_CAST_JUDGMENT, BOSS_CAST_VOLLEY } from '../sim/sim';
+import { CANTOR, CARRIER, BLESSED, CHERUB, CHORISTER, DOMINION, GATEKEEPER, ST_ATTACKING, ST_FALLING, ST_MOVING, ST_WINDUP, WATCHMAN } from '../data/enemies';
+import { BOSS_CAST_CALL, BOSS_CAST_JUDGMENT, BOSS_CAST_TOLL, BOSS_CAST_VOLLEY } from '../sim/sim';
 import { ENEMY_SLOTS } from '../sim/constants';
+import { CANTOR_TELL } from '../data/commanders';
 
-export type EnemyAnimName = 'idle' | 'walk' | 'fly' | 'attack' | 'cast' | 'volley' | 'judgment' | 'pain' | 'death';
+export type EnemyAnimName = 'sing' | 'close' | 'mark' | 'swoop' | 'carry' | 'idle' | 'walk' | 'fly' | 'attack' | 'cast' | 'reload' | 'volley' | 'judgment' | 'trumpet' | 'pain' | 'death';
 
 /** Meters walked per walk cycle (two steps), so the feet keep pace with the ground: the Blessed's. */
 export const WALK_CYCLE_M = 1.6;
 /** Walk cycle lengths by enemy type (§11.1). */
-const WALK_CYCLES: Record<number, number> = { [BLESSED]: WALK_CYCLE_M, [CHORISTER]: 2.0 };
+const WALK_CYCLES: Record<number, number> = { [BLESSED]: WALK_CYCLE_M, [WATCHMAN]: WALK_CYCLE_M, [CHORISTER]: 2.0, [DOMINION]: 2.4 };
 /**
  * Casts (§11.1): the wind-up frames play over the wind-up and hold the last one; the release
  * frames play from the tick the shot fires.
@@ -25,10 +26,18 @@ export interface CastTiming {
   windupMs: number;
   releaseFrames: number;
   releaseMs: number;
+  /** A `reload` animation playing after the release, over this long (the Watchman). */
+  reloadFrames?: number;
+  reloadMs?: number;
 }
 export const CAST_TIMINGS: Partial<Record<number, CastTiming>> = {
+  [CANTOR]: { windupFrames: 8, windupMs: CANTOR_TELL / 30 * 1000, releaseFrames: 0, releaseMs: 0 },
+  [CARRIER]: { windupFrames: 4, windupMs: 500, releaseFrames: 2, releaseMs: 200 },
+  [DOMINION]: { windupFrames: 6, windupMs: 1500, releaseFrames: 2, releaseMs: 1000 },
   [CHORISTER]: { windupFrames: 6, windupMs: 1000, releaseFrames: 2, releaseMs: 250 },
   [CHERUB]: { windupFrames: 4, windupMs: 500, releaseFrames: 2, releaseMs: 200 },
+  // The Watchman (rogue rooms.md §6.4): levels the Clarion over the 1 s aim, fires, lowers it inside the 1.5 s reload.
+  [WATCHMAN]: { windupFrames: 4, windupMs: 1000, releaseFrames: 2, releaseMs: 200, reloadFrames: 4, reloadMs: 800 },
 };
 /** The Cherub's wingbeat: 6 frames every 0.5 s. */
 export const FLY_FRAMES = 6;
@@ -37,7 +46,8 @@ export const FLY_CYCLE_MS = 500;
 export const CORPSE_FALL_G = 20;
 /** The Gatekeeper's Volley: frames 1–3 over the wind-up, then frame 4 for 0.3 s once it fires. */
 export const VOLLEY_WINDUP_FRAMES = 3;
-export const VOLLEY_WINDUP_MS = 500;
+/** The Orb Volley's 1.0 s single-target wind-up (rogue bosses.md §3.2, was 0.5 s). */
+export const VOLLEY_WINDUP_MS = 1000;
 export const VOLLEY_RELEASE_MS = 300;
 /** Judgment's 4 frames loop every second while it is cast. */
 export const JUDGMENT_FRAMES = 4;
@@ -172,20 +182,26 @@ export class EnemyAnimator {
     this.stunned[slot] = on ? 1 : 0;
   }
 
-  /** The animation and frame to show for a slot at `now`; `bossCast` is the snapshot's (BOSS_CAST_*). */
-  pick(slot: number, now: number, bossCast = 0): AnimPick {
+  /**
+   * The animation and frame to show for a slot at `now`; `bossCast` is the snapshot's (BOSS_CAST_*), and
+   * `bossTransition` whether the Gatekeeper is in his 50% transition (he lifts the first trumpet).
+   */
+  pick(slot: number, now: number, bossCast = 0, bossTransition = false): AnimPick {
     const sincePain = now - this.painStart[slot];
     if (this.stunned[slot]) return { anim: 'pain', frame: Math.min(PAIN_FRAMES - 1, Math.floor((Math.max(0, sincePain) / PAIN_MS) * PAIN_FRAMES)) };
     if (sincePain >= 0 && sincePain < PAIN_MS) return { anim: 'pain', frame: Math.min(PAIN_FRAMES - 1, Math.floor((sincePain / PAIN_MS) * PAIN_FRAMES)) };
     const state = this.state[slot];
     const type = this.type[slot];
-    if (type === GATEKEEPER) return this.pickBoss(slot, now, bossCast);
+    if (type === GATEKEEPER) return bossTransition ? { anim: 'trumpet', frame: 0 } : this.pickBoss(slot, now, bossCast);
     const cast = CAST_TIMINGS[type];
     if (cast) {
       // The release plays out even though `attacking` lasts only the tick the shot fires.
       const sinceFired = now - this.firedAt[slot];
       if (sinceFired >= 0 && sinceFired < cast.releaseMs) {
         return { anim: 'cast', frame: cast.windupFrames + Math.min(cast.releaseFrames - 1, Math.floor((sinceFired / cast.releaseMs) * cast.releaseFrames)) };
+      }
+      if (cast.reloadFrames && cast.reloadMs && state !== ST_WINDUP && sinceFired >= cast.releaseMs && sinceFired < cast.releaseMs + cast.reloadMs) {
+        return { anim: 'reload', frame: Math.min(cast.reloadFrames - 1, Math.floor(((sinceFired - cast.releaseMs) / cast.reloadMs) * cast.reloadFrames)) };
       }
       if (state === ST_WINDUP) {
         const t = Math.max(0, now - this.stateSince[slot]);
@@ -195,7 +211,7 @@ export class EnemyAnimator {
       const t = (((now - this.stateSince[slot] + ATTACK_LEAD_MS) % ATTACK_CYCLE_MS) + ATTACK_CYCLE_MS) % ATTACK_CYCLE_MS;
       return { anim: 'attack', frame: Math.floor((t / ATTACK_CYCLE_MS) * ATTACK_FRAMES) };
     }
-    if (type === CHERUB) {
+    if (type === CHERUB || type === CARRIER) {
       // Wingbeats on a clock, offset per slot so a flock doesn't flap in unison.
       const t = (((now + slot * 0.618034 * FLY_CYCLE_MS) % FLY_CYCLE_MS) + FLY_CYCLE_MS) % FLY_CYCLE_MS;
       return { anim: 'fly', frame: Math.floor((t / FLY_CYCLE_MS) * FLY_FRAMES) % FLY_FRAMES };
@@ -211,7 +227,10 @@ export class EnemyAnimator {
     if (sinceFired >= 0 && sinceFired < VOLLEY_RELEASE_MS) return { anim: 'volley', frame: VOLLEY_WINDUP_FRAMES };
     const t = Math.max(0, now - this.stateSince[slot]);
     if (bossCast === BOSS_CAST_JUDGMENT) return { anim: 'judgment', frame: Math.floor((t % JUDGMENT_CYCLE_MS) / (JUDGMENT_CYCLE_MS / JUDGMENT_FRAMES)) };
-    if (bossCast === BOSS_CAST_VOLLEY && this.state[slot] === ST_WINDUP) {
+    // Until the toll (keys raised, struck) and call (keys pointed) poses are painted: the Toll reuses
+    // the raised-hand cast, the Call the staff's wind-up (rogue bosses.md §3.5, Art and sounds).
+    if (bossCast === BOSS_CAST_TOLL) return { anim: 'judgment', frame: Math.floor((t % JUDGMENT_CYCLE_MS) / (JUDGMENT_CYCLE_MS / JUDGMENT_FRAMES)) };
+    if ((bossCast === BOSS_CAST_VOLLEY || bossCast === BOSS_CAST_CALL) && this.state[slot] === ST_WINDUP) {
       return { anim: 'volley', frame: Math.min(VOLLEY_WINDUP_FRAMES - 1, Math.floor((t / VOLLEY_WINDUP_MS) * VOLLEY_WINDUP_FRAMES)) };
     }
     return { anim: 'idle', frame: 0 };
@@ -234,6 +253,8 @@ export interface Corpse {
   type: number;
   /** Where a flying enemy died, above `z`: it falls to `z` while dying (Cherubs). */
   fallFrom?: number;
+  /** The slot it died in. */
+  slot?: number;
 }
 
 export const CORPSE_MS = DEATH_MS + CORPSE_LIE_MS + CORPSE_SINK_MS;

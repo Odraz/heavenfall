@@ -2,11 +2,15 @@
  * The host side on the main thread (§2.2): owns the simulation worker and the host player's
  * LocalTransport and, in multiplayer, relays between the worker and the clients' PeerJS connections.
  */
+import type { CarrierCheck } from '../data/commanders';
 import type { HostNet } from '../net/hostNet';
+import type { RunConfig } from '../net/messages';
 import { LocalTransport } from '../net/transport';
 import type { DirectorInfo } from '../sim/director';
 import type { SimPlayerInit } from '../sim/sim';
 import type { MainToWorker, WorkerToMain } from '../sim/workerMessages';
+import type { Profile } from '../profile/model';
+import type { EvidenceRecord } from '../sim/evidence';
 
 export class HostSession {
   readonly worker: Worker;
@@ -20,8 +24,14 @@ export class HostSession {
   private stopped = false;
   /** The director's state from the latest local snapshot (M12 §2.3). */
   director: DirectorInfo | null = null;
+  carrierChecks: CarrierCheck[] = [];
+  /** Each player's kills by their own weapon hits, from the latest local snapshot (netcode stage 3). */
+  weaponKills: Record<number, number> = {};
   /** Called with each tick's simulation time (ms). */
   onTickMs: (ms: number) => void = () => {};
+  /** `evidence=1` (R9 stage 3): set before `start`/`hostLobby`; records arrive through `onEvidence`. */
+  evidence = false;
+  onEvidence: (record: EvidenceRecord) => void = () => {};
 
   constructor(readonly localPlayerId: number) {
     this.worker = new Worker(new URL('../sim/worker.ts', import.meta.url), { type: 'module' });
@@ -34,12 +44,12 @@ export class HostSession {
   }
 
   /** Singleplayer: starts the game at once. */
-  start(dungeonId: string, players: SimPlayerInit[], seed: number, god: boolean, benchArena: number, singleplayer: boolean, benchBurst = false, startArena = 0): void {
-    this.post({ t: 'start', dungeonId, players, seed, god, benchArena, benchBurst, singleplayer, localPlayerId: this.localPlayerId, startArena });
+  start(run: RunConfig, players: SimPlayerInit[], god: boolean, benchArena: number, benchBurst = false, startRoom?: number, diagnostics = false, devBuild?: string, devRelics?: string[], bossHp?: number): void {
+    this.post({ ...run, t: 'start', players, god, benchArena, benchBurst, localPlayerId: this.localPlayerId, startRoom, diagnostics, devBuild, devRelics, evidence: this.evidence, bossHp });
   }
 
   /** Multiplayer: opens the lobby in the worker and connects the clients' connections to it. */
-  hostLobby(net: HostNet, dungeonId: string, password: string, name: string, god: boolean): void {
+  hostLobby(net: HostNet, fixture: string | null, password: string, name: string, god: boolean, bot: boolean, profile?: Profile, progressionEnabled = false, diagnostics = false, dev: { seed?: number; startRoom?: number } = {}): void {
     this.net = net;
     net.onCtrl = (conn, msg) => this.post({ t: 'connCtrl', conn, msg });
     net.onInput = (conn, buf) => {
@@ -50,7 +60,7 @@ export class HostSession {
       this.unbind(conn);
       this.post({ t: 'connClosed', conn });
     };
-    this.post({ t: 'host', dungeonId, password, name, god });
+    this.post({ t: 'host', heaven: 1, fixture, password, name, god, bot, profile, progressionEnabled, diagnostics, devSeed: dev.seed, devStartRoom: dev.startRoom, evidence: this.evidence });
   }
 
   /** The host's `Start` in the Lobby. */
@@ -62,6 +72,12 @@ export class HostSession {
     return this.net?.stats ?? null;
   }
 
+  /** One line per connected client: its player, round trip and route (the host's F3). */
+  linkLines(): string[] {
+    if (!this.net) return [];
+    return this.net.links().map(({ conn, link }) => `P${this.connPlayer.get(conn) ?? '?'} ${link.text()}`);
+  }
+
   /** Dev keys K and J: removes every enemy, or every Blessed (`blessedOnly`, screenshots). */
   killAll(blessedOnly = false): void {
     this.post({ t: 'killAll', blessedOnly });
@@ -70,6 +86,21 @@ export class HostSession {
   /** Dev key G: toggles invulnerability for the local player. */
   toggleGod(): void {
     this.post({ t: 'toggleGod', playerId: this.localPlayerId });
+  }
+
+  /** Dev key I: fills the local player's item slots with the next pair of items. */
+  devItems(): void {
+    this.post({ t: 'devItems', playerId: this.localPlayerId });
+  }
+
+  /** Dev key B: the next development quick build for the local player. */
+  devBuild(): void {
+    this.post({ t: 'devBuild', playerId: this.localPlayerId });
+  }
+
+  /** Dev key R: a Rite offer for the local player now. */
+  devRite(): void {
+    this.post({ t: 'devRite', playerId: this.localPlayerId });
   }
 
   setPaused(paused: boolean): void {
@@ -112,11 +143,13 @@ export class HostSession {
           this.tickTimes.push([performance.now(), m.simMs]);
           this.onTickMs(m.simMs);
           this.director = m.director ?? null;
+          this.carrierChecks = m.carrierChecks ?? [];
+          this.weaponKills = m.weaponKills ?? {};
           for (const buf of m.bufs) this.local.deliverSnapshot(buf);
         } else {
           // Forwarding is driven by worker messages, so it keeps full rate in a background tab (§2.2).
           const conn = this.playerConn.get(m.to);
-          if (net && conn !== undefined) for (const buf of m.bufs) net.sendSnap(conn, buf);
+          if (net && conn !== undefined) net.sendSnaps(conn, m.bufs);
         }
         break;
       case 'ctrl':
@@ -139,6 +172,9 @@ export class HostSession {
       case 'drop':
         this.unbind(m.conn);
         net?.close(m.conn);
+        break;
+      case 'evidence':
+        this.onEvidence(m.record);
         break;
       case 'heartbeat': {
         const loading = new Set<number>();

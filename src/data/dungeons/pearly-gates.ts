@@ -3,7 +3,7 @@
  * Arena 2), the bottom band back west (Arena 3, the boss arena). The route climbs from 0 m to 4.5 m.
  */
 import { GridBuilder } from './build';
-import type { DungeonDef } from './types';
+import type { FixtureDef } from './types';
 
 const g = new GridBuilder(127, 101);
 type Cell = readonly [number, number];
@@ -118,7 +118,7 @@ const arena4Doors = doors(66, 85, 66, 88);
 
 const grids = g.build();
 
-export const pearlyGates: DungeonDef = {
+export const pearlyGates: FixtureDef = {
   id: 'pearly-gates',
   name: 'The Pearly Gates',
   heights: grids.heights,

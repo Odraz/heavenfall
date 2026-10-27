@@ -12,7 +12,7 @@ function mapOf(rows: string[]): GameMap {
     if (ch !== '#' && s < 4) { cells[r][c] = 'S'; s++; }
   }));
   const markers = cells.map((r) => r.join(''));
-  const def: DungeonDef = { id: 't', name: 'T', heights: rows, markers, arenas: [] };
+  const def: DungeonDef = { id: 't', name: 'T', heights: rows, markers, rooms: [] };
   return loadMap(def);
 }
 

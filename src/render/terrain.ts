@@ -136,11 +136,11 @@ export interface Terrain {
   arches: Arches;
   /** The Heavenly Gate (M10 gate §3): its cut-out mesh (its alpha pass is the painted faces'), and its layout for the tracers; null on maps without one. */
   gate: { mesh: THREE.Mesh; layout: GateLayout } | null;
-  /** Closed-door columns per arena, entry and exit door (null where the arena has none). */
-  doors: Array<{ entry: THREE.Mesh | null; exit: THREE.Mesh | null }>;
+  /** Closed-door columns per room, one per leaf (null for a leaf with no cells). */
+  doors: Array<Array<THREE.Mesh | null>>;
 }
 
-export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
+export function buildTerrain(map: GameMap, textures: TerrainTextures, woodRoom = -1): Terrain {
   const g = new GeometryBuilder();
   const { w, h } = map;
   const hz = map.heights;
@@ -258,7 +258,7 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
           g.side(x0, y0, x1, y1, cliffBottom + CLIFF_FADE, t, u0, u1, (cliffBottom + CLIFF_FADE) / TILE, t / TILE, normal, s, L_WALL, face);
         } else if ((nk === K_FLOOR || nk === K_DOOR) && k !== K_OPEN) {
           // A wall or pillar looking onto floor: the decorated band, tex-wall above it, the cornice.
-          const band = k === K_PILLAR ? L_PILASTER : segmentLook(map, c, r, edge.dx, edge.dy);
+          const band = k === K_PILLAR ? L_PILASTER : segmentLook(map, c, r, edge.dx, edge.dy, woodRoom);
           let fu0 = u0;
           let fu1 = u1;
           if (k === K_PILLAR) {
@@ -346,7 +346,7 @@ export function buildTerrain(map: GameMap, textures: TerrainTextures): Terrain {
     m.visible = false;
     return m;
   };
-  const doors = map.arenas.map((arena) => ({ entry: doorMesh(arena.doors), exit: doorMesh(arena.exitDoors ?? []) }));
+  const doors = map.rooms.map((room) => room.leaves.map((leaf) => doorMesh(leaf.cells)));
 
   return { mesh, lightmap, relief: new ReliefIndex(relief, w), painted, paintedAlpha, arches, gate, doors };
 }

@@ -6,7 +6,7 @@
  */
 import type { TrackId } from '../data/music';
 import { MusicPlayer } from './music';
-import { loadRecordedSetting, nextTake, peakRms, saveRecordedSetting, TAKES } from './recorded';
+import { loadRecordedSetting, loadRecordedTakes, ShuffleBag, saveRecordedSetting, TAKES } from './recorded';
 import { SFX, type SfxName } from './sfx';
 import { renderSound } from './synth';
 import { loadVolume, saveVolume, VOLUME_KEYS, type VolumeKey } from './volume';
@@ -45,6 +45,9 @@ export interface LoopHandle {
   setRate(rate: number): void;
   stop(): void;
 }
+export interface VoiceHandle { stop(): void; playing(): boolean; }
+/** Play only the remaining accepted window, stretching the source to its authoritative duration. */
+export interface PlayWindow { elapsed: number; duration: number; }
 
 export class AudioEngine {
   readonly ctx: AudioContext;
@@ -54,10 +57,13 @@ export class AudioEngine {
   readonly music: MusicPlayer;
   private readonly buffers = new Map<SfxName, AudioBuffer>();
   /** The recorded takes, each with the gain that matches it to the synthesized cue's loudness. */
-  private readonly takes = new Map<SfxName, { bufs: AudioBuffer[]; gains: number[]; last: number }>();
+  private readonly takes = new Map<SfxName, { bufs: AudioBuffer[]; gains: number[]; bag: ShuffleBag }>();
   private recordedOn = loadRecordedSetting();
   private readonly voices: Voice[] = [];
   private readonly lastStart = new Map<SfxName, number>();
+  /** Voices started, and voices refused for lack of a voice to take over, by sound (R8's census). */
+  readonly started: Record<string, number> = {};
+  readonly refused: Record<string, number> = {};
   private readonly volumes: Record<VolumeKey, number>;
   /** The listener: the local player's position and yaw. */
   private lx = 0;
@@ -101,19 +107,8 @@ export class AudioEngine {
     for (const [name, urls] of TAKES) {
       const synth = this.buffers.get(name);
       if (!synth) continue;
-      const target = peakRms(synth.getChannelData(0), synth.sampleRate);
-      const bufs: AudioBuffer[] = [];
-      const gains: number[] = [];
-      for (const url of urls) {
-        try {
-          const buf = await this.ctx.decodeAudioData(await (await fetch(url)).arrayBuffer());
-          bufs.push(buf);
-          gains.push(target / Math.max(1e-6, peakRms(buf.getChannelData(0), buf.sampleRate)));
-        } catch {
-          // Left out; the other takes still play.
-        }
-      }
-      if (bufs.length) this.takes.set(name, { bufs, gains, last: -1 });
+      const { bufs, gains } = await loadRecordedTakes(urls, synth, { fetch: (url) => fetch(url), decode: (data) => this.ctx.decodeAudioData(data) });
+      if (bufs.length) this.takes.set(name, { bufs, gains, bag: new ShuffleBag(bufs.length) });
     }
   }
 
@@ -165,17 +160,17 @@ export class AudioEngine {
    * priority can be taken over. `priority` overrides the sound's own (another player's weapon). An
    * explicit `rate` (playback rate) plays without the random pitch variation, so ladders stay exact.
    */
-  play(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number, rate?: number): void {
+  play(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number, rate?: number, window?: PlayWindow): VoiceHandle | undefined {
     const def = SFX[name];
     let buffer = this.buffers.get(name);
     if (!buffer) return;
     const recorded = this.recordedOn ? this.takes.get(name) : undefined;
-    let take = -1;
     if (recorded) {
-      take = nextTake(recorded.bufs.length, recorded.last);
+      const take = recorded.bag.peek();
       buffer = recorded.bufs[take];
       gain *= recorded.gains[take];
     }
+    if (window && (![window.elapsed, window.duration, buffer.duration].every(Number.isFinite) || window.elapsed < 0 || window.duration <= 0 || window.elapsed >= window.duration || buffer.duration <= 0)) return;
     const prio = priority ?? def.priority;
     const now = this.ctx.currentTime;
     const start = Math.max(now, now + when);
@@ -196,14 +191,15 @@ export class AudioEngine {
     if (same.length >= MAX_PER_SOUND) this.steal(same[0]);
     else if (this.voices.length >= MAX_VOICES) {
       const victim = this.voices.find((v) => v.priority <= prio);
-      if (!victim) return;
+      if (!victim) { this.refused[name] = (this.refused[name] ?? 0) + 1; return; }
       this.steal(victim);
     }
     this.lastStart.set(name, start);
-    if (recorded) recorded.last = take;
+    this.started[name] = (this.started[name] ?? 0) + 1;
+    if (recorded) recorded.bag.take();
     const src = this.ctx.createBufferSource();
     src.buffer = buffer;
-    src.playbackRate.value = playbackRate('ui' in def && def.ui === true, rate);
+    src.playbackRate.value = window ? buffer.duration / window.duration : playbackRate('ui' in def && def.ui === true, rate);
     const g = this.ctx.createGain();
     g.gain.value = gain;
     src.connect(g);
@@ -216,7 +212,13 @@ export class AudioEngine {
     const voice: Voice = { name, priority: prio, started: start, src, ended: false };
     src.onended = () => (voice.ended = true);
     this.voices.push(voice);
-    src.start(start);
+    src.start(start, window ? window.elapsed * src.playbackRate.value : 0);
+    let stopped = false;
+    return { playing: () => !voice.ended && !stopped, stop: () => {
+      if (stopped || voice.ended) return;
+      stopped = true; g.gain.setTargetAtTime(0, this.ctx.currentTime, 0.01);
+      try { src.stop(this.ctx.currentTime + 0.04); } catch { /* Already ended. */ }
+    } };
   }
 
   /** Starts a looping sound effect; it plays outside the voice limits until stopped. */
@@ -305,6 +307,6 @@ export function setMusic(play: TrackId | null, next: TrackId | null = null): voi
 }
 
 /** Plays a sound effect if audio is running (M8 §9.1). */
-export function sfx(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number, rate?: number): void {
-  engine?.play(name, pos, gain, when, priority, rate);
+export function sfx(name: SfxName, pos: SoundPos | null = null, gain = 1, when = 0, priority?: number, rate?: number, window?: PlayWindow): VoiceHandle | undefined {
+  return engine?.play(name, pos, gain, when, priority, rate, window);
 }

@@ -26,3 +26,6 @@ export const SLOT_REUSE_TICKS = 30;
 
 /** Comparison tolerance for heights. */
 export const EPS = 1e-6;
+
+/** No room is active (the snapshot's `activeRoom`, rogue game.md §14.3). */
+export const ROOM_NONE = 255;

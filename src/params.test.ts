@@ -4,6 +4,10 @@ import { parseParams } from './params';
 import { validName } from './ui/menus';
 
 describe('URL parameters (§2.5)', () => {
+  it('restricts held ready to explicit dev menus and keeps the elite fixture reproducible', () => {
+    expect(parseParams('?dev=1&menu=1&readyHold=1&map=dominion')).toMatchObject({ devMenu: true, readyHold: true, mapId: 'dominion' });
+    for (const q of ['?readyHold=1&menu=1', '?dev=1&readyHold=1', '?bench=1&dev=1&menu=1&readyHold=1']) expect(parseParams(q).readyHold).toBe(false);
+  });
   it('opens the menus without dev=1 or bench=1', () => {
     const p = parseParams('');
     expect(p.dev).toBe(false);
@@ -27,6 +31,25 @@ describe('URL parameters (§2.5)', () => {
   it('honors seed only together with dev=1', () => {
     expect(parseParams('?dev=1&seed=7').seed).toBe(7);
     expect(parseParams('?seed=7').seed).toBeNull();
+  });
+
+  it('selects the generated floor and distinguishes room=0 from normal Breach spawns', () => {
+    expect(parseParams('?dev=1&map=rogue&seed=317434499&room=10')).toMatchObject({ mapId: 'rogue', seed: 0x12ebaa83, startRoom: 10, startArena: 0 });
+    expect(parseParams('?dev=1&map=rogue&room=0').startRoom).toBe(0);
+    for (const suffix of ['', '&room=x', '&room=-1']) expect(parseParams(`?dev=1&map=rogue${suffix}`).startRoom).toBeNull();
+    expect(parseParams('?map=rogue&room=10').startRoom).toBeNull();
+    expect(parseParams('?dev=1&map=pearly-gates&room=10').startRoom).toBeNull();
+    expect(parseParams('?dev=1&map=rogue&room=9999999999999999999999999999').startRoom).toBe(31);
+    expect(parseParams('?dev=1&map=rogue&seed=4294967296').seed).toBe(0);
+  });
+
+  it('benches a generated room by seed and room (R9 stage 4), the pinned crest room by default', () => {
+    expect(parseParams('?bench=1&map=rogue&room=10&seed=7')).toMatchObject({ mapId: 'rogue', seed: 7, benchArena: 10, startRoom: null, dev: false });
+    expect(parseParams('?bench=1&map=rogue')).toMatchObject({ mapId: 'rogue', seed: 0x12ebaa83, benchArena: 3 });
+    expect(parseParams('?bench=1&map=rogue&room=x&view=gate')).toMatchObject({ benchArena: 3, benchView: 'gate' });
+    expect(parseParams('?bench=1&map=rogue&room=99').benchArena).toBe(31);
+    // Elsewhere the seed stays a dev switch.
+    expect(parseParams('?bench=1&map=pearly-gates&seed=7').seed).toBeNull();
   });
 
   it('keeps bot and god with the menus', () => {
@@ -53,11 +76,11 @@ describe('URL parameters (§2.5)', () => {
   });
 
   it('benches the boss arena in the gate view (M10 gate §4)', () => {
-    const boss = getDungeon('pearly-gates')!.arenas.findIndex((a) => a.boss);
+    const boss = getDungeon('pearly-gates')!.rooms.findIndex((a) => a.boss);
     expect(boss).toBeGreaterThan(0);
     expect(parseParams('?bench=1&map=pearly-gates&view=gate')).toMatchObject({ benchView: 'gate', benchArena: boss });
     // A map with no boss arena benches arena 0.
-    expect(getDungeon('sandbox')!.arenas.some((a) => a.boss)).toBe(false);
+    expect(getDungeon('sandbox')!.rooms.some((a) => a.boss)).toBe(false);
     expect(parseParams('?bench=1&view=gate')).toMatchObject({ mapId: 'sandbox', benchView: 'gate', benchArena: 0 });
   });
 });
@@ -69,5 +92,17 @@ describe('player name (§3)', () => {
     expect(validName('  Ann  ')).toBe('Ann');
     expect(validName('x'.repeat(16))).toBe('x'.repeat(16));
     expect(validName('x'.repeat(17))).toBeNull();
+  });
+});
+
+describe('R9 evidence and boss HP switches', () => {
+  it('reads bosshp in [0, 1] only with dev=1 on the generated floor', () => {
+    expect(parseParams('?dev=1&map=rogue&bosshp=0.52').bossHp).toBe(0.52);
+    for (const q of ['?dev=1&map=rogue&bosshp=1.5', '?dev=1&map=rogue&bosshp=-1', '?dev=1&map=rogue&bosshp=x', '?dev=1&map=pearly-gates&bosshp=0.5', '?map=rogue&bosshp=0.5'])
+      expect(parseParams(q).bossHp, q).toBeNull();
+  });
+  it('allows evidence=1 on a normal page', () => {
+    expect(parseParams('?evidence=1')).toMatchObject({ evidence: true, dev: false });
+    expect(parseParams('').evidence).toBe(false);
   });
 });

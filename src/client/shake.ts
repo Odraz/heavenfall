@@ -15,6 +15,13 @@ export function massKillShake(count: number): { amp: number; decay: number; dip:
   return { amp: Math.min(1, 0.5 + 0.02 * Math.max(0, count - 6)), decay: 180, dip: 0 };
 }
 
+/** Both Dominion impacts: subtle nearby rumble, fading between 6 and 12 m. */
+export function dominionShake(distance: number): { amp: number; decay: number; dip: number } | null {
+  if (!Number.isFinite(distance) || distance >= 12 || distance < 0) return null;
+  const strength = Math.min(1, (12 - distance) / 6);
+  return { amp: 0.7 * strength, decay: 250, dip: 0.25 * strength };
+}
+
 export const SHAKE_CAP = 2;
 export const SHAKE_STEP_MS = 30;
 export const ROLL_FACTOR = 0.6;

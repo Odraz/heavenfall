@@ -1,0 +1,39 @@
+import { expandRoom } from '../notation';
+export default expandRoom(`
+id        pg-c-1x1-hazard-02
+name      The Kilns
+kind      combat
+shape     1x1
+focus     hazard
+bands     2 3
+weight    1
+grid
+ 0 ......::........ x............o.x
+ 1 ......::........ ....!...........
+ 2 ....~.::...~.... o.x..........x..
+ 3 ....~......~.... ................
+ 4 ~~~~~..vv..~~~~~ ................
+ 5 .......vv....... ................
+ 6 :::...2222...::: ......o..+......
+ 7 :::...2222...::: .......RR.......
+ 8 ......2222...... .......RR.......
+ 9 ......2222...... .........o......
+10 .......^^....... ................
+11 ~~~~~..^^..~~~~~ ................
+12 ....~......~.... ................
+13 ....~.::...~.... ..x..........x.o
+14 ......::........ ..........!.....
+15 ......::........ x.o............x
+obstacles
+  lure   0,2 4,4 north-west kiln: an L of fire round a spawn corner, a 4 m dry gap along the wall
+  lure   11,2 15,4 north-east kiln: an L of fire round a spawn corner, a 4 m dry gap along the wall
+  lure   0,11 4,13 south-west kiln: an L of fire round a spawn corner, a 4 m dry gap along the wall
+  lure   11,11 15,13 south-east kiln: an L of fire round a spawn corner, a 4 m dry gap along the wall
+  spawn  0,0 3,3 the north-west kiln mouth: two spawn points behind the fire
+  high   6,4 9,11 the kiln mound (+2 m), stairs north and south: every corner's direct line crosses fire
+props     loot 0.8 blast 0.75 blessing 0.5
+waves
+  1 0.25 blessed 1
+  2 0.35 blessed 1
+  3 0.40 blessed 1
+`);

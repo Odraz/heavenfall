@@ -3,7 +3,7 @@ import { CLASS_IDS, CLASSES, type ClassId } from '../data/classes';
 import { GAME_ID_LENGTH, normalizeGameId } from '../net/gameId';
 import { inviteLink } from '../net/invite';
 import { CHAT_MAX, PASSWORD_MAX } from '../net/lobby';
-import type { LobbyPlayer } from '../net/messages';
+import type { LobbyState } from '../net/messages';
 import { button, classCard, dungeonPicker, el, MENU_DUNGEONS } from './menus';
 
 function textField(parent: HTMLElement, label: string, name: string, maxLength: number): HTMLInputElement {
@@ -42,6 +42,7 @@ export interface FormScreen {
 }
 
 export interface HostSetupActions {
+  fixtureId?: string;
   onCreate: (password: string, dungeonId: string) => void;
   onBack: () => void;
 }
@@ -52,7 +53,7 @@ export function hostSetupScreen(a: HostSetupActions): FormScreen {
   const panel = el('div', 'panel', screen);
   const password = textField(panel, 'Password', 'password', PASSWORD_MAX);
   el('div', 'field-hint', panel, 'Leave empty for an open game.');
-  const dungeonId = dungeonPicker(panel);
+  const dungeonId = dungeonPicker(panel, a.fixtureId);
   const status = el('div', 'message', panel);
   const buttons = el('div', 'buttons', panel);
   button('Back', buttons, a.onBack, 'secondary');
@@ -137,7 +138,7 @@ export interface LobbyActions {
 
 export interface LobbyView {
   el: HTMLElement;
-  update: (lobby: { dungeonId: string; players: LobbyPlayer[] }) => void;
+  update: (lobby: LobbyState) => void;
   /** Shows the chat log (M8 §7): `Name: text` per message, oldest first. */
   setChat: (lines: ReadonlyArray<{ name: string; text: string }>) => void;
   /** Presses `Enter game` if it's enabled (bot auto-join, M8 §6.4). */
@@ -229,7 +230,7 @@ export function lobbyScreen(a: LobbyActions): LobbyView {
   return {
     el: screen,
     update: (lobby) => {
-      dungeon.textContent = MENU_DUNGEONS.find((d) => d.id === lobby.dungeonId)?.name ?? lobby.dungeonId;
+      dungeon.textContent = lobby.fixture ?? MENU_DUNGEONS[0].name;
       const byId = [...lobby.players].sort((p, q) => p.id - q.id);
       slots.forEach((s, i) => {
         const p = byId[i];

@@ -1,11 +1,12 @@
 /**
  * The Master, Music and SFX sliders on Title and the Pause overlay, in a Settings view (M8 §9.3), with
- * the Screen shake toggle (M12 §4.5) and the Recorded SFX toggle.
+ * the Screen shake toggle (M12 §4.5), the Damage numbers toggle (R06 follow-up §8) and the Recorded SFX toggle.
  */
 import { audio, sfx } from '../audio/audio';
 import { loadRecordedSetting, saveRecordedSetting } from '../audio/recorded';
 import { loadVolume, saveVolume, VOLUME_KEYS, VOLUME_LABELS, volumeText, type VolumeKey } from '../audio/volume';
 import { loadShakeSetting, saveShakeSetting } from '../client/shake';
+import { loadDamageNumbersSetting, saveDamageNumbersSetting } from '../client/damageNumbers';
 
 function setVolume(k: VolumeKey, v: number): void {
   const a = audio();
@@ -48,28 +49,38 @@ export function volumeSliders(parent: HTMLElement): HTMLDivElement {
   return box;
 }
 
-/** The Screen shake toggle (M12 §4.5): on by default, saved at once; each shake reads it when it starts. */
-export function shakeToggle(parent: HTMLElement): HTMLLabelElement {
+/** An On/Off setting row, saved at once. */
+function onOffToggle(parent: HTMLElement, label: string, inputName: string, load: () => boolean, save: (on: boolean) => void): HTMLLabelElement {
   const row = document.createElement('label');
   row.className = 'volume-row toggle-row';
   const name = document.createElement('span');
   name.className = 'volume-label';
-  name.textContent = 'Screen shake';
+  name.textContent = label;
   const input = document.createElement('input');
   input.type = 'checkbox';
-  input.name = 'screen-shake';
-  input.checked = loadShakeSetting();
+  input.name = inputName;
+  input.checked = load();
   const value = document.createElement('span');
   value.className = 'volume-value';
   value.textContent = input.checked ? 'On' : 'Off';
   input.addEventListener('change', () => {
-    saveShakeSetting(input.checked);
+    save(input.checked);
     value.textContent = input.checked ? 'On' : 'Off';
     sfx('buttonClick');
   });
   row.append(name, input, value);
   parent.appendChild(row);
   return row;
+}
+
+/** The Screen shake toggle (M12 §4.5): on by default, saved at once; each shake reads it when it starts. */
+export function shakeToggle(parent: HTMLElement): HTMLLabelElement {
+  return onOffToggle(parent, 'Screen shake', 'screen-shake', loadShakeSetting, saveShakeSetting);
+}
+
+/** The Damage numbers toggle (R06 follow-up §8): on by default; off, new numbers stop appearing. */
+export function damageNumbersToggle(parent: HTMLElement): HTMLLabelElement {
+  return onOffToggle(parent, 'Damage numbers', 'damage-numbers', loadDamageNumbersSetting, saveDamageNumbersSetting);
 }
 
 /**
@@ -111,10 +122,10 @@ function setRecorded(on: boolean): void {
 
 /**
  * A `Settings` button in `buttons` that turns `panel` into the Settings view: its title, the sliders
- * and `Back`. The panel keeps its size meanwhile, so the window doesn't move. The returned function
- * goes back to the panel's own contents.
+ * and `Back`, at the panel's size (M8 §9.3): the panel never grows or moves when Settings opens. The
+ * returned function goes back to the panel's own contents.
  */
-export function settingsButton(panel: HTMLElement, buttons: HTMLElement): () => void {
+export function settingsButton(panel: HTMLElement, buttons: HTMLElement, onProfile?: () => void): () => void {
   const open = document.createElement('button');
   open.type = 'button';
   open.className = 'button';
@@ -130,12 +141,25 @@ export function settingsButton(panel: HTMLElement, buttons: HTMLElement): () => 
   view.appendChild(title);
   const sliders = volumeSliders(view);
   shakeToggle(sliders);
+  damageNumbersToggle(sliders);
   const syncRecorded = recordedToggle(sliders);
+  // One bottom row, so adding Profile doesn't make the view taller than the panel it replaces.
+  const actions = document.createElement('div');
+  actions.className = 'buttons settings-buttons';
+  view.appendChild(actions);
+  if (onProfile) {
+    const profile = document.createElement('button');
+    profile.type = 'button';
+    profile.className = 'button';
+    profile.textContent = 'Profile';
+    profile.addEventListener('click', onProfile);
+    actions.appendChild(profile);
+  }
   const back = document.createElement('button');
   back.type = 'button';
   back.className = 'button secondary';
   back.textContent = 'Back';
-  view.appendChild(back);
+  actions.appendChild(back);
   panel.appendChild(view);
 
   // The panel's own contents that were showing when Settings opened.
@@ -145,10 +169,12 @@ export function settingsButton(panel: HTMLElement, buttons: HTMLElement): () => 
     view.hidden = true;
     for (const e of hidden) e.hidden = false;
     hidden = [];
-    panel.style.height = '';
+    panel.style.minHeight = '';
+    panel.classList.remove('settings-open');
   };
   open.addEventListener('click', () => {
-    panel.style.height = `${panel.offsetHeight}px`;
+    panel.style.minHeight = `${panel.offsetHeight}px`;
+    panel.classList.add('settings-open');
     hidden = [...panel.children].filter((e): e is HTMLElement => e instanceof HTMLElement && e !== view && !e.hidden);
     for (const e of hidden) e.hidden = true;
     syncRecorded();

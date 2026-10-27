@@ -37,7 +37,11 @@ export const PEER_TIMEOUT_MS = 5000;
 export const STALL_MS = 2 * PING_MS;
 /** A client loading the game allows the host this long a silence: the host may be loading too (§3). */
 export const LOADING_PEER_TIMEOUT_MS = 25000;
-/** The host skips a snapshot part for a client whose `snap` channel has more than this buffered (§9.1). */
-export const SNAP_BUFFER_LIMIT = 64000;
+/**
+ * The host skips a snapshot for a client whose `snap` channel would then have more than this buffered
+ * (§9.1). About one and a half full-crowd snapshots: a connection too slow for 10 Hz gets fewer, fresh
+ * snapshots instead of a queue that adds up to a second of lag (netcode stage, 2026-10-22; was 64 KB).
+ */
+export const SNAP_BUFFER_LIMIT = 24000;
 /** How long a closing side waits for its last messages to go out before closing the connection. */
 export const FLUSH_MS = 1000;

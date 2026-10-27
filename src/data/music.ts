@@ -5,7 +5,7 @@
  * (seconds): bar-aligned regions where the end flows into the start, found by
  * `node scripts/music-loops.mjs`. The stings have no loop and play once.
  */
-export type TrackId = 'calm' | 'arena-1' | 'arena-2' | 'arena-3' | 'boss' | 'victory' | 'defeat';
+export type TrackId = 'calm' | 'arena-1' | 'arena-2' | 'arena-3' | 'arena-4' | 'boss' | 'victory' | 'defeat';
 
 export interface TrackDef {
   id: TrackId;
@@ -18,6 +18,7 @@ export const MUSIC: readonly TrackDef[] = [
   { id: 'arena-1', loopStart: 121.9559, loopEnd: 183.6247 },
   { id: 'arena-2', loopStart: 112.8559, loopEnd: 182.4398 },
   { id: 'arena-3', loopStart: 14.4693, loopEnd: 129.7649 },
+  { id: 'arena-4', loopStart: 11.906, loopEnd: 125.9248 },
   { id: 'boss', loopStart: 15.3783, loopEnd: 129.8538 },
   { id: 'victory' },
   { id: 'defeat' },

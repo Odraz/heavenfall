@@ -1,5 +1,9 @@
 /** The in-game HUD and screen feedback (§10), plain DOM over the canvas. */
 import { CLASSES, GENERAL_HINTS, type ClassId } from '../data/classes';
+import { ITEMS } from '../data/items';
+import type { InventoryState } from '../net/messages';
+import { ITEM_ART, RELIC_ART } from './itemArt';
+import { carriedHints, hpTier, newItemSlots, relicHints, xpProgress } from './hudModel';
 import { ABILITIES, WEAPONS } from '../data/weapons';
 import { mouseGlyph } from '../ui/mouseGlyph';
 import { CHAT_MAX } from '../net/lobby';
@@ -81,12 +85,27 @@ interface Fade {
   from: number;
 }
 
+/** The Gatekeeper's cast bar (rogue bosses.md §3.2): its name, wind-up progress and, for Judgment, the red break fill (0–1). */
+export interface BossCastView { label: string; progress: number; brk?: number }
+/** The boss bar's phase (`II` in phase 2), the pale-grey invulnerable transition, and the deferred final hit. */
+export interface BossBarState { phase?: number; invulnerable?: boolean; deferred?: boolean }
+
 export class Hud {
   readonly root: HTMLDivElement;
   private readonly hpBar: HTMLDivElement;
+  private readonly wrathFill: HTMLDivElement;
+  private readonly xpLine: HTMLDivElement;
+  private readonly xpLevel: HTMLSpanElement;
+  private readonly xpCount: HTMLSpanElement;
+  private readonly xpFill: HTMLDivElement;
+  private readonly sentence: HTMLDivElement;
+  private readonly itemSlots: Array<{ box: HTMLDivElement; icon: HTMLImageElement; count: HTMLDivElement }>;
   private readonly hpFill: HTMLDivElement;
   private readonly shieldFill: HTMLDivElement;
+  private readonly cutFill: HTMLDivElement;
   private readonly hpText: HTMLDivElement;
+  private readonly wallet: HTMLDivElement;
+  private readonly walletCount: HTMLSpanElement;
   /**
    * The painted weapon (M11 §3): its box, placed by the manifest and moved by one transform, holding the
    * idle image, the alt image, the hammer, the cylinder blur, the green censer and the glow layers. The
@@ -130,9 +149,18 @@ export class Hud {
   private readonly crosshair: HTMLDivElement;
   private inField = false;
   private fieldEnteredAt = -Infinity;
-  private readonly abilities: Array<{ arc: SVGCircleElement; text: HTMLDivElement; box: HTMLDivElement; glint: HTMLDivElement; cd: number }>;
+  private readonly abilities: Array<{ arc: SVGCircleElement; text: HTMLDivElement; box: HTMLDivElement; glint: HTMLDivElement; icon: HTMLImageElement; cd: number }>;
+  /** The Q/E hint lines' icon and text, rewritten from the effective kit (rogue game.md §1.4). */
+  private readonly abilityHints = new Map<'Q' | 'E', { icon: HTMLImageElement; text: HTMLSpanElement }>();
+  private readonly hiddenMark: HTMLDivElement;
   /** The hints panel (M8 §2.2), toggled with H. */
   private readonly hints: HTMLDivElement;
+  /** The hint window's Carried lines (audit batch 3). */
+  private readonly carried: HTMLDivElement;
+  /** The hint window's Relics section, present only while a relic is equipped (R06 follow-up §2). */
+  private readonly relicSection: HTMLDivElement;
+  private relicKey = '';
+  private lastInventory: InventoryState['inventory'] | null = null;
   /**
    * The bottom-left column (M9 §6.4), from the bottom up: the own frame, the party frames, the chat.
    * The party frames go in before `ownFrame`.
@@ -164,14 +192,23 @@ export class Hud {
   /** The arena countdown (M8 §5): a top-center line, and a large number in the last 5 s. */
   private readonly countdownLine: HTMLDivElement;
   private readonly countdownBig: HTMLDivElement;
+  private readonly roomMessage: HTMLDivElement;
   /** Soul markers (M8 §4.1), by player ID. */
   private readonly souls = new Map<number, { root: HTMLDivElement; fill: HTMLDivElement }>();
   private readonly soulLayer: HTMLDivElement;
   private readonly result: HTMLDivElement;
   private readonly boss: HTMLDivElement;
+  private readonly bossName: HTMLDivElement;
   private readonly bossFill: HTMLDivElement;
   private readonly bossCast: HTMLDivElement;
   private readonly bossCastFill: HTMLDivElement;
+  private readonly bossBreak: HTMLDivElement;
+  private readonly bossCastLabel: HTMLDivElement;
+  private readonly bossNote: HTMLDivElement;
+  private readonly sight: HTMLDivElement;
+  private readonly called: HTMLDivElement;
+  private readonly cue: HTMLDivElement;
+  private cueUntil = 0;
   private readonly judgment: HTMLDivElement;
   private readonly judgmentFlash: HTMLDivElement;
   /** The ally target's chevron (M8 §3.5): gold over the target, grey over an ally out of range. */
@@ -308,6 +345,14 @@ export class Hud {
 
     // The bottom-left column (M9 §6.4): chat on top, then the party frames, then the own frame.
     this.leftColumn = el('div', 'hud-left', this.root);
+    // Halos (audit batch 2): the in-world halo sprite in a band flush with the left edge, mirroring
+    // "Enemies remaining" on the right.
+    this.wallet = el('div', 'halo-wallet', this.root);
+    const halo = el('img', 'halo-icon', this.wallet);
+    halo.src = spriteUrl('gold-halo');
+    halo.alt = '';
+    this.walletCount = el('span', 'halo-count', this.wallet);
+    this.setWallet(0);
     const chat = el('div', 'chat', this.leftColumn);
     this.chatMessages = el('div', 'chat-messages', chat);
     this.chatInput = el('input', 'chat-input', chat);
@@ -341,6 +386,24 @@ export class Hud {
     this.hpBar = el('div', 'hp-bar', hp);
     this.hpFill = el('div', 'hp-fill', this.hpBar);
     this.shieldFill = el('div', 'shield-fill', this.hpBar);
+    this.cutFill = el('div', 'hp-cut', this.hpBar);
+    this.cutFill.hidden = true;
+    // Wrath of Dis (classes-fallen.md `a.cap`): the red-iron ring's fill toward its eruption, along the bar's foot.
+    this.wrathFill = el('div', 'wrath-fill', this.hpBar);
+    this.wrathFill.hidden = true;
+    // Experience (audit batch 2): the level and count above a slim bar in the HP bar's own frame.
+    this.xpLine = el('div', 'xp-line', this.root);
+    this.xpLine.setAttribute('role', 'progressbar');
+    this.xpLine.setAttribute('aria-label', 'Class experience');
+    this.xpLine.setAttribute('aria-valuemin', '0');
+    this.xpLine.setAttribute('aria-valuemax', '100');
+    const xpLabel = el('div', 'xp-label', this.xpLine);
+    this.xpLevel = el('span', '', xpLabel);
+    this.xpCount = el('span', 'xp-count', xpLabel);
+    this.xpFill = el('div', 'xp-fill', el('div', 'xp-bar', this.xpLine));
+    // Under the XP bar while a Sentence is on (game.md §2.5).
+    this.sentence = el('div', 'xp-sentence', this.xpLine);
+    this.sentence.hidden = true;
     this.buff = el('div', 'buff-icon', hp);
     this.buff.hidden = true;
     const buffImg = el('img', '', this.buff);
@@ -354,6 +417,16 @@ export class Hud {
     this.buff.appendChild(buffSvg);
 
     const abil = el('div', 'abilities', this.root);
+    // Consumables (audit batch 2): smaller round slots above Q and E, so they never read as abilities.
+    this.itemSlots = [1, 2].map((key) => {
+      const box = el('div', 'item-slot empty ready', abil);
+      const icon = el('img', 'item-icon', box);
+      icon.hidden = true;
+      icon.alt = '';
+      const count = el('div', 'item-count', box);
+      el('div', 'ability-key', box).textContent = String(key);
+      return { box, icon, count };
+    });
     this.abilities = (['Q', 'E'] as const).map((key) => {
       const box = el('div', 'ability', abil);
       const icon = el('img', 'ability-icon', box);
@@ -377,7 +450,7 @@ export class Hud {
       box.appendChild(svg);
       const text = el('div', 'ability-cd', box);
       el('div', 'ability-key', box).textContent = key;
-      return { arc, text, box, glint, cd: 0 };
+      return { arc, text, box, glint, icon, cd: 0 };
     });
 
     // Hints: the class's lines, each ability's with its icon, then the general ones in multiplayer.
@@ -392,9 +465,19 @@ export class Hud {
         const icon = el('img', 'hint-icon', line);
         icon.src = spriteUrl(ABILITIES[classId][h.key].icon);
         icon.alt = h.key;
+        const text = el('span', 'hint-text', line);
+        text.textContent = h.text;
+        this.abilityHints.set(h.key, { icon, text });
+        continue;
       } else el('span', 'hint-icon', line);
       el('span', 'hint-text', line).textContent = h.text;
     }
+    // Carried items (audit batch 3): what slots 1 and 2 do, always current; replaces the pickup popup.
+    // Talents are read in the T view, not here.
+    el('div', 'hint-section', this.hints).textContent = 'Carried';
+    this.carried = el('div', 'hint-carried', this.hints);
+    this.setCarried(null);
+    this.relicSection = el('div', 'hint-relics', this.hints);
     if (multiplayer) {
       for (const text of GENERAL_HINTS) {
         const line = el('div', 'hint hint-general', this.hints);
@@ -403,12 +486,30 @@ export class Hud {
       }
     }
 
+    this.hiddenMark = el('div', 'hidden-mark', this.root);
+    this.hiddenMark.textContent = 'Hidden from casters';
+    this.hiddenMark.hidden = true;
+
     this.boss = el('div', 'boss', this.root);
-    el('div', 'boss-name', this.boss).textContent = 'The Gatekeeper';
+    this.bossName = el('div', 'boss-name', this.boss);
+    this.bossName.textContent = 'The Gatekeeper';
     this.bossFill = el('div', 'boss-fill', el('div', 'boss-bar', this.boss));
+    this.bossNote = el('div', 'boss-note', this.boss);
+    this.bossNote.textContent = 'Break the seals of Judgment';
+    this.bossNote.hidden = true;
+    this.bossCastLabel = el('div', 'boss-cast-label', this.boss);
     this.bossCast = el('div', 'boss-cast', this.boss);
     this.bossCastFill = el('div', 'boss-cast-fill', this.bossCast);
+    // Judgment's red break fill: the damage taken toward breaking the cast (rogue bosses.md §3.2).
+    this.bossBreak = el('div', 'boss-break-fill', this.bossCast);
     this.boss.hidden = true;
+    // The crosshair eye (§3.5): open while he sees you, half-open while only a Watcher does.
+    this.sight = el('div', 'sight-eye', this.root);
+    this.sight.hidden = true;
+    this.called = el('div', 'called-text', this.root);
+    this.called.hidden = true;
+    this.cue = el('div', 'boss-cue', this.root);
+    this.cue.hidden = true;
     this.judgmentFlash = el('div', 'judgment-flash', this.root);
     this.judgment = el('div', 'judgment-text', this.root);
     this.judgment.hidden = true;
@@ -427,12 +528,91 @@ export class Hud {
     this.countdownLine.hidden = true;
     this.countdownBig = el('div', 'countdown-big', this.root);
     this.countdownBig.hidden = true;
+    this.roomMessage = el('div', 'room-message', this.root);
+    this.roomMessage.hidden = true;
     this.result = el('div', 'result-text', this.root);
   }
 
-  setHp(hp: number, shield: number, maxHp: number): void {
-    const total = Math.max(maxHp, hp + shield);
+  setInventory(state: InventoryState): void {
+    this.itemSlots.forEach((slot, i) => {
+      const stack = state.inventory[i]; slot.icon.hidden = !stack; slot.count.textContent = stack ? String(stack.count) : '';
+      slot.box.classList.toggle('empty', !stack);
+      slot.box.title = stack ? ITEMS[stack.item].name : 'Empty'; slot.box.setAttribute('aria-label', `Item ${i + 1}: ${stack ? `${ITEMS[stack.item].name} ×${stack.count}` : 'empty'}`);
+      if (stack) slot.icon.src = ITEM_ART[stack.item];
+    });
+    for (const i of newItemSlots(this.lastInventory, state.inventory, state.itemsTried)) {
+      // Restart the three-beat pulse even if it ran for an earlier item.
+      const box = this.itemSlots[i].box;
+      box.classList.remove('pulse'); void box.offsetWidth; box.classList.add('pulse');
+    }
+    this.lastInventory = state.inventory.map((s) => s && { ...s }) as InventoryState['inventory'];
+    this.setCarried(state.inventory);
+    const xp = xpProgress(state.xp);
+    this.xpLevel.textContent = `Level ${xp.level}`;
+    this.xpCount.textContent = xp.max ? 'Max' : `${xp.into} / ${xp.span}`;
+    this.xpFill.style.width = `${xp.percent}%`;
+    this.xpLine.setAttribute('aria-valuenow', String(Math.round(xp.percent)));
+    this.xpLine.setAttribute('aria-valuetext', `Level ${xp.level}, ${xp.max ? 'maximum' : `${xp.into} of ${xp.span} experience`}`);
+  }
+  /** `Sentence 3 · XP ×1.45` under the XP bar, or hidden without a Sentence. */
+  setSentence(text: string | null): void {
+    this.sentence.hidden = text === null;
+    this.sentence.textContent = text ?? '';
+  }
+
+  setItemCooldown(seconds: number): void {
+    for (const slot of this.itemSlots) {
+      slot.box.classList.toggle('ready', seconds <= 0);
+      slot.box.style.setProperty('--item-cooldown', `${Math.min(100, seconds * 100)}%`);
+    }
+  }
+
+  private setCarried(inventory: InventoryState['inventory'] | null): void {
+    const lines = inventory ? carriedHints(inventory) : [];
+    this.carried.replaceChildren();
+    for (const h of lines) {
+      const line = el('div', 'hint', this.carried);
+      const icon = el('img', 'hint-icon hint-round', line);
+      icon.src = ITEM_ART[h.item];
+      icon.alt = '';
+      el('span', 'hint-text', line).textContent = h.text;
+    }
+    if (!lines.length) {
+      const line = el('div', 'hint hint-general', this.carried);
+      el('span', 'hint-icon', line);
+      el('span', 'hint-text', line).textContent = 'Nothing carried. You carry two kinds of item, used with 1 and 2: buy them from the Pardoner or pick them up.';
+    }
+  }
+
+  /** What the equipped relics do, under Carried; nothing while none is equipped. */
+  setRelicHints(equipped: readonly (string | null)[]): void {
+    const lines = relicHints(equipped), key = lines.map((h) => h.text).join('|');
+    if (key === this.relicKey) return;
+    this.relicKey = key;
+    this.relicSection.replaceChildren();
+    if (!lines.length) return;
+    el('div', 'hint-section', this.relicSection).textContent = 'Relics';
+    for (const h of lines) {
+      const line = el('div', 'hint', this.relicSection);
+      const icon = el('img', 'hint-icon', line);
+      icon.src = RELIC_ART[h.relic];
+      icon.alt = '';
+      el('span', 'hint-text', line).textContent = h.text;
+    }
+  }
+
+  setWallet(value: number): void {
+    this.walletCount.textContent = String(value);
+    this.wallet.setAttribute('aria-label', `Halos: ${value}`);
+  }
+
+  setHp(hp: number, shield: number, maxHp: number, cut = 0): void {
+    // The bargain's cut stays visible as a dark segment at the bar's right end (game.md §9.6).
+    const total = Math.max(maxHp + cut, hp + shield + cut);
+    this.cutFill.hidden = cut <= 0;
+    this.cutFill.style.width = `${(cut / total) * 100}%`;
     this.hpFill.style.width = `${(Math.max(0, hp) / total) * 100}%`;
+    this.hpFill.dataset.tier = hpTier(hp, maxHp);
     this.shieldFill.style.left = `${(Math.max(0, hp) / total) * 100}%`;
     this.shieldFill.style.width = `${(shield / total) * 100}%`;
     this.hpText.textContent = shield > 0 ? `HP ${Math.ceil(hp)} + ${Math.ceil(shield)}` : `HP ${Math.ceil(hp)} / ${maxHp}`;
@@ -494,6 +674,31 @@ export class Hud {
   }
 
   /** Displayed cooldowns in seconds and their full lengths. */
+  /**
+   * The assigned abilities (rogue game.md §1.4, §9.4): slot icons and the Q/E hint lines follow every
+   * accepted change, so no hint teaches a surrendered effect.
+   */
+  setKit(slots: Record<'Q' | 'E', { name: string; icon: string; hint: string | null }>): void {
+    (['Q', 'E'] as const).forEach((key, i) => {
+      const s = slots[key];
+      this.abilities[i].icon.src = spriteUrl(s.icon);
+      this.abilities[i].icon.alt = s.name;
+      const line = this.abilityHints.get(key);
+      if (line) { line.icon.src = spriteUrl(s.icon); if (s.hint) line.text.textContent = s.hint; }
+    });
+  }
+
+  /** One of Them: the own eye mark while ordinary casters ignore you. */
+  setHidden(hidden: boolean): void {
+    this.hiddenMark.hidden = !hidden;
+  }
+
+  /** Wrath of Dis's fill (0–1), or null to hide it. */
+  setWrath(fraction: number | null): void {
+    this.wrathFill.hidden = fraction === null;
+    if (fraction !== null) this.wrathFill.style.width = `${Math.round(Math.max(0, Math.min(1, fraction)) * 100)}%`;
+  }
+
   setCooldowns(q: number, qMax: number, e: number, eMax: number): void {
     [
       [q, qMax],
@@ -541,17 +746,52 @@ export class Hud {
    * The Gatekeeper's HP bar, shown while `maxHp` > 0, and the Judgment cast bar under it while
    * `judgment` (progress 0–1) isn't null.
    */
-  setBoss(hp: number, maxHp: number, judgment: number | null): void {
+  setBoss(hp: number, maxHp: number, cast: BossCastView | null, state: BossBarState = {}): void {
     this.boss.hidden = maxHp <= 0;
     if (maxHp <= 0) return;
     this.bossFill.style.width = `${Math.max(0, Math.min(1, hp / maxHp)) * 100}%`;
-    this.bossCast.hidden = judgment === null;
-    if (judgment !== null) this.bossCastFill.style.width = `${Math.min(1, judgment) * 100}%`;
+    // Phase 2 names him `II`; pale grey while he can't be damaged.
+    const name = state.phase === 2 ? 'The Gatekeeper II' : 'The Gatekeeper';
+    if (this.bossName.textContent !== name) this.bossName.textContent = name;
+    this.boss.classList.toggle('invulnerable', !!state.invulnerable);
+    this.bossNote.hidden = !state.deferred;
+    this.bossCast.hidden = cast === null;
+    this.bossCastLabel.hidden = cast === null;
+    if (cast !== null) {
+      this.bossCastFill.style.width = `${Math.min(1, cast.progress) * 100}%`;
+      this.bossBreak.style.width = `${Math.min(1, cast.brk ?? 0) * 100}%`;
+      if (this.bossCastLabel.textContent !== cast.label) this.bossCastLabel.textContent = cast.label;
+    }
+  }
+
+  /** The bar flashes: green when he takes his due, red when a tether tears his health. */
+  bossFlash(color: 'green' | 'red'): void {
+    this.bossFill.parentElement?.animate([{ boxShadow: `0 0 18px 4px ${color === 'green' ? 'rgba(80, 230, 100, 0.95)' : 'rgba(235, 40, 20, 0.95)'}` }, {}], { duration: 600, easing: 'ease-out' });
+  }
+
+  /** The crosshair eye: `full`, `half`, or hidden (`none`/null). */
+  setSight(state: 'full' | 'half' | 'none' | null): void {
+    const show = state === 'full' || state === 'half';
+    this.sight.hidden = !show;
+    if (show && this.sight.dataset.state !== state) this.sight.dataset.state = state;
+  }
+
+  /** The held player's own line while the Call holds them, or null. */
+  setCalled(text: string | null): void {
+    this.called.hidden = text === null;
+    if (text !== null && this.called.textContent !== text) this.called.textContent = text;
+  }
+
+  /** A Gatekeeper cue under his bar (the Toll, a Call, the Watchers); Judgment keeps its own large warning. */
+  bossText(text: string, ms: number, now: number): void {
+    this.cue.textContent = text;
+    this.cue.hidden = false;
+    this.cueUntil = now + ms;
   }
 
   /** Judgment feedback (§10): the warning for the 3 s cast, then a white flash or "Interrupted!". */
   judgmentEvent(phase: 'start' | 'interrupted' | 'completed', now: number): void {
-    if (phase === 'start') this.showJudgmentText('JUDGMENT — break line of sight!', JUDGMENT_TEXT_MS, now);
+    if (phase === 'start') this.showJudgmentText('JUDGMENT — hide from his sight!', JUDGMENT_TEXT_MS, now);
     else if (phase === 'interrupted') this.showJudgmentText('Interrupted!', INTERRUPTED_MS, now);
     else {
       this.judgment.hidden = true;
@@ -715,8 +955,10 @@ export class Hud {
     this.fades.push({ el: e, start: now, duration, from });
   }
 
-  centerText(text: string, ms: number, now: number): void {
+  /** A large centered line, and an optional smaller second line under it (audit batch 3: the clear reward). */
+  centerText(text: string, ms: number, now: number, sub: string | null = null): void {
     this.center.textContent = text;
+    if (sub) el('div', 'center-sub', this.center).textContent = sub;
     this.center.hidden = false;
     this.centerUntil = now + ms;
   }
@@ -742,13 +984,18 @@ export class Hud {
    * The arena countdown (M8 §5): `The doors seal in 0:47`, and the number alone, large, in the last
    * 5 s; null hides both.
    */
-  setCountdown(seconds: number | null): void {
+  setCountdown(seconds: number | null, waiting: string | null = null): void {
     this.countdownLine.hidden = seconds === null;
-    this.countdownBig.hidden = seconds === null || seconds > 5;
+    this.countdownBig.hidden = seconds === null || seconds > 5 || waiting !== null;
     if (seconds === null) return;
     const s = Math.ceil(seconds - 1e-6);
-    this.countdownLine.textContent = `The doors seal in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    this.countdownLine.textContent = waiting ?? `The doors seal in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
     this.countdownBig.textContent = String(Math.max(1, s));
+  }
+
+  setRoomMessage(text: string | null): void {
+    this.roomMessage.hidden = text === null;
+    this.roomMessage.textContent = text;
   }
 
   /**
@@ -895,6 +1142,7 @@ export class Hud {
     while (this.chatShown.length && now - this.chatShown[0].at >= CHAT_SHOW_MS) this.chatShown.shift()!.el.remove();
     for (const m of this.chatShown) m.el.style.opacity = String(Math.min(1, (CHAT_SHOW_MS - (now - m.at)) / CHAT_FADE_MS));
     if (now > this.judgmentUntil) this.judgment.hidden = true;
+    if (now > this.cueUntil) this.cue.hidden = true;
     for (let i = this.fades.length - 1; i >= 0; i--) {
       const f = this.fades[i];
       const t = (now - f.start) / f.duration;

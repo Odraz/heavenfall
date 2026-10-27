@@ -13,7 +13,7 @@ import type { TerrainTextures } from './textures';
 /** Stand-ins for the loaded textures: building the terrain only needs their kinds. */
 function fakeTextures(gate: boolean): TerrainTextures {
   const array = () => new THREE.DataArrayTexture(new Uint8Array(4), 1, 1, 1);
-  return { array: array(), door: new THREE.Texture(), sky: new THREE.Texture(), shaft: new THREE.Texture(), atmosphere: new THREE.Texture(), gate: gate ? array() : null };
+  return { array: array(), door: new THREE.Texture(), refiner: new THREE.Texture(), sky: new THREE.Texture(), shaft: new THREE.Texture(), atmosphere: new THREE.Texture(), gate: gate ? array() : null };
 }
 
 function lightOf(map: GameMap) {
@@ -46,7 +46,7 @@ const F = L.F;
 
 describe('the Heavenly Gate (M10 gate)', () => {
   it('is on the Pearly Gates only, at the boss arena', () => {
-    expect(map.gate).toEqual({ x: 6, yCenter: 75, y0: 49, y1: 101 });
+    expect(map.gate).toEqual({ facing: 'W', plane: 6, uCenter: 75, u0: 49, u1: 101 });
     expect(F).toBe(4.5);
     expect(loadMap(DUNGEONS.sandbox).gate).toBeNull();
     expect(gateLayout(loadMap(DUNGEONS.sandbox))).toBeNull();

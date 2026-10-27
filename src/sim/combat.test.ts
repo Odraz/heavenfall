@@ -91,8 +91,8 @@ describe('damage pipeline (M9 §3.6)', () => {
     expect(p.shield).toBe(0);
   });
 
-  it('singleplayer regenerates 1.5% of max HP per second after 8 s without damage', () => {
-    const sim = makeSim(room(20, 10), ['fallen'], { singleplayer: true });
+  it('solo has no passive regeneration outside sealed combat', () => {
+    const sim = makeSim(room(20, 10), ['fallen']);
     const p = sim.players[0];
     sim.step();
     sim.damagePlayer(p, 100 / 0.6); // 100 after Brimstone Hide
@@ -101,7 +101,7 @@ describe('damage pipeline (M9 §3.6)', () => {
     expect(p.hp).toBeCloseTo(300);
     for (let i = 0; i < 31; i++) sim.step();
     // 1 s of regeneration: 6 HP.
-    expect(p.hp).toBeCloseTo(306, 0);
+    expect(p.hp).toBeCloseTo(300, 6);
     const multi = makeSim(room(20, 10), ['fallen', 'binder']);
     multi.damagePlayer(multi.players[0], 100);
     for (let i = 0; i < 300; i++) multi.step();
@@ -242,9 +242,9 @@ describe('combat (§5.3, §5.4, §6)', () => {
     const p = sim.players[0];
     put(sim, p, 1.5, 3.5);
     const a = enemyAt(sim, BLESSED, 10.5, 3.5);
-    // Blessed are 1.6 m tall: a flat ray at eye height (1.6 m) passes just over... at 1.65 m it misses.
-    expect(sim.rayEnemies(p.x, p.y, 1.65, 1, 0, 0, 60, 1)).toEqual([]);
-    expect(sim.rayEnemies(p.x, p.y, 1.55, 1, 0, 0, 60, 1)).toEqual([a]);
+    // A Blessed is drawn 1.75 m tall, and shots test that drawn volume (R06 follow-up §5): over it they miss.
+    expect(sim.rayEnemies(p.x, p.y, 1.8, 1, 0, 0, 60, 1)).toEqual([]);
+    expect(sim.rayEnemies(p.x, p.y, 1.7, 1, 0, 0, 60, 1)).toEqual([a]);
     // A Cherub hovers 4 m up: missed by a flat shot, hit by one aimed up at it.
     const c = enemyAt(sim, CHERUB, 15.5, 3.5);
     sim.removeEnemy(a);
@@ -517,12 +517,12 @@ describe('balance (M8 §8)', () => {
     const g = enemyAt(sim, GATEKEEPER, 15.5, 3.5);
     sim.root(g, 5);
     sim.damageEnemy(g, 100, -1);
-    expect(sim.eHp[g]).toBe(29000 - 100);
+    expect(sim.eHp[g]).toBe(52000 - 100);
   });
 
-  it('the shotgun fires 8 pellets every 0.9 s, ±11°: 20 within 6 m, 10 beyond (M12 §5.1)', () => {
+  it('the shotgun fires 8 pellets every 0.9 s, ±11°: 25 within 6 m (R06 follow-up §4), 10 beyond (M12 §5.1)', () => {
     expect(WEAPONS.fallen).toMatchObject({ pellets: 8, damage: 10, interval: 0.9 });
     expect(WEAPONS.fallen.spreadYaw).toBeCloseTo((11 * Math.PI) / 180, 12);
-    expect(SHOTGUN_CLOSE_DAMAGE).toBe(20);
+    expect(SHOTGUN_CLOSE_DAMAGE).toBe(25);
   });
 });

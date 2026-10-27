@@ -14,7 +14,7 @@ import { chromium } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const BPM = { calm: 70, 'arena-1': 120, 'arena-2': 135, 'arena-3': 150, boss: 165 };
+const BPM = { calm: 70, 'arena-1': 120, 'arena-2': 135, 'arena-3': 150, 'arena-4': 145, boss: 165 };
 const tracks = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(BPM);
 
 /** Runs in the page: decodes and analyzes one track. */

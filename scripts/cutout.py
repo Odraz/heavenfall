@@ -15,6 +15,9 @@ Reads assets/art-src/<name>.png (or a JPEG with the same base name: .jpg, .jpeg,
   transparent and the color stays true over the bright world; resized to the listed width
   and written to assets/textures/<name>.png. Strips (beam, chain) repeat along their
   length: they are cropped to the rows that aren't black and their side seams smoothed.
+- ITEMS (flat green or magenta background): the consumable icons (rogue art-prompts B7), cut out like
+  SPRITES and centered on a transparent square of the listed size, written to assets/items/<name>.png.
+  The same image is the world pickup, the shop stock and the HUD slot icon.
 - UI (flat green background): cut out like SPRITES, written to assets/ui/<name>.png; the
   frames (panel, buttons, slot frame) without a margin, since CSS slices them at their edges.
 - BACKGROUNDS (full-frame paintings): resized to the listed width, written to
@@ -44,6 +47,16 @@ UI_OUT = ROOT / 'assets' / 'ui'
 
 # Output height in pixels per sprite.
 SPRITES = {
+    'amphora-tall': 256,
+    'amphora-squat': 256,
+    'amphora-lily': 256,
+    'amphora-marked': 256,
+    'sanctuary-lamp': 384,
+    'blessing-chalice': 384,
+    # The Pardoner's stock stands on these (audit: the R03 stall art was never used).
+    'shop-pedestal': 384,
+    'gold-halo': 128,
+    'heal-mote': 128,
     'proj-censer': 192,
     'proj-orb': 192,
     'proj-arrow': 192,
@@ -103,6 +116,7 @@ ICON_INSET = {'icon-field-of-blood': 0.125}
 
 # Terrain textures (§11.1): output size in pixels, each covering 4 × 4 m.
 TEXTURES = {
+    'tex-refiner-channel': 1024,
     'tex-floor': 1024,
     'tex-riser': 1024,
     'tex-wall': 1024,
@@ -113,6 +127,8 @@ TEXTURES = {
     'tex-wall-window': 1024,
     'tex-wall-pilaster': 1024,
     'tex-cornice': 1024,
+    # R8 (rogue art-prompts B4): the Confessional's walls; the wall band stretches it over the full height.
+    'tex-confessional-wood': 1024,
 }
 
 # M10 §5.1 preparation. tex-wall's frieze: its bottom rows, from the gold line above the carved band
@@ -137,6 +153,8 @@ EFFECTS = {
     'fx-chain': (512, True, 2.5),
     # M10 §7.1: the light shaft through an arch, tinted warm gold in the shader.
     'fx-lightshaft': (256, False, 1),
+    # R8 (rogue art-prompts B10): white flames on black, tinted by the fire shaders.
+    'fx-flames': (512, False, 1),
 }
 
 # Transparent margin around the cropped subject, in output pixels.
@@ -192,6 +210,28 @@ JPEG_QUALITY = 88
 # Sprites with some green of their own (the lilies' stems). Pixels with less than
 # OWN_GREEN of the background's greenness are kept as they are, not keyed or despilled.
 HAS_GREEN = {'decor-lily-urn'}
+# Green art deliberately uses the opposite key color.
+MAGENTA_BACKGROUND = {'heal-mote', 'item-balm', 'item-venom'}
+
+# Item icons: square size in pixels (B7).
+ITEMS = {f'item-{n}': 512 for n in ('balm', 'seal', 'feather', 'mirror', 'venom', 'frost', 'chain', 'plume')}
+# R6 (rogue art-prompts B5, B8): the twelve relic icons, and the key, Reliquary chest, Bell and Sundial,
+# cut out the same way into assets/items/.
+ITEMS.update({f'relic-{n}': 256 for n in ('usher', 'thurible', 'link', 'tile', 'qseal', 'eseal', 'comb', 'wheel', 'unbroken', 'mercy', 'armageddon', 'sentence3')})
+ITEMS.update({'shared-key': 256, 'reliquary-chest': 512, 'reliquary-chest-open': 512, 'judgment-bell': 512, 'sundial': 256})
+# R8 (rogue art-prompts B6, B3): the Gatekeeper's Watchers and Seal, drawn at most 1.2 m wide; the
+# Pardoner's stall box behind his portrait.
+ITEMS.update({'watcher-open': 256, 'watcher-closed': 256, 'judgment-seal': 256, 'pardoner-box': 512})
+ITEM_OUT = ROOT / 'assets' / 'items'
+
+# Opaque paintings cut to a rectangle (x0, y0, x1, y1 in source pixels) and resized to a width, written
+# to assets/items/<name>.png. confessional-grille (B4): the wooden frame and grille only, without the
+# painted stone wall around it (art-prompts' panel-only check), so it hangs on the room's own wall.
+CROPS = {'confessional-grille': ((410, 100, 2112, 1562), 640)}
+
+# Source defects repaired from a matching image before keying: name -> (donor, (x0, y0, x1, y1)).
+# watcher-open's bottom gold point is smeared; watcher-closed is the same frame at the same pixels.
+PATCH_FROM = {'watcher-open': ('watcher-closed', (740, 1440, 1310, 1890))}
 OWN_GREEN = 0.15
 
 
@@ -209,22 +249,32 @@ def greenness(rgb: np.ndarray) -> np.ndarray:
     return rgb[..., 1] - np.maximum(rgb[..., 0], rgb[..., 2])
 
 
-def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN, rotations: bool = False) -> None:
+def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN, rotations: bool = False, square: bool = False) -> None:
     """
     Keys out the green, crops and resizes to `height`; with `rotations`, `height` is the longer side
-    instead, and the sprite is saved in its 4 rotations (ROTATED).
+    instead, and the sprite is saved in its 4 rotations (ROTATED); with `square`, the subject is
+    centered on a transparent `height` square (ITEMS).
     """
     rgb = np.asarray(Image.open(source(name)).convert('RGB')).astype(np.float32)
+    if name in PATCH_FROM:
+        donor, (x0, y0, x1, y1) = PATCH_FROM[name]
+        other = np.asarray(Image.open(source(donor)).convert('RGB')).astype(np.float32)
+        # A feathered rectangle (24 px ramps), so the seam has no edge.
+        ys, xs = np.mgrid[y0:y1, x0:x1]
+        w = np.minimum.reduce([ys - y0, y1 - 1 - ys, xs - x0, x1 - 1 - xs]).clip(0, 24)[..., None] / 24
+        rgb = rgb.copy()
+        rgb[y0:y1, x0:x1] = rgb[y0:y1, x0:x1] * (1 - w) + other[y0:y1, x0:x1] * w
 
     # The background color, from the corners.
     k = 16
     corners = np.concatenate([c.reshape(-1, 3) for c in (rgb[:k, :k], rgb[:k, -k:], rgb[-k:, :k], rgb[-k:, -k:])])
     bg = np.median(corners, axis=0)
-    bg_green = greenness(bg)
+    key_strength = (lambda c: np.minimum(c[..., 0], c[..., 2]) - c[..., 1]) if name in MAGENTA_BACKGROUND else greenness
+    bg_green = key_strength(bg)
 
     # Each pixel is a mix of the subject and the background; its greenness says how much
     # background it holds. Unmixing recovers the subject's color at the edges.
-    bg_share = np.clip(greenness(rgb) / bg_green, 0, 1)
+    bg_share = np.clip(key_strength(rgb) / bg_green, 0, 1)
     bg_share[bg_share < (OWN_GREEN if name in HAS_GREEN else 0.08)] = 0  # JPEG noise inside the subject
     alpha = 1 - bg_share
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -232,7 +282,8 @@ def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN, ro
     color = np.nan_to_num(np.clip(color, 0, 255))
     # Whatever green is left is spill: no palette color has more green than red or blue.
     spill = bg_share > 0 if name in HAS_GREEN else np.full(alpha.shape, True)
-    color[..., 1] = np.where(spill, np.minimum(color[..., 1], np.maximum(color[..., 0], color[..., 2])), color[..., 1])
+    if name not in MAGENTA_BACKGROUND:
+        color[..., 1] = np.where(spill, np.minimum(color[..., 1], np.maximum(color[..., 0], color[..., 2])), color[..., 1])
 
     if name in SPACED:
         color, alpha = space_letters(color, alpha, *SPACED[name])
@@ -256,6 +307,13 @@ def cutout(name: str, height: int, out_dir: Path = OUT, margin: int = MARGIN, ro
         dx = max(w / 2 - x0, x1 - w / 2)
         y0, y1, x0, x1 = round(h / 2 - dy), round(h / 2 + dy), round(w / 2 - dx), round(w / 2 + dx)
     rgba = np.dstack([color, alpha * 255])[y0:y1, x0:x1].round().astype(np.uint8)
+    if square:
+        side = max(y1 - y0, x1 - x0)
+        padded = np.zeros((side, side, 4), np.uint8)
+        oy, ox = (side - (y1 - y0)) // 2, (side - (x1 - x0)) // 2
+        padded[oy:oy + y1 - y0, ox:ox + x1 - x0] = rgba
+        rgba = padded
+        y0, y1, x0, x1 = 0, side, 0, side
 
     # Resize premultiplied, so transparent pixels don't bleed their color into the edges.
     inner = height - 2 * margin
@@ -931,8 +989,15 @@ def gate() -> None:
     print(f'wrote {GATE_GEN.relative_to(ROOT)}')
 
 
+def crop(name: str, box: tuple[int, int, int, int], width: int) -> None:
+    img = Image.open(source(name)).convert('RGB').crop(box)
+    img = img.resize((width, round(img.height * width / img.width)), Image.LANCZOS)
+    img.save(ITEM_OUT / f'{name}.png', optimize=True)
+    print(f'{name}: {img.width}x{img.height}')
+
+
 def main() -> None:
-    known = [*SPRITES, *ROTATED, *ICONS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere', 'gate', 'weapons']
+    known = [*SPRITES, *ROTATED, *ICONS, *ITEMS, *CROPS, *TEXTURES, *EFFECTS, *UI, *BACKGROUNDS, *SKIES, 'tex-arcade', 'fx-atmosphere', 'gate', 'weapons']
     for name in sys.argv[1:] or known:
         if name in SPRITES:
             cutout(name, SPRITES[name])
@@ -940,6 +1005,10 @@ def main() -> None:
             cutout(name, ROTATED[name], rotations=True)
         elif name in ICONS:
             icon(name, ICONS[name])
+        elif name in ITEMS:
+            cutout(name, ITEMS[name], ITEM_OUT, 8, square=True)
+        elif name in CROPS:
+            crop(name, *CROPS[name])
         elif name in TEXTURES:
             texture(name, TEXTURES[name])
         elif name in EFFECTS:

@@ -1,5 +1,8 @@
+import type { CommanderCast, CarrierCheck } from './data/commanders';
+import type { WatchmanAim } from './data/watchman';
 /** The read-only debug object `window.__heavenfall` (§2.5). */
 import type { DirectorInfo } from './sim/director';
+import type { DominionLeap } from './data/dominion';
 
 export type Screen =
   | 'title'
@@ -34,12 +37,73 @@ export interface DebugState {
   enemies: number;
   enemyCountsByTick: Record<number, number>;
   projectiles: number;
-  arenaIndex: number;
-  arenaPhase: 'idle' | 'countdown' | 'combat' | 'cleared';
-  /** Seconds until the arena seals, 0 outside the countdown (M8 §10). */
+  wallet: number;
+  pickups: Array<{ id: number; kind: number; x: number; y: number }>;
+  props: Array<{ id: number; room: number; family: string; x: number; y: number; z: number; marked: boolean }>;
+  brokenProps: number[];
+  propRecharges: Array<{ id: number; readyTick: number }>;
+  hazards: { activeRoom: number; activeCells: number };
+  spawnWarnings: Array<{ id: number; room: number; x: number; y: number; z: number; startTick: number; readyTick: number }>;
+  crests: number;
+  /** R5: class floor fire cells drawn now, and live talent areas by kind. */
+  talentFire: number;
+  talentAreas: string[];
+  /** R6: the own equipped relics and combo, live relic area effects, the route state, own pending relic offers, the own streak and the Sentence. */
+  relics: { equipped: [string | null, string | null]; combo: string | null };
+  relicAreas: string[];
+  relicShots: number;
+  route: { keyHolder: number; keyUsed: boolean; chest: { open: boolean } | null; bells: string[]; sundial: string } | null;
+  relicOffers: number;
+  streak: { count: number; best: number };
+  sentence: number;
+  commanders: CommanderCast[];
+  /** The latest snapshot's Watchman aim records (rogue rooms.md §6.4). */
+  watchmen: WatchmanAim[];
+  /** The Gatekeeper fight as this screen draws it (rogue bosses.md §3); null outside it. */
+  boss: { phase: number; cast: number; cycle: number; held: number; heldLocal: boolean; eyes: number; seals: number; sight: string; rings: number[]; hp: number; maxHp: number; flags: number; at: [number, number, number]; eyesAt: Array<[number, number, number]>; seal: [number, number, number] | null } | null;
+  /** ...and every Watchman's accepted feet in that snapshot. */
+  watchmanBodies: Array<{ slot: number; incarnation: number; x: number; y: number; z: number }>;
+  carrierChecks: CarrierCheck[];
+  /** The host's count of each player's weapon kills (netcode stage 3); empty on a guest. */
+  weaponKills: Record<number, number>;
+  dominion: { rendered: Array<{ slot: number; type: number; z: number; floor: number }>; actors: Array<{ slot: number; incarnation: number; x: number; y: number; z: number }>; casts: Array<{ slot: number; incarnation: number; castId: number; startTick: number; impactTick: number; room: number; x: number; y: number; z: number; leap?: DominionLeap }>; starts: number; startedCastIds: number[]; strikes: number; cancels: number };
+  seed: number | null;
+  simSeed: number | null;
+  runId: string | null;
+  attempts: number;
+  fallbackUsed: boolean;
+  genMs: number;
+  /** The client map build and this page's Loading duration, ms (R9 stage 4). */
+  mapBuildMs: number;
+  loadMs: number;
+  floorHash: string | null;
+  /** The room in countdown or combat, 255 for none (rogue game.md §14.3). */
+  activeRoom: number;
+  activePhase: 'idle' | 'countdown' | 'combat';
+  /** Bit i: room i is cleared. */
+  clearedMask: number;
+  roomKnowledge: number[];
+  floorSyncTick: number;
+  mapHeld: boolean;
+  /** Seconds until the room seals, 0 outside the countdown (M8 §10). */
   countdown: number;
   netInKBps: number;
   netOutKBps: number;
+  /**
+   * The connection (netcode stage): a client's round trip (ms) and route to the host, the render
+   * delay and the snapshot jitter (ms), and the F3 lines: the client's own, or one per client on the host.
+   */
+  link: { rttMs: number | null; route: 'direct' | 'relay' | null; delayMs: number; jitterMs: number; lines: string[] };
+  /**
+   * The local player's predicted kills: made, confirmed by the host (the enemy left the snapshots), missed,
+   * reappeared; and `reported`, its other kills the host reported that died at once (netcode stage 4).
+   */
+  killMarkers: { predicted: number; confirmed: number; missed: number; revealed: number; reported: number; undrawn: number; undrawnBurst: number; received: number; hidden: number };
+  /**
+   * The local Heretic's own censers (netcode stage 4): thrown here, matched to the host's, ending where the
+   * local one broke, and host censers of its own that matched no throw (drawn late, as the host's).
+   */
+  censers: { thrown: number; matched: number; agreed: number; unmatched: number };
   players: DebugPlayer[];
   gameResult: null | 'victory' | 'defeat';
   /** The last 50 chat messages of the session (M8 §10). */
@@ -67,9 +131,15 @@ export interface DebugState {
   chainsAt: number;
   /** With `dev=1`: the yaw and pitch (radians) from the eye to the nearest Chorister's body center within 30 m, or null. */
   casterAim: { yaw: number; pitch: number } | null;
+  /** Every cue the game's sounds played, by name (R8 stage 5's repetition census). */
+  cues: Record<string, number>;
+  /** The mixer's voices started and refused (no voice of lower or equal priority to take over), by sound. */
+  voices: { started: Record<string, number>; refused: Record<string, number> };
 }
 
 export const debugState: DebugState = {
+  cues: {},
+  voices: { started: {}, refused: {} },
   screen: 'title',
   paused: false,
   fps: 0,
@@ -78,11 +148,51 @@ export const debugState: DebugState = {
   enemies: 0,
   enemyCountsByTick: {},
   projectiles: 0,
-  arenaIndex: 0,
-  arenaPhase: 'idle',
+  wallet: 0,
+  spawnWarnings: [],
+  crests: 0,
+  talentFire: 0,
+  talentAreas: [],
+  relics: { equipped: [null, null], combo: null },
+  relicAreas: [],
+  relicShots: 0,
+  route: null,
+  relicOffers: 0,
+  streak: { count: 0, best: 0 },
+  sentence: 0,
+  pickups: [],
+  props: [],
+  brokenProps: [],
+  propRecharges: [],
+  hazards: { activeRoom: -1, activeCells: 0 },
+  commanders: [],
+  watchmen: [],
+  boss: null,
+  watchmanBodies: [],
+  carrierChecks: [],
+  weaponKills: {},
+  dominion: { rendered: [], actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
+  seed: null,
+  simSeed: null,
+  runId: null,
+  attempts: 0,
+  fallbackUsed: false,
+  genMs: 0,
+  mapBuildMs: 0,
+  loadMs: 0,
+  floorHash: null,
+  activeRoom: 255,
+  activePhase: 'idle',
+  clearedMask: 0,
+  roomKnowledge: [],
+  floorSyncTick: -1,
+  mapHeld: false,
   countdown: 0,
   netInKBps: 0,
   netOutKBps: 0,
+  link: { rttMs: null, route: null, delayMs: 0, jitterMs: 0, lines: [] },
+  killMarkers: { predicted: 0, confirmed: 0, missed: 0, revealed: 0, reported: 0, undrawn: 0, undrawnBurst: 0, received: 0, hidden: 0 },
+  censers: { thrown: 0, matched: 0, agreed: 0, unmatched: 0 },
   players: [],
   gameResult: null,
   chat: [],
@@ -110,11 +220,41 @@ export function resetGameDebug(): void {
     enemies: 0,
     enemyCountsByTick: {},
     projectiles: 0,
-    arenaIndex: 0,
-    arenaPhase: 'idle',
+    wallet: 0,
+    relics: { equipped: [null, null], combo: null }, relicAreas: [], relicShots: 0, route: null, relicOffers: 0, streak: { count: 0, best: 0 }, sentence: 0,
+    pickups: [],
+    props: [],
+    brokenProps: [],
+    propRecharges: [],
+    hazards: { activeRoom: -1, activeCells: 0 },
+    commanders: [],
+  watchmen: [],
+  boss: null,
+  watchmanBodies: [],
+    carrierChecks: [],
+    weaponKills: {},
+    dominion: { rendered: [], actors: [], casts: [], starts: 0, startedCastIds: [], strikes: 0, cancels: 0 },
+    seed: null,
+    simSeed: null,
+    runId: null,
+    attempts: 0,
+    fallbackUsed: false,
+    genMs: 0,
+    mapBuildMs: 0,
+    loadMs: 0,
+    floorHash: null,
+    activeRoom: 255,
+    activePhase: 'idle',
+    clearedMask: 0,
+    roomKnowledge: [],
+    floorSyncTick: -1,
+    mapHeld: false,
     countdown: 0,
     netInKBps: 0,
     netOutKBps: 0,
+    link: { rttMs: null, route: null, delayMs: 0, jitterMs: 0, lines: [] },
+    killMarkers: { predicted: 0, confirmed: 0, missed: 0, revealed: 0, reported: 0, undrawn: 0, undrawnBurst: 0, received: 0, hidden: 0 },
+    censers: { thrown: 0, matched: 0, agreed: 0, unmatched: 0 },
     players: [],
     gameResult: null,
     chat: [],
@@ -135,6 +275,9 @@ declare global {
     readonly __heavenfall: Readonly<DebugState>;
     /** With `dev=1`, in game: moves the local player to (x, y) on the floor there, as a teleport (screenshots, M12 stage 4). */
     __heavenfallTeleport?: (x: number, y: number) => void;
+    __heavenfallLook?: (yaw: number, pitch?: number) => void;
+    /** Dev menu only: finish the prepared client's real ready handshake. */
+    __heavenfallReady?: () => void;
   }
 }
 

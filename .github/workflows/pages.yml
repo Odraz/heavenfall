@@ -19,8 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true
+      # Only the LFS files the game and its tests use (about 130 MB): the source art and audio (about
+      # 620 MB) would spend the account's LFS bandwidth on every deploy.
+      - run: git lfs pull --exclude="assets/art-src/**,assets/audio-src/**,research_notes/**,docs/**"
       - uses: actions/setup-node@v4
         with:
           node-version: 22

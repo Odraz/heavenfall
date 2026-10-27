@@ -10,15 +10,16 @@ import hereticPortrait from '../../assets/ui/portrait-heretic.png';
 import binderPortrait from '../../assets/ui/portrait-binder.png';
 import betrayerPortrait from '../../assets/ui/portrait-betrayer.png';
 import logoUrl from '../../assets/ui/ui-logo.png';
+import { getDungeon } from '../data/dungeons';
 
 /** Each class's idle frame from the front, rendered from its 3D model (§11.2). */
-const PORTRAITS: Record<ClassId, string> = { fallen: fallenPortrait, heretic: hereticPortrait, binder: binderPortrait, betrayer: betrayerPortrait };
+export const PORTRAITS: Record<ClassId, string> = { fallen: fallenPortrait, heretic: hereticPortrait, binder: binderPortrait, betrayer: betrayerPortrait };
 
 const NAME_KEY = 'heavenfall.name';
 export const NAME_MAX = 16;
 
 /** The dungeons offered in the menus; the sandbox isn't selectable (§2.5). */
-export const MENU_DUNGEONS: ReadonlyArray<{ id: string; name: string }> = [{ id: 'pearly-gates', name: 'The Pearly Gates' }];
+export const MENU_DUNGEONS: ReadonlyArray<{ id: string; name: string }> = [{ id: 'rogue', name: 'The Pearly Gates' }];
 
 /** The trimmed player name if it's valid (1–16 characters after trimming), otherwise null. */
 export function validName(raw: string): string | null {
@@ -58,6 +59,8 @@ export function button(label: string, parent: HTMLElement, onClick: () => void, 
 }
 
 export interface TitleActions {
+  profileName?: string;
+  onProfile?: (name: string) => void;
   /** The message line, empty unless set by a return to Title; the next button press clears it. */
   message: string;
   /** The game ID of an invite link (M8 §6.1): Title offers `Join game <ID>`. */
@@ -84,6 +87,7 @@ export function titleScreen(a: TitleActions): HTMLElement {
   input.autocomplete = 'off';
   input.spellcheck = false;
   input.value = loadName();
+  if (a.profileName) input.value = a.profileName;
   const message = el('div', 'message', panel, a.message);
 
   const buttons = el('div', 'buttons', panel);
@@ -119,7 +123,7 @@ export function titleScreen(a: TitleActions): HTMLElement {
     update();
   });
   update();
-  settingsButton(panel, buttons);
+  settingsButton(panel, buttons, a.onProfile ? () => a.onProfile!(validName(input.value) ?? 'Player') : undefined);
   el('div', 'version', screen, `v${__BUILD_VERSION__}`);
   queueMicrotask(() => input.focus());
   return screen;
@@ -166,11 +170,13 @@ export function classCard(id: ClassId, parent: HTMLElement): HTMLButtonElement {
 }
 
 /** The dungeon picker with its only entry preselected; returns that dungeon's id. */
-export function dungeonPicker(panel: HTMLElement): string {
+export function dungeonPicker(panel: HTMLElement, fixtureId?: string): string {
   el('div', 'section-label', panel, 'Dungeon');
   const dungeons = el('div', 'dungeon-picker', panel);
-  const dungeonId = MENU_DUNGEONS[0].id;
-  for (const d of MENU_DUNGEONS) {
+  const fixture = getDungeon(fixtureId);
+  const choices = fixture ? [{ id: fixture.id, name: `${fixture.name} (dev)` }] : MENU_DUNGEONS;
+  const dungeonId = choices[0].id;
+  for (const d of choices) {
     const opt = el('button', 'dungeon-option', dungeons, d.name);
     opt.type = 'button';
     opt.setAttribute('aria-pressed', String(d.id === dungeonId));

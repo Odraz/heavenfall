@@ -168,18 +168,18 @@ describe('EnemyAnimator, Gatekeeper', () => {
     expect(a.pick(1, 100, BOSS_CAST_NONE)).toEqual({ anim: 'idle', frame: 0 });
   });
 
-  it('plays Volley frames 1–3 over the 0.5 s wind-up, then frame 4 for 0.3 s after it fires', () => {
+  it('plays Volley frames 1–3 over the 1.0 s wind-up (rogue bosses.md §3.2), then frame 4 for 0.3 s after it fires', () => {
     const a = new EnemyAnimator();
     let s = run(a, 1, { x: 0, y: 0, t: 0 }, 2, 0, 0, ST_IDLE, GATEKEEPER);
     s = run(a, 1, s, 1, 0, 0, ST_WINDUP, GATEKEEPER);
     const start = s.t;
     expect(a.pick(1, start, BOSS_CAST_VOLLEY)).toEqual({ anim: 'volley', frame: 0 });
-    expect(a.pick(1, start + 250, BOSS_CAST_VOLLEY)).toEqual({ anim: 'volley', frame: 1 });
-    expect(a.pick(1, start + 480, BOSS_CAST_VOLLEY)).toEqual({ anim: 'volley', frame: 2 });
-    s = run(a, 1, { ...s, t: start + 500 }, 1, 0, 0, ST_ATTACKING, GATEKEEPER);
+    expect(a.pick(1, start + 500, BOSS_CAST_VOLLEY)).toEqual({ anim: 'volley', frame: 1 });
+    expect(a.pick(1, start + 960, BOSS_CAST_VOLLEY)).toEqual({ anim: 'volley', frame: 2 });
+    s = run(a, 1, { ...s, t: start + 1000 }, 1, 0, 0, ST_ATTACKING, GATEKEEPER);
     s = run(a, 1, s, 1, 0, 0, ST_IDLE, GATEKEEPER);
-    expect(a.pick(1, start + 600, BOSS_CAST_NONE)).toEqual({ anim: 'volley', frame: 3 });
-    expect(a.pick(1, start + 850, BOSS_CAST_NONE)).toEqual({ anim: 'idle', frame: 0 });
+    expect(a.pick(1, start + 1100, BOSS_CAST_NONE)).toEqual({ anim: 'volley', frame: 3 });
+    expect(a.pick(1, start + 1350, BOSS_CAST_NONE)).toEqual({ anim: 'idle', frame: 0 });
   });
 
   it('loops Judgment every second while it is cast', () => {
@@ -190,6 +190,15 @@ describe('EnemyAnimator, Gatekeeper', () => {
     expect(a.pick(1, start + 10, BOSS_CAST_JUDGMENT)).toEqual({ anim: 'judgment', frame: 0 });
     expect(a.pick(1, start + 760, BOSS_CAST_JUDGMENT)).toEqual({ anim: 'judgment', frame: 3 });
     expect(a.pick(1, start + 1010, BOSS_CAST_JUDGMENT)).toEqual({ anim: 'judgment', frame: 0 });
+  });
+
+  it('holds the first trumpet aloft through the 50% transition, whatever was cast (R8, art-prompts A2)', () => {
+    const a = new EnemyAnimator();
+    let s = run(a, 1, { x: 0, y: 0, t: 0 }, 2, 0, 0, ST_IDLE, GATEKEEPER);
+    s = run(a, 1, s, 1, 0, 0, ST_WINDUP, GATEKEEPER);
+    expect(a.pick(1, s.t + 10, BOSS_CAST_JUDGMENT, true)).toEqual({ anim: 'trumpet', frame: 0 });
+    expect(a.pick(1, s.t + 10, BOSS_CAST_NONE, true)).toEqual({ anim: 'trumpet', frame: 0 });
+    expect(a.pick(1, s.t + 10, BOSS_CAST_JUDGMENT, false)).toEqual({ anim: 'judgment', frame: 0 });
   });
 });
 

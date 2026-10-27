@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { DECOR_IDS, decorSprite } from '../data/decor';
 import { ROTATED_SPRITES } from '../client/burstDeaths';
+import { PROP_SPRITES } from '../data/props';
 
 const pngs = import.meta.glob('../../assets/sprites/*.png', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 
@@ -16,7 +17,11 @@ const BILLBOARD_SPRITES = new Set([
   // M12 §4.2: the burst and the torn pieces, each in 4 rotations.
   ...ROTATED_SPRITES.flatMap((n) => [0, 1, 2, 3].map((r) => `${n}-r${r}`)),
   ...DECOR_IDS.map(decorSprite),
+  ...PROP_SPRITES, 'gold-halo', 'heal-mote',
 ]);
+
+/** Whether a sprite exists (optional art such as talent icons). */
+export const hasSprite = (name: string): boolean => sources.has(name);
 
 /** A sprite's image URL, for HUD images. */
 export function spriteUrl(name: string): string {
@@ -24,6 +29,13 @@ export function spriteUrl(name: string): string {
   if (!url) throw new Error(`Unknown sprite ${name}`);
   return url;
 }
+
+/**
+ * Decorations drawn as grey stone (audit batch 3): the lily urn shared the breakable amphorae's white
+ * porcelain and gold, so it read as breakable. White porcelain now always means "breaks".
+ */
+const STONE_SPRITES = new Set(['decor-lily-urn']);
+const STONE_FILTER = 'grayscale(0.85) sepia(0.25) brightness(0.92) contrast(1.05)';
 
 export const ATLAS_SIZE = 2048;
 const PAD = 4;
@@ -86,7 +98,9 @@ export async function buildAtlas(): Promise<Atlas> {
       shelf = 0;
     }
     if (y + e.ph + PAD > ATLAS_SIZE) throw new Error('Sprite atlas is full');
+    ctx.filter = STONE_SPRITES.has(e.name) ? STONE_FILTER : 'none';
     ctx.drawImage(e.img, x, y, e.pw, e.ph);
+    ctx.filter = 'none';
     frames[e.name] = {
       u0: x / ATLAS_SIZE,
       u1: (x + e.pw) / ATLAS_SIZE,

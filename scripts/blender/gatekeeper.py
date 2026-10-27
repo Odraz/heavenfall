@@ -13,6 +13,7 @@ import math
 import os
 import sys
 
+import bpy
 from mathutils import Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -175,6 +176,30 @@ def build_model():
                     rot=(math.pi / 2, 0, 0), seg=16, outline=0.004), 'hand.R')
     rigid(sphere('keyjewel', bow + Vector((0, -0.01, 0)), (0.03, 0.02, 0.04), 'blue', seg=10, outline=0.004), 'hand.R')
 
+    # The first trumpet (rogue art-prompts A2): an ivory tube banded in gold with a wide gold bell
+    # ringed by small eyes, held in the left hand. In the rest pose the arm hangs, so it runs down and
+    # outward from the grip; raised overhead, the bell points up and away. Shown only in `trumpet`.
+    d = Vector((0.30, -0.12, -1.0)).normalized()
+    grip = HAND_L + Vector((0, -0.02, -0.04))
+    mouth, bell0, bell1 = grip - d * 0.22, grip + d * 0.62, grip + d * 0.82
+    trumpet = [tube('trumpettube', mouth, bell0, 0.016, 0.022, 'ivory', seg=12, outline=0.005),
+               sphere('trumpetmouth', mouth, (0.026, 0.026, 0.026), 'gold', seg=10, outline=0.004),
+               tube('trumpetbell', bell0, bell1, 0.024, 0.13, 'gold', seg=24, outline=0.006),
+               torus('trumpetlip', bell1, 0.13, 0.012, 'gold', rot=d.to_track_quat('Z', 'Y').to_euler(), seg=28, outline=0.004)]
+    for i, f in enumerate((0.05, 0.3, 0.55)):
+        trumpet.append(torus(f'trumpetband{i}', mouth.lerp(bell0, f), 0.024, 0.008, 'gold', rot=d.to_track_quat('Z', 'Y').to_euler(), seg=14, outline=0.003))
+    # Small orderly eyes round the bell, facing out like those in his wings.
+    side = d.orthogonal().normalized()
+    for i in range(6):
+        a = 2 * math.pi * i / 6
+        n = (side * math.cos(a) + d.cross(side) * math.sin(a)).normalized()
+        c = bell0.lerp(bell1, 0.7) + n * 0.085
+        trumpet.append(sphere(f'trumpeteye{i}', c, (0.018, 0.018, 0.012), 'gold', seg=8, outline=0.002))
+        trumpet.append(sphere(f'trumpetpupil{i}', c + n * 0.008, (0.007, 0.007, 0.006), 'pupil', seg=6, outline=0.0))
+    for o in trumpet:
+        o['trumpet'] = True
+    rigid(trumpet, 'hand.L')
+
     for obj, bone in parts:
         bind_rigid(obj, arm, bone)
     for obj, bone in skirt:
@@ -237,6 +262,30 @@ def pose_judgment(t):
     return Pose(r, locs={'hips': (0, 0, 0.01 * pulse)})
 
 
+def pose_trumpet(t):
+    """
+    At half health he lifts the first trumpet (rogue bosses.md §3): the left arm raises it high and
+    out to his side, bell up, the mouthpiece held away from the helm; it stays silent. The key stays
+    planted; the wings flare as for Judgment.
+    """
+    r = stance()
+    r['upper_arm.L'] = (-150, 0, -38)
+    r['forearm.L'] = (-12, 0, 0)
+    r['hand.L'] = (-20, 0, 0)
+    add(r, 'spine', dx=-3)
+    add(r, 'head', dx=-10, dz=8)
+    wings(r, (22, 16, 10), 4)
+    return Pose(r, trumpet=True)
+
+
+def after_pose(pose):
+    """The trumpet is in his hand only for the 50% transition."""
+    show = pose.extra.get('trumpet', False)
+    for o in bpy.data.objects:
+        if o.get('trumpet'):
+            o.hide_render = not show
+
+
 def pose_death(t):
     """
     The colossus falls: a stagger, a slow sink to the knees with the wings sagging, then it topples
@@ -277,11 +326,13 @@ ANIMS = {
     'volley': (4, pose_volley, False),
     'judgment': (4, pose_judgment, True),
     'death': (8, pose_death, False),
+    'trumpet': (1, pose_trumpet, True),
 }
 
 # 64 px/m from 5 directions (§11.2); the game mirrors directions 1–3 for 7–5. The canvas, in game
 # meters, leaves room for the six wings and the colossus lying on the ground.
-SPEC = Spec(build_model, ANIMS, px_per_m=64, canvas=(-6.5, 6.5, -0.5, 8.5), contact=(0.10, 0.03, 0.06), directions=5)
+SPEC = Spec(build_model, ANIMS, px_per_m=64, canvas=(-6.5, 6.5, -0.5, 8.5), contact=(0.10, 0.03, 0.06), directions=5,
+            after_pose=after_pose)
 
 if __name__ == '__main__':
     main(SPEC, __doc__)

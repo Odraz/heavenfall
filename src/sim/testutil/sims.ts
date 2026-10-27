@@ -4,6 +4,20 @@ import { ENEMIES } from '../../data/enemies';
 import { Simulation, type SimOptions, type SimPlayer } from '../sim';
 import { dungeonOf } from './maps';
 
+/** Lets the next body hit finish the Gatekeeper: phase 2 with both completion episodes resolved (rogue bosses.md §3.2.1). */
+export function openBossGate(sim: Simulation): void {
+  sim.boss.phase = 2;
+  sim.boss.callResolved = sim.boss.aimResolved = true;
+}
+
+/** Run-scoped fields for standalone simulation fixtures; session tests supply their admitted ID. */
+export const INPUT_DEFAULTS = {
+  runId: '00000000000000000000000000000000',
+  item1Presses: 0, item2Presses: 0, mapHeld: false, qHeld: false, eHeld: false,
+  leftPresses: 0, rightPresses: 0, viewTick: -1, viewGap: 0, viewFrac: 0, shots: 0, shotButton: 255,
+  shotYaw: 0, shotPitch: 0, shotViewTick: -1, shotViewGap: 0, shotViewFrac: 0,
+};
+
 /** An open room of floor 0, `w` × `h` cells inside a wall border. */
 export function room(w: number, h: number): string[] {
   const wall = '#'.repeat(w + 2);
@@ -59,10 +73,10 @@ export function press(p: SimPlayer, key: 'Q' | 'E', allyTargetId = 255): void {
 }
 
 /**
- * Ends an arena's countdown (M8 §5) at the next tick, as if its timer ran out, and steps once.
- * The arena must be in its countdown.
+ * Ends a room's countdown (M8 §5) at the next tick, as if its timer ran out, and steps once.
+ * The room must be in its countdown.
  */
 export function sealNow(sim: Simulation, ai = 0): void {
-  sim.arenas[ai].sealTick = sim.tick + 1;
+  sim.rooms[ai].sealTick = sim.tick; // Already expired, independent of the next quorum hold.
   sim.step();
 }

@@ -4,7 +4,7 @@
  * loaded, the same way on the host and every client, so the protocol doesn't change.
  */
 import { CHERUB, CHERUB_HOVER, ENEMIES, GATEKEEPER, LAUNCH_HEIGHT } from '../data/enemies';
-import type { ArenaDef } from '../data/dungeons/types';
+import type { RoomDef } from '../data/dungeons/types';
 import { GRAVITY, JUMP_VZ, PLAYER_EYE } from './constants';
 import { SOUL_BOB, SOUL_HEIGHT, SOUL_RISE } from './souls';
 
@@ -63,7 +63,7 @@ export interface Heights {
   zone: Int16Array;
   /** Per zone: the zone top (§3.1). */
   zoneTop: Float32Array;
-  /** Number of zones; arenas are zones 0 to arenas.length − 1. */
+  /** Number of zones; rooms are zones 0 to rooms.length − 1. */
   zoneCount: number;
   /**
    * Per cell: the simulation height of a wall cell (an open edge: its parapet), the closed height of a
@@ -88,9 +88,11 @@ interface MapLike {
   h: number;
   floor: Float32Array;
   wall: Uint8Array;
-  doorArena: Int16Array;
+  doorRoom: Int16Array;
   boss: [number, number] | null;
-  arenas: ArenaDef[];
+  rooms: Pick<RoomDef, 'rect'>[];
+  /** 1 where an open edge may form (rogue game.md §3.5); null: anywhere. */
+  viewMask?: Uint8Array | null;
 }
 
 /** Computes zones, wall heights, open edges and bays (§3.1–3.3). Deterministic. */
@@ -100,13 +102,14 @@ export function computeHeights(map: MapLike): Heights {
   const inside = (c: number, r: number) => c >= 0 && r >= 0 && c < w && r < h;
   const isFloor = (c: number, r: number) => inside(c, r) && !wall[r * w + c];
 
-  // ---- Zones (§3.1): arenas' floor inside their rect, door cells by their arena, the rest connected.
+  // ---- Zones (§3.1): rooms' floor inside their rect, door cells by their room, the rest connected
+  // (corridors and vestibules).
   const zone = new Int16Array(n).fill(-1);
-  map.arenas.forEach((a, ai) => {
+  map.rooms.forEach((a, ai) => {
     for (let r = a.rect.y0; r <= a.rect.y1; r++) for (let c = a.rect.x0; c <= a.rect.x1; c++) if (isFloor(c, r)) zone[r * w + c] = ai;
   });
-  for (let i = 0; i < n; i++) if (map.doorArena[i] >= 0) zone[i] = map.doorArena[i];
-  let zoneCount = map.arenas.length;
+  for (let i = 0; i < n; i++) if (map.doorRoom[i] >= 0) zone[i] = map.doorRoom[i];
+  let zoneCount = map.rooms.length;
   for (let i = 0; i < n; i++) {
     if (wall[i] || zone[i] >= 0) continue;
     const z = zoneCount++;
@@ -157,7 +160,7 @@ export function computeHeights(map: MapLike): Heights {
   for (let i = 0; i < n; i++) {
     const c = i % w;
     const r = (i - c) / w;
-    if (map.doorArena[i] >= 0) kind[i] = K_DOOR;
+    if (map.doorRoom[i] >= 0) kind[i] = K_DOOR;
     else if (!wall[i]) kind[i] = K_FLOOR;
     else kind[i] = neighborFloorMax(c, r) === -Infinity ? K_VOID : K_WALL;
   }
@@ -187,12 +190,15 @@ export function computeHeights(map: MapLike): Heights {
     if (!border) for (const a of cells) kind[a] = K_PILLAR;
   }
 
-  // ---- Open edges (§3.3): candidates next to floor of exactly one zone, minus facing pairs.
+  // ---- Open edges (§3.3): candidates next to floor of exactly one zone, inside the view mask (rogue
+  // game.md §3.5, applied before the facing loop), minus facing pairs.
   const outX = new Float32Array(n);
   const outY = new Float32Array(n);
   const candidates: number[] = [];
+  const mask = map.viewMask ?? null;
   for (let i = 0; i < n; i++) {
     if (kind[i] !== K_WALL) continue;
+    if (mask && !mask[i]) continue;
     const c = i % w;
     const r = (i - c) / w;
     if (neighborZones(c, r).size !== 1) continue;

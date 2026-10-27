@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BLESSED, CHERUB, CHORISTER, GATEKEEPER } from '../data/enemies';
 import { SHADOWSTEP_SPEED } from '../data/weapons';
-import { FLAG_STUNNED } from '../net/protocol';
+import { FLAG_ROOTED, FLAG_SLOWED, FLAG_STUNNED } from '../net/protocol';
 import { ENEMY_SLOTS } from '../sim/constants';
 import { mapOf } from '../sim/testutil/maps';
 import { LocalPlayer } from './localPlayer';
@@ -104,5 +104,18 @@ describe('wading (M12 §3.1)', () => {
     leap.startLeap(4.5, 3.5, 0);
     for (let i = 0; i < 8; i++) leap.update(map, 0.05, 0, 0, false);
     expect(leap.body.x).toBeCloseTo(4.5, 6);
+  });
+});
+
+describe('wading talents (R5)', () => {
+  const map = room('0');
+  const crowd = enemies([[BLESSED, 4.5, 3.5, FLAG_ROOTED], [BLESSED, 2.5, 3.5, FLAG_SLOWED], [BLESSED, 3.5, 4.5]]);
+  it('Unbowed counts only bound enemies; Iron Stride leaves out slowed ones', () => {
+    expect(wadeCount(map, 3.5, 3.5, 0, crowd, NEVER, 0)).toBe(3);
+    const unbowed = (f: number) => !(f & FLAG_ROOTED);
+    const stride = (f: number) => !!(f & FLAG_SLOWED);
+    expect(wadeCount(map, 3.5, 3.5, 0, crowd, NEVER, 0, unbowed)).toBe(1);
+    expect(wadeCount(map, 3.5, 3.5, 0, crowd, NEVER, 0, stride)).toBe(2);
+    expect(wadeCount(map, 3.5, 3.5, 0, crowd, NEVER, 0, () => true)).toBe(0);
   });
 });
