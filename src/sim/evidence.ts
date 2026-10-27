@@ -63,14 +63,33 @@ export class EvidenceLog {
   private revives = 0;
   private window = new Map<number, Decisions>();
   private readonly totals = new Map<number, Decisions>();
-  /** Discovered rooms not yet visited: a visit while two or more were open was a route choice. */
-  private readonly frontier = new Set<number>();
+  /**
+   * Visited rooms. A first visit is a route choice when two or more unvisited rooms had a door to a
+   * visited one; it counts for the humans who walked in, not the whole party, and rooms only seen on
+   * the Chart are not doors (R9 review P2).
+   */
+  private readonly visited = new Set<number>();
   private written = 0;
   private dropped = 0;
   private done = false;
 
   constructor(private readonly sim: Simulation, private readonly build: string, private readonly out: (r: EvidenceRecord) => void) {
-    sim.rooms.forEach((r, i) => { if (r.knowledge === 1) this.frontier.add(i); });
+    sim.rooms.forEach((r, i) => { if (r.knowledge === 2) this.visited.add(i); });
+  }
+
+  /** Unvisited rooms with a door to a visited room. */
+  private openRooms(): number {
+    const open = new Set<number>(), rooms = this.sim.map.rooms;
+    for (const v of this.visited) for (const leaf of rooms[v]?.leaves ?? []) if (leaf.to >= 0 && !this.visited.has(leaf.to)) open.add(leaf.to);
+    return open.size;
+  }
+
+  /** A first visit: a route choice for the humans inside when it had two or more options. */
+  private visit(room: number): void {
+    const sim = this.sim;
+    if (this.visited.has(room)) return;
+    if (this.openRooms() >= 2) for (const p of sim.players) if (p.connected && !p.bot && sim.roomAt(p.x, p.y) === room) this.decision(p, 'route');
+    this.visited.add(room);
   }
 
   /** A human's decision, counted once its request was accepted. */
@@ -100,11 +119,7 @@ export class EvidenceLog {
     const sim = this.sim;
     switch (e.type) {
       case 'roomState': {
-        if (e.knowledge === 1 && !this.frontier.has(e.room) && e.phase !== PHASE_CLEARED) this.frontier.add(e.room);
-        if (e.knowledge === 2 && this.frontier.has(e.room)) {
-          if (this.frontier.size >= 2) for (const p of sim.players) if (p.connected) this.decision(p, 'route');
-          this.frontier.delete(e.room);
-        }
+        if (e.knowledge === 2) this.visit(e.room);
         if (e.phase === PHASE_COMBAT && this.open?.room !== e.room) {
           if (this.open) this.closeRoom(null);
           this.open = { room: e.room, sealed: sim.tick, peak: 0, ms: 0, msMax: 0, ticks: 0, crestFrom: -1, crestTo: -1, crestWave: -1 };
