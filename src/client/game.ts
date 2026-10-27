@@ -582,6 +582,11 @@ export class Game {
   private readonly reportedKills: number[] = [];
   /** Reported kills that died at once instead of after the render delay (the lag test). */
   private reportedEarly = 0;
+  /** R9 B3 diagnosis: reported kills this screen did not draw at the report, with or without a pending burst. */
+  private reportedUndrawn = 0;
+  private reportedUndrawnBurst = 0;
+  private reportedReceived = 0;
+  private reportedHidden = 0;
   private readonly flinches = new Flinches();
   private readonly shake = new Shake();
   private wasLeaping = false;
@@ -2717,13 +2722,15 @@ export class Game {
     const kills = this.reportedKills;
     for (let k = 0; k + 1 < kills.length; k += 2) {
       const slot = kills[k], incarnation = kills[k + 1];
-      if (slot < 0 || slot >= ENEMY_SLOTS || this.deaths.hides(slot, incarnation)) continue;
+      this.reportedReceived++;
+      if (slot < 0 || slot >= ENEMY_SLOTS) continue;
+      if (this.deaths.hides(slot, incarnation)) { this.reportedHidden++; continue; }
       const pending = this.pendingBursts.find((b) => !b.censer && b.slot === slot);
       let i = -1;
       for (let j = 0; j < ents.count; j++) if (ents.slot[j] === slot && ents.incarnation[j] === incarnation) { i = j; break; }
       if (i < 0) {
         // Not drawn now: its death, if the snapshots already dropped it, plays now.
-        if (pending) pending.at = Math.min(pending.at, now);
+        if (pending) { pending.at = Math.min(pending.at, now); this.reportedUndrawnBurst++; } else this.reportedUndrawn++;
         continue;
       }
       const rtt = this.o.link ? this.o.link.rttMs : 0;
@@ -3285,7 +3292,7 @@ export class Game {
     };
     const c = this.confirmations;
     c.update(now, (slot) => this.snaps.hasEnemy(slot));
-    debugState.killMarkers = { predicted: c.predicted, confirmed: c.confirmed, missed: c.missed, revealed: this.revealedKills, reported: this.reportedEarly };
+    debugState.killMarkers = { predicted: c.predicted, confirmed: c.confirmed, missed: c.missed, revealed: this.revealedKills, reported: this.reportedEarly, undrawn: this.reportedUndrawn, undrawnBurst: this.reportedUndrawnBurst, received: this.reportedReceived, hidden: this.reportedHidden };
     const oc = this.ownCensers;
     debugState.censers = { thrown: oc.thrown, matched: oc.matched, agreed: oc.agreed, unmatched: oc.unmatched };
     // Read-only own pose also supports the normal-menu multiplayer prop/catch-up fixture.

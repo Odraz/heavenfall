@@ -74,7 +74,7 @@ One game event plays one sound family; an alias is not a second event. New event
 | A talent, item or relic **applies** a state: bound / airborne / lands / fire patch / fire area ends | `state-bind` / `state-launch` / `state-land` / `state-fire` / `fireOut`; never a sound per tick of membership | R3–R5 |
 | Incense cloud | `incense` loop | R2 |
 | Confessional | `confessionalAmbience` loop | R4 |
-| The twelve alternatives | their S6 one-shots (R8: no S8 loops for alternatives; Bread of Angels' cast keeps `chaliceHeal`; `gatebreakerWall` waits for a wall-stop event); Bread of Angels harvest = `motePickup`; Gatebreaker bursts = `burstPop`; Cast Out landings = `state-land`; Boundary Chain/Silver Wire binds = `state-bind` (≤4 per second); Way Back cuts = `daggerCut`; endings of fire = `fireOut` | R4–R5 |
+| The twelve alternatives | their S6 one-shots (R8: no S8 loops for alternatives; Bread of Angels' cast keeps `chaliceHeal`; `gatebreakerWall` plays on the host's wall-stop event since R9); Bread of Angels harvest = `motePickup`; Gatebreaker bursts = `burstPop`; Cast Out landings = `state-land`; Boundary Chain/Silver Wire binds = `state-bind` (≤4 per second); Way Back cuts = `daggerCut`; endings of fire = `fireOut` | R4–R5 |
 | Talent shape changes (more pellets, wider cones, longer chains) | the native attack's own sound; no new event | R4–R5 |
 | Talent payloads | fire → `state-fire`; bind → `state-bind`; launch/land → `state-launch`/`state-land`; incense → `incense`; revive/mote reactions → `revive`/`motePickup`; native damage → its attack family | R4–R5 |
 | Key / chest / relic claim / bargain | `keyPickup` / `chestOpen` / `relicClaim` / `bargainAccept` | R6 |

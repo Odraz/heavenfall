@@ -51,7 +51,8 @@ for (const { guest: guestClass, host: hostClass } of GUESTS) test(`a ${guestClas
     const atOnce = s.killMarkers.confirmed + s.killMarkers.reported, c = s.censers;
     console.log(`lag ${guestClass}: rtt ${s.link.rttMs?.toFixed(0)} ms (${s.link.route}), view delay ${s.link.delayMs.toFixed(0)} ms, jitter ${s.link.jitterMs.toFixed(0)} ms, ` +
       `kill markers ${s.killMarkers.confirmed}/${settled} confirmed, ${s.killMarkers.revealed} predicted deaths reappeared, ` +
-      `${s.killMarkers.confirmed} of ${weaponKills} weapon kills shown at once, ${s.killMarkers.reported} reported kills at once, ` +
+      `${s.killMarkers.confirmed} of ${weaponKills} weapon kills shown at once, ${s.killMarkers.reported} reported kills at once ` +
+      `(${s.killMarkers.received} received, ${s.killMarkers.hidden} already hidden, ${s.killMarkers.undrawn} undrawn, ${s.killMarkers.undrawnBurst} undrawn in a burst), ` +
       `${atOnce} of ${guest.kills} kills in all at once, censers ${c.thrown} thrown ${c.matched} matched ${c.agreed} agreed ${c.unmatched} unmatched, host lines ${JSON.stringify(host.link.lines)}`);
     expect(s.link.rttMs).toBeGreaterThanOrEqual(150);
     expect(s.link.rttMs).toBeLessThan(450);

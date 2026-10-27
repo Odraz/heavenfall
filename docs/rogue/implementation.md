@@ -2,7 +2,7 @@
 
 Revision 9, 2026-10-11. The development sequence for the one-dungeon Pearly Gates slice. [game.md](game.md), its catalogs and [slice-acceptance.md](slice-acceptance.md) remain the gameplay authority; this file decides **order**, not rules.
 
-**R9 prepared, 2026-10-25:** the acceptance milestone is ready to implement: a content census, the review against `main` with four known fixes (assists, the Gatebreaker's turn limit, the intermittent lag test, the wall-stop sound), evidence tools, the first rogue benchmark workload, then your sessions; see [r09.md](r09.md).
+**R9 stages 1–4 implemented, 2026-10-27, awaiting-human-play:** the content census and dev-switch guard, assists, the Gatebreaker's host turn clamp and wall-stop sound, the evidence log, `bosshp` and the collected fixture, and the rogue benchmark workloads. Your sessions (stage 5), any repairs (6) and the merge preparation (7) remain; see [r09-report.md](r09-report.md).
 
 **R8 checkpoint, 2026-10-25:** every required event has its own cue and boss/elite warnings outrank gunfire, awaiting your listening; see the [R08 report](r08-report.md).
 
